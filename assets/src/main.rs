@@ -242,7 +242,7 @@ fn extract_scrub(source: &Path, outdir: &Path) -> Result<(), String> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> | vbios <rom>>";
+    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | generate-tu102-direct [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> | vbios <rom>>";
     let result = match args.get(1).map(String::as_str) {
         Some("generate") => {
             let out: PathBuf = args
@@ -265,6 +265,14 @@ fn main() {
             assets::payload::build_pinned_ad102().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
                 println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                Ok(())
+            })
+        }
+        Some("generate-tu102-direct") => {
+            let out = args.get(2).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("v67-tu102-direct-ss.bin"));
+            assets::tu102_direct::generate().and_then(|payload| {
+                std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
+                println!("wrote {} ({} bytes, SHA-256 verified)",out.display(),payload.len());
                 Ok(())
             })
         }

@@ -28,6 +28,9 @@ pub const NVIDIA_VENDOR_ID: u16 = 0x10de;
 /// allocation path it was field-verified with). Default OFF.
 #[cfg(feature = "tx")]
 static TX_HIGH_STAGING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+#[cfg(feature = "tu102-c-compat")]
+static TU102_NEXT_SLOT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(crate::tu102_profile::FIRST_SLOT);
 
 /// Enable above-4GB staging for the current card's transaction.
 #[cfg(feature = "tx")]
@@ -475,6 +478,29 @@ impl PciIo {
             "DMA alloc: no usable >4GB conventional space (candidates={candidates} failed={failed})"
         );
         Err(Status::NOT_FOUND)
+    }
+
+    /// C兼容配置的独立分槽分配器；不改变其他GPU的默认DMA路径。
+    #[cfg(feature = "tu102-c-compat")]
+    pub fn dma_alloc_tu102_compat(&self, len: usize) -> Result<DmaBuffer, Status> {
+        use core::sync::atomic::Ordering;
+        let cursor = TU102_NEXT_SLOT.load(Ordering::Relaxed);
+        for attempt in 0..12 {
+            let (addr, next, pages) = crate::tu102_profile::slot(cursor, attempt, len)
+                .ok_or(Status::INVALID_PARAMETER)?;
+            if let Ok(ptr) = boot::allocate_pages(AllocateType::Address(addr), MemoryType::RESERVED, pages) {
+                if ptr.as_ptr() as u64 != addr {
+                    unsafe { boot::free_pages(ptr, pages) }.ok();
+                    return Err(Status::DEVICE_ERROR);
+                }
+                TU102_NEXT_SLOT.store(next, Ordering::Relaxed);
+                unsafe { core::ptr::write_bytes(ptr.as_ptr(), 0, pages * 4096); }
+                info!("TU102-C: DMA dev={addr:#x} pages={pages} type=Reserved");
+                return Ok(DmaBuffer { host: ptr.as_ptr(), dev: addr, pages, len,
+                    mapping: core::ptr::null_mut(), high: true, released: false });
+            }
+        }
+        Err(Status::OUT_OF_RESOURCES)
     }
 
     /// Bulk u32 read from a BAR window (used for the PROM CRC pass).

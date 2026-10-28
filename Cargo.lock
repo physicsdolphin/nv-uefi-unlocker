@@ -171,6 +171,7 @@ name = "loader"
 version = "2.1.5"
 dependencies = [
  "log",
+ "sha2",
  "uefi",
 ]
 

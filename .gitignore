@@ -3,6 +3,7 @@
 
 # rust
 /target/
+/local-artifacts/
 **/*.rs.bk
 
 # asset pipeline: NVIDIA-derived blobs never enter git (constitution §6)
