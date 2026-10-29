@@ -590,3 +590,12 @@ cargo xt                # 全部宿主测试（assets + sim；数量以当前输
 许可：**GPL-2.0-only**（`LICENSE`）。NVIDIA 固件与 VBIOS 版权归 NVIDIA，按其
 原许可条款从钉版公开包本地再生，不在本仓库分发。
 
+
+## TU102 22GiB C兼容修复候选
+
+`--features tu102-c-compat`提供针对已记录的1e07/22GiB/.e9本机的隔离修复配置，
+迁移原生C成功首轮的PTIMER、主机探测、内存与FWSEC/Booter顺序及直接SS载荷。
+**原生C与Rust候选均已在该本机实测成功**；Rust已通过一次启动与短时算力测试，
+尚未验证多次冷启动或长期稳定性，不会自动替换现有tx路径。
+详见[修复说明](docs/tu102-c-compatible-fix.md)。载荷可用
+`cargo run -p assets -- generate-tu102-direct <输出文件>`重建，固件不入库。

@@ -247,13 +247,17 @@ pub struct RadixBlock {
 }
 
 pub fn radix_build(gpu: &TxGpu, image: &[u8]) -> Result<RadixBlock, TxError> {
+    radix_build_with(image, |len| gpu.pci.dma_alloc(len).map_err(|_| TxError::ENodev))
+}
+
+pub fn radix_build_with(image: &[u8], allocate: impl FnOnce(usize) -> Result<crate::pci::DmaBuffer, TxError>) -> Result<RadixBlock, TxError> {
     const PAGE: usize = 4096;
     let leaves = image.len().div_ceil(PAGE);
     let l2 = leaves.div_ceil(512);
     let l1 = l2.div_ceil(512).max(1);
     let tables = 1 + l1 + l2;
     let total = tables + leaves;
-    let dma = gpu.pci.dma_alloc(total * PAGE).map_err(|_| TxError::ENodev)?;
+    let dma = allocate(total * PAGE)?;
     // Safety: dma.host is valid for total*PAGE bytes.
     let mem = unsafe { core::slice::from_raw_parts_mut(dma.host, total * PAGE) };
     for b in mem.iter_mut() {
@@ -343,11 +347,7 @@ pub fn wpr_meta_pack(
     // bit-for-bit: heapOffset = 0x1f7900000.
     let (nonwpr_off, nonwpr_size, wpr_start, heap_off, heap_size, flags) = if family == "tu10x" {
         const MB: u64 = 1024 * 1024;
-        let hs = match fb_size {
-            0x280000000 => 0x7F00000, // 10 GiB
-            0x500000000 => 0xFE00000, // 20 GiB
-            _ => 0x6900000,           // 8 GiB (40HX live value)
-        };
+        let hs = crate::tu102_profile::heap_size(fb_size);
         let ho = (layout.gsp_offset - hs) & !(MB - 1);
         let ws = ho - MB;
         info!(
@@ -634,7 +634,7 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     // Sample DMEM[0x600] WHILE the core runs: the payload's fill dword
     // 0x4a7 appearing there is direct evidence the signature DMA landed
     // (meta accepted); 0xdead5ec2 appearing means sanitize reached it
-    // without a payload landing (meta rejected upstream).
+    // is evidence of sanitization only; earlier DMA can already have been wiped.
     let mut dma_landed = false;
     let mut sanitized = false;
     // cmp50hx v2.69: intermediate booter mailbox codes are overwritten by
@@ -662,7 +662,7 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
             break;
         }
         if v == 0xdead_5ec2 {
-            info!("BOOTER-DIRECT: sanitize reached DMEM[0x600] at sample {i} - no payload landed before it");
+            info!("BOOTER-DIRECT: sanitize visible at DMEM[0x600] sample {i}; earlier payload activity is undetermined");
             sanitized = true;
             break;
         }
@@ -713,7 +713,7 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     if dma_landed {
         info!("BOOTER-DIRECT: DMEM verdict: signature DMA LANDED (fill 0x4a7 seen) - booter entered canary/ROP territory");
     } else {
-        info!("BOOTER-DIRECT: DMEM verdict: signature DMA never landed - the booter rejected the meta/staging before the exploit point");
+        info!("BOOTER-DIRECT: DMEM sample: payload fill was not observed; sanitization/timing can hide transient DMA, so this does not locate the rejection stage");
     }
     // Turing BOOT_DIRECT halt shapes (sixth TU106 fire + issues #14/#16):
     // the mailboxes carry the 64-bit WprMeta address as INPUT. A healthy

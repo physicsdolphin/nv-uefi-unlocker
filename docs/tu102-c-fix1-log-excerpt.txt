@@ -1,0 +1,24 @@
+[INFO ] loader: TU102-C-FIX1: experimental C-compatible 1e07/22GiB profile; Space required; one start only
+[INFO ] loader::keywait: CONFIRM: Space pressed, proceeding
+[INFO ] loader::tu102_compat: TU102-C: exact device/PROM/capacity/firmware/payload identity verified
+[INFO ] loader::tu102_compat: TU102-C: reference PTIMER seed=0x18da4e6bdc702e00
+[INFO ] loader::pci: TU102-C: DMA dev=0x110000000 pages=16 type=Reserved
+[INFO ] loader::pci: TU102-C: DMA dev=0x111010000 pages=15 type=Reserved
+[INFO ] loader::pci: TU102-C: DMA dev=0x11201f000 pages=6 type=Reserved
+[INFO ] loader::pci: TU102-C: DMA dev=0x113025000 pages=7163 type=Reserved
+[INFO ] loader::pci: TU102-C: DMA dev=0x115c20000 pages=7179 type=Reserved
+[INFO ] loader::tx_booter: radix: leaves=7163 tables=16 level0=0x115c20000
+[INFO ] loader::pci: TU102-C: DMA dev=0x11882b000 pages=1 type=Reserved
+[INFO ] loader::pci: TU102-C: DMA dev=0x11982c000 pages=10 type=Reserved
+[INFO ] loader::tx_fwsec: FWSEC mapper patched: frts=0x57fe00000 cmd@0x3d0
+[INFO ] loader::tu102_compat: TU102-C: FWSEC exact WPR2 and GSP HALT verified; buffer retained until cleanup
+[INFO ] loader::tu102_compat: TU102-C: before booter GSP=0x10 SEC2=0x10 RESET_PLM=0xff meta=0x11882b000
+[INFO ] loader::tu102_compat: TU102-C: booter Ok(()) mailbox0=0x0 PLM=0xffffff8f SS0=0x88888888 SS1=0x8
+[INFO ] loader::tu102_compat: TU102-C: post-sanitize SS0/SS1 verified; no FLR or GOP reconnect
+[INFO ] loader: SELECTOR RESULT: transaction complete
+[INFO ] loader::tx: HANDOFF-OUT: ss0=0xbadf5040 ss1=0xbadf5040 readout1=0xbadf5040 feat_plm=0xbadf5040 wpr2_hi=0x0 pmcsr=0x0008 dstate=D0 | tu10x: plm=0xffffff8f ss0=0x88888888 ss1=0x00000008 | tu10x_unlock=true ss0_unlock=false ss1_unlock=false plm_open=false
+[INFO ] loader::tu102_compat: TU102-C: DMA cleanup complete
+[INFO ] loader::tu102_compat: TU102-C: PCI command restored=0x3 expected=0x3
+[INFO ] loader::chainload: PHASE: CHAIN
+[INFO ] loader::chainload: CHAIN: reconnect skipped on NVIDIA display Handle(0x84039b98)
+[INFO ] loader::chainload: CHAIN: LoadImage (FromDevicePath)

@@ -750,3 +750,12 @@ License: **GPL-2.0-only** (`LICENSE`). NVIDIA firmware and VBIOS remain
 NVIDIA property; regenerate them locally from pinned public packages
 under their own license terms — they are not distributed in this
 repository.
+
+## Experimental TU102 22 GiB C-compatible profile
+
+The opt-in `tu102-c-compat` feature ports the successful C first-attempt sequence
+for the recorded 1e07/22 GiB/.e9 board. Both the C reference and this Rust candidate
+have passed a hardware boot test; repeated cold boots and long-term stability
+remain unverified. Existing transaction
+tracks remain the default. See [the implementation notes](docs/tu102-c-compatible-fix.md).
+Reproduce the separate payload with `cargo run -p assets -- generate-tu102-direct <output>`.

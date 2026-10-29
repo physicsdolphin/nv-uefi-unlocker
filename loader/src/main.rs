@@ -28,6 +28,10 @@ mod tx_booter;
 mod tx_detach;
 #[cfg(feature = "tx")]
 mod tx_portal;
+#[cfg(feature = "tx")]
+mod tu102_profile;
+#[cfg(feature = "tu102-c-compat")]
+mod tu102_compat;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -48,6 +52,8 @@ fn main() -> Status {
         Err(e) => info!("WATCHDOG: disable failed: {:?}", e.status()),
     }
     banner::print(VERSION);
+    #[cfg(feature = "tu102-c-compat")]
+    info!("TU102-C-FIX1: experimental C-compatible 1e07/22GiB profile; Space required; one start only");
 
     // Phase: CONFIRM. TX builds: ONLY Space or Enter proceeds - timeout or
     // any other key aborts into chain-load with zero GPU writes (issue #4.1:
@@ -190,9 +196,13 @@ fn tx_one_card(g: &pci::FoundGpu) {
     let booter = tx::read_boot_file_fmt("\\booter_load_{}.bin", family);
     let boot_desc = tx::read_boot_file_fmt("\\gsp_boot_desc_{}.bin", family);
     let gsp_boot = tx::read_boot_file_fmt("\\gsp_boot_{}.bin", family);
-    let gsp_image = tx::read_boot_file_fmt("\\fwimage_{}.bin", family);
+    let gsp_image = if cfg!(feature = "tu102-c-compat") {
+        Some(alloc::vec![0u8; 0x1bfadc8])
+    } else { tx::read_boot_file_fmt("\\fwimage_{}.bin", family) };
     let stock_sig = tx::read_boot_file_fmt("\\fwsignature_{}.bin", family);
-    let v67 = tx::read_boot_file_fmt("\\v67-{}-four-plm.bin", family);
+    let v67 = if cfg!(feature = "tu102-c-compat") {
+        tx::read_boot_file("\\v67-tu102-direct-ss.bin")
+    } else { tx::read_boot_file_fmt("\\v67-{}-four-plm.bin", family) };
     let bl = if family == "tu10x" {
         tx::read_boot_file("\\sec2_bl_tu10x.bin")
     } else {
@@ -224,7 +234,20 @@ fn tx_one_card(g: &pci::FoundGpu) {
         info!("TX: asset validation failed ({e:?}) - nothing was touched, chain-loading Windows");
         return;
     }
-    match tx::run_transaction(&gpu, &assets, g.handle) {
+    #[cfg(feature = "tu102-c-compat")]
+    if let Err(e) = tu102_compat::preflight(&gpu, &assets, dev) {
+        info!("TU102-C: preflight rejected {e:?}; no GPU writes, no emergency FLR");
+        return;
+    }
+    #[cfg(feature = "tu102-c-compat")]
+    let mut compatibility_buffers = alloc::vec::Vec::new();
+    #[cfg(feature = "tu102-c-compat")]
+    let compatibility_command = pci.config_read_u16(4);
+    #[cfg(feature = "tu102-c-compat")]
+    let outcome = tu102_compat::run(&gpu, &assets, &mut compatibility_buffers);
+    #[cfg(not(feature = "tu102-c-compat"))]
+    let outcome = tx::run_transaction(&gpu, &assets, g.handle);
+    match outcome {
         Ok(()) => {
             info!("SELECTOR RESULT: transaction complete");
             tx::handoff_out(&pci);
@@ -252,4 +275,6 @@ fn tx_one_card(g: &pci::FoundGpu) {
             tx::handoff_out(&pci);
         }
     }
+    #[cfg(feature = "tu102-c-compat")]
+    tu102_compat::release_after_handoff(&gpu, &mut compatibility_buffers, compatibility_command);
 }

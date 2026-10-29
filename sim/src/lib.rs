@@ -14,6 +14,11 @@
 //! The PLM write-filter itself (host L0 writes dropped unless PLM open) is
 //! the core privilege model and lives here too.
 
+#[path = "../../loader/src/tu102_profile.rs"]
+pub mod tu102_profile;
+#[cfg(test)]
+mod tu102_profile_tests;
+
 /// BAR0 offsets (pinned 610.43.03 GA102 headers via gpu-unlock gfw_eval.h;
 /// cross-checked against task brief §3.2).
 pub mod regs {
