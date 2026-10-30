@@ -27,6 +27,13 @@
 
 已有的 [#8（4070 `2709`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#11（3060 Ti LHR `2489`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#12（2060 Super `1f06`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)记录保留在 README；[#2](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/2) 的 Turing 计算解锁与 BAR1 扩展是不同工作，后者没有随计算解锁一并实现。
 
+## 社区免 U 盘工具记录（非官方，不背书）
+
+§1.4 对项目交付物绝对（决策记录见 [#73](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/73)）：本项目不收录常驻引导项 installer，也不提供官方教程。以下社区方案仅作存在性记录——非官方、不背书、不承诺兼容；常驻启动项的风险模型（每次上电自动重放固件事务、chain-load 前失败即黑屏且需恢复介质或固件菜单）由使用者自担：
+
+- [#33 报告者的脚本](https://github.com/chungtair/rtx4060ti-auto-unlock)：数据盘 300 MB FAT32 分区 + `{fwbootmgr}` 固件启动项，AD106/MSI B550 实测（上表 #33 行；注意 B550 无视 Windows 写的启动顺序，须进 BIOS 手设 Boot Option #1）。
+- [#73 提案者发布的 downstream 工具](https://github.com/Catnip202X/nv-uefi-unlocker/tree/downstream)：`downstream/install-partition.ps1`，独立 FAT32 分区安装/卸载（SHA-256 逐文件校验、manifest 先于启动项写入、拒绝 ESP/可移动盘/部分资产集、`-AllowArmed` 门控自动确认）。作者如实声明脚本从未实际执行，首个真实运行即测试。
+
 ## 仍待复测的反馈
 
 - [#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6)：GA10x 原先等待 HALT/marker 的误判已改为 PLM 翻转判据。但另一台 Hasee/Clevo、无 MUX 的混合输出 `249d` 在 v2.1.0 EFI 成功后进入 Windows 无收益。可用 [Windows ssdiag](../tools/ssdiag/README.md) 或 Linux `tools/diag-unlock.py` 与 HANDOFF-OUT 对照，区分选择器被重写、PLM 重锁或设备失电；该机器的后续复测待回传。PLM 仍开放时，可用 `--reapply` 重写选择器并读回。
