@@ -571,6 +571,82 @@ pub fn booter_fire(
     Ok(())
 }
 
+/// Secure-segment placement for the TU10x BOOT_DIRECT fire, plus the two
+/// diagnostic switches used by issue #62 (RTX 2080 TU104-400 crashes at the
+/// secure entry with EXPC=0x100 / EXCAUSE=0x10 - instruction fetch miss).
+///
+/// Defaults reproduce the shipped behaviour exactly: destination
+/// align_up(imem_ns_size, 256), tag = the segment's offset inside the image,
+/// BOOTVEC = 0 (start at the non-secure stub).
+///
+/// `\tx-sec-base.txt` overrides BOTH the destination and the tag with one
+/// value, which is what "move the segment" means. It exists because those two
+/// are two different quantities that happen to be equal in the current bundle
+/// (app_code_off == align_up(imem_ns_size, 256)); if a chip disagrees about the
+/// placement, making them diverge deliberately is the cheapest way to see it.
+///
+/// `\tx-bootvec-sec.txt` starts the core at the secure entry instead of the
+/// non-secure stub, to separate "the stub jumps wrong" from "the secure segment
+/// was not placed where the core looks for it".
+fn sec_placement(hdr: &BooterHdr) -> (u32, u32, bool) {
+    let default_base = hdr.imem_ns_size.div_ceil(256) * 256;
+    let override_base = crate::tx::read_boot_file("\\tx-sec-base.txt")
+        .and_then(|b| parse_num(&b))
+        .map(|v| v & !0xffu32);
+    let base = override_base.unwrap_or(default_base);
+    // With an override the tag follows the destination; without one the shipped
+    // behaviour (tag = image offset) is kept bit for bit.
+    let tag = if override_base.is_some() { base } else { hdr.app_code_off };
+    let bootvec_sec = crate::tx::probe_file("\\tx-bootvec-sec.txt")
+        || (override_base.is_some() && crate::tx::probe_file("\\tx-sec-bootvec.txt"));
+    info!(
+        "BOOTER-PLACE: ns {:#x}+{:#x} -> dest 0 tag {:#x} | sec {:#x}+{:#x} -> dest {:#x} tag {:#x} (default dest {:#x}, tag==dest: {}, override: {:?}) | bootvec {}",
+        hdr.imem_ns_off,
+        hdr.imem_ns_size,
+        hdr.imem_ns_off >> 8,
+        hdr.app_code_off,
+        hdr.app_code_size,
+        base,
+        tag,
+        default_base,
+        tag == base,
+        override_base,
+        if bootvec_sec { "secure entry" } else { "ns stub (0)" }
+    );
+    (base, tag, bootvec_sec)
+}
+
+/// Minimal ASCII number parser for the marker files: `0x` prefix = hex,
+/// otherwise decimal. No allocation, no locale, no sign.
+fn parse_num(raw: &[u8]) -> Option<u32> {
+    let t: alloc::vec::Vec<u8> = raw
+        .iter()
+        .copied()
+        .filter(|b| !b.is_ascii_whitespace() && *b != 0)
+        .collect();
+    if t.is_empty() {
+        return None;
+    }
+    let (digits, radix) = match t.as_slice() {
+        [b'0', b'x' | b'X', rest @ ..] => (rest, 16u32),
+        all => (all, 10u32),
+    };
+    let mut v: u32 = 0;
+    for &d in digits {
+        let n = match d {
+            b'0'..=b'9' => (d - b'0') as u32,
+            b'a'..=b'f' => (d - b'a') as u32 + 10,
+            b'A'..=b'F' => (d - b'A') as u32 + 10,
+            _ => return None,
+        };
+        if n >= radix {
+            return None;
+        }
+        v = v.checked_mul(radix)?.checked_add(n)?;
+    }
+    Some(v)
+}
+
 /// SEC2 booter fire, Turing BOOT_DIRECT variant (kernel_gsp_falcon_tu102.c
 /// s_prepareHsFalconDirect + kgspExecuteHsFalcon_TU102 tail). No HS
 /// bootstrap, no DMA: the image is portal-copied into SEC2 IMEM/DMEM
@@ -602,16 +678,16 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     gpu.write32(base + 0x084, chip); // FALCON_RM = chipId0
     crate::tx::falcon_dma_unblock(gpu, base, crate::tx::eng::SEC2_FBIF)?;
 
+    let (sec_base, sec_tag, bootvec_sec) = sec_placement(hdr);
     let ns = &image[hdr.imem_ns_off as usize..(hdr.imem_ns_off + hdr.imem_ns_size) as usize];
     crate::tx_portal::portal_load_imem(gpu, base, 0, hdr.imem_ns_off, ns, false);
-    let sec_dest = hdr.imem_ns_size.div_ceil(256) * 256;
     let sec = &image[hdr.app_code_off as usize..(hdr.app_code_off + hdr.app_code_size) as usize];
-    crate::tx_portal::portal_load_imem(gpu, base, sec_dest, hdr.app_code_off, sec, true);
+    crate::tx_portal::portal_load_imem(gpu, base, sec_base, sec_tag, sec, true);
     let dmem = &image[hdr.data_off as usize..(hdr.data_off + hdr.data_size) as usize];
     crate::tx_portal::portal_load_dmem(gpu, base, 0, dmem);
 
-    // BOOTVEC = start of non-secure code; mailboxes = WprMeta phys addr.
-    gpu.write32(base + FALCON_BOOTVEC, 0);
+    // BOOTVEC = start of non-secure code (or the secure entry under \tx-bootvec-sec.txt).
+    gpu.write32(base + FALCON_BOOTVEC, if bootvec_sec { sec_base } else { 0 });
     gpu.write32(base + FALCON_MAILBOX0, meta_dma as u32);
     gpu.write32(base + FALCON_MAILBOX1, (meta_dma >> 32) as u32);
     info!(
@@ -775,11 +851,11 @@ pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma
     gpu.write32(base + 0x10c, 0);
     info!("BOOTER-C: FBIF CTL {ctl:#010x} -> {:#010x} (bit7), DMACTL=0, TRANSCFG untouched", ctl | (1 << 7));
     // Portal loads - identical placement to booter_fire_direct.
+    let (sec_base, sec_tag, _bootvec_sec) = sec_placement(hdr);
     let ns = &image[hdr.imem_ns_off as usize..(hdr.imem_ns_off + hdr.imem_ns_size) as usize];
     crate::tx_portal::portal_load_imem(gpu, base, 0, hdr.imem_ns_off, ns, false);
-    let sec_dest = hdr.imem_ns_size.div_ceil(256) * 256;
     let sec = &image[hdr.app_code_off as usize..(hdr.app_code_off + hdr.app_code_size) as usize];
-    crate::tx_portal::portal_load_imem(gpu, base, sec_dest, hdr.app_code_off, sec, true);
+    crate::tx_portal::portal_load_imem(gpu, base, sec_base, sec_tag, sec, true);
     let dmem = &image[hdr.data_off as usize..(hdr.data_off + hdr.data_size) as usize];
     crate::tx_portal::portal_load_dmem(gpu, base, 0, dmem);
     wbinvd_flush();
