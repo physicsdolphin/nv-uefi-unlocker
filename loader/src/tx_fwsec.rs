@@ -34,6 +34,16 @@ pub struct FwsecInfo {
 fn le16(d: &[u8], o: usize) -> u16 {
     u16::from_le_bytes([d[o], d[o + 1]])
 }
+/// Bounds-checked variants: every offset below comes out of device data (the
+/// card's own PROM), so a malformed token/table/descriptor must end the walk
+/// with None, not panic the firmware app or index past the staging buffer.
+fn u16v(d: &[u8], o: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(d.get(o..o + 2)?.try_into().ok()?))
+}
+fn u32v(d: &[u8], o: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(d.get(o..o + 4)?.try_into().ok()?))
+}
+
 fn le32(d: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]])
 }
@@ -79,7 +89,7 @@ fn find_expansion_offset(rom: &[u8]) -> Option<usize> {
             }
         }
         if code == 0xE0 {
-            return Some(curr - base_size?);
+            return curr.checked_sub(base_size?);
         }
         if code == 0x00 && base_size.is_none() {
             base_size = Some(sub * 512);
@@ -106,9 +116,9 @@ pub fn prom_find_scrubber(rom: &[u8]) -> Option<FwsecInfo> {
 fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
     let bit = find_bit_header(rom)?;
     let expansion = find_expansion_offset(rom)?;
-    let hdr_size = rom[bit + 8] as usize;
-    let stride = rom[bit + 9] as usize;
-    let tokens = rom[bit + 10] as usize;
+    let hdr_size = *rom.get(bit + 8)? as usize;
+    let stride = *rom.get(bit + 9)? as usize;
+    let tokens = *rom.get(bit + 10)? as usize;
     if !(6..=8).contains(&stride) {
         return None;
     }
@@ -117,20 +127,24 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
         if rom.get(tok..tok + 2) != Some(&[0x70, 0x02][..]) {
             continue;
         }
-        let data_ptr = if stride >= 8 { le32(rom, tok + 4) as usize } else { le16(rom, tok + 4) as usize };
-        let table = expansion + le32(rom, data_ptr) as usize;
+        let data_ptr = if stride >= 8 {
+            u32v(rom, tok + 4)? as usize
+        } else {
+            u16v(rom, tok + 4)? as usize
+        };
+        let table = expansion.checked_add(u32v(rom, data_ptr)? as usize)?;
         if rom.get(table) != Some(&1) {
             continue;
         }
-        let esz = rom[table + 2] as usize;
-        let count = rom[table + 3] as usize;
+        let esz = *rom.get(table + 2)? as usize;
+        let count = *rom.get(table + 3)? as usize;
         for e in 0..count {
             let at = table + 6 + e * esz;
             if *rom.get(at)? != want_app {
                 continue;
             }
-            let desc_off = expansion + le32(rom, at + 2) as usize;
-            let vdesc = le32(rom, desc_off);
+            let desc_off = expansion.checked_add(u32v(rom, at + 2)? as usize)?;
+            let vdesc = u32v(rom, desc_off)?;
             let ver = (vdesc >> 8) & 0xFF;
             let size = vdesc >> 16;
             if want_app != 0x85 && ver != 3 {
@@ -522,6 +536,17 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
         Ok(d) => d,
         Err(st) => { info!("FWSEC-TRACE: dma_alloc FAILED {:?}", st); return Err(TxError::ENodev); }
     };
+    // The descriptor's payload window must fit the 1 MiB PROM staging buffer:
+    // prom_find_ucode checks the *descriptor* bounds, not the image it points
+    // at, so an over-long `stored` would read past the buffer and DMA whatever
+    // follows it into an engine that then executes it.
+    if (fw.image_off as usize)
+        .checked_add(fw.stored_size as usize)
+        .map_or(true, |end| end > rom.len())
+    {
+        info!("FWSEC-TRACE: image window {:#x}+{:#x} outside the staged ROM ({:#x})", fw.image_off, fw.stored_size, rom.len());
+        return Err(TxError::ENodev);
+    }
     unsafe {
         // Zero the whole block first (rounded tail must be 0), then copy
         // the exact stored-size payload.
@@ -701,6 +726,13 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
         fw.dmem_size, fw.data_off, fw.interface_off, fw.stored_size
     );
 
+    if (fw.image_off as usize)
+        .checked_add(fw.stored_size as usize)
+        .map_or(true, |end| end > rom.len())
+    {
+        info!("FWSEC-TU10X: image window {:#x}+{:#x} outside the staged ROM ({:#x})", fw.image_off, fw.stored_size, rom.len());
+        return Err(TxError::ENodev);
+    }
     let mut dma = gpu.pci.dma_alloc(fw.image_size as usize).map_err(|_| TxError::ENodev)?;
     unsafe {
         core::ptr::write_bytes(dma.host, 0, fw.image_size as usize);
