@@ -283,3 +283,4 @@ pub mod dma;
 pub mod layout;
 pub mod radix;
 pub mod transaction;
+pub mod booter_diag;

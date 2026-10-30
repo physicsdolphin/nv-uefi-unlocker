@@ -1025,10 +1025,18 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // a non-D0 entry means the firmware did not POST this card (sleep/resume
     // or fast-startup handoff), which changes what the Windows driver will
     // do with the state we leave behind.
-    crate::tx_detach::pm_preflight(gpu.pci).map_err(|e| {
-        info!("TX: PM preflight: {e}");
-        TxError::EWarm
-    })?;
+    // \tx-no-pm-preflight.txt skips it for the #17/#62 ablation axis: the
+    // guarded C-parity build compiled it out (travis overlay T2, Phase B) -
+    // one PMCSR force-D0 config write is the only behavioral difference on a
+    // cold D0 entry.
+    if probe_file("\\tx-no-pm-preflight.txt") {
+        info!("TX: \\tx-no-pm-preflight.txt present - PM preflight skipped (guarded-overlay parity, one PMCSR write)");
+    } else {
+        crate::tx_detach::pm_preflight(gpu.pci).map_err(|e| {
+            info!("TX: PM preflight: {e}");
+            TxError::EWarm
+        })?;
+    }
 
     // TOTORONG craft: all console + vendor drivers off the device, PciIo
     // exclusively claimed, IO|MEM|BME enabled, config baseline captured.
@@ -1106,12 +1114,19 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         // different binary that EIO'd on TU106 (first fire, 2026-10-27).
         // WPR2-up entry is the MAINLINE path there (POST or FLR reboot
         // provisions it): skip the fire instead of refusing.
+        // Entry state is logged in full (matrix A4 gap 5): the ran/skipped
+        // split and the cold/warm cycle are per-machine constants and every
+        // failing-machine log needs this line for the cross-machine table.
         let wpr_hi = gpu.read32(regs::WPR2_HI)?;
+        let wpr_lo = gpu.read32(regs::WPR2_LO)?;
         if wpr_hi >> 4 != 0 {
             info!(
-                "TX-tu10x: WPR2 already up (hi={wpr_hi:#x}, POST/FLR provisioned) - skipping the FWSEC fire (cmp50hx mainline path)"
+                "TX-tu10x: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (already up, POST/FLR provisioned) - FWSEC fire SKIPPED (cmp50hx mainline path) [fwsec=skipped]"
             );
         } else {
+            info!(
+                "TX-tu10x: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (cold) - FWSEC will be fired by the loader [fwsec=ran]"
+            );
             let bl = match &assets.bl {
                 Some(b) => b,
                 None => {
@@ -1210,8 +1225,16 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // Bus master on the bridges above the GPU, with the DMA path logged before
     // and after. The guard lives until run_transaction returns, early error
     // returns included, then clears what it set.
+    // \tx-no-bridge-master.txt skips the bridge writes (guarded-overlay parity
+    // T3): on boards whose bridges already carry BME the enable is a no-op
+    // anyway - the marker exists to rule the write itself out on boards where
+    // the log above shows it actually set a bit.
     crate::pci::log_dma_path("before-bridge-bme", gpu.pci);
-    let _bridge_master = crate::pci::BridgeMaster::enable(gpu.pci);
+    if probe_file("\\tx-no-bridge-master.txt") {
+        info!("TX: \\tx-no-bridge-master.txt present - BridgeMaster::enable skipped (guarded-overlay parity)");
+    } else {
+        let _bridge_master = crate::pci::BridgeMaster::enable(gpu.pci);
+    }
     crate::pci::log_dma_path("after-bridge-bme", gpu.pci);
 
     // VRAM fallback staging (\tx-meta-in-vram.txt): put everything the booter

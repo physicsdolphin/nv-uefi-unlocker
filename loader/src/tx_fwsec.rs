@@ -811,7 +811,70 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
         let _ = dma.release(gpu.pci);
         return Err(TxError::EIO);
     }
-    let _ = dma.release(gpu.pci);
+    // Completion criteria + staging lifetime (Phase B, docs/tu10x-c-parity-diff.md
+    // B0, 2026-10-31): every field-proven implementation of this step waits for
+    // the GSP core to HALT before proceeding/releasing - nlzy/turing-unlock
+    // (poll CPUCTL HALT 5s), PR #49 ("exact WPR2 + GSP HALT, WPR2 appearing is
+    // not completion"), the travis guarded overlay (wait_fwsec: stopped AND
+    // exact lo/hi), and our own GA10x/Ada fwsec_ignite above. This tu10x path
+    // instead released the FWSEC staging (BL+image, ~10 pages / 40KB) on the
+    // FIRST WPR2 register match (observed 0-3ms) and never read the FWSEC
+    // result registers - the subsequent allocations may reuse those pages,
+    // and the booter fires while the GSP-side FWSEC may still be finishing
+    // (WPR2/MMU lockdown programming). Default behavior is UNCHANGED; the two
+    // markers below ablate it one axis at a time.
+    if crate::tx::probe_file("\\tx-fwsec-gsp-halt.txt") {
+        let want_hi = ((layout.frts_offset + 0xe_0000) >> 8) as u32;
+        if wpr_hi != want_hi {
+            info!(
+                "FWSEC-TU10X: GSP-HALT gate: WPR2 hi={wpr_hi:#x} != exact FRTS window end {want_hi:#x} (frts+0xe0000) - refusing (reference shape demands exact lo AND hi)"
+            );
+            let _ = dma.release(gpu.pci);
+            return Err(TxError::EIO);
+        }
+        let cpuctl0 = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x100) as u64);
+        let mut halted = cpuctl0 & 0x10 != 0;
+        let mut waited = 0u32;
+        while !halted && waited < 10_000 {
+            uefi::boot::stall(core::time::Duration::from_millis(1));
+            waited += 1;
+            halted = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x100) as u64) & 0x10 != 0;
+        }
+        // Kernel parity continues past the halt: kgspExecuteFwsec_TU102
+        // (open-gpu-kernel-modules kernel_gsp_frts_tu102.c:486-530) reads the
+        // FWSEC RESULT registers after kflcnWaitForHalt - mailbox0/1 plus
+        // scratch0e[31:16] FRTS_ERR_CODE (NV_VBIOS_FWSECLIC_SCRATCH_INDEX_0E).
+        // main never read any of these; the marker logs all three and gates
+        // on the kernel's own error condition.
+        let mb0 = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x40) as u64);
+        let mb1 = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x44) as u64);
+        let scratch = gpu.read32(0x1400 + 0x0e * 4).unwrap_or(0);
+        info!(
+            "FWSEC-TU10X: GSP-HALT gate: CPUCTL {cpuctl0:#010x} -> halted={halted} after {waited}ms (exact WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x})"
+        );
+        info!(
+            "FWSEC-TU10X: FWSEC result (kernel shape): MAILBOX0={mb0:#010x} MAILBOX1={mb1:#010x} scratch0e={scratch:#010x} frts_err={:#06x}",
+            scratch >> 16
+        );
+        if !halted {
+            info!("FWSEC-TU10X: GSP did not HALT within 10s - refusing to fire the booter on a running FWSEC (reference shape)");
+            let _ = dma.release(gpu.pci);
+            return Err(TxError::EIO);
+        }
+        if scratch >> 16 != 0 {
+            info!("FWSEC-TU10X: scratch0e FRTS_ERR_CODE={:#06x} nonzero - FWSEC itself reported an error (kernel: NV_ERR_GENERIC); refusing", scratch >> 16);
+            let _ = dma.release(gpu.pci);
+            return Err(TxError::EIO);
+        }
+    }
+    if crate::tx::probe_file("\\tx-fwsec-hold-dma.txt") {
+        // Deliberate retention under the marker: DmaBuffer has no Drop, so the
+        // pages stay owned for this boot only. Isolates the page-reuse axis
+        // from the halt-wait axis (parity-diff B4: hold-dma vs gsp-halt).
+        info!("FWSEC-TU10X: \\tx-fwsec-hold-dma.txt present - FWSEC staging retained until reboot (no release)");
+    } else {
+        let _ = dma.release(gpu.pci);
+    }
     info!("FWSEC-TU10X: WPR2 verified (FRTS at {:#x})", layout.frts_offset);
     Ok(())
 }

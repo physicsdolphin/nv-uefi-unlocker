@@ -604,14 +604,16 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
 
     let ns = &image[hdr.imem_ns_off as usize..(hdr.imem_ns_off + hdr.imem_ns_size) as usize];
     crate::tx_portal::portal_load_imem(gpu, base, 0, hdr.imem_ns_off, ns, false);
-    let sec_dest = hdr.imem_ns_size.div_ceil(256) * 256;
+    let place = sec_placement(hdr);
     let sec = &image[hdr.app_code_off as usize..(hdr.app_code_off + hdr.app_code_size) as usize];
-    crate::tx_portal::portal_load_imem(gpu, base, sec_dest, hdr.app_code_off, sec, true);
+    crate::tx_portal::portal_load_imem(gpu, base, place.dest, place.tag, sec, true);
     let dmem = &image[hdr.data_off as usize..(hdr.data_off + hdr.data_size) as usize];
     crate::tx_portal::portal_load_dmem(gpu, base, 0, dmem);
+    portal_audit(gpu, hdr, image, &place);
 
-    // BOOTVEC = start of non-secure code; mailboxes = WprMeta phys addr.
-    gpu.write32(base + FALCON_BOOTVEC, 0);
+    // BOOTVEC = start of non-secure code (or the secure entry under the
+    // \tx-bootvec-sec.txt switch); mailboxes = WprMeta phys addr.
+    gpu.write32(base + FALCON_BOOTVEC, place.bootvec);
     gpu.write32(base + FALCON_MAILBOX0, meta_dma as u32);
     gpu.write32(base + FALCON_MAILBOX1, (meta_dma >> 32) as u32);
     info!(
@@ -692,6 +694,8 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     info!(
         "BOOTER-DIRECT: halted, mailbox0={mbox0:#x} mailbox1={mbox1:#x} exci={exci:#010x}"
     );
+    log_exci_decode(exci);
+    log_mailbox_verdict(mbox0);
     // Post-halt FBIF audit (issue #1's arbitration read): 0x115/0x190 are
     // the values we programmed at fire time; anything else means the booter
     // itself reprogrammed SEC2's aperture before dying - a strong
@@ -739,6 +743,217 @@ fn wbinvd_flush() {
     unsafe { core::arch::asm!("wbinvd", options(nostack, preserves_flags)) };
 }
 
+// ---------------------------------------------------------------------------
+// TU10x booter forensics (branch diag/tu10x-forensics, 2026-10-31).
+//
+// Three instruments for the 0x91 family (docs/tu10x-booter-0x91-matrix.md):
+//  - placement logging + placement switches: PR #67's diagnostic shape
+//    (Catnip202X), field-proven by issue #62's D/E rounds (the only axis
+//    that ever moved EXCI);
+//  - a full portal readback audit before START: the old verify covered
+//    exactly one IMEM word and one DMEM word;
+//  - EXCI / mailbox0 decoders built from the NS-stub disassembly
+//    (docs/tu10x-booter-nsstub-disasm.md) and the authoritative EXCI
+//    bitfields (open-gpu-kernel-modules dev_soe_ip.h, NV_SOE_FALCON_EXCI).
+// The sim-side table copy lives in sim/src/booter_diag.rs - keep both in
+// sync when the dictionary grows.
+// ---------------------------------------------------------------------------
+
+/// EXCAUSE[24:20] names (NV_SOE_FALCON_EXCI_EXCAUSE_*, Falcon IP common).
+pub fn exci_cause_name(cause: u32) -> &'static str {
+    match cause {
+        0..=3 => "TRAPn",
+        0x08 => "ILL_INS",
+        0x09 => "INV_INS",
+        0x0a => "MISS_INS",
+        0x0b => "DHIT_INS",
+        0x0d => "SP_OVERFLOW",
+        0x0f => "BRKPT_INS",
+        0x10 => "DMEM_MISS_INS",
+        0x11 => "DMEM_DHIT_INS",
+        0x12 => "DMEM_PAFAULT_INS",
+        0x13 => "DMEM_PERMISSION_INS",
+        0x15 => "BROM_CALL_INS",
+        0x16 => "KMEM_VIOLATION_INS",
+        0x17 => "BMEM_PERMISSION_INS",
+        _ => "unknown",
+    }
+}
+
+/// EXCI decode line with the corrected bit reading: EXCAUSE is [24:20]
+/// (0x00900100 = EXPC 0x100 + INV_INS(9), NOT the previously annotated
+/// 0x10/DMEM_MISS_INS), and 0x00900100 also appears in fully successful
+/// runs (travis guarded evidence pack, all three attempts) - it is the
+/// secure stage's terminal self-kill residue, not a verdict by itself.
+fn log_exci_decode(exci: u32) {
+    let expc = exci & 0x000f_ffff;
+    let cause = (exci >> 20) & 0x1f;
+    info!(
+        "BOOTER: EXCI decode: EXPC={expc:#x} EXCAUSE={cause:#x} ({}) - also seen in successful runs, not a verdict by itself",
+        exci_cause_name(cause)
+    );
+}
+
+/// Post-halt mailbox0 dictionary (NS-stub disassembly + field correlation,
+/// docs/tu10x-booter-nsstub-disasm.md C3): the stub writes 0x31 right before
+/// `lcall 0x100` into the secure entry, the secure stage writes its own
+/// codes after that. A FINAL 0x31 therefore means the secure entry never
+/// executed; 0x89-0x91 mean it executed and rejected.
+pub fn mailbox0_verdict(mbox0: u32) -> &'static str {
+    match mbox0 {
+        0x31 => "NS-stub pre-secure marker (final) - the secure entry never executed (placement/entry-level failure)",
+        0x0 => "secure-stage success status",
+        0x89..=0x90 => "wpr_desc_validate rejection (meta DMA readback mismatch)",
+        0x91 => "secure-stage rejection family - the secure code RAN and rejected (cmp50hx dictionary)",
+        0x11 | 0x0b => "secure-stage early status (ran, rejected before validation)",
+        _ => "input-carrier residue or unknown",
+    }
+}
+
+fn log_mailbox_verdict(mbox0: u32) {
+    info!("BOOTER: mailbox0 verdict: {mbox0:#x} - {}", mailbox0_verdict(mbox0));
+}
+
+/// ASCII number parse ("0x200" hex or "512" decimal) for \tx-sec-base.txt.
+fn parse_num_ascii(raw: &[u8]) -> Option<u32> {
+    let mut hex = false;
+    let mut val: u32 = 0;
+    let mut any = false;
+    for &b in raw {
+        match b {
+            0 | b'\n' | b'\r' | b' ' | b'\t' => continue,
+            b'x' | b'X' if !any => hex = true,
+            b'0'..=b'9' => {
+                let d = (b - b'0') as u32;
+                val = val.checked_mul(if hex { 16 } else { 10 })?.checked_add(d)?;
+                any = true;
+            }
+            b'a'..=b'f' if hex => {
+                let d = (b - b'a' + 10) as u32;
+                val = val.checked_mul(16)?.checked_add(d)?;
+                any = true;
+            }
+            b'A'..=b'F' if hex => {
+                let d = (b - b'A' + 10) as u32;
+                val = val.checked_mul(16)?.checked_add(d)?;
+                any = true;
+            }
+            _ => return None,
+        }
+    }
+    any.then_some(val)
+}
+
+/// Secure-segment placement resolver + BOOTER-PLACE log. The default is
+/// byte-identical to the field-proven placement (dest and tag are two
+/// quantities that happen to be equal). \tx-sec-base.txt moves dest AND tag
+/// together - moving only one manufactures exactly the fetch fault this
+/// diagnostic hunts for; \tx-bootvec-sec.txt starts the core at the secure
+/// entry instead of the NS stub. Shape and both switches credit PR #67
+/// (Catnip202X), field-tested in issue #62's D/E rounds.
+struct SecPlacement {
+    dest: u32,
+    tag: u32,
+    bootvec: u32,
+    bootvec_sec: bool,
+}
+
+fn sec_placement(hdr: &BooterHdr) -> SecPlacement {
+    let default_dest = hdr.imem_ns_size.div_ceil(256) * 256;
+    let mut p = SecPlacement { dest: default_dest, tag: hdr.app_code_off, bootvec: 0, bootvec_sec: false };
+    let override_txt = crate::tx::read_boot_file("\\tx-sec-base.txt")
+        .and_then(|raw| parse_num_ascii(&raw))
+        .filter(|v| *v != 0 && (*v & 0xff) == 0);
+    if let Some(v) = override_txt {
+        p.dest = v;
+        p.tag = v;
+    }
+    if crate::tx::probe_file("\\tx-bootvec-sec.txt") {
+        p.bootvec = p.dest;
+        p.bootvec_sec = true;
+    }
+    if let Some(v) = override_txt {
+        info!("BOOTER-PLACE: sec-base override Some({v:#x}) - dest AND tag moved together");
+    }
+    info!(
+        "BOOTER-PLACE: ns 0x0+{:#x} -> dest 0 tag 0x0 | sec {:#x}+{:#x} -> dest {:#x} tag {:#x} (default dest {:#x}, tag==dest: {}, override: {}) | bootvec {:#x} ({})",
+        hdr.imem_ns_size, hdr.app_code_off, hdr.app_code_size, p.dest, p.tag, default_dest,
+        p.tag == p.dest, override_txt.is_some(), p.bootvec,
+        if p.bootvec_sec { "secure entry" } else { "ns stub" }
+    );
+    p
+}
+
+/// Full portal readback audit BEFORE START (both fire paths). Walks the NS
+/// stub, the whole secure segment and the DMEM head word-by-word through the
+/// same read ports the loader uses, FNV-1a-hashing against the image bytes.
+/// The secure segment is AES ciphertext on disk (entropy 7.96) - a MATCH
+/// proves the portal write landed bit-exact, so a later INV_INS at the
+/// entry is a fetch/decrypt-side difference, not a lost write. A DENIED
+/// secure readback (badf/all-ones) is an observation, not a failure.
+fn portal_audit(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], p: &SecPlacement) {
+    const IMEMC: u32 = 0x180;
+    const IMEMD: u32 = 0x184;
+    const DMEMC: u32 = 0x1c0;
+    const DMEMD: u32 = 0x1c4;
+    let base = crate::tx::eng::SEC2;
+    let fnv = |h: u32, w: u32| (h ^ w).wrapping_mul(0x0100_0193);
+    let denied = |v: u32| v == u32::MAX || (v & 0xffff_0000) == 0xbadf_0000;
+
+    // NS stub: VA 0..ns_size must read back exactly (it is what the core
+    // executes first - a mismatch here is fatal evidence on its own).
+    let ns = &image[hdr.imem_ns_off as usize..(hdr.imem_ns_off + hdr.imem_ns_size) as usize];
+    let (mut h, mut ok, mut denied_at) = (0x811c_9dc5u32, true, u32::MAX);
+    for w in 0..(ns.len() / 4) {
+        gpu.write32(base + IMEMC, (w * 4) as u32);
+        let v = gpu.read32(base + IMEMD).unwrap_or(u32::MAX);
+        if denied(v) { denied_at = (w * 4) as u32; break; }
+        if v != u32::from_le_bytes(ns[w * 4..w * 4 + 4].try_into().unwrap()) && ok {
+            ok = false;
+            info!("BOOTER-AUDIT: ns first mismatch at va {:#x}: got {v:#010x}", w * 4);
+        }
+        h = fnv(h, v);
+    }
+    if denied_at != u32::MAX {
+        info!("BOOTER-AUDIT: ns readback DENIED at va {denied_at:#x} (read port refused)");
+    } else {
+        info!("BOOTER-AUDIT: ns readback {} (fnv {:010x})", if ok { "MATCH" } else { "MISMATCH" }, h);
+    }
+
+    // Secure segment: ciphertext we wrote - expect it back bit-exact.
+    let sec = &image[hdr.app_code_off as usize..(hdr.app_code_off + hdr.app_code_size) as usize];
+    let (mut h, mut ok, mut denied_at) = (0x811c_9dc5u32, true, u32::MAX);
+    for w in 0..(sec.len() / 4) {
+        gpu.write32(base + IMEMC, p.dest + (w * 4) as u32);
+        let v = gpu.read32(base + IMEMD).unwrap_or(u32::MAX);
+        if denied(v) { denied_at = p.dest + (w * 4) as u32; break; }
+        if v != u32::from_le_bytes(sec[w * 4..w * 4 + 4].try_into().unwrap()) && ok {
+            ok = false;
+            info!("BOOTER-AUDIT: sec first mismatch at va {:#x}: got {v:#010x}", p.dest + (w * 4) as u32);
+        }
+        h = fnv(h, v);
+    }
+    if denied_at != u32::MAX {
+        info!("BOOTER-AUDIT: sec readback DENIED at va {denied_at:#x} (secure pages may refuse NS reads - observation, not a failure)");
+    } else {
+        info!("BOOTER-AUDIT: sec readback {} (fnv {:010x}, {:x} bytes walked)", if ok { "MATCH" } else { "MISMATCH" }, h, sec.len());
+    }
+
+    // DMEM head: first 256B of the data segment.
+    let dmem = &image[hdr.data_off as usize..(hdr.data_off + hdr.data_size) as usize];
+    let (mut h, mut ok) = (0x811c_9dc5u32, true);
+    for w in 0..64u32 {
+        gpu.write32(base + DMEMC, w * 4);
+        let v = gpu.read32(base + DMEMD).unwrap_or(u32::MAX);
+        if v != u32::from_le_bytes(dmem[(w * 4) as usize..(w * 4 + 4) as usize].try_into().unwrap()) && ok {
+            ok = false;
+            info!("BOOTER-AUDIT: dmem first mismatch at {:#x}: got {v:#010x}", w * 4);
+        }
+        h = fnv(h, v);
+    }
+    info!("BOOTER-AUDIT: dmem readback {} (fnv {:010x})", if ok { "MATCH" } else { "MISMATCH" }, h);
+}
+
 /// C-reference SEC2 booter fire for Turing BOOT_DIRECT (issue #17/#62
 /// matrix, marker \tx-sec2-c-load.txt). Byte-exact mirror of the
 /// hardware-proven reference path (chenxluo/tu102-22g-uefi-unlock
@@ -774,14 +989,17 @@ pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma
     gpu.write32(base + 0x624, ctl | (1 << 7));
     gpu.write32(base + 0x10c, 0);
     info!("BOOTER-C: FBIF CTL {ctl:#010x} -> {:#010x} (bit7), DMACTL=0, TRANSCFG untouched", ctl | (1 << 7));
-    // Portal loads - identical placement to booter_fire_direct.
+    // Portal loads - identical placement to booter_fire_direct (and the same
+    // placement switches + readback audit, so the two paths stay comparable
+    // in the #17/#62 matrix rounds).
     let ns = &image[hdr.imem_ns_off as usize..(hdr.imem_ns_off + hdr.imem_ns_size) as usize];
     crate::tx_portal::portal_load_imem(gpu, base, 0, hdr.imem_ns_off, ns, false);
-    let sec_dest = hdr.imem_ns_size.div_ceil(256) * 256;
+    let place = sec_placement(hdr);
     let sec = &image[hdr.app_code_off as usize..(hdr.app_code_off + hdr.app_code_size) as usize];
-    crate::tx_portal::portal_load_imem(gpu, base, sec_dest, hdr.app_code_off, sec, true);
+    crate::tx_portal::portal_load_imem(gpu, base, place.dest, place.tag, sec, true);
     let dmem = &image[hdr.data_off as usize..(hdr.data_off + hdr.data_size) as usize];
     crate::tx_portal::portal_load_dmem(gpu, base, 0, dmem);
+    portal_audit(gpu, hdr, image, &place);
     wbinvd_flush();
     // Reference verify readbacks BEFORE start (imem word0, dmem 0x200).
     gpu.write32(base + 0x180, 0);
@@ -802,9 +1020,10 @@ pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma
         }
     }
     info!("BOOTER-C: portal verify ok (imem {imem_rb:#010x} dmem {dmem_rb:#010x})");
-    // BOOTVEC = 0, mailboxes = meta, direct START (the reference writes
-    // CPUCTL=2 unconditionally; the alias retry lives in the default path).
-    gpu.write32(base + 0x104, 0);
+    // BOOTVEC = 0 (or the secure entry under \tx-bootvec-sec.txt), mailboxes
+    // = meta, direct START (the reference writes CPUCTL=2 unconditionally;
+    // the alias retry lives in the default path).
+    gpu.write32(base + 0x104, place.bootvec);
     gpu.write32(base + 0x040, meta_dma as u32);
     gpu.write32(base + 0x044, (meta_dma >> 32) as u32);
     wbinvd_flush();
@@ -824,6 +1043,8 @@ pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma
     let mbox1 = gpu.read32(base + 0x044)?;
     let exci = gpu.read32(base + 0x0d0)?;
     info!("BOOTER-C: post-quiet CPUCTL={cpu_end:#010x} mailbox0={mbox0:#x} mailbox1={mbox1:#x} exci={exci:#010x} (verdict lands in POST-BOOT)");
+    log_exci_decode(exci);
+    log_mailbox_verdict(mbox0);
     Ok(())
 }
 
@@ -842,6 +1063,16 @@ pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma
 /// read path (firmware IOMMU remap). A corrupt magic instead indicts the
 /// buffer itself - our bug, not the platform.
 fn wpr_desc_rejected_hint(mbox0: u32, meta: &[u8]) {
+    // 0x91 family (docs/tu10x-booter-nsstub-disasm.md C3): the secure stage
+    // RAN and wrote this - unlike 0x89-0x90 the readback of OUR meta page
+    // cannot localize it alone. Point at the two ablation axes instead.
+    if mbox0 == 0x91 {
+        info!("POST-BOOT: status 0x91 = secure-stage rejection (the secure code executed and wrote this - cmp50hx wpr_desc_validate family)");
+        info!("POST-BOOT: next axes (docs/tu10x-c-parity-diff.md B4): cold boot + \\tx-fwsec-gsp-halt.txt first, then \\tx-fwsec-hold-dma.txt - capture the BOOTER-AUDIT lines either way");
+    }
+    if mbox0 == 0x31 {
+        info!("POST-BOOT: status 0x31 = NS-stub pre-secure marker (final) - the secure entry never executed (placement/entry level, see PR #67 D/E rounds)");
+    }
     if (0x89..=0x90).contains(&mbox0) {
         info!("POST-BOOT: status 0x89-0x90 = WPR descriptor (WprMeta) rejected on DMA readback");
         info!("POST-BOOT: platform hint - turn firmware IOMMU (AMD-Vi) OFF in BIOS (SVM/AMD-V and Intel VT-x/VT-d are verified harmless)");

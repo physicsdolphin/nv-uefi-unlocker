@@ -1,0 +1,46 @@
+[INFO ] loader::logging: log file \loader.log opened on boot volume
+[INFO ] loader::logging: nv-uefi-unloader v2.1.6 (M0 skeleton: read-only)
+[INFO ] loader: WATCHDOG: disabled
+[INFO ] loader::banner: ==================================================
+[INFO ] loader::banner:  nv-uefi-unlocker v2.1.6 (built Fri 2026-10-30 03:17:48 +08:00)
+[INFO ] loader::banner:  ** TX BUILD: CONTAINS GPU-WRITE PATHS **
+[INFO ] loader::banner:  transaction: claim->gfw->fwsec->booter->selectors->flr
+[INFO ] loader::banner: ======== PRESS SPACE or ENTER to CONTINUE ========
+[INFO ] loader::banner: ======== PRESS SPACE or ENTER to CONTINUE ========
+[INFO ] loader::banner: ======== PRESS SPACE or ENTER to CONTINUE ========
+[INFO ] loader::banner:   other key or 30s no-key = ABORT; unlocks NOTHING
+[INFO ] loader::banner:   other key or 30s no-key = ABORT; unlocks NOTHING
+[INFO ] loader::banner:   other key or 30s no-key = ABORT; unlocks NOTHING
+[INFO ] loader::banner:  armed: \i_know_what_i_am_doing.txt = 5s auto-run, any key aborts
+[INFO ] loader::banner:  multi-GPU: no marker = every supported card in order;
+[INFO ] loader::banner:             \tx-select-bdf.txt (bb:dd.f) pins exactly one
+[INFO ] loader::banner:  failure = no retry (per card; the next card still runs)
+[INFO ] loader::banner: ==================================================
+[INFO ] loader::banner: PHASE: CONFIRM
+[INFO ] loader: CONFIRM: no armed marker - Space/Enter/30s confirm semantics
+[INFO ] loader::keywait: CONFIRM: 30s timeout - ABORT to Windows, NOTHING was unlocked this boot (zero GPU writes)
+[INFO ] loader::pci: PHASE: ENUMERATE (read-only)
+[INFO ] loader::pci: ENUMERATE: 6 PciIo handles
+[INFO ] loader::pci: PCI 0000:00:00.0 8086:29c0 class 000600
+[INFO ] loader::pci: PCI 0000:00:01.0 1234:1111 class 000300
+[INFO ] loader::pci: PCI 0000:00:02.0 8086:2922 class 000106
+[INFO ] loader::pci: PCI 0000:00:1f.0 8086:2918 class 000601
+[INFO ] loader::pci: PCI 0000:00:1f.2 8086:2922 class 000106
+[INFO ] loader::pci: PCI 0000:00:1f.3 8086:2930 class 000c05
+[INFO ] loader::gop: PHASE: GOP-PROBE (read-only)
+[INFO ] loader::gop: GOP-PROBE: 2 GOP handles
+[INFO ] loader::gop: GOP handle Handle(0x7e663618): 1280x800 Bgr
+[INFO ] loader::gop: GOP handle Handle(0x7e7a7e18): 1280x800 Bgr
+[INFO ] loader: SAMPLE: no NVIDIA GPU present, skipped (negative control path)
+[INFO ] loader::chainload: PHASE: CHAIN
+[INFO ] loader::chainload: CHAIN: reconnect pass over 6 PciIo handles (NVIDIA display skipped)
+[INFO ] loader::chainload: CHAIN: reconnect pass done
+[INFO ] loader::chainload: CHAIN: 1 SimpleFileSystem handles
+[INFO ] loader::chainload: CHAIN: no specific candidate on Handle(0x7e5c9a98) (own=true, probes=12)
+[INFO ] loader::chainload: CHAIN: generic fallback skipped on own volume Handle(0x7e5c9a98)
+[INFO ] loader::chainload: CHAIN: no OS loader found on any filesystem.
+[INFO ] loader::chainload: CHAIN: unlock is COMPLETE and logged - the GPU is in a normal cold state.
+[INFO ] loader::chainload: CHAIN: boot the machine into its UEFI boot menu / built-in shell and
+[INFO ] loader::chainload: CHAIN: start the desired OS manually; no further tool action is needed.
+[INFO ] loader: CHAIN: failed: NOT_FOUND
+[INFO ] loader: FINAL: read-only run complete; nothing was written to the GPU, nothing to restore. Safe to reboot.
