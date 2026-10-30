@@ -39,6 +39,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 corrupts large Invoke-WebRequest transfers while the
+# progress UI is active ("unexpected EOF or 0 bytes") - issue #59.
+$ProgressPreference = 'SilentlyContinue'
 
 # Normalize the family aliases (the task is 20/30/40 series, not chip names).
 $Family = switch ($Family.ToLowerInvariant()) {
@@ -185,15 +188,36 @@ New-Item -ItemType Directory -Force -Path $Work, $Out | Out-Null
 
 foreach ($s in $Sources) {
     $dest = Join-Path $Work $s.Name
-    if (-not (Test-Path $dest)) {
-        Write-Host "[fetch] $($s.Name)"
-        Invoke-WebRequest -Uri $s.Url -OutFile $dest
+    $part = "$dest.part"
+    $verified = $false
+    foreach ($attempt in 1..2) {
+        if (-not (Test-Path $dest)) {
+            # Never write to $dest directly: an interrupted transfer used to leave a
+            # partial file there, and the "already downloaded" check below then made
+            # every later run report a pinned-input SHA-256 mismatch instead of
+            # re-fetching (issue #59).
+            if (Test-Path $part) { Remove-Item $part -Force }
+            Write-Host ("[fetch] {0}{1}" -f $s.Name, $(if ($attempt -gt 1) { " (retry)" } else { "" }))
+            try {
+                Invoke-WebRequest -Uri $s.Url -OutFile $part
+                Move-Item -Force $part $dest
+            } catch {
+                Remove-Item $part -Force -ErrorAction SilentlyContinue
+                if ($attempt -eq 2) { throw }
+                continue
+            }
+        }
+        $hash = (Get-FileHash -Algorithm SHA256 $dest).Hash
+        if ($hash -eq $s.Sha256) { $verified = $true; break }
+        # A stale/corrupt local file must not masquerade as a pin mismatch: drop it
+        # and fetch once more. The pinned hash still gates the result either way.
+        Write-Host "[warn] $($s.Name) hash mismatch on attempt $attempt - discarding and re-fetching"
+        Remove-Item $dest -Force
+        if ($attempt -eq 2) {
+            throw "SHA-256 mismatch for $($s.Name): got $hash want $($s.Sha256) - refusing (pinned inputs only)"
+        }
     }
-    $hash = (Get-FileHash -Algorithm SHA256 $dest).Hash
-    if ($hash -ne $s.Sha256) {
-        throw "SHA-256 mismatch for $($s.Name): got $hash want $($s.Sha256) - refusing (pinned inputs only)"
-    }
-    Write-Host "[ok] $($s.Name) SHA-256 verified"
+    if ($verified) { Write-Host "[ok] $($s.Name) SHA-256 verified" }
 }
 
 $SrcTar = Join-Path $Work $Sources[0].Name
