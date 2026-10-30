@@ -22,7 +22,7 @@
 
 1. **R1（头号假设）**：`\tx-fwsec-gsp-halt.txt` —— FWSEC 完成判据改为精确 WPR2（lo+hi）**且 GSP HALT**（10s 预算），HALT 前不点火、不释放 staging。三个成功实现（nlzy Linux/PR #49/travis guarded）全部使用此判据。
 2. **R2（分解轴）**：`\tx-fwsec-hold-dma.txt` —— 只延迟释放 staging 到重启，不加 HALT 等待。R1 成 R2 败→"提前点火"为主因；R1/R2 都成→"页复用"即足够。
-3. **R3/R4（弱嫌疑，仅 R1/R2 阴性时）**：`\tx-no-pm-preflight.txt`、`\tx-no-bridge-master.txt`（先看日志 before/after-bridge-bme 行确认该机桥是否真被写过）。
+3. **R3（弱嫌疑，仅 R1/R2 阴性时）**：`\tx-no-pm-preflight.txt`。（~~`\tx-no-bridge-master.txt`~~ **已撤销 2026-10-31**：BridgeMaster 是 PR #5/issue #1 场验证的必要修复——上游桥 BME 未开=booter 0x89 族；跳过要么 no-op 要么引入 0x89，不判别 0x91。请勿使用。）
 4. **入口维（可选，对应 #67 D/E 轮复现）**：`\tx-sec-base.txt`（内容如 `0x200`，256 对齐）搬安全段 dest+tag；`\tx-bootvec-sec.txt` BOOTVEC 直入安全段。
 
 **纪律**：每轮完整冷启动（彻底断电）；同会话失败绝不重试；回收完整 `loader.log`（新诊断行全在）。R1 预期：若硬核案例（#17/#62/#57/ProxVirtualZone）任一转绿→根因闭环，B0 差分表收束为单变量。

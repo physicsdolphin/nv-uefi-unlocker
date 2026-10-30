@@ -38,7 +38,7 @@ tx.rs +78/-29、tx_fwsec.rs +32/-2、pci.rs +17、main.rs +29/-2、chainload.rs 
 |---|---|---|---|
 | T1 | **FWSEC 完成判据**（tx_fwsec.rs） | `wait_fwsec`：GSP stopped + WPR2 精确 lo/hi；stopped 前不释放 DMA | **头号嫌疑（见 B0）** |
 | T2 | **跳过 `pm_preflight`**（tx.rs） | guarded 下不执行：少一次 PMCSR 读+force-D0 写。冷启动 D0 时 force-D0 写多为 no-op | 弱嫌疑（一个配置写） |
-| T3 | **跳过 `BridgeMaster::enable`**（tx.rs/pci.rs） | 不写上游桥 BME（他的板本就使能）。仅当 main 在该机上实际写过桥时才构成差分 | 弱嫌疑（查日志 before/after-bridge-bme 行可判） |
+| T3 | ~~跳过 `BridgeMaster::enable`~~（tx.rs/pci.rs） | 不写上游桥 BME | **无效轴，已撤销（2026-10-31 维护者裁定）**：PR #5/issue #1 早已闭环——上游桥 BME 未开=设备 DMA Master Abort=booter 0x89 族，该写是场验证的必要修复。travis 跳过它无害只因他的桥 BME 本就置位（enable 只在 bit 为 0 处写）→ 这个"差分"要么 no-op（不构成差分）要么删必要修复（只会引入 0x89），无论哪种都不能判别 0x91 |
 | T4 | **FWSEC 镜像改用宿主侧钉死副本**（tx_fwsec.rs） | 不在运行时经 BAR0 读 1MiB PROM；用 hash 钉死的 host blob + 预解析字段 | 中弱嫌疑（少 1MiB BAR0 PROM 读） |
 | T5 | `post_flr=false` 进 claim_guards | 冷启动（WPR2=0）时与 tu10x 无条件接受等价 | 等价 |
 | T6 | layout 身份断言（fb==22GiB && LMR==0x2c9） | 只读检查 | 无行为差 |
@@ -73,7 +73,7 @@ tx.rs +78/-29、tx_fwsec.rs +32/-2、pci.rs +17、main.rs +29/-2、chainload.rs 
 1. **`\tx-fwsec-gsp-halt.txt`** —— tu10x FWSEC 完成判据改为：WPR2 精确 lo+hi（hi==frts+0xe0000）**且** GSP CPUCTL(0x110100) HALT（10s 预算），HALT 前不释放 staging、不进入 booter 阶段。**预期：若硬核四例中任一转绿，根因闭环。**
 2. `\tx-fwsec-hold-dma.txt` —— 只把 staging 持有到事务结束（不释放），不加 HALT 等待。用于把 B0 的 (a)（页复用）与 (b)（提前点火）分解（若 #1 转绿而 #2 不转绿 → (b) 为主）。
 3. `\tx-no-pm-preflight.txt` —— 跳过 pm_preflight（T2）。若 #1/#2 阴性再试。
-4. `\tx-no-bridge-master.txt` —— 跳过 BridgeMaster 写（T3；先查日志确认该机是否实际写过桥）。
+4. ~~`\tx-no-bridge-master.txt`~~ —— **已撤销（2026-10-31 维护者裁定）**：BridgeMaster 写是 PR #5/issue #1 场验证的必要修复（上游桥 BME 未开=booter 0x89 族）；跳过要么 no-op（桥本就置位）要么重新引入 0x89，不构成 0x91 判别轴。诊断件二进制保持不变（SHA `ae14421d…` 本轮内稳定），marker 不再被协议推荐。
 5. `\tx-fwsec-preparsed.txt` —— 跳过运行时 PROM 读（T4；配合宿主侧钉死资产，仅诊断）。
 6. （#1 转绿后的收敛验证）PR #49 独有项 P1/P2/P3 单独复刻的必要性检验——预期全部"非必要"。
 
