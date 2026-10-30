@@ -32,7 +32,7 @@
 | S5 | OBC100（PR #49） | **= F1 同卡同机**（#17 的 22G 魔改） | 22528 MiB | = F1（B650M+7700） | = F1 | PR #49 分支（base `a99fe4b`=v2.1.5）feature `tu102-c-compat`（TU102-C-FIX1） | **全 C 链**：Reserved 分槽 staging + dummy RM + FWSEC 等 GSP HALT + PTIMER + host-probe + fire_direct 静默窗 | 成功：`booter Ok(()) mailbox0=0x0`、`PLM=0xffffff8f SS0=0x88888888 SS1=0x8`、`tu10x_unlock=true`；64.353→97.388 / 67.210→100.962 TFLOPS（+51.33%/+50.22%）。多变量移植、一次成功、未逐项消融 | PR #49 / #17 |
 | S6 | u/Additional-Avocado33（Reddit） | 2080 Ti ×2，`10de:1e07`（17:00.0 + 65:00.0） | （22G 魔改概率大，未确认） | 未记录 | Windows（LLM 推理负载） | **未知（待问）** | 未知（ssdiag 读回验证） | 双卡 `VERDICT [turing]: UNLOCKED`：READOUT=0 全速、SS0=`0x88888888`、SS1=`0x8`；tensor 56→203 TF；q4 14B 118.7/391W→121.9/442W | Reddit 1xj5jp3 |
 | S7 | nlzy/turing-unlock（Linux） | 2070 SUPER，TU104，`10de:1e84` rev a1（HP OEM `103c:8701`），`90.04.76.40.2A` | 8192 MiB | Linux 侧 | EndeavourOS + 615.78.08 open | nlzy/turing-unlock 2.0.0-2（kmod） | Linux direct-via-dma | 成功：`meta=0x34c11000`（**sysmem 低址**！）、`dmem sig readback match=1`、`halted=1 plm=0xffffffff`、FLR 后干净绑定。**sub-4GB meta 在 Linux 上成功——对照 S3 的 sub-4GB 被拒** | #55 pascalblanchet 长评 |
-| S8 | 维护者自机 | RTX 2070，TU106，`10de:1f07` | 8192 MiB | 主力实验机 | Windows GSP 模式 | 各版本回归基准 | 默认 | 长期全绿（回归门） | 本仓证据链 |
+| S8 | 维护者自机 | RTX 2070，TU106，`10de:1f07` | 8192 MiB | 主力实验机 | Windows GSP 模式 | 各版本回归基准；**2026-10-31 诊断件回归通过**（BOOTX64.EFI.tu10x-forensics-diag sha256 `ae14421d…c27d44f`，无 marker 默认路径=main v2.1.6+只读诊断行，解锁正常落地——维护者实测报告，loader.log 待归档） | 默认 | 长期全绿（回归门） | 本仓证据链 |
 
 谱系对照（非 20 系，不展开）：#52 X99+GA103 2420、Z790+GA102、#11 3060Ti LHR 2489 等 GA10x/Ada 成功族。
 
