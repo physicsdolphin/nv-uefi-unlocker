@@ -1011,6 +1011,11 @@ pub struct TxAssets {
     /// Generic falcon BL (sec2_bl_tu10x.bin, 768B) - Turing FWSEC
     /// BOOT_WITH_LOADER only; the GA10x/Ada HS path ignores it.
     pub bl: Option<alloc::vec::Vec<u8>>,
+    /// The staged payload is the AD102 bar1-64g variant (marker file
+    /// \ad102-bar1-64g.txt on a 10de:2684 card). Switches the pre-flight
+    /// CYA/CFG layout check and the execution verdict to the gpu-unlock-bar1
+    /// construction; false = the four-plm semantics everywhere.
+    pub bar1_64g: bool,
 }
 
 /// Asset size validation BEFORE any GPU interaction (issue #4.3): the DMA
@@ -1107,6 +1112,21 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // \tx-accept-warm-wpr2.txt opts in).
     let post_flr = pre_flr_did_flr;
     claim_guards(gpu, assets.family, post_flr)?;
+
+    // bar1-64g pre-flight (gpu-unlock-bar1 report: "执行前检查 CYA/CFG 的
+    // 保留位，未知布局直接拒绝"): the 64 GiB construct is only defined
+    // against the stock CYA=0x28 / CFG=0x80000009 layout measured on the
+    // eight reference 2684 cards. Any other readback = unknown board state
+    // - refuse BEFORE the fire instead of writing a construct blind.
+    if assets.bar1_64g {
+        let cya = gpu.pci.bar_read_u32(gpu.bar, 0x0008_8724);
+        let cfg = gpu.pci.bar_read_u32(gpu.bar, 0x0008_8dcc);
+        info!("TX-bar1: pre-check CYA={cya:#x} CFG={cfg:#010x} (want stock 0x28 / 0x80000009)");
+        if cya != 0x28 || cfg != 0x8000_0009 {
+            info!("TX-bar1: unknown CYA/CFG layout - refusing the bar1-64g construct");
+            return Err(TxError::EInval);
+        }
+    }
 
     // Differential authority map while both engines sit in the as-booted
     // state: localizes the SEC2 start-authority gate before any reset.
@@ -1391,7 +1411,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let booter_ok = if assets.family == "tu10x" {
         tb::verify_execution_tu10x(gpu, payload_mode, meta_view).is_ok()
     } else {
-        tb::verify_execution(gpu, assets.family, payload_mode, meta_view).is_ok()
+        tb::verify_execution(gpu, assets.family, payload_mode, assets.bar1_64g, meta_view).is_ok()
     };
     if !booter_ok && !force_continue {
         // Canonical failure-path invariant (unlock_610.c restores the stock
@@ -1519,6 +1539,16 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         let flr_expect_unlock = payload_mode && booter_ok;
         tb::flr_phase(gpu, assets.family, flr_expect_unlock)?;
         info!("POST-FLR: verified{}", if flr_expect_unlock { " (selectors survive AON)" } else { "" });
+        // bar1-64g construct survival across FLR (gpu-unlock-bar1: "FLR 将
+        // 当前 size control 恢复为 ... 这不代表上限丢失" - the CYA/CFG
+        // construct and the 64 GiB capability survive; only the runtime size
+        // control reverts). Read-back logged either way; a construct LOSS
+        // here would be the surprise and needs the log archived.
+        if assets.bar1_64g {
+            let cya = gpu.pci.bar_read_u32(gpu.bar, 0x0008_8724);
+            let cfg = gpu.pci.bar_read_u32(gpu.bar, 0x0008_8dcc);
+            info!("POST-FLR-bar1: CYA={cya:#x} CFG={cfg:#010x} (construct expected to survive: 0x30 / 0x8000000a)");
+        }
     }
 
     // Read-only handoff PCI snapshot (issue #61 ask #2): the config state

@@ -1108,7 +1108,16 @@ fn wpr_desc_rejected_hint(mbox0: u32, meta: &[u8]) {
 /// never touches the PLM selectors, so demanding unlock values here would
 /// fail a correct run. `meta` is the host view of the published WprMeta DMA
 /// page, for the failure-path readback in `wpr_desc_rejected_hint`.
-pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u8]) -> Result<(), TxError> {
+/// `bar1_64g`: the payload is the AD102 bar1-64g variant — it writes
+/// CYA/CFG/XVE-PLM/FEAT (marker 0x67b00004), NOT the WPRCFG/FBPA/WPR triad,
+/// so the verdict swaps to the gpu-unlock-bar1 readback set.
+pub fn verify_execution(
+    gpu: &TxGpu,
+    family: &str,
+    payload_mode: bool,
+    bar1_64g: bool,
+    meta: &[u8],
+) -> Result<(), TxError> {
     let plm = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_PLM as u64);
     let ss0 = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_SS0 as u64);
     let ss1 = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_SS1 as u64);
@@ -1150,6 +1159,29 @@ pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u
         // patched-word table (assets payload.rs) carries no marker and no
         // WPRCFG/FBPA/WPR writes; those logs are informational here. The
         // SS0/SS1 selectors follow host-side from the open PLM (issue #6).
+        return Ok(());
+    }
+    // bar1-64g variant verdict (gpu-unlock-bar1 report, eight 2684 cards):
+    // the blob's four writes are CYA/CFG/XVE-PLM/FEAT - the WPRCFG/FBPA/WPR
+    // readbacks above are informational for this blob (it never writes them),
+    // so the verdict must swap BEFORE the four-plm triad hard checks.
+    // CYA 0x30 + CFG 0x8000000a = the 64 GiB construct; XVE PLM open is what
+    // makes the construct stick; FEAT PLM open feeds the SS selectors after.
+    if bar1_64g {
+        let cya = gpu.pci.bar_read_u32(gpu.bar, 0x0008_8724);
+        let cfg = gpu.pci.bar_read_u32(gpu.bar, 0x0008_8dcc);
+        let xve_plm = gpu.pci.bar_read_u32(gpu.bar, 0x0008_8ff4);
+        info!("POST-BOOT: bar1-64g CYA={cya:#x} CFG={cfg:#010x} XVE_PLM={xve_plm:#010x}");
+        if cya != 0x30 || cfg != 0x8000_000a || xve_plm != 0xffff_ffff {
+            info!("POST-BOOT: bar1-64g construct readback mismatch - the payload's writes did not take");
+            wpr_desc_rejected_hint(mbox0, meta);
+            return Err(TxError::EIO);
+        }
+        if mbox0 != 0x67b0_0004 {
+            info!("POST-BOOT: mailbox0 marker={mbox0:#x} (want 0x67b00004 for the bar1-64g variant)");
+            wpr_desc_rejected_hint(mbox0, meta);
+            return Err(TxError::EIO);
+        }
         return Ok(());
     }
     if wprcfg != 0xffff_f0ff || wpr != 0xffff_ffff {
