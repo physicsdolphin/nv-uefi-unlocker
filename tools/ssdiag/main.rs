@@ -101,6 +101,10 @@ mod win {
         pub fn GetStdHandle(nStdHandle: u32) -> Handle;
         pub fn GetConsoleMode(hConsole: Handle, mode: *mut u32) -> i32;
         pub fn SetConsoleMode(hConsole: Handle, mode: u32) -> i32;
+        pub fn SetConsoleCtrlHandler(
+            handler: Option<unsafe extern "system" fn(u32) -> i32>,
+            add: i32,
+        ) -> i32;
     }
 
     #[repr(C)]
@@ -114,6 +118,86 @@ mod win {
         pub checkpoint: u32,
         pub wait_hint: u32,
     }
+}
+
+/// One HKEY_LOCAL_MACHINE DWORD, read for the platform pre-flight. Kept as a
+/// separate tiny module so the main `win` block stays kernel32-only.
+mod reg {
+    #[link(name = "advapi32")]
+    extern "system" {
+        pub fn RegGetValueW(
+            hkey: isize,
+            subkey: *const u16,
+            value: *const u16,
+            flags: u32,
+            typ: *mut u32,
+            data: *mut core::ffi::c_void,
+            cbdata: *mut u32,
+        ) -> i32;
+    }
+}
+
+const HKEY_LOCAL_MACHINE: isize = 0x8000_0002;
+const RRF_RT_REG_DWORD: u32 = 0x0000_0010;
+
+/// None = the value is absent (or unreadable), which the caller must print as
+/// "unknown" rather than as a pass.
+fn hklm_dword(subkey: &str, value: &str) -> Option<u32> {
+    let sub = wide(subkey);
+    let val = wide(value);
+    let mut data: u32 = 0;
+    let mut cb: u32 = 4;
+    let rc = unsafe {
+        reg::RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            sub.as_ptr(),
+            val.as_ptr(),
+            RRF_RT_REG_DWORD,
+            core::ptr::null_mut(),
+            (&mut data as *mut u32).cast(),
+            &mut cb,
+        )
+    };
+    if rc == 0 && cb == 4 {
+        Some(data)
+    } else {
+        None
+    }
+}
+
+const CI_CONFIG: &str = "SYSTEM\\CurrentControlSet\\Control\\CI\\Config";
+const HVCI_SCENARIO: &str =
+    "SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity";
+
+fn gate_word(v: Option<u32>) -> &'static str {
+    match v {
+        Some(0) => "OFF",
+        Some(_) => "ON",
+        None => "unknown (value absent - the Windows default applies)",
+    }
+}
+
+/// The two gates that decide whether pmxdrv can load at all, plus what
+/// installing it looks like from the outside. Both values are readable without
+/// the driver, so this runs before anything is deployed - and `--dry-run` can
+/// print it on a machine where the real run would only fail with a raw win32
+/// code.
+fn preflight() {
+    let blocklist = hklm_dword(CI_CONFIG, "VulnerableDriverBlocklistEnable");
+    let hvci = hklm_dword(HVCI_SCENARIO, "Enabled");
+    println!("PLATFORM: vulnerable-driver blocklist = {}", gate_word(blocklist));
+    println!("PLATFORM: core isolation (HVCI)       = {}", gate_word(hvci));
+    if blocklist == Some(1) || hvci == Some(1) {
+        println!(
+            "{}",
+            red("PLATFORM: pmxdrv cannot load here - StartService will be refused.")
+        );
+        println!("  Either turn the gate off deliberately (Windows Security -> Device security ->");
+        println!("  Core isolation), or use the EFI read-only sampler in this repo: it reaches the");
+        println!("  same FEAT registers with no driver at all.");
+    }
+    println!("NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs");
+    println!("      a driver install (event 7045) and managed/EDR machines may alert on it.");
 }
 
 const GENERIC_RW: u32 = 0xC000_0000;
@@ -484,6 +568,38 @@ fn deploy_driver() -> Result<(), String> {
     Ok(())
 }
 
+/// Teardown on the paths that never reach `cleanup_driver()` in `main`.
+///
+/// The release profile is `panic = "abort"`, so a panic runs no destructors and
+/// `?`/`unwrap` sites in the probe would leave the kernel service installed and
+/// started, with the extracted `pmxdrv.sys` still in %TEMP%. Hooks are the only
+/// place that code runs on those paths: the panic hook fires before the abort,
+/// and a console control handler fires before the console teardown kills us.
+/// True once this process installed or borrowed the driver. The teardown line in
+/// main() keys off it so a --dry-run does not claim to have removed something it
+/// never loaded.
+static DRIVER_TOUCHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn install_crash_cleanup() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        cleanup_driver();
+        default_hook(info);
+    }));
+    // Safety: the handler only calls cleanup_driver(), which re-opens the SCM
+    // itself and is idempotent; it runs on the process's control thread.
+    unsafe {
+        win::SetConsoleCtrlHandler(Some(console_ctrl), 1);
+    }
+}
+
+/// CTRL_C_EVENT / CTRL_BREAK_EVENT / CTRL_CLOSE_EVENT / logoff / shutdown.
+/// Returns 0 so the default handler still terminates the process afterwards.
+unsafe extern "system" fn console_ctrl(_event: u32) -> i32 {
+    cleanup_driver();
+    0
+}
+
 /// Own-the-service cleanup: stop + delete + remove the temp .sys (retry a
 /// short while - the kernel releases the image mapping with a small delay).
 fn cleanup_driver() {
@@ -513,9 +629,11 @@ fn cleanup_driver() {
 fn ensure_driver() -> Result<PmxDrv, String> {
     if let Some(d) = PmxDrv::try_open() {
         println!("PMXDRV device already running - borrowing it (no service changes)");
+        DRIVER_TOUCHED.store(true, std::sync::atomic::Ordering::Relaxed);
         return Ok(d);
     }
     deploy_driver()?;
+    DRIVER_TOUCHED.store(true, std::sync::atomic::Ordering::Relaxed);
     // the kernel can take a beat between StartService and the device symlink
     for _ in 0..10 {
         if let Some(d) = PmxDrv::try_open() {
@@ -881,16 +999,20 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
 
 fn main() {
     color_init();
+    install_crash_cleanup();
     let code = run();
     // strict remove-when-done: our own service and temp file never outlive
     // this process - cleanup runs on every path that got past arg parsing.
     cleanup_driver();
-    println!("driver service removed (remove-when-done)");
+    if DRIVER_TOUCHED.load(std::sync::atomic::Ordering::Relaxed) {
+        println!("driver service removed (remove-when-done)");
+    }
     std::process::exit(code);
 }
 
 fn run() -> i32 {
     let mut reapply = false;
+    let mut dry = false;
     let mut select: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -908,6 +1030,7 @@ OPTIONS:
                    SS1=0x8 and verify by read-back (separate-lock method -
                    restores an unlock the driver re-derived, no reboot)
   --select <s>     only cards whose DeviceID contains <s> (multi-GPU)
+  --dry-run        print the platform gates + discovered cards, load nothing
   --help           this text
 
 WHAT IT DOES:
@@ -939,6 +1062,9 @@ SSDIAG_COLOR=force pins on.",
                     ver = env!("CARGO_PKG_VERSION")
                 );
                 std::process::exit(0);
+            }
+            "--dry-run" => {
+                dry = true;
             }
             "--select" => {
                 select = Some(args.next().unwrap_or_else(|| {
@@ -982,6 +1108,13 @@ SSDIAG_COLOR=force pins on.",
         return 2;
     }
 
+    if dry {
+        preflight();
+        println!("DRY-RUN: {} NVIDIA range set(s) discovered, nothing was loaded or written", gpus.len());
+        return 0;
+    }
+
+    preflight();
     let drv = match ensure_driver() {
         Ok(d) => d,
         Err(e) => {
