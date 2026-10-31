@@ -46,3 +46,12 @@ CMP 170HX（=A100 同芯，三轴 fuse-crippled：SM 速率钳 1/32、显存 10�
 4. **对 Feature A 的增益**：论文独立确认 Gen1→Gen2 是纯固件门（软件可破）且 2× 实测，Gen3 是另一堵墙（fuses+DevInit+GSP 补丁）；离线仿真确定性微码后构造"合法续延镜像"的方法论 = 我们 sim/ 先行纪律的学术同构。
 
 结论不变：§1 探索、§2 不落地、§3 已落地（PR #95）、§4 不立项；论文为 §1/§2 提供机制层背书。
+
+## 6. ssdiag v0.6.0 第一轮实测（TU106 1f07，2026-11-01，docs/evidence/tu106-1f07/ssdiag-v060-r3-tu106.log）
+
+pcie/gen2 探测并集首轮（零写入，BAR0+ECAM 双传输）：
+
+1. **bar1 构造值逐芯成立**：TU106 `CYA(0x88724)=0x08 / CFG(0x88dcc)=0x02`，与 AD102 stock（0x28/0x80000009）完全不同——PR #95 的预检门会在任何非 AD102 布局上正确拒绝，"未知布局直接拒绝"不是理论而是本轮实测。
+2. **XP3G_PLM0 在 TU106 读作 0xffffffff（OPEN）**——与 50HX 卡的 0xffffff8f 相反；XP3G 状态/覆盖/值寄存器全部 PL0 可读（0）。PLM4/8/C、XVE_D0/D4/D8/C、AD1X_XVE_PLM 均为 badf5040；XVE_B（0x88ab4）可读 0xffffff8f。逐 die 的 XP3G/XVE PLM 页面映射差异是 Gen2 探索的下一轮输入：Turing consumer 的 XP3G 门可能无需载荷内打开（50HX 的 closed 是矿卡配置层的产物？待 40HX 卡对照）。
+3. **OPT 熔丝区（0x820350/520/57c/580）+ GA100 SM banks（0x820a40/0x820c38）+ L2 掩码区在 TU106 全部 badf5040** = PLM 门控（寄存器解码存在，非 floorswept）——PL0 只读轮回答"被门控"，内容需 M3 窗口内读；PR#55 式覆盖寄存器在 Turing 的存在性判定要靠带窗读。
+4. **XVE 镜像地址表双传输互证**：BAR0 LNKCAP=0x00453d03（Gen3 x16）与 ECAM LnkCap 解码一致；BAR0 LNKCAP2=0x0e（bits1-3）与 ECAM [Gen1,Gen2,Gen3] 一致。本轮快照 LnkSta=Gen2 x16（平台训练态，TLS=Gen3）——LnkSta/LnkCap/LnkCtl2 三寄存器在两个传输上逐位对上，XVE shadow 基址 0x88000 的镜像映射正确。

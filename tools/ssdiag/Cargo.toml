@@ -1,6 +1,6 @@
 [package]
 name = "ssdiag"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "GPL-2.0-only"
 description = "In-OS NVIDIA FEAT-cluster (PLM/SS0/SS1) reader / re-applier over the pmxdrv physical-memory transport"

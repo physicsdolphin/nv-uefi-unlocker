@@ -917,6 +917,7 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
     }
     let mut off: u32 = 0x100;
     let mut found = false;
+    let mut pcie_off: Option<u32> = None;
     for _ in 0..48 {
         let hdr = rd(off);
         let cid = (hdr & 0xffff) as u16;
@@ -924,6 +925,9 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
             break;
         }
         let next = (hdr >> 20) & 0xfff;
+        if cid == 0x0010 && pcie_off.is_none() {
+            pcie_off = Some(off);
+        }
         if cid == 0x0015 {
             let first_ctrl = rd(off + 8);
             let n_bars = ((first_ctrl >> 5) & 0x7) as u32;
@@ -973,7 +977,82 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
             "config-space ReBAR (bus {bus} dev {dev} fn {func}): no 0x15 capability - card does not advertise resizable BAR (A4G/ReBAR board settings cannot resize this card's BAR1)"
         );
     }
+    // Link capability line (field round 3): the OS-side Gen2 verification
+    // pair. LnkSta is THE criterion (cmp170hx rule #1: LnkCap can read Gen2
+    // while the link still trains Gen1; sysfs max_link_speed lies too).
+    // Config offsets: LnkCap +0x0C, LnkCtl|LnkSta +0x10 (Sta in high word),
+    // LnkCap2 +0x2C, LnkCtl2|LnkSta2 +0x30 (Sta2 in high word).
+    // The PCIe capability usually lives in STANDARD space on NVIDIA (0x78,
+    // not 0x60 - cmp170hx pcie-subsystem) - the extended walk above never
+    // sees it. Walk the standard chain from the 0x34 pointer as fallback;
+    // relative offsets (LnkCap +0x0C .. LnkCtl2 +0x30) are identical.
+    if pcie_off.is_none() {
+        let mut p = (rd(0x34) & 0xFF) as u32;
+        for _ in 0..24 {
+            if p == 0 || p > 0xFC {
+                break;
+            }
+            let hdr = rd(p);
+            let id = hdr & 0xFF;
+            let next = (hdr >> 8) & 0xFF;
+            if id == 0x10 {
+                pcie_off = Some(p);
+                break;
+            }
+            p = next;
+        }
+    }
+    if let Some(poff) = pcie_off {
+        let lnkcap = rd(poff + 0x0C);
+        let ctl_sta = rd(poff + 0x10);
+        let cap2 = rd(poff + 0x2C);
+        let ctl2_sta2 = rd(poff + 0x30);
+        let mls = lnkcap & 0xF;
+        let mlw = (lnkcap >> 4) & 0x3F;
+        let dlllarc = lnkcap & (1 << 20) != 0;
+        let sta = (ctl_sta >> 16) & 0xFFFF;
+        let cls = sta & 0xF;
+        let nlw = (sta >> 4) & 0x3F;
+        let tls = ctl2_sta2 & 0xF;
+        let mut speeds = String::new();
+        for bit in 1..=7u32 {
+            if cap2 & (1 << bit) != 0 {
+                if !speeds.is_empty() {
+                    speeds.push(',');
+                }
+                speeds.push_str(&gen_name(bit));
+            }
+        }
+        if speeds.is_empty() {
+            speeds = "none".into();
+        }
+        let downgrade = if nlw != 0 && nlw != mlw { " (downgraded)" } else { "" };
+        println!(
+            "config-space link caps (bus {bus} dev {dev} fn {func}): \
+LnkCap max {} x{mlw}{} | LnkSta {} x{nlw}{downgrade} | LnkCap2 [{speeds}] | LnkCtl2 TLS {}",
+            gen_name(mls),
+            if dlllarc { " DLLLARC+" } else { "" },
+            gen_name(cls),
+            gen_name(tls),
+        );
+    } else {
+        println!("config-space link caps: no PCIe capability (0x10) found in the chain - skipped");
+    }
     drv.unmap_physical(va);
+}
+
+/// PCIe speed nibble -> human name (LnkCap[3:0] / LnkSta[3:0] / LnkCtl2[3:0]
+/// share the encoding; LnkCap2 uses bit n = Gen n).
+fn gen_name(g: u32) -> String {
+    match g {
+        1 => "Gen1".into(),
+        2 => "Gen2".into(),
+        3 => "Gen3".into(),
+        4 => "Gen4".into(),
+        5 => "Gen5".into(),
+        0 => "Gen1?0".into(),
+        _ => format!("Gen?{g}"),
+    }
 }
 
 // ---------------------------------------------------------------- register dump
@@ -1050,6 +1129,64 @@ const AMPADA_SWEEP: [u32; 9] = [
     0x0082_3800, 0x0082_3808, 0x0082_380C, 0x0082_3810, 0x0082_3814, 0x0082_3824,
     0x0082_3828, 0x0082_382C, 0x0082_3B00,
 ];
+/// PCIe link block, BAR0 mirrors of XVE config space (field round 3 union:
+/// cmp50hx patch04 + cmpunlocker 0007 + gpu-unlock-bar1 + AD102 L2 research).
+/// XVE shadow base 0x88000, so config CAP_EXP+0x0C (LnkCap) maps to 0x88084
+/// and so on; the policy registers are the endpoint-side half of the CMP
+/// mining-card Gen2 unlock (docs/cmp-gen2-sm-unlock-assessment.md §1). On a
+/// consumer die these read stock/benign - that IS the family answer.
+const PCIE_LINK_ROWS: [(&str, u32); 16] = [
+    ("LNKCAP", 0x0008_8084),
+    ("LNKCTL_LNKSTA", 0x0008_8088),
+    ("LNKCAP2", 0x0008_80A4),
+    ("LNKCTL2_LNKSTA2", 0x0008_80A8),
+    ("PRIV_MISC_1", 0x0008_841C),
+    ("VSEC_DEVICE", 0x0008_860C),
+    ("VSEC_HIERARCHY", 0x0008_8610),
+    ("XVE_OVR_LTSSM", 0x0008_872C),
+    ("XVE_B_PLM", 0x0008_8AB4),
+    ("XVE_D0_PLM", 0x0008_8FE8),
+    ("XVE_D4_PLM", 0x0008_8FEC),
+    ("XVE_D8_PLM", 0x0008_8FF0),
+    ("XVE_C_PLM", 0x0008_8FF8),
+    ("LINK_CONFIG_0", 0x0008_C040),
+    ("PL_LINK_RATE", 0x0008_C1C0),
+    ("CYA_0_DISG2", 0x0008_C2C0),
+];
+/// XP3G fuse-override block: status base 0x8e100, override-enable 0x8e110,
+/// value 0x8e120 (slot n at base+4n), PLMs 0x8e1b0..bc. The Gen2 capability
+/// layer - XP3G_PLM0 must read OPEN before any policy write can land.
+const XP3G_ROWS: [(&str, u32); 10] = [
+    ("XP3G_STATUS0", 0x0008_E100),
+    ("XP3G_STATUS3", 0x0008_E10C),
+    ("XP3G_OVR0", 0x0008_E110),
+    ("XP3G_OVR3", 0x0008_E11C),
+    ("XP3G_VAL0", 0x0008_E120),
+    ("XP3G_VAL3", 0x0008_E12C),
+    ("XP3G_PLM0", 0x0008_E1B0),
+    ("XP3G_PLM4", 0x0008_E1B4),
+    ("XP3G_PLM8", 0x0008_E1B8),
+    ("XP3G_PLMC", 0x0008_E1BC),
+];
+/// Fuse/OPT region union: the Gen2 fuse wall (OPT_GEN23 = pure OTP sense,
+/// no write port; OPT_GEN3/MAGIC logged-never-written by 0007), the
+/// GPC-disable shadow, the AD102 L2 disable-mask layer (aajax.top research:
+/// effective = fuse layer | SW mask), plus where the consumer TPC/GPC
+/// disable would live if a PR#55-style shadow override exists at all.
+const OPT_FUSE_ROWS: [(&str, u32); 7] = [
+    ("OPT_GPC_DISABLE", 0x0082_0350),
+    ("OPT_MAGIC", 0x0082_0520),
+    ("OPT_GEN23", 0x0082_057C),
+    ("OPT_GEN3", 0x0082_0580),
+    ("L2_CANDIDATE", 0x0082_1200),
+    ("L2_SW_MASK", 0x0082_2080),
+    ("L2_EFF_MASK", 0x0082_2900),
+];
+/// cmpunlocker PR#55's GA100 per-GPC SM override/status banks (0xff to
+/// 0x820a40+4*gpc, status at 0x820c38+4*gpc). On 20-40 series expect badf -
+/// the existence/nonexistence answer per die, read-only.
+const GA100_SM_OVR_BASE: u32 = 0x0082_0A40;
+const GA100_SM_STATUS_BASE: u32 = 0x0082_0C38;
 
 fn badf_bucket(v: u32) -> Option<&'static str> {
     if v >> 16 != 0xBADF {
@@ -1219,6 +1356,38 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
             println!("  {label:<15} {name:<22} = {}{note}", hx32(v));
         }
     }
+    println!("--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---");
+    for (name, off) in PCIE_LINK_ROWS
+        .iter()
+        .chain(XP3G_ROWS.iter())
+        .chain(OPT_FUSE_ROWS.iter())
+    {
+        let v = rd(*off);
+        let note = match *name {
+            n if n.ends_with("_PLM") || n.ends_with("PLM0") => format!(" ({})", decode_plm(v)),
+            _ => match badf_bucket(v) {
+                Some(b) => format!(" [{}]", red(b)),
+                None => String::new(),
+            },
+        };
+        println!("  {name:<18} = {}{note}", hx32(v));
+    }
+    // GA100 PR#55 SM banks: 8 dwords per row, badf-bucketed inline. On
+    // consumer dies the whole row is the per-die existence answer.
+    print!("{: >18}", "  GA100_SM_OVR");
+    for gpc in 0..8u32 {
+        let v = rd(GA100_SM_OVR_BASE + gpc * 4);
+        let b = badf_bucket(v).map(|b| format!("({b})")).unwrap_or_default();
+        print!(" {}{}", hx32(v), b);
+    }
+    println!();
+    print!("{: >18}", "  GA100_SM_STAT");
+    for gpc in 0..8u32 {
+        let v = rd(GA100_SM_STATUS_BASE + gpc * 4);
+        let b = badf_bucket(v).map(|b| format!("({b})")).unwrap_or_default();
+        print!(" {}{}", hx32(v), b);
+    }
+    println!();
     println!("--- ampere/ada FEAT sweep (M1 cluster) ---");
     print!("{: >24}", "");
     for off in AMPADA_SWEEP {
@@ -1309,6 +1478,13 @@ WHAT IT DOES:
        - Ada four-write targets (WPR/WPR_CFG/FBPA PLMs), AD10x 64G-BAR1
          line (CYA/CFG/XVE/BAR1 cap), 26-register PLM survey, Ampere FEAT
          sweep
+       - pcie/gen2 probe union (field round 3): XVE link block + policy
+         registers (0x8808x/0x8841c/0x886xx/0x8872c/0x8c040/0x8c1c0/
+         0x8c2c0), XVE PLMs, XP3G override block + PLMs, fuse/OPT wall
+         (OPT_GEN23/GEN3/MAGIC, OPT_GPC_DISABLE), GA100 PR#55 SM banks,
+         AD102 L2 mask layer - read-only existence evidence per die
+       - config-space link caps: LnkCap/LnkSta/LnkCap2/LnkCtl2 decoded
+         (LnkSta is the only trustworthy link-speed criterion)
   4. unlock verdict: FEAT SS0/SS1 == 0x88888888/0x8 => UNLOCKED
      (field-proven to persist in Windows on the Turing relock chain)
 
