@@ -1074,21 +1074,44 @@ fn describe_nvidia(pci: &PciIo, seg: usize, bus: usize, dev: usize, fun: usize, 
         let next = ((hdr >> 20) & 0xfff) as u32;
         match id {
             0x0015 => {
-                let ctrl = pci.config_read_u32(off + 4);
-                let n_bars = ctrl & 0x1f;
+                // Layout per PCIe spec as decoded by Linux and ReBarUEFI
+                // (both field-proven): a chain of {CAP, CTRL} 8-byte pairs
+                // at +4/+8. The first pair's CTRL[7:5] holds the resizable
+                // BAR count; per pair, CTRL[2:0] = BAR index, CTRL[12:8] =
+                // current size (1 MiB << n), CAP = supported-sizes bitmap
+                // (bit n raw = 2^n MB, mask 0x00FFFFF0). The M0-era decode
+                // read the count from CAP bits[4:0] and the size from the
+                // next pair's CAP - both wrong; corrected against
+                // ReBarUEFI (reference/ReBarUEFI, ReBar.c).
+                let first_ctrl = pci.config_read_u32(off + 8);
+                let n_bars = (first_ctrl >> 5) & 0x7;
                 info!("  ReBAR cap @{:#06x}: {} resizable BAR(s)", off, n_bars);
                 for b in 0..n_bars as u32 {
-                    let bc = pci.config_read_u32(off + 8 + 8 * b);
-                    let bs_ = pci.config_read_u32(off + 12 + 8 * b);
-                    let size_idx = bs_ & 0x1f;
-                    // sizes are 1MB << index per spec
+                    let cap = pci.config_read_u32(off + 4 + 8 * b);
+                    let ctrl = pci.config_read_u32(off + 8 + 8 * b);
+                    let size_idx = (ctrl >> 8) & 0x1f;
+                    let mut supported = alloc::string::String::new();
+                    for bit in (4..=23).rev() {
+                        if cap & (1 << bit) != 0 {
+                            if !supported.is_empty() {
+                                supported.push('/');
+                            }
+                            let mib = 1u64 << (bit - 4 + 20);
+                            if mib >= 1024 {
+                                supported.push_str(&alloc::format!("{}G", mib / 1024));
+                            } else {
+                                supported.push_str(&alloc::format!("{}M", mib));
+                            }
+                        }
+                    }
                     info!(
-                        "    BAR{} ctrl {:#010x} status {:#010x} -> {} MiB (idx {})",
-                        bc & 0x1f,
-                        bc,
-                        bs_,
+                        "    BAR{} supported [{}] current {} MiB (size_idx {}, ctrl {:#010x} cap {:#010x})",
+                        ctrl & 0x7,
+                        supported,
                         1u64 << (20 + size_idx),
-                        size_idx
+                        size_idx,
+                        ctrl,
+                        cap
                     );
                 }
             }
