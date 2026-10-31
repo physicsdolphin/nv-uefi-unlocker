@@ -21,8 +21,21 @@ pub const LOG_PATH: &CStr16 = cstr16!(r"\loader.log");
 /// hang or mid-call reset - exactly what the 2026-10-27 Z790 diagnosis
 /// needed (the log ended at "POST-FLR: verified"). A Flush per line is
 /// visible on slow USB media (the TU106 run of 2026-10-28 spent noticeable
-/// seconds on ~415 flushed lines).
-const FLUSH_EVERY_LINES: usize = 16;
+/// seconds on ~415 flushed lines); the 2026-11-01 TU106 run measured four
+/// ~1.2 s stalls all aligned to flush events (USB flash GC shape), so the
+/// count cadence is a knob: `\tx-flush-lines.txt` on the stick root sets it
+/// (0 = marker lines only). Raising it trades forensics resolution for
+/// fewer flush stalls - the marker lines below always flush regardless.
+const FLUSH_EVERY_LINES_DEFAULT: usize = 16;
+static FLUSH_EVERY_LINES: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(FLUSH_EVERY_LINES_DEFAULT);
+
+/// Set the count-based flush cadence (caller clamps; 0 disables
+/// count-based flushes, marker lines still flush). Default 16.
+pub fn set_flush_every_lines(n: usize) {
+    FLUSH_EVERY_LINES.store(n, core::sync::atomic::Ordering::Relaxed);
+}
+
 const FLUSH_MARKERS: &[&str] = &[
     "PHASE", "RESULT", "POST-", "FINAL", "RECONNECT", "DETACH", "CHAIN",
     "SELECTOR", "HANDOFF", "WATCHDOG", "AUTH-SCAN end",
@@ -108,7 +121,8 @@ impl Log for DualLogger {
         unsafe {
             let n = *self.lines.get() + 1;
             *self.lines.get() = n;
-            let flush = n % FLUSH_EVERY_LINES == 0
+            let fe = FLUSH_EVERY_LINES.load(core::sync::atomic::Ordering::Relaxed);
+            let flush = (fe > 0 && n % fe == 0)
                 || FLUSH_MARKERS.iter().any(|m| line.contains(m));
             if let Some(f) = (*self.file.get()).as_mut() {
                 let ok = f.write(line.as_bytes()).is_ok() && (!flush || f.flush().is_ok());

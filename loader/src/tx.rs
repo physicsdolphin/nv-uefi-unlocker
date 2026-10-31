@@ -4,6 +4,7 @@
 #![allow(dead_code)] // pre-wired ahead of the M3 gate; test surface lives in sim/
 //! the default shipped binary carries zero GPU-write paths (constitution 1.7).
 
+use core::cell::UnsafeCell;
 use core::time::Duration;
 use uefi::boot;
 use log::info;
@@ -941,10 +942,45 @@ pub fn read_asset_fmt(pattern: &str, family: &str) -> Result<Option<alloc::vec::
     read_asset(&path)
 }
 
+#[derive(Clone)]
 enum Inner {
     Absent,
     Failed,
     Content(alloc::vec::Vec<u8>),
+}
+
+/// Read-through cache over the boot volume's asset reads (issue #38
+/// follow-up): the armed-countdown prep warms the family's files into RAM
+/// while the wait window still has time to give, so the post-countdown
+/// transaction pays memory speed instead of USB. Keyed by path, written
+/// once per path, hits return a clone (a 29 MB fwimage memcpy is single
+/// digit milliseconds). Deliberately NOT covering `probe_file` - UI
+/// switches are zero-byte markers whose presence checks keep their own
+/// live-open semantics.
+struct AssetCacheCell(UnsafeCell<alloc::vec::Vec<(alloc::string::String, Inner)>>);
+
+// Safety: UEFI applications are single-threaded during boot services.
+unsafe impl Sync for AssetCacheCell {}
+unsafe impl Send for AssetCacheCell {}
+
+static ASSET_CACHE: AssetCacheCell = AssetCacheCell(UnsafeCell::new(alloc::vec::Vec::new()));
+
+/// Warm the read-through cache with one family's whole asset set, exactly
+/// the files tx_one_card will ask for next (each surfaces its own
+/// TX-ASSET-DIAG line; failures are cached too, so "present but unreadable"
+/// still aborts at use time, never degrades). All read-only; safe to call
+/// before any GPU interaction.
+pub fn prefetch_family_assets(family: &str) {
+    let _ = read_asset_fmt("\\booter_load_{}.bin", family);
+    let _ = read_asset_fmt("\\gsp_boot_desc_{}.bin", family);
+    let _ = read_asset_fmt("\\gsp_boot_{}.bin", family);
+    let _ = read_asset_fmt("\\fwimage_{}.bin", family);
+    let _ = read_asset_fmt("\\fwsignature_{}.bin", family);
+    let _ = read_asset("\\v67-direct-ss.bin");
+    let _ = read_asset_fmt("\\v67-{}-four-plm.bin", family);
+    if family == "tu10x" {
+        let _ = read_asset("\\sec2_bl_tu10x.bin");
+    }
 }
 
 /// Read one file from the boot volume with per-step diagnostics.
@@ -956,6 +992,18 @@ pub fn read_boot_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_boot_file_inner(path: &str) -> Inner {
+    // Read-through cache first (armed prep warms it; see AssetCacheCell).
+    // Safety: single-threaded boot services; pointer use confined here.
+    let cache = unsafe { &mut *ASSET_CACHE.0.get() };
+    if let Some((_, hit)) = cache.iter().find(|(p, _)| p == path) {
+        return hit.clone();
+    }
+    let fresh = read_boot_file_uncached(path);
+    cache.push((alloc::string::String::from(path), fresh.clone()));
+    fresh
+}
+
+fn read_boot_file_uncached(path: &str) -> Inner {
     // Runtime path: CString16::try_from (cstr16! only takes literals).
     let path_c = match uefi::CString16::try_from(path) {
         Ok(p) => p,

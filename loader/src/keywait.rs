@@ -20,7 +20,9 @@ pub enum Confirm {
     Abort,
 }
 
-fn poll_key() -> Option<Key> {
+/// One console-input poll. Public so the armed-prep loop (tx_prep) can
+/// interleave read-only work with the abort window.
+pub fn poll_key() -> Option<Key> {
     let key = system::with_stdin(|stdin| stdin.read_key());
     key.ok().flatten()
 }
@@ -94,7 +96,10 @@ pub fn wait_confirm(seconds: u64) -> Confirm {
 /// collapses to a short countdown that PROCEEDS on timeout; any key during
 /// the window is a human saying stop - TX builds abort into chain-load
 /// with zero GPU writes, read-only builds have nothing to abort (they
-/// proceed; everything is zero-write by design).
+/// proceed; everything is zero-write by design). TX builds route the armed
+/// wait through tx_prep (prep interleaved) and only reach this fn in
+/// non-tx builds.
+#[cfg_attr(feature = "tx", allow(dead_code))]
 pub fn wait_confirm_armed(seconds: u64) -> Confirm {
     let ticks = seconds * 20;
     for _ in 0..ticks {
