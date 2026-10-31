@@ -1,4 +1,6 @@
-//! ssdiag v0.2 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.5.0 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.5.0 adds a read-only config-space ReBAR probe (ECAM via MCFG; the
+//! BAR1-resize answer board A4G/ReBAR settings can and cannot provide).
 //!
 //! Reads the registers the EFI unlock stage touches, from inside the running
 //! OS, and - where the EFI chain left the FEAT PLM gate open (Ampere/Ada AON
@@ -96,6 +98,12 @@ mod win {
         ) -> i32;
         pub fn CloseHandle(h: Handle) -> i32;
         pub fn GetLastError() -> u32;
+        pub fn GetSystemFirmwareTable(
+            provider: u32,
+            table_id: u32,
+            buffer: *mut u8,
+            buffer_size: u32,
+        ) -> u32;
         pub fn LoadLibraryW(name: *const u16) -> Handle;
         pub fn GetProcAddress(h: Handle, name: *const u8) -> *const c_void;
         pub fn GetStdHandle(nStdHandle: u32) -> Handle;
@@ -139,6 +147,57 @@ mod reg {
 
 const HKEY_LOCAL_MACHINE: isize = 0x8000_0002;
 const RRF_RT_REG_DWORD: u32 = 0x0000_0010;
+const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+
+/// One HKEY_LOCAL_MACHINE string value (REG_SZ), for the PCI LocationInformation.
+fn hklm_string(subkey: &str, value: &str) -> Option<String> {
+    let sub = wide(subkey);
+    let val = wide(value);
+    let mut cb: u32 = 0;
+    // size query first: RegGetValueW wants a big-enough buffer, and a NULL
+    // buffer with cb=0 returns the required byte count
+    let rc = unsafe {
+        reg::RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            sub.as_ptr(),
+            val.as_ptr(),
+            RRF_RT_REG_SZ,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            &mut cb,
+        )
+    };
+    if rc != 0 || cb == 0 {
+        return None;
+    }
+    let mut data = vec![0u8; cb as usize];
+    let rc = unsafe {
+        reg::RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            sub.as_ptr(),
+            val.as_ptr(),
+            RRF_RT_REG_SZ,
+            core::ptr::null_mut(),
+            data.as_mut_ptr().cast(),
+            &mut cb,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    // cb counts bytes including the NUL; UTF-16 pairs
+    let words: Vec<u16> = data[..(cb as usize & !1)]
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    let s = String::from_utf16_lossy(&words);
+    let s = s.trim_end_matches('\0').trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
 
 /// None = the value is absent (or unreadable), which the caller must print as
 /// "unknown" rather than as a pass.
@@ -750,6 +809,188 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
     Ok(gpus)
 }
 
+// ---------------------------------------------------------------- config-space ReBAR (ECAM)
+
+const ACPI_PROVIDER: u32 = 0x4143_5049; // 'ACPI'
+const MCFG_TABLE: u32 = 0x4746_434D; // 'MCFG'
+
+/// Parse the device ID (DID) hex out of a PCI DeviceID string
+/// ("PCI\VEN_10DE&DEV_2504&..." -> 0x2504).
+fn dev_id_from(instance: &str) -> Option<u16> {
+    let i = instance.to_uppercase().find("&DEV_")? + 5;
+    u16::from_str_radix(instance.get(i..i + 4)?, 16).ok()
+}
+
+/// bus/device/function out of the registry LocationInformation
+/// ("PCI bus 1, device 0, function 0" - the format string keeps the
+/// bus/device/function argument order across UI languages, so the first
+/// three integer runs are taken positionally).
+fn bdf_from_location(loc: &str) -> Option<(u32, u32, u32)> {
+    let mut nums: Vec<u32> = Vec::new();
+    let mut cur: Option<u32> = None;
+    for ch in loc.chars() {
+        if ch.is_ascii_digit() {
+            let v = cur.unwrap_or(0);
+            cur = if v > 10_000 { None } else { Some(v * 10 + (ch as u32 - '0' as u32)) };
+        } else if let Some(v) = cur.take() {
+            nums.push(v);
+        }
+    }
+    if let Some(v) = cur.take() {
+        nums.push(v);
+    }
+    if nums.len() < 3 {
+        return None;
+    }
+    let (bus, dev, func) = (nums[0], nums[1], nums[2]);
+    if bus > 0xFF || dev > 0x1F || func > 0x7 {
+        return None;
+    }
+    Some((bus, dev, func))
+}
+
+/// MCFG base address for segment 0 covering `bus`, or None (no MMCONFIG).
+fn mcfg_base_for(bus: u32) -> Option<u64> {
+    let need = unsafe {
+        win::GetSystemFirmwareTable(ACPI_PROVIDER, MCFG_TABLE, core::ptr::null_mut(), 0)
+    };
+    if need == 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; need as usize];
+    let got = unsafe {
+        win::GetSystemFirmwareTable(ACPI_PROVIDER, MCFG_TABLE, buf.as_mut_ptr(), need)
+    };
+    if got == 0 || got as usize > buf.len() {
+        return None;
+    }
+    let len = (u32::from_le_bytes(buf[4..8].try_into().ok()?) as usize).min(buf.len());
+    if len < 44 {
+        return None; // 36-byte ACPI header + 8 reserved, then 16-byte entries
+    }
+    let mut off = 44;
+    while off + 16 <= len {
+        let base = u64::from_le_bytes(buf[off..off + 8].try_into().ok()?);
+        let seg = u16::from_le_bytes(buf[off + 8..off + 10].try_into().ok()?);
+        let (sb, eb) = (buf[off + 10], buf[off + 11]);
+        if seg == 0 && bus >= sb as u32 && bus <= eb as u32 {
+            return Some(base);
+        }
+        off += 16;
+    }
+    None
+}
+
+/// Read-only ReBAR extended-capability probe through ECAM. The driver only
+/// offers physical map/unmap, and config space on every modern x64 machine
+/// IS memory-mapped (MCFG/ECAM), so the probe needs no new driver surface:
+/// it maps exactly one 4 KiB page - the target function's own config space,
+/// located via the registry LocationInformation and validated against the
+/// DeviceID's VID/DID before anything is decoded. Nothing outside that page
+/// is ever touched (no bus scanning - unclaimed ECAM reads are the one
+/// platform quirk this avoids). Register layout identical to the loader's
+/// corrected decode (eb2bff5): {CAP, CTRL} pairs at +4/+8, count in first
+/// CTRL[7:5], per-pair CTRL[2:0] index / CTRL[12:8] size (1 MiB << n),
+/// CAP = supported-sizes bitmap (raw bit n = 2^n MB).
+fn print_config_rebar(drv: &PmxDrv, instance: &str) {
+    let Some(did) = dev_id_from(instance) else {
+        println!("config-space ReBAR: no DEV_ in DeviceID - skipped");
+        return;
+    };
+    let loc = match hklm_string(
+        &format!("SYSTEM\\CurrentControlSet\\Enum\\PCI\\{}", instance),
+        "LocationInformation",
+    ) {
+        Some(l) => l,
+        None => {
+            println!("config-space ReBAR: no LocationInformation in registry - bdf unknown, skipped");
+            return;
+        }
+    };
+    let Some((bus, dev, func)) = bdf_from_location(&loc) else {
+        println!("config-space ReBAR: LocationInformation not parseable ({loc:?}) - skipped");
+        return;
+    };
+    let Some(mcfg) = mcfg_base_for(bus) else {
+        println!("config-space ReBAR: no MCFG/MMCONFIG for bus {bus} - unavailable on this firmware");
+        return;
+    };
+    let ecam = mcfg + ((bus as u64) << 20) + ((dev as u64) << 15) + ((func as u64) << 12);
+    let va = match drv.map_physical(ecam, 1) {
+        Ok(va) => va,
+        Err(e) => {
+            println!("config-space ReBAR: ECAM map failed ({e}) - skipped");
+            return;
+        }
+    };
+    let base = va as *const u8;
+    let rd = |off: u32| unsafe { (base.add(off as usize) as *const u32).read_volatile() };
+    let idword = rd(0);
+    let (vid, cdid) = (idword & 0xffff, (idword >> 16) & 0xffff);
+    if vid != 0x10de || cdid != did as u32 {
+        println!(
+            "config-space ReBAR: ECAM page reads {vid:04x}:{cdid:04x}, expected 10de:{did:04X} - bdf mismatch, skipped"
+        );
+        drv.unmap_physical(va);
+        return;
+    }
+    let mut off: u32 = 0x100;
+    let mut found = false;
+    for _ in 0..48 {
+        let hdr = rd(off);
+        let cid = (hdr & 0xffff) as u16;
+        if cid == 0 {
+            break;
+        }
+        let next = (hdr >> 20) & 0xfff;
+        if cid == 0x0015 {
+            let first_ctrl = rd(off + 8);
+            let n_bars = ((first_ctrl >> 5) & 0x7) as u32;
+            println!(
+                "config-space ReBAR (bus {bus} dev {dev} fn {func}): cap @{off:#06x} - {n_bars} resizable BAR(s)"
+            );
+            for b in 0..n_bars {
+                let cap = rd(off + 4 + 8 * b);
+                let ctrl = rd(off + 8 + 8 * b);
+                let size_idx = (ctrl >> 8) & 0x1f;
+                let mut supported = String::new();
+                for bit in (4..=23).rev() {
+                    if cap & (1 << bit) != 0 {
+                        if !supported.is_empty() {
+                            supported.push('/');
+                        }
+                        let mib = 1u64 << (bit - 4 + 20);
+                        if mib >= 1024 {
+                            supported.push_str(&format!("{}G", mib / 1024));
+                        } else {
+                            supported.push_str(&format!("{}M", mib));
+                        }
+                    }
+                }
+                println!(
+                    "  BAR{} supported [{}] current {} MiB (size_idx {})",
+                    ctrl & 0x7,
+                    supported,
+                    1u64 << (20 + size_idx),
+                    size_idx
+                );
+            }
+            found = true;
+            break;
+        }
+        if next < 0x100 {
+            break;
+        }
+        off = next;
+    }
+    if !found {
+        println!(
+            "config-space ReBAR (bus {bus} dev {dev} fn {func}): no 0x15 capability - card does not advertise resizable BAR (A4G/ReBAR board settings cannot resize this card's BAR1; expected on Turing)"
+        );
+    }
+    drv.unmap_physical(va);
+}
+
 // ---------------------------------------------------------------- register dump
 
 const SS0_UNLOCK: u32 = 0x8888_8888;
@@ -1169,6 +1410,9 @@ SSDIAG_COLOR=force pins on.",
         for (a, b) in &g.ranges {
             println!("  {}-{} ({} MiB)", hxaddr(*a), hxaddr(*b), (b - a + 1) >> 20);
         }
+        // works even for a parked card (config space answers regardless of
+        // D0/MEM decode) - hence before the BAR0 walk, not after
+        print_config_rebar(&drv, &g.id);
         let mut picked = walk_candidates(&drv, g);
         // degenerate reads (GC6/GCOFF park, D3, MEM decode off) -> one NVAPI
         // driver-mediated wake, then a single re-walk
