@@ -304,6 +304,22 @@ club-3090 #70 / harrychen 5090 博文这类"消费卡 P2P 解锁"，能否在我
   （cudaDeviceCanAccessPeer）。四源全是 Linux；Windows 侧 `nvlddmkm`
   RegistryDwords 机制存在但 GSP 是否同样响应未验证（可测，非本项目杠杆）。
 
+### Windows 侧假想攻面的工具选择（防误读，2026-11-01 追问后补）
+
+主武器是**用户态注册表写**，非内核写原语：门是配置门不是代码门，旁路钥匙
+（RMDisableFeatureDisablement）的递送通道 OS 无关——OS 注册表→RM 注册表
+DB→GSP bring-up RPC→固件 ~850 键解析器（osapi.c rm_parse_option_string /
+kernel_gsp.c 一手核对）。Windows 等价物=nvlddmkm 服务键 RegistryDwords
+（REG_SZ）。决策树：①注册表写+重启→`nvidia-smi topo -p2p` /
+cudaDeviceCanAccessPeer（Linux 590 一键已实证，Windows 未验证；3090 旧
+GSP ELF 是否同吃该键未证实——club-3090 那批仍在用代码补丁 fork）；
+②若 WDDM 闭源前端另有硬检查（未证实：550 时代 gate 在内核代码，590 移进
+固件后 Linux 已免补丁，前端更像 caps 转发者）→才轮到 BYOVD 内核写做内存
+补丁——RE 闭源驱动+per-version 偏移+每次驱动更新重做，且 pmxdrv 物理
+map/unmap 原语打 VA 须先 CR3 页表翻译，工具本就不匹配；③CUDA 用户态
+（nvcuda.dll）若有 gate 仍是用户态补丁。本项目 pmxdrv 纪律=只读诊断+用完
+即毁，不拿去做第三方签名驱动镜像补丁。
+
 ### EFI 侧真实杠杆
 
 - **BAR1（唯一 EFI-native 件）**：我们的 PSTRAPS/CTRL 写技术正对路，但
