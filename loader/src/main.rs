@@ -21,6 +21,8 @@ mod sample;
 #[cfg(feature = "tx")]
 mod tx;
 #[cfg(feature = "tx")]
+mod claim_plm;
+#[cfg(feature = "tx")]
 mod tx_fwsec;
 #[cfg(feature = "tx")]
 mod tx_booter;
@@ -268,6 +270,13 @@ fn tx_one_card(g: &pci::FoundGpu) {
         // a live unlock.
         Err(tx::TxError::EAlready) => {
             info!("TX: already unlocked / not cold (EALREADY) - skipped, nothing to unwind");
+            tx::handoff_out(&pci);
+        }
+        // The claim read cannot establish whether an unlock is already
+        // present. Detach/claim and an optional pre-FLR may have happened;
+        // do not add a failure reset merely because this read failed.
+        Err(tx::TxError::EClaimUnreadable) => {
+            info!("TX: claim PLM transport read failed - transaction skipped, no additional failure reset");
             tx::handoff_out(&pci);
         }
         // Warm entry with the require-D0 switch: nothing was written, the

@@ -535,11 +535,15 @@ pub fn booter_fire(
         BooterWait::Halt => gpu.poll_us(SEC2 + 0x100, 1 << 4, 1 << 4, 5_000_000, true),
         BooterWait::PlmFlip => {
             // unlock_610.c falcon_hs wait_plm=true loop: vetted reads, the
-            // PLM cold->open transition is success, HALT is -EIO. Entry PLM
-            // must be closed for the flip to prove anything (claim_guards
-            // EALREADY already rejects an open GA10x PLM upstream of here).
+            // PLM cold->open transition is success, HALT is -EIO. The claim
+            // guard vouched the GA10x PLM closed at transaction entry
+            // (classifier-based since the PR #65 adoption), so ANY open read
+            // here is the payload's flip — including one that out-ran this
+            // loop's first read: the signature DMA is a single ~64KB burst
+            // (tens of µs) and the ROP chain is short, so sub-read-latency
+            // flips are structural, not flaky (issues #6/#11/#37).
             let entry = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_PLM as u64);
-            info!("BOOTER wait_plm: entry FEAT_PLM={entry:#010x} (cold entry must be closed; open entry cannot prove execution)");
+            info!("BOOTER wait_plm: first-read FEAT_PLM={entry:#010x} (claim guard vouched closed at entry; open here = payload out-ran the verdict read)");
             let mut verdict = Err(TxError::ETimeout { tolerated: false });
             let max_iters = 5_000_000 / 75 + 1;
             for i in 0..max_iters {
@@ -549,8 +553,12 @@ pub fn booter_fire(
                     break;
                 }
                 let plm = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_PLM as u64);
-                if plm == !0u32 && entry != !0u32 {
-                    info!("BOOTER wait_plm: PLM flip {entry:#010x} -> 0xffffffff after ~{}us - payload executed (booter stays in the fill self-loop; no halt will follow)", i * 75);
+                if plm == !0u32 {
+                    if entry != !0u32 {
+                        info!("BOOTER wait_plm: PLM flip {entry:#010x} -> 0xffffffff after ~{}us - payload executed (booter stays in the fill self-loop; no halt will follow)", i * 75);
+                    } else {
+                        info!("BOOTER wait_plm: PLM already open at the first verdict read - payload out-ran the verdict (issues #6/#11/#37 race); claim guard vouched closed at entry - success");
+                    }
                     verdict = Ok(());
                     break;
                 }
