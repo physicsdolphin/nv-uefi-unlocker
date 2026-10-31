@@ -49,6 +49,10 @@ const TABLE: &[Reg] = &[
     // measures a different locked block on Turing).
     Reg("TU10x FEAT_PLM 0x409650", 0x0040_9650),
     Reg("TU10x FEAT_SS0 0x409664", 0x0040_9664),
+    // Readout of the same block (nlzy turing-unlock, same constant ssdiag
+    // carries). Cold-state read doubles as the #10 factory-clamp probe once
+    // a payload run opens the gate.
+    Reg("TU10x FEAT_READOUT 0x409668", 0x0040_9668),
 ];
 
 /// FEAT override cluster, dword sweep (task brief: 0x823804-0x823820 focus;

@@ -1175,16 +1175,21 @@ pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u
 pub const TU10X_FEAT_PLM: u32 = 0x0040_9650;
 pub const TU10X_FEAT_SS0: u32 = 0x0040_9664;
 pub const TU10X_FEAT_SS1: u32 = 0x0040_966c;
+/// Turing FEAT readout, same constant ssdiag carries (issue #42: the loader
+/// previously logged the Ampere/Ada address here, which reads badf on Turing).
+pub const TU10X_FEAT_READOUT: u32 = 0x0040_9668;
 
 pub fn verify_execution_tu10x(gpu: &TxGpu, payload_mode: bool, meta: &[u8]) -> Result<(), TxError> {
     let plm = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_PLM as u64);
     let ss0 = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_SS0 as u64);
     let ss1 = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_SS1 as u64);
     info!("POST-BOOT: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} (Turing 0x4096xx block)");
-    // Factory compute-throttle readout: on Turing this is only readable once
-    // the payload has opened the FEAT PLM (open-questions #1/#10). In replay
-    // mode it stays badf-locked and doubles as the negative control.
-    let readout1 = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_READOUT_1 as u64);
+    // Factory compute-throttle readout, from the Turing block itself (0x409668;
+    // 0x823818 is the Ampere/Ada cluster and reads badf here - issue #42): on
+    // Turing this is only readable once the payload has opened the FEAT PLM
+    // (open-questions #1/#10). In replay mode it stays badf-locked and doubles
+    // as the negative control.
+    let readout1 = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_READOUT as u64);
     info!("POST-BOOT: FACTORY FEAT_READOUT_1={readout1:#010x} (0 = full speed; badf5040 = PLM still closed)");
     let mbox0 = gpu.pci.bar_read_u32(gpu.bar, (crate::tx::eng::SEC2 + 0x40) as u64);
     let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
