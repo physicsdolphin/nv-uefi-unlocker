@@ -721,7 +721,7 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     if dma_landed {
         info!("BOOTER-DIRECT: DMEM verdict: signature DMA LANDED (fill 0x4a7 seen) - booter entered canary/ROP territory");
     } else {
-        info!("BOOTER-DIRECT: DMEM verdict: signature DMA never landed - the booter rejected the meta/staging before the exploit point");
+        info!("BOOTER-DIRECT: DMEM verdict: signature DMA never landed - the 0x4a7 fill check is V67-SPECIFIC: in replay mode, or when sanitize wins the race to the sample point, this is NOT a rejection signal (#14/#90 field-proven false negatives; #90's PLM opened and selectors landed with this exact verdict)");
     }
     // Turing BOOT_DIRECT halt shapes (sixth TU106 fire + issues #14/#16):
     // the mailboxes carry the 64-bit WprMeta address as INPUT. A healthy
@@ -802,10 +802,10 @@ fn log_exci_decode(exci: u32) {
 pub fn mailbox0_verdict(mbox0: u32) -> &'static str {
     match mbox0 {
         0x31 => "NS-stub pre-secure marker (final) - the secure entry never executed (placement/entry-level failure)",
-        0x0 => "secure-stage success status",
+        0x0 => "secure-stage success status (replay chains also end here)",
         0x89..=0x90 => "wpr_desc_validate rejection (meta DMA readback mismatch)",
         0x91 => "secure-stage rejection family - the secure code RAN and rejected (cmp50hx dictionary)",
-        0x11 | 0x0b => "secure-stage early status (ran, rejected before validation)",
+        0x11 | 0x0b => "secure-stage status, stage unknown - the secure code ran and wrote this (0x0B: #82/#57, 0x11: #57); exact stage pending debug-booter RE",
         _ => "input-carrier residue or unknown",
     }
 }
@@ -815,6 +815,10 @@ fn log_mailbox_verdict(mbox0: u32) {
 }
 
 /// ASCII number parse ("0x200" hex or "512" decimal) for \tx-sec-base.txt.
+/// v2.1.8 fix (issue #57 round E): the first version consumed the leading
+/// '0' as a decimal digit and then rejected the 'x' - "0x200" silently
+/// parsed as None while "512" worked, voiding that ablation round. The 'x'
+/// is now accepted whenever no nonzero digit has been consumed yet.
 fn parse_num_ascii(raw: &[u8]) -> Option<u32> {
     let mut hex = false;
     let mut val: u32 = 0;
@@ -822,7 +826,7 @@ fn parse_num_ascii(raw: &[u8]) -> Option<u32> {
     for &b in raw {
         match b {
             0 | b'\n' | b'\r' | b' ' | b'\t' => continue,
-            b'x' | b'X' if !any => hex = true,
+            b'x' | b'X' if val == 0 && !hex => hex = true,
             b'0'..=b'9' => {
                 let d = (b - b'0') as u32;
                 val = val.checked_mul(if hex { 16 } else { 10 })?.checked_add(d)?;
@@ -934,9 +938,9 @@ fn portal_audit(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], p: &SecPlacement) {
         h = fnv(h, v);
     }
     if denied_at != u32::MAX {
-        info!("BOOTER-AUDIT: sec readback DENIED at va {denied_at:#x} (secure pages may refuse NS reads - observation, not a failure)");
+        info!("BOOTER-AUDIT: sec readback DENIED at va {denied_at:#x} - Turing secure pages return the scrub pattern on NS reads (field-proven on success machines, issue #62 R1: same poison, same fnv); not a verdict");
     } else {
-        info!("BOOTER-AUDIT: sec readback {} (fnv {:010x}, {:x} bytes walked)", if ok { "MATCH" } else { "MISMATCH" }, h, sec.len());
+        info!("BOOTER-AUDIT: sec readback {} (fnv {:010x}, {:x} bytes walked) - Turing secure pages return the scrub pattern on NS reads (field-proven on success machines); not a verdict, ns/dmem lines are", if ok { "MATCH" } else { "MISMATCH" }, h, sec.len());
     }
 
     // DMEM head: first 256B of the data segment.
@@ -1075,7 +1079,7 @@ fn wpr_desc_rejected_hint(mbox0: u32, meta: &[u8]) {
     }
     if (0x89..=0x90).contains(&mbox0) {
         info!("POST-BOOT: status 0x89-0x90 = WPR descriptor (WprMeta) rejected on DMA readback");
-        info!("POST-BOOT: platform hint - turn firmware IOMMU (AMD-Vi) OFF in BIOS (SVM/AMD-V and Intel VT-x/VT-d are verified harmless)");
+        info!("POST-BOOT: known causes (>=3, issue #74 rounds 15-28): 1) a bridge on the path without bus master (check the DMA-PATH lines; PR #5 family), 2) the meta address in a band this platform cannot DMA (>=4GiB on TB tunnels; the mirror-image sub-4GB booter locks also land here), 3) firmware IOMMU (AMD-Vi) remap - try it OFF (SVM/AMD-V and Intel VT-x/VT-d are verified harmless)");
         if meta.len() >= 16 {
             let got = rd64(meta, 0);
             if got == WPR_META_MAGIC {
