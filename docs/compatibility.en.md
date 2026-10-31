@@ -108,7 +108,7 @@ Family routing and assets are available; EFI hardware verification is pending. M
 
 ### AD103 · 4080S 2702 / 4080 2704 / 4070TiS 2705 / 4070 2709 / 4090M 2757
 
-`2704` / `2705` / `2709` pass full-chain and in-OS performance verification. `2702` / `2757` have upstream silicon evidence. Sources: [#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53), [#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36), [#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8).
+`2704` / `2705` / `2709` pass full-chain and in-OS performance verification. `2702` / `2757` have upstream silicon evidence. Sources: [#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53), [#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36), [Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72), [#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8).
 
 <a id="device-8"></a>
 
