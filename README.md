@@ -118,17 +118,68 @@ bash release/make-usbroot.sh --family 40 \
 ## 参考资料与仓库
 
 本项目是社区工作的直接受益者与衍生者，完整致谢见
-[docs/ada28e0-uefi-report.md](docs/ada28e0-uefi-report.md) 的同名章节。核心：
+[docs/ada28e0-uefi-report.md](docs/ada28e0-uefi-report.md) 的同名章节。
+开发期实际研读与引用的仓库已 clone 至本地 `reference/`（不入库），按作用分组：
+
+**事务链母本与一手权威**
 
 - [gpu-unlock](https://github.com/Zagitta/gpu-unlock)（GPL-2.0）——事务链移植母本
 - [gpu-unlock-ada](https://github.com/JustAResearcher/gpu-unlock-ada)（GPL-2.0）——
   AD10x 四写链源头；28e1 报告（Windroid234）是本项目直接依据
-- [cmp170hx](https://github.com/Consensus-Protocol/cmp170hx)——PLM 语义与验证方法论
-- [cmp90hx-unlock](https://github.com/WildFlash1st/cmp90hx-unlock)——V67 链源头
-- [AD103_win_unlocker](https://huggingface.co/TOTORONG/AD103_win_unlocker)（TOTORONG）——
-  Windows EFI 载具工艺先例
+- [gpu-unlock-bar1](https://github.com/84634E1A607A/gpu-unlock-4090-48g-64g-bar1)——
+  AD10x 大 BAR1 参考（未并入主线）
+- [cmp90hx-unlock](https://github.com/WildFlash1st/cmp90hx-unlock)——V67 载荷链源头
 - [open-gpu-kernel-modules](https://github.com/NVIDIA/open-gpu-kernel-modules)（MIT）——
-  引导路径一手权威
+  引导路径一手权威（`kgspBootGspRm`/`kernel_gsp_fwsec.c`）
+- [AD103_win_unlocker](https://huggingface.co/TOTORONG/AD103_win_unlocker)（TOTORONG）——
+  Windows EFI 载具工艺先例（GOP 断连/链式交接/事务日志范式）
+
+**Turing 族定址与对照（0x4096xx FEAT 块）**
+
+- [cmp170hx](https://github.com/Consensus-Protocol/cmp170hx)——PLM 语义、booter
+  0x89/0x91 状态码字典与验证方法论
+- [cmp50hx-unlock](https://github.com/xrip/cmp50hx-unlock)——Turing FEAT 块
+  `0x409650/64/6c` 的公开实证源（本仓库 Turing 定址依据）
+- [turing-unlock](https://github.com/nlzy/turing-unlock)（nlzy）——
+  `TU_FEAT_READOUT 0x409668` 引用源（ssdiag 与 loader 的 Turing readout 同源）
+- [travis-mcdevitt/nv-uefi-unlocker](https://github.com/travis-mcdevitt/nv-uefi-unlocker)——
+  本项目下游 fork，其 Turing 成功链记录进入 0x91 取证对照
+- [tu102-22g-uefi-unlock](https://github.com/chenxluo/tu102-22g-uefi-unlock)——
+  TU102 22G 改装卡 UEFI 方案（22G 支持线的同类对照）
+
+**同类 Windows/UEFI 先行工作**
+
+- [rtx30-unlock](https://github.com/craftingmod/rtx30-unlock)——Zagitta kmod 的
+  Windows/UEFI 移植（GA10x 同类先行）
+- [rtx30-unlock-windows-toolkit](https://github.com/Siselea/rtx30-unlock-windows-toolkit)——
+  上者的单卡单显伴侣工具
+- [rtx3080-unlock-public](https://github.com/rough2515-hub/rtx3080-unlock-public)——
+  RTX 3080 10GB UEFI 实验先行（韩文）
+- [KohakUnlock](https://github.com/KohakuBlueleaf/KohakUnlock)——2080 Ti
+  initramfs 与 4090 UEFI 的源码优先研究
+- [Turing-unlock](https://github.com/haohervchb/Turing-unlock)（haohervchb）——
+  2080 Ti（TU102）易失解锁，2026-10-22 单跑成功记录
+- [nv_unlock_win](https://github.com/mirabarukaso/nv_unlock_win)——Titan RTX
+  Windows 内核例试验（同目标的另一条路）
+- [gpuunlock](https://github.com/miounet11/gpuunlock)——4090/4070 Ti SUPER
+  合并发行版
+
+**寄存器/熔丝侧线**
+
+- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar)——Turing PSTRAPS
+  BAR1 可扩实证（M1 采样 PSTRAPS 解码依据）
+- [ga100-fuse-re](https://github.com/ahnguyen17/ga100-fuse-re) ·
+  [gpcprobe](https://github.com/matstatman/gpcprobe) ·
+  [170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool)——GA100
+  熔丝/RIR 架构（熔丝语义参考线）
+- [p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock)——P104 PCIe
+  Gen2 链路工具（PCI 配置空间操作参考，与算力解锁正交）
+
+**逆向工具链**
+
+- [envytools](https://github.com/envytools/envytools)——envydis（fuc5 Falcon
+  反汇编）+ nvbios
+- [faucon](https://github.com/vbe0201/faucon)——fuc5 反汇编备选
 
 许可：**GPL-2.0-only**（`LICENSE`）。NVIDIA 固件与 VBIOS 版权归 NVIDIA，按其
 原许可条款从钉版公开包本地再生，不在本仓库分发。

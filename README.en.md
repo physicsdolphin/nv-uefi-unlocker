@@ -119,21 +119,84 @@ Combined operation can substantially exceed stock power and thermal envelopes; c
 
 This project is a direct beneficiary and derivative of community work;
 full credits in the same-named section of
-[docs/ada28e0-uefi-report.md](docs/ada28e0-uefi-report.md). Core:
+[docs/ada28e0-uefi-report.md](docs/ada28e0-uefi-report.md). The
+repositories actually studied and cited during development are cloned
+into a local, untracked `reference/` directory, grouped by role:
+
+**Transaction-chain sources and first-hand authority**
 
 - [gpu-unlock](https://github.com/Zagitta/gpu-unlock) (GPL-2.0) — the
   transaction-chain porting source
 - [gpu-unlock-ada](https://github.com/JustAResearcher/gpu-unlock-ada)
   (GPL-2.0) — the AD10x four-write chain origin; the 28e1 report
   (Windroid234) is this project's direct basis
-- [cmp170hx](https://github.com/Consensus-Protocol/cmp170hx) — PLM
-  semantics and verification methodology
+- [gpu-unlock-bar1](https://github.com/84634E1A607A/gpu-unlock-4090-48g-64g-bar1) —
+  AD10x large-BAR1 reference (not merged into the mainline)
 - [cmp90hx-unlock](https://github.com/WildFlash1st/cmp90hx-unlock) — the
-  V67 chain origin
-- [AD103_win_unlocker](https://huggingface.co/TOTORONG/AD103_win_unlocker)
-  (TOTORONG) — the Windows EFI carrier-craft precedent
+  V67 payload-chain origin
 - [open-gpu-kernel-modules](https://github.com/NVIDIA/open-gpu-kernel-modules)
-  (MIT) — first-hand authority on the boot path
+  (MIT) — first-hand authority on the boot path (`kgspBootGspRm`,
+  `kernel_gsp_fwsec.c`)
+- [AD103_win_unlocker](https://huggingface.co/TOTORONG/AD103_win_unlocker)
+  (TOTORONG) — the Windows EFI carrier-craft precedent (GOP
+  disconnect/chain-load handoff/transaction-log conventions)
+
+**Turing addressing and cross-checks (the 0x4096xx FEAT block)**
+
+- [cmp170hx](https://github.com/Consensus-Protocol/cmp170hx) — PLM
+  semantics, the booter 0x89/0x91 status-code dictionary and
+  verification methodology
+- [cmp50hx-unlock](https://github.com/xrip/cmp50hx-unlock) — the public
+  proof behind the Turing FEAT block `0x409650/64/6c` (basis of this
+  repo's Turing addressing)
+- [turing-unlock](https://github.com/nlzy/turing-unlock) (nlzy) — the
+  `TU_FEAT_READOUT 0x409668` citation source (ssdiag and the loader
+  share this constant)
+- [travis-mcdevitt/nv-uefi-unlocker](https://github.com/travis-mcdevitt/nv-uefi-unlocker) —
+  a downstream fork of this project; its successful Turing chain logs
+  feed the 0x91 forensics cross-check
+- [tu102-22g-uefi-unlock](https://github.com/chenxluo/tu102-22g-uefi-unlock) —
+  UEFI approach for TU102 22G modded cards (peer reference for the 22G
+  support line)
+
+**Prior Windows/UEFI work of the same kind**
+
+- [rtx30-unlock](https://github.com/craftingmod/rtx30-unlock) — the
+  Windows/UEFI port of the Zagitta kmod (GA10x predecessor)
+- [rtx30-unlock-windows-toolkit](https://github.com/Siselea/rtx30-unlock-windows-toolkit) —
+  companion toolkit for the above (single-GPU, single-display)
+- [rtx3080-unlock-public](https://github.com/rough2515-hub/rtx3080-unlock-public) —
+  earlier RTX 3080 10GB UEFI experiment (Korean)
+- [KohakUnlock](https://github.com/KohakuBlueleaf/KohakUnlock) —
+  source-first research: 2080 Ti initramfs and 4090 UEFI unlocks
+- [Turing-unlock](https://github.com/haohervchb/Turing-unlock) (haohervchb) —
+  volatile unlock on a 2080 Ti (TU102), one successful physical run
+  2026-10-22
+- [nv_unlock_win](https://github.com/mirabarukaso/nv_unlock_win) —
+  Titan RTX in-kernel Windows attempt (a different route to the same
+  goal)
+- [gpuunlock](https://github.com/miounet11/gpuunlock) — merged
+  distribution for 4090 / 4070 Ti SUPER
+
+**Register/fuse side lines**
+
+- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar) — proof
+  that the Turing BAR1 is expandable via PSTRAPS (basis of the M1
+  sample PSTRAPS decoding)
+- [ga100-fuse-re](https://github.com/ahnguyen17/ga100-fuse-re) ·
+  [gpcprobe](https://github.com/matstatman/gpcprobe) ·
+  [170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool) —
+  GA100 fuse/RIR architecture (fuse-semantics reference line)
+- [p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock) —
+  P104 PCIe Gen2 link tool (PCI config-space operation reference,
+  orthogonal to the compute unlock)
+
+**Reverse-engineering toolchain**
+
+- [envytools](https://github.com/envytools/envytools) — envydis (fuc5
+  Falcon disassembler) + nvbios
+- [faucon](https://github.com/vbe0201/faucon) — alternative fuc5
+  disassembler
 
 License: **GPL-2.0-only** (`LICENSE`). NVIDIA firmware and VBIOS remain
 NVIDIA property; regenerate them locally from pinned public packages
