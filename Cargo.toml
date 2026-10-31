@@ -7,7 +7,7 @@ members = ["loader", "assets", "sim"]
 default-members = ["assets", "sim"]
 
 [workspace.package]
-version = "2.1.6"
+version = "2.1.8"
 edition = "2021"
 license = "GPL-2.0-only"
 
