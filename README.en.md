@@ -233,7 +233,19 @@ repository.
   [HardwareCooking](https://www.hardwarecooking.fr/nv-uefi-unlocker-tensor-cores-rtx-20-30-40-windows/) (FR) ·
   [DNS Club](https://club.dns-shop.ru/amp/digest/187732-instrument-nv-uefi-unlocker-povyishaet-ii-proizvoditelnost-kart/) (RU) ·
   [Playground.ru](https://www.playground.ru/misc/news/novaya_utilita_pozvolyaet_uvelichit_proizvoditelnost_videokart_nvidia_rtx_do_75_v_zadachah_ii-1886614) (RU) ·
-  [FanaticosDelHardware](https://fanaticosdelhardware.com/nv-uefi-unlocker-multiplica-hasta-265-veces-el-rendimiento-tensor-de-las-geforce-rtx-en-windows/) (ES)
+  [FanaticosDelHardware](https://fanaticosdelhardware.com/nv-uefi-unlocker-multiplica-hasta-265-veces-el-rendimiento-tensor-de-las-geforce-rtx-en-windows/) (ES) ·
+  [OMGPU](https://www.omgpu.com/nvidia-luefi-gpu-unlocker-dope-de-75-lia-des-rtx-20-a-40-sur-windows/) (FR) ·
+  [PauseHardware](https://pausehardware.com/nvidia-tensor-rtx-debridees-sous-windows/) (FR) ·
+  [HardwarePremium](https://www.hardwarepremium.com/noticias/78275/uefi-nvidia-desbloqueador-rtx-2000-3000-4000/) (ES) ·
+  [Gaming-ST](https://gaming-st.com/gpu/nv-uefi-unlocker-windows-rtx20-30-40-tensor-unlock/) (JA) ·
+  [Shahrsakhtafzar](https://www.shahrsakhtafzar.com/fa/news/graphic-card/62809-nvidia-geforce-rtx-tensor-unlock-windows-tool) (FA) ·
+  [Quasar Zone](https://quasarzone.com/bbs/qn_hardware/views/2085634) (KO) ·
+  [GiggleHD](https://gigglehd.com/gg/hard/19358883) (KO) ·
+  [GECID](https://ua.gecid.com/news/novij_nstrument_podvoyu_produktivn_st_tenzornih_yader_dlya_v_deokart_rtx_20_40_u_windows/) (UK) ·
+  [DicasPC](https://dicaspc.com.br/noticias/nv-uefi-unlocker-libere-ate-75-mais-ia-na-sua-rtx/) (PT-BR) ·
+  [Diario da Midia](https://diariodamidia.com.br/autor/thiago-nogueira) (PT-BR) ·
+  [GPU-Unlock.net](https://gpu-unlock.net/) (EN) ·
+  [IT-SVR](https://it-svr.com/svrforum-news-3234984/) (KO)
 
 ## Star History
 

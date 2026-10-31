@@ -1,0 +1,84 @@
+ssdiag v0.5.0 field round 3 (confirmed decode), TU106 1f07 maintainer machine, 2026-11-01.
+
+First config-space ReBAR probe evidence: cap present on Turing (0x0bb0, 3 resizable
+BARs), domain {64M/128M/256M} on BAR1 with current 256 MiB matching the live window
+- see docs/reading-notes.md "ReBAR 实测修正". Decode verified: CTRL[12:8] = 2^n MiB,
+CAP raw bit (n+4) = 2^n MiB. Note 0x009a0bfc low bits drift across runs (2a/2b).
+
+---
+PLATFORM: vulnerable-driver blocklist = OFF
+PLATFORM: core isolation (HVCI)       = unknown (value absent - the Windows default applies)
+PLATFORM: Secure Boot                 = OFF
+NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs
+      a driver install (event 7045) and managed/EDR machines may alert on it.
+1 NVIDIA GPU function(s) discovered
+===== GPU 1/1: PCI\VEN_10DE&DEV_1F07&SUBSYS_86711043&REV_A1\4&23B96B75&0&0008 =====
+ranges:
+  0xc0000000-0xcfffffff (256 MiB)
+  0xd0000000-0xd1ffffff (32 MiB)
+  0xde000000-0xdeffffff (16 MiB)
+config-space ReBAR (bus 1 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [256M/128M/64M] current 256 MiB (size_idx 8)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+BAR0: 0xde000000
+--- core/debug block ---
+PMC_BOOT_0             = 0x166000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0xbadf5040 [PRIV_VIOLATION]
+GFW_PLM                = 0xffffff8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x6a2001bf
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x01fce000
+WPR2_HI                = 0x01ffee00
+MMU_PLM                = 0xbadf5040 [PRIV_VIOLATION]
+MMU_LOCK_LO            = 0x1ffffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000010
+GSP_EXCI               = 0x00000000
+SEC2_CPUCTL            = 0x00000020
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00003911
+FUSE_VER_DECODE        = 0xbadf5040 [PRIV_VIOLATION]
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (both families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xffffffef (closed (relock+drift))
+  turing 0x4096xx      SS0       = 0x88888888 [0* 0* 0* 0* 0* 0* 0* 0*]
+  turing 0x4096xx      READOUT   = 0x00000000 [full speed]
+  turing 0x4096xx      SS1       = 0x00000008 [0*]
+  ampere/ada 0x823xxx  PLM       = 0xbadf5040 (closed (non-standard))
+  ampere/ada 0x823xxx  SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  ampere/ada 0x823xxx  SS1       = 0xbadf5040 [.]
+  ampere/ada 0x823xxx  READOUT_1 = 0xbadf5040 [PRIV_VIOLATION]
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0xbadf5040 (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0xbadf5040 (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0xffffffcf (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0x00000008
+  ad1x 64g-bar1   AD1X_CFG               = 0x00000002
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0xbadf5040 (closed (non-standard))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0x00001c00
+--- ampere/ada FEAT sweep (M1 cluster) ---
+                         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+                   value 0xbadf5040 0xbadf5040 0xbadf5040 0xbadf5040 0xbadf5040 0xbadf5040 0xbadf5040 0xbadf5040 0xbadf5040
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0xbadf5040 [PRIV_VIOLATION]  0x008200d4=0xbadf5040 [PRIV_VIOLATION]
+  0x008200d8=0xbadf5040 [PRIV_VIOLATION]  0x008200dc=0xbadf5040 [PRIV_VIOLATION]
+  0x008200e0=0xffffff8f  0x008200e4=0xffffff8f
+  0x008200e8=0xbadf5040 [PRIV_VIOLATION]  0x008200ec=0xbadf5040 [PRIV_VIOLATION]
+  0x008200f0=0xbadf5040 [PRIV_VIOLATION]  0x008200f4=0xffffff8f
+  0x008200fc=0xffffffff [OPEN]  0x00823800=0xbadf5040 [PRIV_VIOLATION]
+  0x00823804=0xbadf5040 [PRIV_VIOLATION]  0x00823b00=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0008=0x49a40a0a  0x009a000c=0xff053977
+  0x009a0148=0xffffffcf  0x009a014c=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0168=0xffffffcf  0x009a03f0=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0554=0xffffffcf  0x009a0bfc=0x11042b2a
+  0x00100b10=0xffffff8f  0x00100b38=0xffffff8f
+  0x00100b84=0xffffff88  0x00100b9c=0xbadf5040 [PRIV_VIOLATION]
+FUSE_OPT_FEATURE_OVR   = 0xbadf5040 [PRIV_VIOLATION]
+FUSE_VER               = 0xbadf5040 [PRIV_VIOLATION]
+VERDICT [turing]: UNLOCKED (override values live)
+driver service removed (remove-when-done)

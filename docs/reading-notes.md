@@ -220,7 +220,8 @@ twice so we will do same"），差别全部在**设备侧旋钮**：
 → straps（自报域外但 PL0 可达）→ PLM 锁死（必须让已签固件代写），与
 PLM 模型预测严格同构，是"跨族移植=重抽重审"的又一实例。
 
-**ReBAR 实测修正（2026-11-01，TU106 1f07 field round，ssdiag v0.5.0）**：
+**ReBAR 实测修正（2026-11-01，TU106 1f07 field round，ssdiag v0.5.0；完整日志
+[docs/evidence/tu106-1f07/ssdiag-v050-rebar.log](evidence/tu106-1f07/ssdiag-v050-rebar.log)）**：
 本机 2070 的 config space **确实有** ReBAR cap（@0x0bb0，3 个 resizable BAR）
 ——"Turing 无 cap"的先验错了，Turing 的限制是**广播域小**：BAR1 支持
 {64M/128M/256M}（当前 256 MiB，与活窗 0xc0000000-0xcfffffff 精确吻合）、
