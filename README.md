@@ -10,7 +10,7 @@
 [![license](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
 [![stars](https://img.shields.io/github/stars/physicsdolphin/nv-uefi-unlocker?label=stars&color=yellow)](https://github.com/physicsdolphin/nv-uefi-unlocker/stargazers)
 
-**实测 FP16 / BF16 / TF32 张量吞吐最高约 2× · 图像 / 视频生成 +30–75% · 无 VBIOS 刷写，断电即复原**（逐卡数据见[兼容性矩阵](docs/compatibility.md)；增益受功耗墙与精度路径制约）
+**实测 FP16 / BF16 / TF32 张量吞吐最高约 2.6× · FP8 最高约 1.9× · 图像 / 视频生成 +14–75% · DirectML 推理算子最高 +94% · 无 VBIOS 刷写，断电即复原**（逐卡数据见[兼容性矩阵](docs/compatibility.md)；增益受功耗墙与精度路径制约）
 
 GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解锁工具。
 
