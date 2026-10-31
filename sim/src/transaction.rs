@@ -183,9 +183,11 @@ impl<'a> Transaction<'a> {
                 return Err(PhaseError::new("claim", "EBUSY: WPR2 initialized"));
             }
             // Issue #4.2 triage (mirror of the loader's Turing branch in
-            // claim_guards): WPR2-up at entry accepts only on firmware-window
-            // evidence (GFW completed + BSI handoff DONE, GSP not started);
-            // anything else refuses unless the operator-marker analog opts in.
+            // claim_guards): WPR2-up at entry accepts on firmware-window
+            // evidence (GFW completed, GSP not started); the BSI handoff is
+            // logged but NOT gated (scrubber FSM per OpenRM, DONE=3, TU106
+            // entry measures 1 - not a WPR2-provenance discriminator).
+            // Anything else refuses unless the operator-marker analog opts in.
             let gfw = self.gpu.read(regs::GFW_BOOT);
             let handoff = self.gpu.read(regs::BSI_SCRATCH15) >> 29 & 7;
             let cpuctl = self.gpu.read(regs::GFW_CPUCTL);
@@ -198,14 +200,14 @@ impl<'a> Transaction<'a> {
                     "EBUSY: GSP session live (CPUCTL started)",
                 ));
             }
-            if gfw == regs::GFW_BOOT_COMPLETED && handoff == 1 {
+            if gfw == regs::GFW_BOOT_COMPLETED {
                 self.note("claim: firmware-window state proven - WPR2-up accepted");
             } else if self.warm_wpr2_marker {
                 self.note("claim: evidence inconclusive, operator marker - accepted");
             } else {
                 return Err(PhaseError::new(
                     "claim",
-                    "EBUSY: Turing WPR2-up without firmware-window evidence",
+                    "EBUSY: Turing WPR2-up with GFW_BOOT not completed (warm/FLR residue)",
                 ));
             }
         }

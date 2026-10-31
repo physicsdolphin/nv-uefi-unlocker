@@ -314,14 +314,15 @@ fn t27_report_fields_come_from_reads_not_faults() {
 // ---------------------------------------------------- issue #4.2 Turing WPR2-up triage
 
 /// Turing mainline entry shape: WPR2 already provisioned, GFW completed,
-/// BSI handoff DONE - the state the community chains enter through. The
-/// triage must accept it (with evidence) and the full transaction must
-/// still go green end-to-end.
+/// GSP idle - the state the community chains enter through (TU106 measured
+/// 2026-11-01: entry BSI handoff=1 of DONE=3, so the handoff is logged but
+/// never gated). The triage must accept it (with evidence) and the full
+/// transaction must still go green end-to-end.
 #[test]
 fn t28_turing_wpr2_up_firmware_window_accepts() {
     let mut gpu = FakeGpu::new_locked_cold(None);
     gpu.force_write(regs::WPR2_HI, 0x0400_0000); // provisioned window
-    gpu.force_write(regs::BSI_SCRATCH15, 1 << 29); // handoff DONE
+    gpu.force_write(regs::BSI_SCRATCH15, 1 << 29); // handoff=1, as measured
     let mut txn = Transaction::new(&mut gpu, Faults::default());
     txn.tu10x_entry = true;
     let report = txn.run().expect("mainline entry must accept and complete");
@@ -332,27 +333,29 @@ fn t28_turing_wpr2_up_firmware_window_accepts() {
     );
 }
 
-/// Warm residue: WPR2 up but the handoff never read DONE. The old code
-/// accepted this family-wide; the triage must refuse (-EBUSY analog).
+/// Warm/FLR residue: WPR2 up and GFW_BOOT stuck mid-boot (the measured
+/// post-reset 0x101 shape). The old code accepted this family-wide; the
+/// triage must refuse (-EBUSY analog).
 #[test]
-fn t29_turing_wpr2_up_without_evidence_refused() {
+fn t29_turing_wpr2_up_gfw_incomplete_refused() {
     let mut gpu = FakeGpu::new_locked_cold(None);
     gpu.force_write(regs::WPR2_HI, 0x0400_0000);
-    gpu.force_write(regs::BSI_SCRATCH15, 0); // handoff != DONE
+    gpu.force_write(regs::GFW_BOOT, 0x101); // stuck in-progress (measured)
     let mut txn = Transaction::new(&mut gpu, Faults::default());
     txn.tu10x_entry = true;
     let err = txn.run().unwrap_err();
     assert_eq!(err.phase, "claim");
-    assert!(err.reason.contains("without firmware-window evidence"));
+    assert!(err.reason.contains("GFW_BOOT not completed"));
 }
 
-/// Same ambiguous state, operator marker present (the
+/// Same residue state, operator marker present (the
 /// \tx-accept-warm-wpr2.txt analog): accepted deliberately, chain green.
 #[test]
 fn t30_turing_wpr2_up_marker_accepts() {
     let mut gpu = FakeGpu::new_locked_cold(None);
     gpu.force_write(regs::WPR2_HI, 0x0400_0000);
-    gpu.force_write(regs::BSI_SCRATCH15, 0);
+    gpu.force_write(regs::GFW_BOOT, 0x101); // stuck in-progress (measured)
+    gpu.gfw_late_reads = 2; // the settling warm state completes right after claim
     let mut txn = Transaction::new(&mut gpu, Faults::default());
     txn.tu10x_entry = true;
     txn.warm_wpr2_marker = true;

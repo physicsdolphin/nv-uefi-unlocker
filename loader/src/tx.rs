@@ -471,9 +471,9 @@ pub fn hs_prevalidate(
 }
 
 /// Issue #4.2 escape hatch: Turing entry with WPR2 up but WITHOUT the
-/// firmware-window evidence pair (GFW completed + BSI handoff DONE, GSP not
-/// started) refuses unless the operator drops this marker on the stick root -
-/// a deliberate, per-stick accept of the ambiguous warm state.
+/// firmware-window evidence (GFW completed + GSP not started) refuses unless
+/// the operator drops this marker on the stick root - a deliberate, per-stick
+/// accept of the ambiguous warm state.
 pub const ACCEPT_WARM_WPR2_MARKER: &str = "\\tx-accept-warm-wpr2.txt";
 
 /// Cold-state guards (task brief 9.6 semantics).
@@ -483,11 +483,15 @@ pub const ACCEPT_WARM_WPR2_MARKER: &str = "\\tx-accept-warm-wpr2.txt";
 /// Turing + WPR2-up without a self-FLR (issue #4.2): WPR2-up at entry is the
 /// mainline provisioned state there, but WPR2 alone cannot tell a firmware
 /// window from "a driver used this card this power cycle". The old code
-/// blanket-accepted the whole family; the accept is now evidence-based: the
-/// firmware-window pair (GFW_BOOT completed + BSI handoff DONE, GSP not
-/// started - the same entry state the community chains run through) accepts
-/// with the evidence logged, a still-started GSP or missing evidence refuses
-/// (-EBUSY) unless `ACCEPT_WARM_WPR2_MARKER` opts in per stick.
+/// blanket-accepted the whole family; the accept is now evidence-based:
+/// GFW_BOOT completed + GSP not started (a dormant card in a boot-firmware
+/// window) accepts with the evidence logged; a still-started GSP or an
+/// in-progress GFW refuses (-EBUSY) unless `ACCEPT_WARM_WPR2_MARKER` opts in
+/// per stick. The BSI handoff is LOGGED but not gated: it is the scrubber
+/// FSM (OpenRM kgspExecuteScrubberIfNeeded_AD102, DONE=3), not a
+/// WPR2-provenance discriminator - the TU106 firmware-window entry measures
+/// handoff=1 there (evidence/tu106-triage-regression), so anchoring the
+/// accept on any handoff value would mis-refuse legitimate entries.
 pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxError> {
     // Preflight: is BAR0 decoding at all? Right after the MEM enable a powered
     // dGPU answers; one parked by the EC in D3cold (iGPU-only boot: no GOP on
@@ -534,12 +538,12 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
             info!("claim: EBUSY (GSP CPUCTL shows a started GSP session, CPUCTL={cpuctl:#x}) - a driver-era GSP may still hold the card; power off first");
             return Err(TxError::EBusy);
         }
-        if gfw == regs::GFW_BOOT_COMPLETED && handoff == 1 {
-            info!("claim: WPR2 up at entry, firmware-window state PROVEN (GFW completed + BSI handoff DONE, GSP idle) - accepted");
+        if gfw == regs::GFW_BOOT_COMPLETED {
+            info!("claim: WPR2 up at entry, firmware-window state (GFW completed, GSP idle; BSI handoff={handoff}/DONE=3, logged not gated) - accepted");
         } else if probe_file(ACCEPT_WARM_WPR2_MARKER) {
-            info!("claim: WPR2 up at entry, evidence inconclusive (GFW_BOOT={gfw:#x}, handoff={handoff}) - accepted by operator marker {ACCEPT_WARM_WPR2_MARKER}");
+            info!("claim: WPR2 up at entry, GFW_BOOT={gfw:#x} not completed (warm/FLR residue shape) - accepted by operator marker {ACCEPT_WARM_WPR2_MARKER}");
         } else {
-            info!("claim: EBUSY (Turing WPR2-up without firmware-window evidence: GFW_BOOT={gfw:#x}, BSI handoff={handoff}) - power-cycle the machine first, or drop {ACCEPT_WARM_WPR2_MARKER} on the stick to accept the warm state deliberately");
+            info!("claim: EBUSY (Turing WPR2-up but GFW_BOOT={gfw:#x} not completed - warm/FLR residue, e.g. the measured stuck 0x101; BSI handoff={handoff}) - power-cycle the machine first, or drop {ACCEPT_WARM_WPR2_MARKER} on the stick to accept the warm state deliberately");
             return Err(TxError::EBusy);
         }
     } else if hi != 0 {
