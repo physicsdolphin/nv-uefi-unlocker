@@ -24,11 +24,9 @@ HF TOTORONG/AD103_win_unlocker 与本地克隆逐字节同版，无隐藏明文/
 - 字节级终验：AD102 解密结果 @0x31b5 与 TOTORONG 发表的 status writer 逐字节相同；GA102 差异仅 canary 槽位 0x6140 vs 0x5f50（芯片差异）。
 - 复现流程（未落盘、全内存）：bindata 数组（NvU8/NvU64，raw-DEFLATE+CRC 尾）→ 解出 IMAGE_DBG → 按 HEADER_DBG 字段 `[sec_off : sec_off+sec_size]` AES-ECB 解密（DMEM 不解、NS 前缀保留）→ entropy/SHA/控制值三验。**解密产物与全量反汇编列表只在本地工作目录，永不入库。**
 
-## 3. TU10x 密钥缺口
+## 3. TU10x 密钥（~~缺口~~ → **已破，2026-11-01，见 §7**）
 
-- TU102 610.43.03 DBG padding 最频块 = `24e89313dcbd280aa71a071bed8f53c1`（14 次）= **`AES(key_TU10x, 00×16)` 的已知验证值**——拿到 key 的瞬间即可解密钉版包内 TU102 IMAGE_DBG（59136 B，与量产同版）。
-- GitHub 全站 code search 该 hex 无命中；gist 无 Turing key。
-- 线索：gist 提及 "Lapsus Booter disassembly"（带 `_acrVerifySignature_TU10X` 等**符号**）——Lapsus 2022 泄露源码树中存在过 TU10x booter 的完整反汇编，暗示 TU 明文/debug 工具链在私人手里。次级线索：PetriKrohn/BlackSun 材料、FAUCON/envytools 社区 key 表。
+- 验证标记 `24e89313dcbd280aa71a071bed8f53c1`（=AES(key6,00×16)）最初来自 TU102 DBG padding 频谱；**key=编号测试 key 族 #6**（cmp170hx csecret 表 secret(6)+shuttie published test-key family），TU102/TU116 共用。破过程与 TU 语义图见 §7；本节保留为历史记录。GitHub 全站码搜无命中（key 字节串从未公开提交过——公开的只有族结构与 KAT）。
 
 ## 4. 状态码写入结构（GA10x 明文实测）
 
@@ -62,8 +60,31 @@ HF TOTORONG/AD103_win_unlocker 与本地克隆逐字节同版，无隐藏明文/
 
 **含义**：①#57/#82 的 0x0B/0x11 应按"bringup 阶段号"重新解读——0x91 修复（等 HALT）已在 v2.1.8 默认，剩下的 B 类死亡点在 bringup 步骤（radix/boot image 交接的 DMA 阶段——与 #74 的"签名/radix ≥4GiB→bringup 挂死"同域）；②#74 的 meta≥4G→0x89 在 GA 码表上=meta 读回不符（平台不可达的读失败恰好落进 0x89 族，非邮箱宽度问题）；③stage 表的逐号语义（0x0B/0x11 各对应哪一步）需 TU 明文或 GA 递归下降全注释——后续工作。
 
-## 7. 后续工作项（不在本轮）
+## 7. TU debug key 已破（2026-11-01，key 族 #6）+ TU102 明文语义图
 
-- GA 系递归下降全注释（stage 表逐号语义 → 0x0B/0x11 具体步骤名）；envydis 线性扫描在变长指令流有失同步区，正式注释需分支锚定。
-- TU key 线索跟踪（Lapsus 树/社区 key 表）。
-- 若 TU key 到手：解密 TU102 IMAGE_DBG → 直接检索 TU 码表与 stage 表闭环。
+**Key**：TU10x（TU102/TU116 共用）debug key = 编号测试 key 族的 **#6**（族结构：`key(N) = [N] || EF CD AB 89 67 45 23 10 32 54 76 98 BA DC FE`——MD5-IV 词流的 BE 字节序删 0x01 后前插索引；GA 系=#37/0x25，同族）。出处：cmp170hx csecret 表"ECB blob decryption = secret(6)"+shuttie/bf16-unlock-blackwell-research 定义的 published test-key family；**密钥字节按宪法不入库**，KAT 指针代替：`AES(key6, 00×16)=24e89313dcbd280aa71a071bed8f53c1`、`AES(key6, FF×16)=1610a8b51609725eb31e1e1fc13f22ab`。TU116 旧"58e4591c"条目证伪（噪声）。复现：`nv-uefi-re/tudecrypt.py`（KAT 自验内置）+ 钉版/本地 generated bindata。
+
+**TU102 明文验证链**：首指令 `89 fc ff 00`（=cmp170hx 记载的 `mov $r9 0xfffc`）；熵 6.943；零块 5 块↔密文标记 5 次自洽；TU116 同 key（首指令同、熵 6.937、零块 6）。
+
+**TU102 语义图（文件地址；真=文件+0x100；与 GA 同构）**：
+
+| 结构 | TU102 文件偏移 | GA102 对照 |
+|---|---|---|
+| 0x91 产生点 | **0x2995** `mov $r10 0x91` | 0x28b6 |
+| 0x91 机制 | **0x2937-0x2981：读活 WPR2（0x1fa824/28）→ hi 侧 +0x20000 → 64 位差值须恰 0x100000（1 MiB）**→ 不等 0x91 | 同构（窗口尾常数代际差异） |
+| 0x8a/0x89 | 0x1263 / 0x17e6、0x17f4、0x2863 | 同构 |
+| **0x0b 产生点** | **0x37dd `mov $r0 0xb`**：0x37cc `ld $r10 D[$sp+0x44]` → 0x37d5 `lcall 0x7c93(…, 0x5a00, 0x20)` **32B 终判比较** → 不等 0xb | GA 0x8254 终判（sig+0x15f, 0x5a00, 0x20）→ 同构 |
+| GetParam | **0x2d5e**（真 0x2e5e）：`mov $r10 <id>; lcall 0x2d5e`——0xa/0xb/0xc/0xd… 使能字段序列 @0x2fab-0x2fd9+（id 实参≠错误码）；0x11×5 处（0x323d/0x33ae/0x5f03/0x60d6/0x62b4）=期望值表 id | GA 0x2b69 同角色 |
+| 错误登记 | 0x1b0f ×24（码 0x38/0x15…与 GA 同族） | GA 0x1b56 ×26 |
+| __stack_chk_fail | 0x7948 区：`mov $r15 0x47; mov $r9 0x1000; iowrs`（写 0x47 停机）+ 0x7a38 包装 ×135 | GA 0x7ed3 ×141 |
+| MMIO r/w | 0xf27 ×69 / 0xe3b ×66 | GA 0xf7c/0xe90 |
+| DMA helper | 0x532 ×15（canary 0x6140 同 GA） | GA 0x5b9 |
+| meta magic | 0x371a60b3/dc3aae21 ×6 | 同 |
+| mailbox 语义 | EXIT 时 $r10→mailbox0（NS 桩 0x31 为进度标记被终值覆盖） | 同 |
+
+**B 类最终判读（TU 源码级）**：0x91=**WPR 窗口几何校验失败**（逐指令确认，v2.1.8 竞态修复的 TU 侧机制闭环）；**0x0B=终判 32B 哈希比较失败（PSS 尾，逐指令确认）**；0x11=验签参数域（期望值表 id，精确失败指令待 GetParam 0x2d5e 递归下降）。⇒ **#57（0x0B/0x11）/#82（0x0B）：meta/WPR2 校验全部通过、死在签名页 DMA→PSS 验签→哈希对账域**——与 #74"签名/radix ≥4GiB→挂死"同域；第一嫌疑=该域 DMA 地址带，首选消融=全局低位轮（协议 v2 B 类第 1 条）。
+
+## 8. 后续工作项（不在本轮）
+
+- TU GetParam 0x2d5e 递归下降（0x11 失败返回路径定案）；TU116 差分。
+- GA 系递归下降全注释（正式分支锚定版）。

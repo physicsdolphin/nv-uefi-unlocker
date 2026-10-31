@@ -203,7 +203,7 @@ travis 成功的额外信息：证明 C-load 成功**不需要** PTIMER 与 host
 2. diag 分支 `parse_num_ascii` 吃不掉 `0x` 前缀（"0x200" 无声失效、"512" 可用）——坑了 #57 的 E 轮；v2.1.8 修复+回归测试。
 3. `signature DMA never landed` verdict 是 V67 专用检查的恒假阴性（#14 成功轮、#90 实际成功皆有此行）——v2.1.8 文案已改。
 
-**残留类汇总（2026-11-01 更新）**：A=FWSEC 死（staging 带：#74 TB 型已由 v2.1.8 低位默认覆盖；#89 VRAM 型待 FWSEC-VRAM 载具落地）；B=签名/验证参数域码 0x0B/0x11（#57/#82；GA 明文 RE 定位：0x0b=PSS 终判哈希不等/验签参数 id、0x11=期望值表 id——meta 校验已过、死在签名验证域；TU 精确映射待 TU debug key，见 keychain §6-7）；C=0x0+sanitize 误读（文案已修）；D=Windows 侧重编程（#82 实测 GSP 615.78/驱动 617.42 init 重编程 FEAT；成功例均 ≥621/620）；E=Windows 病态疑硬件（#90）。另：#91（Catnip202X）提议 DMEM 内 WprMeta 全字段 dump 与成功机 A/B——可由 v2.1.8 的 BOOTER-AUDIT 框架扩展实现。
+**残留类汇总（2026-11-01 更新）**：A=FWSEC 死（staging 带：#74 TB 型已由 v2.1.8 低位默认覆盖；#89 VRAM 型待 FWSEC-VRAM 载具落地）；B=签名/验证域码 0x0B/0x11（#57/#82；**TU 明文 RE 已定案**——key 族 #6 破解后 TU102 全量反汇编：0x0B=终判 32B 哈希比较失败（PSS 尾，0x37dd）、0x11=期望值表 id、0x91=WPR 窗口 1MiB 几何校验（0x2995），见 keychain §7）；C=0x0+sanitize 误读（文案已修）；D=Windows 侧重编程（#82 实测 GSP 615.78/驱动 617.42 init 重编程 FEAT；成功例均 ≥621/620）；E=Windows 病态疑硬件（#90）。另：#91（Catnip202X）提议 DMEM 内 WprMeta 全字段 dump 与成功机 A/B——可由 v2.1.8 的 BOOTER-AUDIT 框架扩展实现。
 
 ## 维护结论（2026-11-01 定案版）
 
