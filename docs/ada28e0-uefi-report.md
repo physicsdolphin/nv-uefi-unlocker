@@ -134,29 +134,9 @@ payload 永不入库；一切资产从钉 SHA-256 的公开输入本地再生；
 
 ## 社区贡献与参照源
 
-本项目是社区工作的直接受益者与衍生者，按依赖与影响排序：
-
-- **[gpu-unlock](https://github.com/Zagitta/gpu-unlock)**（Zagitta，GPL-2.0）：
-  GA10x kmod 权威范本。`unlock_610.c` 是本仓库事务链的移植母本
-  （falcon_reset/HS 启动/WprMeta/FLR），`layout_610.c` 是布局算法原版。
-- **[gpu-unlock-ada](https://github.com/JustAResearcher/gpu-unlock-ada)**
-  （JustAResearcher 及全部卡片报告贡献者，GPL-2.0）：AD10x 四写链与审计纪律
-  的源头。特别感谢 **Windroid234** 的 28e1 报告——与本卡一 ID 之差的完整
-  实测（2.00×、稳定性验证、OEM 注意事项），是本项目 M4 立项的直接依据；
-  以及 2705/2805/2882/28a0 等全部 canary 报告作者。
-- **[cmp170hx](https://github.com/Consensus-Protocol/cmp170hx)**
-  （Consensus-Protocol）：PLM 语义、四写表、SS0/SS1、"读回是唯一判据"方法论。
-- **[cmp90hx-unlock](https://github.com/WildFlash1st/cmp90hx-unlock)**
-  （WildFlash1st）：GA102 V67 链源头（rejoin15 补丁集）。
-- **[AD103_win_unlocker](https://huggingface.co/TOTORONG/AD103_win_unlocker)**
-  （TOTORONG）：Windows EFI 载具工艺的唯一公开先例——GOP 断连/交棒纪律、
-  FLR 与 PCI 恢复时序、 containment 设计均对照其对齐。
-- **[open-gpu-kernel-modules](https://github.com/NVIDIA/open-gpu-kernel-modules)**
-  （NVIDIA，MIT；本仓库钉 610.43.03 源包）：Turing/Ada 引导路径的一手权威
-  （kernel_gsp_tu102/falcon/booter/frts、BINDATA、BCR/BROM 寄存器定义）。
-- **[envytools](https://github.com/envytools/envytools)**：falcon 寄存器与
-  ISA 文档。
-- Rust 生态：`uefi-rs`、`miniz_oxide`、`crc32fast`、`sha2`。
+本项目是社区工作的直接受益者与衍生者。完整致谢（事务链母本、Turing 谱系、
+同类先行工作、寄存器/熔丝侧线、报告者与协作者，均按仓库历史中的实际作用
+核对归类）已独立成文：**[docs/credits.md](credits.md)**。
 
 许可：**GPL-2.0-only**（与上游一致；见 `LICENSE`）。NVIDIA 固件与 VBIOS
 版权归 NVIDIA，按其原许可条款从钉版公开包本地再生，不在本仓库分发。

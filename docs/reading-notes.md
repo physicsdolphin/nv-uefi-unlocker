@@ -199,3 +199,45 @@ PCIe Gen2 重训绝不在 pre-OS 做（X99/X299 挂死，OS 侧 BYOVD 做）；�
 归档 blob（钉 610.43.03），fwsec=自 PROM 抽（M2 已计划），fwsignature
 =TU10x 签名段；开放问题 #10 的关闭路径不变但风险大降。
 
+
+## ReBarUEFI 考据（2026-11-01，xCuri0/ReBarUEFI @ master 9c80fdb，已 clone 入 reference/）
+
+ReBarUEFI（0.1–0.3 tag）= NvStrapsReBar 的上游本体：同一个 DXE 载具
+（hook `EFI_PCI_HOST_BRIDGE_RESOURCE_ALLOCATION_PROTOCOL.PreprocessController`，
+EfiPciBeforeResourceCollection 相位里"EDK2 PciBusDxe setups Resizable BAR
+twice so we will do same"），差别全部在**设备侧旋钮**：
+
+**为什么分版本（ReBarUEFI vs NvStrapsReBar）= BAR1 尺寸旋钮随代际换位置**：
+
+| 代际 | 旋钮 | 可达性 | 载具 |
+|---|---|---|---|
+| RTX 30 系+（Ampere+）/现代 AMD | PCIe ReBAR 扩展能力（cap ID 0x15）：`PCI_REBAR_CAP` 广播支持尺寸、`PCI_REBAR_CTRL` 写选定值 | 配置空间，PL0 可写，**设备自报尺寸域** | ReBarUEFI，328 行 C，完全 GPU 无关（仅一个 AMD cap dword quirk） |
+| Turing（20/16 系） | PSTRAPS（PEXTDEV 0x101000，SET0[15:14]+SET1[22:20]） | BAR0 MMIO，PL0 可写，但位义逐代不同且**无 ReBAR cap 广播** | NvStrapsReBar fork（strap 改写 + 枚举期载具不变） |
+| Pascal- | straps 可写但 ReBAR cap 不存在 | 只能固定大 BAR，Windows 驱动 BSOD | 不支持 resize |
+| AD10x 超广播域（64G） | CYA 0x88724 / CFG 0x88dcc | **PLM 锁死，SEC2 heavy-secure 内写** | gpu-unlock-bar1 谱系（本仓库 M5 线） |
+
+即同一"改 BAR1"目标在四代硬件上是四种机制——旋钮从配置空间（自报域内）
+→ straps（自报域外但 PL0 可达）→ PLM 锁死（必须让已签固件代写），与
+PLM 模型预测严格同构，是"跨族移植=重抽重审"的又一实例。
+
+**对我们的增量信息**：
+1. **枚举期是硬约束**：resize 必须发生在 `PreprocessController`
+   （枚举相位内），PciBus 同轮分窗口；EFI **app**（我们）运行在枚举后，
+   改 BAR 后需自重配 root bridge aperture——把 NvStrapsReBar 节"记录不
+   立项"的裁决机制化。若未来真要做，唯一正路是 DXE 驱动载具，不是 app。
+2. **M1/ssdiag 增量采样点**：只读 ReBAR 扩展能力（config space 走链找
+   cap 0x15 → 读 CAP sizes + CTRL）即可逐卡回答"是否自报 ReBAR、支持
+   域多大"——TU106 预期缺席/单值、GA106 预期有域，把 #88"ReBAR 非硬
+   前提"裁决变成逐卡可读数。
+3. **GA10x + A4G/ReBAR 板的 BAR1 大孔径**对 `\tx-meta-in-vram` 的
+   BAR1 批量拷贝是纯加速（84MB 少换窗）；与 booter 0x91 的 >4GB staging
+   需求**正交**（booter 读 sysmem 走设备 DMA，不经 BAR1 孔径）——勿混。
+4. ReBarState 的 NVRAM 变量 + CMOS 复位年检（before BUILD_YEAR 即静默
+   禁用）是"防御性默认关"范式；我们用 U 盘 marker 文件（宪法不动
+   NVRAM），两条路线互为对照。
+5. UEFIPatch 补丁目录 = 平台固件大 BAR 限制分类学（<4G/<16G/<64G 上限、
+   MMIO 39/36-bit 扩充、64 位 BAR 降级防护、X79 A4G fix）——#88 裁决
+   "A4G 非硬前提"的用户侧补充文档：即使开了 A4G，固件处理大 BAR 的能
+   力仍是独立变量。
+6. Linux 免刷 BIOS 路径（4G decoding + `pci=realloc` 自动 resize）——
+   RTD3/Linux 线（issue #9）的背景资料。

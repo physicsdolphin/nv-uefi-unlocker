@@ -118,7 +118,7 @@ bash release/make-usbroot.sh --family 40 \
 ## 参考资料与仓库
 
 本项目是社区工作的直接受益者与衍生者，完整致谢见
-[docs/ada28e0-uefi-report.md](docs/ada28e0-uefi-report.md) 的同名章节。
+[docs/credits.md](docs/credits.md)（按仓库历史中的实际作用核对归类）。
 开发期实际研读与引用的仓库已 clone 至本地 `reference/`（不入库），按作用分组：
 
 **事务链母本与一手权威**
@@ -172,8 +172,11 @@ bash release/make-usbroot.sh --family 40 \
 
 **寄存器/熔丝侧线**
 
-- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar)——推翻本项目
-  此前"Turing BAR1 不可扩"的判断；M1 采样 PSTRAPS 解码直接依据
+- [ReBarUEFI](https://github.com/xCuri0/ReBarUEFI)（xCuri0，MIT）——30 系+
+  ReBAR 平台侧机制权威（枚举期 hook + PCIe ReBAR 扩展能力）与平台大 BAR
+  限制补丁目录；[NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar)
+  是其 Turing fork——推翻本项目此前"Turing BAR1 不可扩"的判断；M1 采样
+  PSTRAPS 解码直接依据
 - [ga100-fuse-re](https://github.com/ahnguyen17/ga100-fuse-re) ·
   [gpcprobe](https://github.com/matstatman/gpcprobe) ·
   [170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool)——GA100

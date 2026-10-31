@@ -118,8 +118,8 @@ Combined operation can substantially exceed stock power and thermal envelopes; c
 ## References and repositories
 
 This project is a direct beneficiary and derivative of community work;
-full credits in the same-named section of
-[docs/ada28e0-uefi-report.md](docs/ada28e0-uefi-report.md). The
+full credits in [docs/credits.md](docs/credits.md) (verified against
+each item's actual role in the repo history). The
 repositories actually studied and cited during development are cloned
 into a local, untracked `reference/` directory, grouped by role:
 
@@ -190,9 +190,13 @@ into a local, untracked `reference/` directory, grouped by role:
 
 **Register/fuse side lines**
 
-- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar) —
-  overturned this project's earlier "Turing BAR1 is not expandable"
-  assumption; direct basis of the M1 sample PSTRAPS decoding
+- [ReBarUEFI](https://github.com/xCuri0/ReBarUEFI) (xCuri0, MIT) — the
+  platform-side authority for ReBAR on RTX 30+ (enumeration-time hook +
+  PCIe ReBAR extended capability) and the catalog of platform large-BAR
+  limitation patches; [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar)
+  is its Turing fork — overturned this project's earlier "Turing BAR1 is
+  not expandable" assumption; direct basis of the M1 sample PSTRAPS
+  decoding
 - [ga100-fuse-re](https://github.com/ahnguyen17/ga100-fuse-re) ·
   [gpcprobe](https://github.com/matstatman/gpcprobe) ·
   [170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool) —
