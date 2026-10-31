@@ -36,10 +36,36 @@ and re-verified at startup, fail-closed) is **bundled in the exe**. On run:
 Elevation is required for the deploy path (`OpenSCManager`); borrowing an
 already-running driver works unelevated only if the device ACL allows it.
 
+## Platform gates (preflight)
+
+Before any deploy, the tool prints three platform gates (also via
+`ssdiag --dry-run`, which loads nothing):
+
+- **Secure Boot** — the gate that actually refuses this driver. The pinned
+  `pmxdrv.sys` is Intel/COMODO cross-signed (leaf cert issued 2018-10-24, no
+  Microsoft root), so on a Secure Boot-ON machine it fits none of the
+  [DSE cross-signing carve-outs](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/kernel-mode-code-signing-policy--windows-vista-and-later-)
+  (exemptions: OS upgraded from Windows <= 1607, Secure Boot off, or a
+  signing cert issued before 2015-07-29) and the load is expected to be
+  refused.
+- **Vulnerable-driver blocklist / core isolation (HVCI)** — informational:
+  the pinned hash is **not** on the current Microsoft blocklist (verified
+  2026-11 against both the OS-delivered `driversipolicy.p7b` and the fuller
+  downloadable policy — no `pmxdrv` entry in any hash form, while in-list
+  control hashes do match). These gates refuse nothing for this driver until
+  Microsoft adds the hash; see issue #40 for the full evidence trail.
+
+The historical "pmxdrv blocked" experience comes from a different binary: the
+2010-era file circulating as `pmxdrv.sys` was WinRing0 1.2.2, which the
+blocklist denies under its WinRing0 rules. Note also that 1.0.0.1003 is the
+pre-fix build of the Eclypsium-disclosed flaw (CVE-2019-11147, compiled
+2019-07-16, fix shipped 2019-11-12) — "not blocked" is not "patched".
+
 ## Usage
 
 ```text
 ssdiag                              # dump every NVIDIA display GPU (auto-discovers BAR0 per card)
+ssdiag --dry-run                    # print platform gates + discovered cards, load nothing
 ssdiag --reapply                    # + SS0=0x88888888 SS1=0x8 per card where the gate is open
 ssdiag --select 1F07                # narrow to functions whose DeviceID matches
 ```

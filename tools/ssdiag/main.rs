@@ -168,6 +168,8 @@ fn hklm_dword(subkey: &str, value: &str) -> Option<u32> {
 const CI_CONFIG: &str = "SYSTEM\\CurrentControlSet\\Control\\CI\\Config";
 const HVCI_SCENARIO: &str =
     "SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity";
+/// `UEFISecureBootEnabled`: 1 = Secure Boot on, 0 = off; readable unelevated.
+const SECUREBOOT_STATE: &str = r"SYSTEM\CurrentControlSet\Control\SecureBoot\State";
 
 fn gate_word(v: Option<u32>) -> &'static str {
     match v {
@@ -177,24 +179,47 @@ fn gate_word(v: Option<u32>) -> &'static str {
     }
 }
 
-/// The two gates that decide whether pmxdrv can load at all, plus what
-/// installing it looks like from the outside. Both values are readable without
-/// the driver, so this runs before anything is deployed - and `--dry-run` can
-/// print it on a machine where the real run would only fail with a raw win32
-/// code.
+/// The platform gates that decide whether the pinned pmxdrv can load at all,
+/// plus what installing it looks like from the outside. All values are
+/// readable without the driver, so this runs before anything is deployed -
+/// and `--dry-run` can print it on a machine where the real run would only
+/// fail with a raw win32 code.
+///
+/// Gate semantics (verified 2026-11, issue #40):
+/// - Secure Boot ON is the gate that actually refuses THIS driver: the pinned
+///   pmxdrv.sys is Intel/COMODO cross-signed (leaf cert issued 2018-10-24, no
+///   Microsoft root), so it qualifies for none of the DSE cross-signing
+///   carve-outs (only machines upgraded from Windows <= 1607, Secure Boot
+///   off, or end-entity certs issued before 2015-07-29 are exempt).
+/// - The Microsoft vulnerable-driver blocklist does NOT list this hash (file
+///   SHA256, authentihashes and imphash all absent from both the OS-delivered
+///   and the downloadable policies, with in-list control hashes verified), so
+///   blocklist/HVCI being ON refuses nothing until Microsoft adds the hash.
 fn preflight() {
     let blocklist = hklm_dword(CI_CONFIG, "VulnerableDriverBlocklistEnable");
     let hvci = hklm_dword(HVCI_SCENARIO, "Enabled");
+    let secure_boot = hklm_dword(SECUREBOOT_STATE, "UEFISecureBootEnabled");
     println!("PLATFORM: vulnerable-driver blocklist = {}", gate_word(blocklist));
     println!("PLATFORM: core isolation (HVCI)       = {}", gate_word(hvci));
+    println!("PLATFORM: Secure Boot                 = {}", gate_word(secure_boot));
+    if secure_boot == Some(1) {
+        println!(
+            "{}",
+            red("PLATFORM: Secure Boot is ON - the pinned pmxdrv.sys cannot load here.")
+        );
+        println!("  It is cross-signed (Intel/COMODO, no Microsoft root, signing cert issued");
+        println!("  after the 2015-07-29 cutoff), so it fits none of the DSE carve-outs and");
+        println!("  StartService is expected to be refused - unless this OS was upgraded from");
+        println!("  Windows <= 1607. The driver-free path is the EFI read-only sampler.");
+    }
     if blocklist == Some(1) || hvci == Some(1) {
         println!(
             "{}",
-            red("PLATFORM: pmxdrv cannot load here - StartService will be refused.")
+            yellow("PLATFORM: blocklist/HVCI gate is ON, but that alone refuses nothing here.")
         );
-        println!("  Either turn the gate off deliberately (Windows Security -> Device security ->");
-        println!("  Core isolation), or use the EFI read-only sampler in this repo: it reaches the");
-        println!("  same FEAT registers with no driver at all.");
+        println!("  The pinned pmxdrv hash is NOT on the current Microsoft blocklist (checked");
+        println!("  2026-11 against the OS-delivered and downloadable policies); it loads or");
+        println!("  fails on the signature gate above, not on this one.");
     }
     println!("NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs");
     println!("      a driver install (event 7045) and managed/EDR machines may alert on it.");
@@ -284,6 +309,10 @@ fn green(s: &str) -> String {
 
 fn red(s: &str) -> String {
     paint("91", s)
+}
+
+fn yellow(s: &str) -> String {
+    paint("93", s)
 }
 
 // ---------------------------------------------------------------- NVAPI GC6 wake
