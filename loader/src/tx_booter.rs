@@ -1181,11 +1181,11 @@ pub fn verify_execution_tu10x(gpu: &TxGpu, payload_mode: bool, meta: &[u8]) -> R
     let ss0 = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_SS0 as u64);
     let ss1 = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_SS1 as u64);
     info!("POST-BOOT: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} (Turing 0x4096xx block)");
-    // Factory compute-throttle readout: on Turing this is only readable once
-    // the payload has opened the FEAT PLM (open-questions #1/#10). In replay
-    // mode it stays badf-locked and doubles as the negative control.
+    // Keep the generic address as diagnostic data only. A BADF response at
+    // 0x823818 does not establish the state of Turing's 0x409650 PLM above.
+    // No effective-speed interpretation of this generic read is assumed.
     let readout1 = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_READOUT_1 as u64);
-    info!("POST-BOOT: FACTORY FEAT_READOUT_1={readout1:#010x} (0 = full speed; badf5040 = PLM still closed)");
+    info!("POST-BOOT: generic 0x823818 diagnostic={readout1:#010x} (not a Turing PLM or speed verdict)");
     let mbox0 = gpu.pci.bar_read_u32(gpu.bar, (crate::tx::eng::SEC2 + 0x40) as u64);
     let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
     info!("POST-BOOT: SEC2 MAILBOX0={mbox0:#010x} WPR2_HI={wpr_hi:#x}");

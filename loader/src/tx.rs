@@ -59,6 +59,9 @@ pub enum TxError {
     ERange,
     EBusy,
     EAlready,
+    /// FEAT PLM transport read failed during claim; do not reset over an
+    /// unknown pre-existing state in the generic failure handler.
+    EClaimUnreadable,
     /// Warm (non-D0) entry: aborted before any GPU write, nothing to undo.
     EWarm,
 }
@@ -486,15 +489,17 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     // survive FLR (13th fire) - so a live Turing unlock must be detected and
     // SKIPPED, never reset over.
     let feat_plm_addr = if family == "tu10x" { 0x0040_9650 } else { regs::FEAT_PLM };
-    match gpu.read32(feat_plm_addr) {
-        Err(TxError::EIO) => info!("claim: FEAT PLM unreadable (Turing-locked) - EALREADY check skipped"),
-        Err(e) => return Err(e),
-        Ok(plm) => {
-            if plm == 0xffff_ffff {
-                info!("claim: EALREADY (FEAT PLM open at {feat_plm_addr:#010x}) - already unlocked, skip (da96e3f)");
-                return Err(TxError::EAlready);
-            }
+    // read32() rejects all ones, which is precisely the OPEN value here.
+    // Preserve PCI I/O failure separately from valid register contents.
+    use crate::claim_plm::{classify, ClaimPlm};
+    match classify(gpu.pci.bar_try_read_u32(gpu.bar, feat_plm_addr as u64)) {
+        ClaimPlm::Open => {
+            info!("claim: EALREADY (FEAT PLM open at {feat_plm_addr:#010x}) - already unlocked, skip (da96e3f)");
+            return Err(TxError::EAlready);
         }
+        ClaimPlm::Inaccessible => info!("claim: FEAT PLM BADF response - EALREADY check skipped"),
+        ClaimPlm::ReadFailed => return Err(TxError::EClaimUnreadable),
+        ClaimPlm::NotOpen => {}
     }
     let hi = gpu.read32(regs::WPR2_HI)?;
     if hi != 0 && !post_flr {
