@@ -510,12 +510,31 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     // survive FLR (13th fire) - so a live Turing unlock must be detected and
     // SKIPPED, never reset over.
     let feat_plm_addr = if family == "tu10x" { 0x0040_9650 } else { regs::FEAT_PLM };
+    // Same-block corroboration BEFORE the PLM is consulted (Catnip review,
+    // PR #65): a dead block answers all-ones for every address, so PLM=
+    // all-ones alone cannot distinguish "open" from "not answering". The
+    // corroborator must traverse the SAME register block as the PLM — the
+    // cluster's SS0 (0x82381c GA10x / 0x409664 Turing). PMC_BOOT_0 lives in
+    // a different block and proves nothing about this one; it is logged by
+    // the chip preflight above and nothing more. Semantics: transport
+    // failure or all-ones on the corroborator = dead block ->
+    // EClaimUnreadable (the PLM is never consulted); ANY other value,
+    // INCLUDING BADF, is an answered transaction and proves the block alive
+    // (the Turing locked cluster answers badf5040 on every register at PL0).
+    let corroborator_addr = if family == "tu10x" { 0x0040_9664 } else { regs::FEAT_SS0 };
+    match gpu.pci.bar_try_read_u32(gpu.bar, corroborator_addr as u64) {
+        None => {}
+        Some(v) if v == !0u32 => {
+            info!(
+                "claim: FEAT block corroborator (SS0 at {corroborator_addr:#010x}) dead (all-ones/transport fail) - the PLM is never consulted"
+            );
+            return Err(TxError::EClaimUnreadable);
+        }
+        _ => {}
+    }
     // read32() rejects all ones, which is precisely the OPEN value here —
     // the EALREADY branch was dead for open PLMs (PR #65). The transport
     // failure case is preserved separately from valid register contents.
-    // Ordering guarantee for the dead-window case (Catnip review, PR #65):
-    // the chip preflight above already refused an all-ones PMC_BOOT_0, so an
-    // all-ones PLM here is a genuinely open register, not a dead window.
     use crate::claim_plm::{classify, ClaimPlm};
     match classify(gpu.pci.bar_try_read_u32(gpu.bar, feat_plm_addr as u64)) {
         ClaimPlm::Open => {
