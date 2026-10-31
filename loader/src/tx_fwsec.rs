@@ -326,22 +326,26 @@ pub fn layout_from_registers(
     );
     // FB_SIZE_MIB is PLM-LOCKED at PL0 on Turing (measured 2026-10-26/27:
     // badf5040, unlike Ada where it reads) - first fire failed exactly here.
-    // Driver-exact source instead: NV_PFB_PRI_MMU_LOCAL_MEMORY_RANGE
-    // (0x100ce0 on TU102, GP102 layout) is programmed by VBIOS devinit with
-    // the USABLE FB window and the GSP booter validates WprMeta.fbSize
-    // against the same value - kmemsysReadUsableFbSize_GP102 decodes
-    // mag[27:4] << (scale[3:0]+20) and keeps 15/16 when ECC (bit30) is on.
-    // The #17 card reads 0x2c9 = 44 << 29 = 22528 MiB, exactly the C
-    // reference fbSize; issue #57's nominal-24G TITAN RTX reporting 0x11
-    // with a marker-fed 24G makes a smaller usable window (ECC, devinit
-    // reserve) the prime suspect - decode, log, and never guess.
+    // Driver-exact source instead: NV_PFB_PRI_MMU_LOCAL_MEMORY_RANGE is
+    // programmed by VBIOS devinit with the USABLE FB window and the GSP
+    // booter validates WprMeta.fbSize against the same value. Turing
+    // overrides neither the register nor the decode: turing/tu102/dev_fb.h
+    // keeps the GP102 definition (0x100ce0, LOWER_MAG[9:4], LOWER_SCALE
+    // [3:0], ECC_MODE[30]) and kern_mem_sys_tu102.c defines no
+    // ReadUsableFbSize body, so TU102 runs kmemsysReadUsableFbSize_GP102
+    // verbatim: mag << (scale+20), 15/16 when ECC is on. Field-verified
+    // bit-exact on every current-build Turing log: 0x2c9 -> 22528 MiB
+    // twice (#17 and #84's 0x1e04 22G board), 0x208 -> 8192 MiB (#62).
+    // Do NOT read issue #57's 0x11 as an LMR value - that is the booter
+    // mailbox status (meta/staging rejection), misattributed here before.
+    // Decode, log, and never guess.
     let fb_mib = if inaccessible(fb_raw) {
         if family == "tu10x" {
             const FB_MIB_TU106_1F07: u32 = 8192;
             const LOCAL_MEMORY_RANGE: u32 = 0x0010_0ce0;
             let lmr = gpu.read32_raw(LOCAL_MEMORY_RANGE);
             let decoded_mib = if !inaccessible(lmr) {
-                let mag = (lmr >> 4) & 0x00ff_ffff; // [27:4]
+                let mag = (lmr >> 4) & 0x3f; // [9:4] LOWER_MAG
                 let scale = lmr & 0xf; // [3:0]
                 let bytes = (mag as u64) << (scale + 20);
                 let bytes = if lmr & (1 << 30) != 0 { bytes / 16 * 15 } else { bytes };
@@ -372,8 +376,11 @@ pub fn layout_from_registers(
                             (gib * 1024) as u32
                         }
                         None => {
+                            // Config 0x00 = vendor|device<<16; print the id so a
+                            // field log identifies the SKU without the marker.
+                            let dev = (gpu.pci.config_read_u32(0) >> 16) as u16;
                             info!(
-                                "layout: FB_SIZE_MIB PLM-locked on Turing ({fb_raw:#010x}), LOCAL_MEMORY_RANGE {lmr:#010x} undecodable - using SKU geometry 8192 MiB (10de:1f07); refuse and extend the table for other TU106 SKUs"
+                                "layout: FB_SIZE_MIB PLM-locked on Turing ({fb_raw:#010x}), LOCAL_MEMORY_RANGE {lmr:#010x} undecodable on 10de:{dev:04x} - no driver-exact FB source; defaulting to 8192 MiB - write \\tu10x-fb-gb.txt (GiB) or extend the fallback with a measured card"
                             );
                             FB_MIB_TU106_1F07
                         }
