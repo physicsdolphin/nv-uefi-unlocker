@@ -18,6 +18,7 @@ mod keywait;
 mod logging;
 mod pci;
 mod sample;
+mod timing;
 #[cfg(feature = "tx")]
 mod tx;
 #[cfg(feature = "tx")]
@@ -37,12 +38,31 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// stick root, the operator has declared intent ON THE STICK ITSELF - the
 /// wait becomes a short countdown that auto-proceeds, any key aborts.
 const ARMED_MARKER: &CStr16 = cstr16!(r"\i_know_what_i_am_doing.txt");
+/// Issue #38: verdict-lines-only console output. Some iGPU GOPs render
+/// ~1 line/s, so the full console mirror cost minutes per run; the log
+/// file always records everything either way.
+const QUIET_MARKER: &CStr16 = cstr16!(r"\tx-quiet.txt");
 const CONFIRM_WAIT: u64 = 30;
 const ARMED_WAIT: u64 = 5;
 
 #[entry]
 fn main() -> Status {
+    timing::init();
     logging::init(VERSION);
+    // Phase: QUIET gate (issue #38). The stick opts in via the marker;
+    // refused when the log file could not be opened (console = only
+    // record, it must stay complete).
+    if chainload::boot_volume_has(QUIET_MARKER) {
+        if logging::set_quiet(true) {
+            info!(
+                "QUIET: \\tx-quiet.txt present - console shows verdict lines only; every line still lands in \\loader.log"
+            );
+        } else {
+            info!(
+                "QUIET: \\tx-quiet.txt present but the log file is unavailable - console stays complete (it is the only record)"
+            );
+        }
+    }
     // The boot manager arms a 5-minute watchdog before StartImage; a slow
     // or stalled transaction must not be cut short by a firmware reset.
     match uefi::boot::set_watchdog_timer(0, 0x10000, None) {
