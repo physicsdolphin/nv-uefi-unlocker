@@ -801,18 +801,24 @@ fn log_exci_decode(exci: u32) {
     );
 }
 
-/// Post-halt mailbox0 dictionary (NS-stub disassembly + field correlation,
-/// docs/tu10x-booter-nsstub-disasm.md C3): the stub writes 0x31 right before
-/// `lcall 0x100` into the secure entry, the secure stage writes its own
-/// codes after that. A FINAL 0x31 therefore means the secure entry never
-/// executed; 0x89-0x91 mean it executed and rejected.
+/// Post-halt mailbox0 dictionary v3 (NS-stub disassembly + GA-line plaintext
+/// RE, docs/booter-secure-re-keychain.md §6): the stub writes 0x31 right
+/// before `lcall 0x100` into the secure entry, the secure stage writes its
+/// own codes after that. GA-line instruction-level findings (advisory for TU
+/// until the TU debug key surfaces the TU listing): 0x89 = meta magic
+/// mismatch on the live-WPR2 rebuild, 0x8a = descriptor field mismatch, 0x91
+/// = WPR-window geometry check failed (64-bit delta vs the 0x1fa824/28
+/// registers must be exactly 1 MiB), 0xb = RSASSA-PSS final-hash mismatch
+/// (and a signature-struct param id), 0x11-class small values = sig-struct
+/// GetParam ids (enable-field/expected-value-table). The secure code RAN in
+/// every non-0x31 non-zero case.
 pub fn mailbox0_verdict(mbox0: u32) -> &'static str {
     match mbox0 {
         0x31 => "NS-stub pre-secure marker (final) - the secure entry never executed (placement/entry-level failure)",
         0x0 => "secure-stage success status (replay chains also end here)",
-        0x89..=0x90 => "wpr_desc_validate rejection (meta DMA readback mismatch)",
-        0x91 => "secure-stage rejection family - the secure code RAN and rejected (cmp50hx dictionary)",
-        0x11 | 0x0b => "secure-stage status, stage unknown - the secure code ran and wrote this (0x0B: #82/#57, 0x11: #57); exact stage pending debug-booter RE",
+        0x89..=0x90 => "meta validation family (GA RE: 0x89 magic mismatch, 0x8a field mismatch on the live-WPR2 rebuild; also the classic DMA-readback mismatch)",
+        0x91 => "WPR-window geometry check failed (GA RE: desc-vs-live-0x1fa824/28 delta must be exactly 1 MiB) - the race-fix mechanism; the secure code RAN and rejected",
+        0x11 | 0x0b => "signature/verify parameter-domain code (GA RE: 0x0b = PSS final-hash mismatch or sig-struct param id; 0x11 = expected-value-table param id) - meta checks PASSED, death is at/after signature verification; exact TU mapping pending TU debug key",
         _ => "input-carrier residue or unknown",
     }
 }
@@ -1074,12 +1080,13 @@ pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma
 /// read path (firmware IOMMU remap). A corrupt magic instead indicts the
 /// buffer itself - our bug, not the platform.
 fn wpr_desc_rejected_hint(mbox0: u32, meta: &[u8]) {
-    // 0x91 family (docs/tu10x-booter-nsstub-disasm.md C3): the secure stage
-    // RAN and wrote this - unlike 0x89-0x90 the readback of OUR meta page
-    // cannot localize it alone. Point at the two ablation axes instead.
+    // 0x91 (GA-line RE, keychain §6.5): the secure code compared its meta
+    // descriptor against the LIVE WPR2 registers and the 64-bit window delta
+    // was not exactly 1 MiB - v2.1.8 waits for FWSEC HALT by default so this
+    // now indicates a genuinely inconsistent WPR2 state, not the race.
     if mbox0 == 0x91 {
-        info!("POST-BOOT: status 0x91 = secure-stage rejection (the secure code executed and wrote this - cmp50hx wpr_desc_validate family)");
-        info!("POST-BOOT: next axes (docs/tu10x-c-parity-diff.md B4): cold boot + \\tx-fwsec-gsp-halt.txt first, then \\tx-fwsec-hold-dma.txt - capture the BOOTER-AUDIT lines either way");
+        info!("POST-BOOT: status 0x91 = WPR-window geometry rejection (GA plaintext RE: descriptor vs live 0x1fa824/28 delta must be exactly 1 MiB)");
+        info!("POST-BOOT: with the v2.1.8 GSP-HALT gate this is no longer the old race - capture BOOTER-AUDIT lines and the GSP-HALT gate timing; \\tx-no-gsp-halt-gate.txt can A/B the legacy path");
     }
     if mbox0 == 0x31 {
         info!("POST-BOOT: status 0x31 = NS-stub pre-secure marker (final) - the secure entry never executed (placement/entry level, see PR #67 D/E rounds)");

@@ -4,7 +4,7 @@
 >
 > **定性更正（重要）**：这不是"时成时败"的偶发问题。证据形态是**同一人同一卡跨所有版本必败（或必成）**；同型号卡在不同人手里确定性分裂（2080S 1e81：#14 必成 / ProxVirtualZone 四轮必败；2080Ti 1e07：Reddit 双卡必成 / #17 必败）。分裂变量跟随**机器/点火环境**，不跟随卡型号、显存容量（8G TU104-400 也败；22G TU102 在 C 链下能成）。
 >
-> 数据来源：issue #12/#14/#16/#17/#55/#57/#62，PR #49/#64/#65/#67，travis-mcdevitt fork 证据包 `2654419e`（docs/evidence/msi-tu102-guarded），Reddit r/overclocking 1xj5jp3。引用日志行保留原文。
+> 数据来源：issue #12/#14/#16/#17/#55/#57/#62/#74/#82/#84/#89/#90/#91，PR #49/#64/#65/#67，travis-mcdevitt fork 证据包 `2654419e`（docs/evidence/msi-tu102-guarded），Reddit r/overclocking 1xj5jp3。引用日志行保留原文。
 
 ---
 
@@ -194,8 +194,8 @@ travis 成功的额外信息：证明 C-load 成功**不需要** PTIMER 与 host
 | #62 TU104-400 1e87 | **转绿** | `WPR2 UP after 3ms` → `GSP-HALT gate halted after 156ms`——旧路径在 FWSEC 尾巴中段点火；booter `mailbox0=0x0`、`tu10x_unlock=true`、34.9→69 TFLOPS | **竞态实锤并修复**（v2.1.8 转正默认） |
 | #57 TITAN RTX 24G×2 | **双阴性** | 门控 87ms 生效（halt+scratch0e 全过），booter 仍 0x0B/0x11；R2 同形 | 竞态非本机病因——B 类独立存在 |
 | #82 2060M 6G 1f15 | **推进未治愈** | 0x91 → **0x0B**；FWSEC 全绿；`BOOTER-AUDIT: ns MATCH / dmem MATCH / sec 首字 0xdead5ec1`；R2 无变化 | 同 B 类 |
-| #74 TU102 22G+TB3 | 用户自解（第 16 轮单变量） | staging `dev=0x4b782000 [LOW]` ⇒ WPR2 0ms 起；`0x100000000`/`0x110000000` ⇒ `WPR2 never came up` | **FWSEC staging ≥4GiB 平台不可达**（与 cmp50hx v2.63 注释方向相反；booter 侧另证 meta ≥4GiB 32 位截断→0x89、签名/radix 高位→挂死） |
-| #89 2060 12G 1f03 | 未跑消融 | FWSEC 阶段死：`WPR2 never came up`，EXCI=0x00a003ff（PC 0x3ff MISS_INS）；staging 恰在 0x100000000 | A 类头号线索：`\tx-low-staging.txt` 未试 |
+| #74 TU102 22G+TB3 | 用户 28 轮自查（第 15-16 轮单变量实锤；**第 17 轮重要修正**） | staging `dev=0x4b782000 [LOW]` ⇒ WPR2 0ms 起；`0x100000000`/`0x110000000` ⇒ `WPR2 never came up`（零残影）；**全低位轮是 V67 模式**：`mailbox0=0x0`=secure-stage 成功但 `PLM still locked - the payload's writes did not happen` → **UEFI 链在该机从未完整跑通**；第 28 轮：签名/radix ≥4G → `BOOTER-C: poll timeout reg=0x8400100`（SEC2 永不停机挂死，非报错）；用户已撤回"邮箱 32 位截断"误读（GA 明文反汇编独立证伪：meta 全 64 位寻址） | **FWSEC/签名/radix staging ≥4GiB 在 TB 链全段不可达**（三种死形：WPR2 不建立/0x89/挂死）；剩余阻塞=Windows 侧 USB4 接管（D 类） |
+| #89 2060 12G 1f03 | **v2.1.8 后用户跑通**（11-01） | v2.1.8 低位默认仍死（EXCI 0x009003ff）→ 用户自改 **FWSEC 走 VRAM staging**（BAR1 写+`TRANSCFG4=(t4&!7)|4` LOCAL_FB+BL DESC codeDma/dataDma 指 VRAM）→ `WPR2 UP after 3ms` 全链绿，20.6→33.7 TFLOPS；**meta 必须留 sysmem**（放 VRAM 则 0x89） | A 类第三形态：低位不够、需 VRAM 载具——"sysmem 自测失败→VRAM 兜底"提案待落码 |
 | #90 2080Ti 11G X79 | 判读纠偏 | UEFI 侧实为成功（PLM 开+selector 写入+unlock_persist=true）；Windows 侧病态疑硬件混杂（630 条 WHEA；断电未跑工具仍病态） | E 类：先排硬件 |
 
 **三个跨机定案**：
@@ -203,10 +203,11 @@ travis 成功的额外信息：证明 C-load 成功**不需要** PTIMER 与 host
 2. diag 分支 `parse_num_ascii` 吃不掉 `0x` 前缀（"0x200" 无声失效、"512" 可用）——坑了 #57 的 E 轮；v2.1.8 修复+回归测试。
 3. `signature DMA never landed` verdict 是 V67 专用检查的恒假阴性（#14 成功轮、#90 实际成功皆有此行）——v2.1.8 文案已改。
 
-**残留类汇总（第二轮计划骨架，2026-10-31）**：A=FWSEC 死（staging 带，#89/#74）；B=安全段状态码 0x0B/0x11 语义未知（#57/#82，竞态排除后）；C=0x0+sanitize 误读（文案已修）；D=Windows 侧重编程（#82 评论3：GSP 615.78/驱动 617.42 init 重编程 FEAT/清 SS，WPR2_HI 尚在=GPU 未复位；成功例均 ≥621/620——advisory）；E=Windows 病态疑硬件（#90）。另：PR #87 修复了上轮 marker 引入的 BridgeMaster guard 作用域 bug（guard 绑在 else 分支内导致 Drop 提前恢复桥寄存器）。
+**残留类汇总（2026-11-01 更新）**：A=FWSEC 死（staging 带：#74 TB 型已由 v2.1.8 低位默认覆盖；#89 VRAM 型待 FWSEC-VRAM 载具落地）；B=签名/验证参数域码 0x0B/0x11（#57/#82；GA 明文 RE 定位：0x0b=PSS 终判哈希不等/验签参数 id、0x11=期望值表 id——meta 校验已过、死在签名验证域；TU 精确映射待 TU debug key，见 keychain §6-7）；C=0x0+sanitize 误读（文案已修）；D=Windows 侧重编程（#82 实测 GSP 615.78/驱动 617.42 init 重编程 FEAT；成功例均 ≥621/620）；E=Windows 病态疑硬件（#90）。另：#91（Catnip202X）提议 DMEM 内 WprMeta 全字段 dump 与成功机 A/B——可由 v2.1.8 的 BOOTER-AUDIT 框架扩展实现。
 
-## 维护结论（当前工作假设）
+## 维护结论（2026-11-01 定案版）
 
-- 硬核四例的共同点不是几何、地址、载荷、GOP、PTIMER/probe/静默（全部单变量证伪），而是：**NS 桩执行后跳安全段入口 0x100 取指 miss**（EXPC=0x100 不变；EXCAUSE 随放置动）。
-- 同卡同机可用全 C 链（PR #49）解锁 → 机器不受诅咒；**分野在事务链的未枚举差分**。
-- 下一步：Phase B 差分清单（travis overlay / PR #49 / nlzy vs main）→ Phase C NS 桩语义 → Phase D 诊断构建（全段读回 CRC + 放置日志 + 消融 markers）→ 社区一轮回收，目标把残留假设砍到 ≤1 个。
+- **0x91 竞态根因已源码级闭环并修复**（keychain §6.5：booter 将描述符与活 WPR2 寄存器重建比对、64 位差值须恰 1 MiB；v2.1.8 默认等 FWSEC HALT+scratch0e 门控）。#62 已实证转绿。
+- "NS 桩取指 miss"旧工作假设作废：EXCI=0x00900100（INV_INS@0x100）是 booter 拒收后的自毁残影（GA 系干净 exit 对照证实 TU 自毁为 TU 代际行为），成功链亦有该值。
+- 剩余 OPEN：B 类 TU 精确映射（等 TU debug key）；A 类 VRAM 载具；D 类驱动版本敏感；E 类硬件隔离；#35 Code 12；#55 交棒蓝屏。
+- 复现工具链：GA 系明文钥匙公开（keychain §2 指针）；TU key 猜解进行中（round-3 报告）。

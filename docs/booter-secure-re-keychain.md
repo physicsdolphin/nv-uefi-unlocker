@@ -38,7 +38,7 @@ HF TOTORONG/AD103_win_unlocker 与本地克隆逐字节同版，无隐藏明文/
 
 ## 5. 对 B 类（#57/#82）的含义
 
-1. **0x11 的阶段假说升级**：GA100 谱系里 0x11 属 `tgt_falcon_bringup`——**meta 过验之后的引擎拉起阶段**，不是"早期拒收"（我们字典 v2 的"stage unknown"措辞正确，但阶段方向应从"验证前"翻转为"验证后 bringup"）。若 TU10x 同构，#57/#82 的 0x0B/0x11 意味着 **meta 校验已通过、死在 booter 拉起 GSP/RM 的环节**（radix/boot image 交接）——与 #74 实测的"签名/radix ≥4GiB → bringup 挂死"是同一阶段的两种死法（#74 挂死不报码、#57/#82 报码停机）。
+1. **0x0B/0x11 的语义（v3，已被 §6 递归下降修正）**：GA100 wiki 说 0x11∈`tgt_falcon_bringup` 的方向正确（meta 过验之后的签名验证域），但机制不是"阶段索引"——§6 证明 0x2b69 是 **GetParam（验签结构参数访问器）**，0xb/0x11 是**验签参数空间的 id**（0xb 同时=PSS 终判哈希不等的错误码）。若 TU10x 同构，#57/#82 的 0x0B/0x11 意味着 **meta/WPR2 校验已通过、死在签名页 DMA→PSS 验签→期望值对账域**——与 #74 实测的"签名/radix ≥4GiB → 挂死"同域（#74 挂死不报码、#57/#82 报码停机）。早期"阶段索引/早期拒收"两说均作废。
 2. 近程判别仍靠现场：`\tx-bootvec-sec.txt`（桩 vs 安全段）+ v2.1.8 默认轮；**新增一个值得加的消融**：把 radix/boot image 与 meta 一起压低带（`\tx-low-staging.txt` 全局低位）在 #57/#82 上各跑一轮——若 0x0B/0x11 消失，bringup 阶段假说即闭环（这两台此前只在 v2.1.6 时代试过全局低位且当时死于 0x91=meta 读锁；v2.1.8 的 FWSEC-低+meta-高的新默认组合未曾测过，正好补这个矩阵格）。
 3. TU10x 字典的最终钥匙 = TU debug key（§3）；GA 系明文（§2）可先建全调用图作结构参照——后续工作项。
 
@@ -56,7 +56,7 @@ HF TOTORONG/AD103_win_unlocker 与本地克隆逐字节同版，无隐藏明文/
 | 4 | 0x89/0x8a=meta 校验族码 | `0x2784: mov $r0 0x89`（二次魔数比对失败路径）；`0x278b: mov $r0 0x8a`（描述符字段 D[+0xac] 比对失败） |
 | 5 | **0x91=WPR 窗口几何校验失败（对账活寄存器）** | `0x1fa824/0x1fa828`（WPR2 lo/hi）作为字面量被读出与描述符重建比对；`0x288e-0x28b6`: 两 64 位量做减法，**差值必须恰为 0x100000（1 MiB）**，否则 `mov $r10 0x91`。**⇒ B0 因果链源码闭环：FWSEC 未收尾→WPR2/MMU 寄存器半编程→几何校验失败→0x91**（#62 的竞态修复与此逐位吻合） |
 | 6 | 金丝雀护 DMA helper（ROP 机制） | `0x5b9`（sysmem DMA 读 helper）内部与每个错误收尾都比对 `D[0x6140]`（GA102 全局 canary；AD102=0x5f50）；**canary 完整→带码返回；canary 破坏→`lcall 0x7ed3` 校验响应**（0x7ed3=141 调用点的验签包装） |
-| 7 | **0x0B/0x11=bringup 阶段索引（字典 v3）** | `0x2b69(stage_id,…)`=表驱动阶段分发器（17 调用点）；`0x2d79/0x2d90/0x2da7: mov $r10 0xa/0xb/0xc` 后跟 `lcall 0x2b69` 与失败共跳 `0x35ad`（阶段错误收尾：canary 查→带阶段返回值返回）。**小字面量 0x0a/0x0b/0x0c/0x10/0x11/0x12/0x15 全部是阶段号**——⇒ TU 终值 0x0B/0x11 最可能是"死在第 0x0B/0x11 号 bringup 步"的阶段报告，非独立错误码（与 cmp170hx wiki"0x11∈tgt_falcon_bringup"互证） |
+| 7 | **0x0B/0x11=验签参数域 id（字典 v3；修正 §5.1 的"阶段索引"预判）** | 递归下降（见上）证明 `0x2b69`=GetParam（验签结构参数访问器，比较链 switch，非阶段分发器）；`0x2d79/0x2d90/0x2da7: mov $r10 0xa/0xb/0xc` 是 **GetParam 的 id 实参**（读 ctx+0x818/81a/814 的 u16 使能字段，须==1）；失败返回 0x1/0x1c/0x1d，**0xb 同时=PSS 终判哈希不等的错误码**（文件 0x35ab `mov $r0 0xb`）；0x11=期望值表 id（拷贝 count*8 供对账）。⇒ TU 终值 0x0B/0x11 = "meta/WPR2 校验已过、死在签名页 DMA→PSS 验签→期望值对账域"（TU 精确映射待 TU key） |
 | 8 | mailbox0=I/O 0x1000（跨族常量） | TU NS 桩 `mov $r15 0x31; iowrs I[0x1000]`；GA 安全段 `0x7de1: mov $r15 0x47; mov $r9 0x1000; iowrs I[$r9] $r15` |
 | 9 | GA 以干净 `exit` 终止（22 处） | TU 特有的 INV_INS@0x100 自毁终态是 TU 代际行为，非跨族 |
 

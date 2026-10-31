@@ -40,18 +40,21 @@ pub fn exci_decode(exci: u32) -> (u32, u32, &'static str) {
     (expc, cause, exci_cause_name(cause))
 }
 
-/// Post-halt mailbox0 classification (see module docs). v2 (2026-10-31
-/// round-2): 0x0B/0x11 relabeled "stage unknown" - the "early/pre-validation"
-/// reading was a guess; #82's R1 round moved 0x91 -> 0x0B which is backwards
-/// under that label. The proven part stands: the secure code ran and wrote
-/// the code (final 0x31 would mean it never executed).
+/// Post-halt mailbox0 classification (see module docs). v3 (2026-11-01,
+/// round-3): GA-line plaintext RE (keychain §6) identified the mechanisms -
+/// 0x91 = WPR-window geometry check vs LIVE 0x1fa824/28 (delta must be
+/// exactly 1 MiB), 0x89/0x8a = meta magic/field mismatch, 0x0b = PSS
+/// final-hash mismatch (and a sig-struct param id), 0x11-class = sig-struct
+/// GetParam ids. The earlier "stage index" reading was wrong; the "early"
+/// reading before that was also wrong. TU mapping is advisory until the TU
+/// debug key surfaces the TU listing.
 pub fn mailbox0_verdict(mbox0: u32) -> &'static str {
     match mbox0 {
         0x31 => "NS-stub pre-secure marker (final) - the secure entry never executed (placement/entry-level failure)",
         0x0 => "secure-stage success status (replay chains also end here)",
-        0x89..=0x90 => "wpr_desc_validate rejection (meta DMA readback mismatch)",
-        0x91 => "secure-stage rejection family - the secure code RAN and rejected (cmp50hx dictionary)",
-        0x11 | 0x0b => "secure-stage status, stage unknown - the secure code ran and wrote this (0x0B: #82/#57, 0x11: #57); exact stage pending debug-booter RE",
+        0x89..=0x90 => "meta validation family (GA RE: 0x89 magic mismatch, 0x8a field mismatch on the live-WPR2 rebuild; also the classic DMA-readback mismatch)",
+        0x91 => "WPR-window geometry check failed (GA RE: desc-vs-live-0x1fa824/28 delta must be exactly 1 MiB) - the race-fix mechanism; the secure code RAN and rejected",
+        0x11 | 0x0b => "signature/verify parameter-domain code (GA RE: 0x0b = PSS final-hash mismatch or sig-struct param id; 0x11 = expected-value-table param id) - meta checks PASSED, death is at/after signature verification; exact TU mapping pending TU debug key",
         _ => "input-carrier residue or unknown",
     }
 }
@@ -126,18 +129,17 @@ mod tests {
     fn mailbox0_dictionary_field_values() {
         // 0x31: stub marker stuck = entry-level failure (#62 D/E rounds).
         assert!(mailbox0_verdict(0x31).contains("never executed"));
-        // 0x91: the hard-core family final value - secure ran and rejected.
+        // 0x91: v3 = WPR-window geometry check vs live registers (GA RE).
+        assert!(mailbox0_verdict(0x91).contains("geometry"));
         assert!(mailbox0_verdict(0x91).contains("RAN and rejected"));
-        // 0x11 (TITAN RTX >4GB round) / 0x0B (#82/#57 after R1): secure-stage
-        // codes of UNKNOWN stage - must classify as "ran" with the unknown
-        // stage flagged (v2 dictionary: "early" was a guess, dropped).
-        assert!(mailbox0_verdict(0x11).contains("ran"));
-        assert!(mailbox0_verdict(0x11).contains("stage unknown"));
-        assert!(mailbox0_verdict(0x0b).contains("stage unknown"));
+        // 0x11 / 0x0B: v3 = signature/verify parameter-domain codes (GA RE);
+        // meta checks passed, death at/after signature verification.
+        assert!(mailbox0_verdict(0x11).contains("parameter-domain"));
+        assert!(mailbox0_verdict(0x0b).contains("PSS final-hash"));
         // 0x0: success (travis guarded attempt-003; replay chains end here).
         assert!(mailbox0_verdict(0x0).contains("success"));
-        // 0x89: the platform-DMA (firmware IOMMU) rejection stays distinct.
-        assert!(mailbox0_verdict(0x89).contains("wpr_desc_validate"));
+        // 0x89: meta validation family (GA RE magic mismatch + classic DMA).
+        assert!(mailbox0_verdict(0x89).contains("meta validation family"));
         // Input carrier (a meta address) must not misclassify.
         assert!(mailbox0_verdict(0x1000_1f00).contains("input-carrier"));
     }

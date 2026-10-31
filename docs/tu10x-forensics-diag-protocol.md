@@ -12,13 +12,13 @@
 
 ## 按残留类的第二轮消融（每轮一次冷启动、一个变量）
 
-**A 类（FWSEC 死：`WPR2 never came up`）——#89**：
-1. **v2.1.8 默认已修**（FWSEC staging 低位化）——直接跑无 marker 默认路径，预期 WPR2 起来。
-2. 若仍死 → `\tx-low-staging.txt`（全局低位含 meta/radix）排除其余缓冲的地址带问题；若 booter 阶段变 0x91/0x89（#16 型 sub-4GB meta 锁），回报即可（混合带机器的存在性本身是重要数据）。
+**A 类（FWSEC 死：`WPR2 never came up`）——#89 型**：
+1. **v2.1.8 默认已修 TB 型**（FWSEC staging 低位化，#74 实证）——#89 已证明低位在该机**仍不够**（EXCI 0x009003ff）：该机需要 **FWSEC VRAM staging 载具**（BAR1 写+`TRANSCFG4=(t4&!7)|4` LOCAL_FB+BL DESC codeDma/dataDma 指 VRAM；**meta 必须留 sysmem**）——上游提案待落码（见 round-3 报告）。
+2. 若 booter 阶段变 0x91/0x89（#16 型 sub-4GB meta 锁），回报即可（混合带机器的存在性本身是重要数据）。
 
-**B 类（FWSEC 全绿但终值 0x0B/0x11）——#57、#82**：
-1. `\tx-bootvec-sec.txt`（跳 NS 桩直入安全段）——区分"桩的环境块被拒"vs"安全码自身拒"。
-2. `\tx-sec-base.txt` 搬址轮重做（`0x200` 前缀 bug 已修，#57 的 E 轮作废重跑）。
+**B 类（FWSEC 全绿但终值 0x0B/0x11）——#57、#82**（v3 语义：GA 明文 RE 定位为**签名/验证参数域**——meta/WPR2 校验已过、死在签名页 DMA→PSS 验签→期望值对账）：
+1. `\tx-low-staging.txt`（全局低位，meta/签名/radix/boot image 一起压低）——**首要**：该域的 DMA 地址带是头号变量（与 #74"签名/radix ≥4G→挂死"同域）。
+2. `\tx-bootvec-sec.txt`（跳 NS 桩直入安全段）——区分"桩的环境块被拒"vs"安全码自身拒"。
 3. Windows 侧（#82）：升级 GSP≥620/驱动≥621 后复测（D 类预防——615.78/617.42 已实证 init 重编程 FEAT）。
 
 **E 类（Windows 病态）——#90**：先跑 stock 基线三件套（不插 U 盘正常启动 + ssdiag 读数 + VRAM/内存测试排 WHEA）再谈软件。
