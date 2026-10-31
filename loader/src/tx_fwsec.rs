@@ -133,6 +133,18 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
             let vdesc = le32(rom, desc_off);
             let ver = (vdesc >> 8) & 0xFF;
             let size = vdesc >> 16;
+            // vDesc bit2: the image is AES ciphertext (the key lives in the
+            // fuses). Nothing can be done with it here - it cannot be
+            // disassembled for diagnostics and it will not ignite - so name it
+            // and refuse instead of handing an opaque blob to the fire path and
+            // letting it fail as a geometry error. Task brief 7.3 makes this the
+            // first classification step for exactly this reason.
+            if vdesc & (1 << 2) != 0 {
+                info!(
+                    "FWSEC-TRACE: app {want_app:#04x} descriptor at {desc_off:#x} is ENCRYPTED (vDesc bit2, ver {ver}) - refusing: a ciphertext FWSEC cannot be analysed or ignited"
+                );
+                return None;
+            }
             if want_app != 0x85 && ver != 3 {
                 continue; // non-FWSEC entries only parsed in V3 (scrubber 0x49)
             }
