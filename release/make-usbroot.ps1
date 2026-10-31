@@ -189,7 +189,6 @@ New-Item -ItemType Directory -Force -Path $Work, $Out | Out-Null
 foreach ($s in $Sources) {
     $dest = Join-Path $Work $s.Name
     $part = "$dest.part"
-    $verified = $false
     foreach ($attempt in 1..2) {
         if (-not (Test-Path $dest)) {
             # Never write to $dest directly: an interrupted transfer used to leave a
@@ -208,7 +207,7 @@ foreach ($s in $Sources) {
             }
         }
         $hash = (Get-FileHash -Algorithm SHA256 $dest).Hash
-        if ($hash -eq $s.Sha256) { $verified = $true; break }
+        if ($hash -eq $s.Sha256) { break }
         # A stale/corrupt local file must not masquerade as a pin mismatch: drop it
         # and fetch once more. The pinned hash still gates the result either way.
         Write-Host "[warn] $($s.Name) hash mismatch on attempt $attempt - discarding and re-fetching"
@@ -217,7 +216,9 @@ foreach ($s in $Sources) {
             throw "SHA-256 mismatch for $($s.Name): got $hash want $($s.Sha256) - refusing (pinned inputs only)"
         }
     }
-    if ($verified) { Write-Host "[ok] $($s.Name) SHA-256 verified" }
+    # Reaching here means the loop exited via break on a matching hash - every
+    # other exit path throws, so the [ok] line is unconditional.
+    Write-Host "[ok] $($s.Name) SHA-256 verified"
 }
 
 $SrcTar = Join-Path $Work $Sources[0].Name
