@@ -9,6 +9,9 @@ use log::info;
 use crate::tx::{TxError, TxGpu};
 use crate::tx_fwsec::LayoutOut;
 
+#[path = "btl1_signature.rs"]
+mod btl1_signature;
+
 pub const WPR_META_MAGIC: u64 = 0xdc3a_ae21_371a_60b3;
 pub const WPR_META_SIZE: usize = 256;
 pub const V67_SIZE: usize = 0xfa00;
@@ -131,6 +134,15 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
     let h = |i: usize| le32(bundle, 8 + i * 4);
     let image_size = le32(bundle, 8 + 14 * 4);
     let sig_total = le32(bundle, 8 + 15 * 4);
+    // BTL1 field 13 stores the TOTAL signature bytes, like trailer field 15.
+    // Downstream booter_patch_stock needs a SINGLE signature's byte length.
+    let sig_bytes = match btl1_signature::per_signature_size(h(12), h(13), sig_total) {
+        Some(bytes) => bytes,
+        None => {
+            info!("Booter: signature table inconsistent");
+            return Err(TxError::EInval);
+        }
+    };
     let hdr = BooterHdr {
         imem_ns_off: h(0),
         imem_ns_size: h(1),
@@ -142,13 +154,11 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
         ucode_id: h(10),
         engine_id: h(11),
         num_sigs: h(12),
-        sig_bytes: h(13),
+        sig_bytes,
     };
-    // Kernel checks: numSigs > 0, total % numSigs == 0, patch inside image.
-    if hdr.num_sigs == 0
-        || sig_total == 0
-        || sig_total % hdr.num_sigs != 0
-        || hdr.patch_loc as u64 + (sig_total / hdr.num_sigs) as u64 > image_size as u64
+    // The metadata helper validates numSigs, both totals, and divisibility.
+    // Ensure the selected stock signature patch fits the image.
+    if hdr.patch_loc as u64 + hdr.sig_bytes as u64 > image_size as u64
     {
         info!("Booter: signature table inconsistent");
         return Err(TxError::EInval);
@@ -201,31 +211,28 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
 
 /// prep_610.c gpu_unlock_booter_patch: install the fuse-selected stock
 /// signature into the patch slot (num_sigs-1-fuse_ver indexing).
+///
+/// The indexing, the bounds and the copy live in the dependency-free
+/// btl1_signature module, so sim/tests runs this exact code on the host
+/// (loader is an x86_64-unknown-uefi crate and never runs under `cargo test`).
 pub fn booter_patch_stock(image: &mut [u8], hdr: &BooterHdr, signatures: &[u8], fuse_ver: u32) -> Result<(), TxError> {
     // Turing BOOT_DIRECT bundles carry exactly ONE signature (SIG_PROD,
-    // 16B AES): there is no fuse-version table to index, so pin index 0.
-    // The num_sigs<2 refusal below is the GA10x/Ada two-slot layout - it
-    // rejected the whole Turing bundle (fifth TU106 fire, 2026-10-27).
-    if hdr.num_sigs == 1 {
-        let sig_size = hdr.sig_bytes as usize;
-        let at = hdr.patch_loc as usize;
-        if at + sig_size > image.len() || sig_size > signatures.len() {
-            return Err(TxError::EInval);
-        }
-        image[at..at + sig_size].copy_from_slice(&signatures[..sig_size]);
-        return Ok(());
-    }
-    if hdr.num_sigs < 2 || fuse_ver >= hdr.num_sigs {
-        return Err(TxError::ERange);
-    }
-    let sig_size = hdr.sig_bytes as usize;
-    let index = (hdr.num_sigs - 1 - fuse_ver) as usize;
-    let at = hdr.patch_loc as usize;
-    if at + sig_size > image.len() || (index + 1) * sig_size > signatures.len() {
-        return Err(TxError::EInval);
-    }
-    image[at..at + sig_size].copy_from_slice(&signatures[index * sig_size..(index + 1) * sig_size]);
-    Ok(())
+    // 16B AES): there is no fuse-version table to index, so index 0 is
+    // pinned. Only the GA10x/Ada two-slot layout indexes by fuse version -
+    // the blanket num_sigs<2 refusal this replaced rejected the whole Turing
+    // bundle (fifth TU106 fire, 2026-10-27).
+    btl1_signature::install_stock_signature(
+        image,
+        hdr.patch_loc,
+        hdr.num_sigs,
+        hdr.sig_bytes,
+        fuse_ver,
+        signatures,
+    )
+    .map_err(|err| match err {
+        btl1_signature::SlotError::IndexOutOfRange => TxError::ERange,
+        btl1_signature::SlotError::TableInconsistent => TxError::EInval,
+    })
 }
 
 /// Replace the patch slot with the V67 payload image (the exploit vehicle).
