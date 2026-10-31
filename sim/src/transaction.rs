@@ -94,6 +94,12 @@ pub struct Transaction<'a> {
     pub payload: bool,
     /// Payload return-path shape (Ada triad vs GA102 self-loop wait_plm).
     pub shape: PayloadShape,
+    /// Turing entry shape (issue #4.2): WPR2 up at claim is triaged on
+    /// firmware-window evidence instead of the old family-wide accept.
+    pub tu10x_entry: bool,
+    /// Operator-marker analog of the loader's \tx-accept-warm-wpr2.txt:
+    /// accept an up WPR2 whose evidence is inconclusive.
+    pub warm_wpr2_marker: bool,
     // bookkeeping (unwind contract)
     dma_live: usize,
     dma_allocs: usize,
@@ -117,6 +123,8 @@ impl<'a> Transaction<'a> {
             faults,
             payload: true,
             shape: PayloadShape::AdaTriad,
+            tu10x_entry: false,
+            warm_wpr2_marker: false,
             dma_live: 0,
             last_marker: None,
             last_cpuctl: None,
@@ -156,6 +164,12 @@ impl<'a> Transaction<'a> {
         self.log.push(s.into());
     }
 
+    /// Phase log (read-only): tests anchor on what the machine actually
+    /// read, not on the switches that constructed it.
+    pub fn log(&self) -> &[String] {
+        &self.log
+    }
+
     /// Cold guards + identity + BME claim. BME dirty state (board firmware
     /// left it on) is recorded and re-cleared — task brief §9.3.
     fn claim(&mut self) -> Result<(), PhaseError> {
@@ -165,7 +179,35 @@ impl<'a> Transaction<'a> {
         }
         let hi = self.gpu.read(regs::WPR2_HI);
         if hi != 0 {
-            return Err(PhaseError::new("claim", "EBUSY: WPR2 initialized"));
+            if !self.tu10x_entry {
+                return Err(PhaseError::new("claim", "EBUSY: WPR2 initialized"));
+            }
+            // Issue #4.2 triage (mirror of the loader's Turing branch in
+            // claim_guards): WPR2-up at entry accepts only on firmware-window
+            // evidence (GFW completed + BSI handoff DONE, GSP not started);
+            // anything else refuses unless the operator-marker analog opts in.
+            let gfw = self.gpu.read(regs::GFW_BOOT);
+            let handoff = self.gpu.read(regs::BSI_SCRATCH15) >> 29 & 7;
+            let cpuctl = self.gpu.read(regs::GFW_CPUCTL);
+            self.note(format!(
+                "wpr2-up triage: GFW={gfw:#x} handoff={handoff} GSP_CPUCTL={cpuctl:#x}"
+            ));
+            if cpuctl & 0x3 != 0 {
+                return Err(PhaseError::new(
+                    "claim",
+                    "EBUSY: GSP session live (CPUCTL started)",
+                ));
+            }
+            if gfw == regs::GFW_BOOT_COMPLETED && handoff == 1 {
+                self.note("claim: firmware-window state proven - WPR2-up accepted");
+            } else if self.warm_wpr2_marker {
+                self.note("claim: evidence inconclusive, operator marker - accepted");
+            } else {
+                return Err(PhaseError::new(
+                    "claim",
+                    "EBUSY: Turing WPR2-up without firmware-window evidence",
+                ));
+            }
         }
         let chip = self.gpu.read(0);
         if chip >> 16 == 0xBADF || chip == 0 {

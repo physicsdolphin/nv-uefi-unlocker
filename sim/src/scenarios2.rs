@@ -310,3 +310,72 @@ fn t27_report_fields_come_from_reads_not_faults() {
     assert!(replay.halt_seen, "the stock booter halts");
     assert!(!replay.plm_open_verified, "replay leaves the PLM locked");
 }
+
+// ---------------------------------------------------- issue #4.2 Turing WPR2-up triage
+
+/// Turing mainline entry shape: WPR2 already provisioned, GFW completed,
+/// BSI handoff DONE - the state the community chains enter through. The
+/// triage must accept it (with evidence) and the full transaction must
+/// still go green end-to-end.
+#[test]
+fn t28_turing_wpr2_up_firmware_window_accepts() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    gpu.force_write(regs::WPR2_HI, 0x0400_0000); // provisioned window
+    gpu.force_write(regs::BSI_SCRATCH15, 1 << 29); // handoff DONE
+    let mut txn = Transaction::new(&mut gpu, Faults::default());
+    txn.tu10x_entry = true;
+    let report = txn.run().expect("mainline entry must accept and complete");
+    assert!(report.unwind_clean && report.flr_done);
+    assert!(
+        txn.log().iter().any(|l| l.contains("firmware-window state proven")),
+        "the accept must carry its evidence in the log"
+    );
+}
+
+/// Warm residue: WPR2 up but the handoff never read DONE. The old code
+/// accepted this family-wide; the triage must refuse (-EBUSY analog).
+#[test]
+fn t29_turing_wpr2_up_without_evidence_refused() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    gpu.force_write(regs::WPR2_HI, 0x0400_0000);
+    gpu.force_write(regs::BSI_SCRATCH15, 0); // handoff != DONE
+    let mut txn = Transaction::new(&mut gpu, Faults::default());
+    txn.tu10x_entry = true;
+    let err = txn.run().unwrap_err();
+    assert_eq!(err.phase, "claim");
+    assert!(err.reason.contains("without firmware-window evidence"));
+}
+
+/// Same ambiguous state, operator marker present (the
+/// \tx-accept-warm-wpr2.txt analog): accepted deliberately, chain green.
+#[test]
+fn t30_turing_wpr2_up_marker_accepts() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    gpu.force_write(regs::WPR2_HI, 0x0400_0000);
+    gpu.force_write(regs::BSI_SCRATCH15, 0);
+    let mut txn = Transaction::new(&mut gpu, Faults::default());
+    txn.tu10x_entry = true;
+    txn.warm_wpr2_marker = true;
+    let report = txn.run().expect("operator marker must override the triage");
+    assert!(report.unwind_clean);
+    assert!(
+        txn.log().iter().any(|l| l.contains("operator marker")),
+        "the deliberate accept must be logged as such"
+    );
+}
+
+/// A still-started GSP is a live session regardless of the BSI handoff -
+/// the strongest refuse signal the triage has.
+#[test]
+fn t31_turing_wpr2_up_live_gsp_refused() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    gpu.force_write(regs::WPR2_HI, 0x0400_0000);
+    gpu.force_write(regs::BSI_SCRATCH15, 1 << 29); // handoff lies DONE
+    gpu.force_write(regs::GFW_CPUCTL, 0x2); // START still set
+    let mut txn = Transaction::new(&mut gpu, Faults::default());
+    txn.tu10x_entry = true;
+    txn.warm_wpr2_marker = true; // even the marker must not override a live GSP
+    let err = txn.run().unwrap_err();
+    assert_eq!(err.phase, "claim");
+    assert!(err.reason.contains("GSP session live"));
+}
