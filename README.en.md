@@ -126,32 +126,41 @@ into a local, untracked `reference/` directory, grouped by role:
 **Transaction-chain sources and first-hand authority**
 
 - [gpu-unlock](https://github.com/Zagitta/gpu-unlock) (GPL-2.0) — the
-  transaction-chain porting source
+  transaction-chain porting source; `unlock_610.c` read section by
+  section, and the blueprint for this repo's mock tests
 - [gpu-unlock-ada](https://github.com/JustAResearcher/gpu-unlock-ada)
   (GPL-2.0) — the AD10x four-write chain origin; the 28e1 report
-  (Windroid234) is this project's direct basis
+  (Windroid234) is this project's direct basis and drove three verdict
+  corrections here (FBPA `0xffffff0f` acceptance, non-fatal scrubber,
+  EALREADY without FLR)
 - [gpu-unlock-bar1](https://github.com/84634E1A607A/gpu-unlock-4090-48g-64g-bar1) —
-  AD10x large-BAR1 reference (not merged into the mainline)
+  AD10x large-BAR1 reference line (not merged into the mainline)
 - [cmp90hx-unlock](https://github.com/WildFlash1st/cmp90hx-unlock) — the
   V67 payload-chain origin
 - [open-gpu-kernel-modules](https://github.com/NVIDIA/open-gpu-kernel-modules)
-  (MIT) — first-hand authority on the boot path (`kgspBootGspRm`,
-  `kernel_gsp_fwsec.c`)
+  (MIT) — first-hand authority on the boot path: all four Turing
+  generational differences (BOOT_DIRECT, register-portal loading,
+  RM_RISCV_UCODE_DESC v4, FWSEC generic-BL) were verified here and
+  landed in the code
 - [AD103_win_unlocker](https://huggingface.co/TOTORONG/AD103_win_unlocker)
   (TOTORONG) — the Windows EFI carrier-craft precedent (GOP
   disconnect/chain-load handoff/transaction-log conventions)
 
-**Turing addressing and cross-checks (the 0x4096xx FEAT block)**
+**Turing lineage and addressing (the 0x4096xx FEAT block)**
 
 - [cmp170hx](https://github.com/Consensus-Protocol/cmp170hx) — PLM
   semantics, the booter 0x89/0x91 status-code dictionary and
   verification methodology
-- [cmp50hx-unlock](https://github.com/xrip/cmp50hx-unlock) — the public
-  proof behind the Turing FEAT block `0x409650/64/6c` (basis of this
-  repo's Turing addressing)
+- [cmp50hx-unlock](https://github.com/xrip/cmp50hx-unlock) — the
+  hardware-proven origin of the Turing lineage: 31.7× measured on 50HX
+  (TU102); 40HX/50HX share the TU102 booter archive, which is the
+  field evidence behind TU106 full-chain feasibility; also the source
+  of the FEAT block `0x409650/64/6c` addressing
 - [turing-unlock](https://github.com/nlzy/turing-unlock) (nlzy) — the
-  `TU_FEAT_READOUT 0x409668` citation source (ssdiag and the loader
-  share this constant)
+  official Turing adaptation of the Zagitta kmod (Dell 2080 Ti 22GB,
+  ~1.6× FP16); source of the TU102 gadget/stack geometry tables and
+  the GSP IDA database; the `TU_FEAT_READOUT 0x409668` citation source
+  (ssdiag and the loader share this constant)
 - [travis-mcdevitt/nv-uefi-unlocker](https://github.com/travis-mcdevitt/nv-uefi-unlocker) —
   a downstream fork of this project; its successful Turing chain logs
   feed the 0x91 forensics cross-check
@@ -168,7 +177,8 @@ into a local, untracked `reference/` directory, grouped by role:
 - [rtx3080-unlock-public](https://github.com/rough2515-hub/rtx3080-unlock-public) —
   earlier RTX 3080 10GB UEFI experiment (Korean)
 - [KohakUnlock](https://github.com/KohakuBlueleaf/KohakUnlock) —
-  source-first research: 2080 Ti initramfs and 4090 UEFI unlocks
+  source-first research covering the Turing lineage (boot-hook form)
+  and a 4090 Windows/UEFI unlock
 - [Turing-unlock](https://github.com/haohervchb/Turing-unlock) (haohervchb) —
   volatile unlock on a 2080 Ti (TU102), one successful physical run
   2026-10-22
@@ -180,9 +190,9 @@ into a local, untracked `reference/` directory, grouped by role:
 
 **Register/fuse side lines**
 
-- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar) — proof
-  that the Turing BAR1 is expandable via PSTRAPS (basis of the M1
-  sample PSTRAPS decoding)
+- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar) —
+  overturned this project's earlier "Turing BAR1 is not expandable"
+  assumption; direct basis of the M1 sample PSTRAPS decoding
 - [ga100-fuse-re](https://github.com/ahnguyen17/ga100-fuse-re) ·
   [gpcprobe](https://github.com/matstatman/gpcprobe) ·
   [170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool) —
@@ -194,9 +204,10 @@ into a local, untracked `reference/` directory, grouped by role:
 **Reverse-engineering toolchain**
 
 - [envytools](https://github.com/envytools/envytools) — envydis (fuc5
-  Falcon disassembler) + nvbios
+  Falcon disassembler; the production booter secure segment is
+  ciphertext and only decodes with the key in hand) + nvbios
 - [faucon](https://github.com/vbe0201/faucon) — alternative fuc5
-  disassembler
+  disassembler (could not decode the production booter in practice)
 
 License: **GPL-2.0-only** (`LICENSE`). NVIDIA firmware and VBIOS remain
 NVIDIA property; regenerate them locally from pinned public packages

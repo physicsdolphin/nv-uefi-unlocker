@@ -123,25 +123,31 @@ bash release/make-usbroot.sh --family 40 \
 
 **事务链母本与一手权威**
 
-- [gpu-unlock](https://github.com/Zagitta/gpu-unlock)（GPL-2.0）——事务链移植母本
+- [gpu-unlock](https://github.com/Zagitta/gpu-unlock)（GPL-2.0）——事务链移植母本；
+  `unlock_610.c` 逐段对照与 mock 测试蓝本
 - [gpu-unlock-ada](https://github.com/JustAResearcher/gpu-unlock-ada)（GPL-2.0）——
-  AD10x 四写链源头；28e1 报告（Windroid234）是本项目直接依据
+  AD10x 四写链源头；28e1 报告（Windroid234）是本项目直接依据，并驱动本项目
+  三处判据修正（FBPA `0xffffff0f` 接受、scrubber 非致命、EALREADY 不 FLR）
 - [gpu-unlock-bar1](https://github.com/84634E1A607A/gpu-unlock-4090-48g-64g-bar1)——
-  AD10x 大 BAR1 参考（未并入主线）
+  AD10x 大 BAR1 参考线（未并入主线）
 - [cmp90hx-unlock](https://github.com/WildFlash1st/cmp90hx-unlock)——V67 载荷链源头
 - [open-gpu-kernel-modules](https://github.com/NVIDIA/open-gpu-kernel-modules)（MIT）——
-  引导路径一手权威（`kgspBootGspRm`/`kernel_gsp_fwsec.c`）
+  引导路径一手权威：Turing 引导路径四处代际差异（BOOT_DIRECT、portal 直写、
+  RM_RISCV_UCODE_DESC v4、FWSEC generic-BL）全部据此考据落进代码
 - [AD103_win_unlocker](https://huggingface.co/TOTORONG/AD103_win_unlocker)（TOTORONG）——
   Windows EFI 载具工艺先例（GOP 断连/链式交接/事务日志范式）
 
-**Turing 族定址与对照（0x4096xx FEAT 块）**
+**Turing 谱系与定址（0x4096xx FEAT 块）**
 
 - [cmp170hx](https://github.com/Consensus-Protocol/cmp170hx)——PLM 语义、booter
   0x89/0x91 状态码字典与验证方法论
-- [cmp50hx-unlock](https://github.com/xrip/cmp50hx-unlock)——Turing FEAT 块
-  `0x409650/64/6c` 的公开实证源（本仓库 Turing 定址依据）
-- [turing-unlock](https://github.com/nlzy/turing-unlock)（nlzy）——
-  `TU_FEAT_READOUT 0x409668` 引用源（ssdiag 与 loader 的 Turing readout 同源）
+- [cmp50hx-unlock](https://github.com/xrip/cmp50hx-unlock)——Turing 谱系实机闭环
+  源头：50HX（TU102）31.7× 实测，40HX/50HX 共用 TU102 booter 归档，是 TU106
+  全链可行性的实机依据；FEAT 块 `0x409650/64/6c` 定址亦出自此
+- [turing-unlock](https://github.com/nlzy/turing-unlock)（nlzy）——Zagitta kmod
+  的 Turing 官方改编（Dell 2080 Ti 22GB，FP16 约 1.6×）；TU102 gadget/栈几何
+  表与 GSP IDA 库来源；`TU_FEAT_READOUT 0x409668` 引用源（ssdiag 与 loader
+  的 Turing readout 同源）
 - [travis-mcdevitt/nv-uefi-unlocker](https://github.com/travis-mcdevitt/nv-uefi-unlocker)——
   本项目下游 fork，其 Turing 成功链记录进入 0x91 取证对照
 - [tu102-22g-uefi-unlock](https://github.com/chenxluo/tu102-22g-uefi-unlock)——
@@ -155,8 +161,8 @@ bash release/make-usbroot.sh --family 40 \
   上者的单卡单显伴侣工具
 - [rtx3080-unlock-public](https://github.com/rough2515-hub/rtx3080-unlock-public)——
   RTX 3080 10GB UEFI 实验先行（韩文）
-- [KohakUnlock](https://github.com/KohakuBlueleaf/KohakUnlock)——2080 Ti
-  initramfs 与 4090 UEFI 的源码优先研究
+- [KohakUnlock](https://github.com/KohakuBlueleaf/KohakUnlock)——Turing 谱系
+  （boot-hook 形态）与 4090 Windows/UEFI 的源码优先研究
 - [Turing-unlock](https://github.com/haohervchb/Turing-unlock)（haohervchb）——
   2080 Ti（TU102）易失解锁，2026-10-22 单跑成功记录
 - [nv_unlock_win](https://github.com/mirabarukaso/nv_unlock_win)——Titan RTX
@@ -166,8 +172,8 @@ bash release/make-usbroot.sh --family 40 \
 
 **寄存器/熔丝侧线**
 
-- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar)——Turing PSTRAPS
-  BAR1 可扩实证（M1 采样 PSTRAPS 解码依据）
+- [NvStrapsReBar](https://github.com/terminatorul/NvStrapsReBar)——推翻本项目
+  此前"Turing BAR1 不可扩"的判断；M1 采样 PSTRAPS 解码直接依据
 - [ga100-fuse-re](https://github.com/ahnguyen17/ga100-fuse-re) ·
   [gpcprobe](https://github.com/matstatman/gpcprobe) ·
   [170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool)——GA100
@@ -178,8 +184,9 @@ bash release/make-usbroot.sh --family 40 \
 **逆向工具链**
 
 - [envytools](https://github.com/envytools/envytools)——envydis（fuc5 Falcon
-  反汇编）+ nvbios
-- [faucon](https://github.com/vbe0201/faucon)——fuc5 反汇编备选
+  反汇编，量产 booter 安全段为密文、需密钥在场才可解）+ nvbios
+- [faucon](https://github.com/vbe0201/faucon)——fuc5 反汇编备选（实测解不了
+  量产 booter）
 
 许可：**GPL-2.0-only**（`LICENSE`）。NVIDIA 固件与 VBIOS 版权归 NVIDIA，按其
 原许可条款从钉版公开包本地再生，不在本仓库分发。
