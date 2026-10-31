@@ -330,15 +330,37 @@ rtd3_notice
 if [ "$FAMILY" = "tu10x" ]; then check_turing_gate; fi
 
 fetch_verify() { # <name> <url> <sha> -> echoes dest path (logs go to stderr)
-    local dest="$WORK/$1" got
-    if [ ! -f "$dest" ]; then
-        logerr "[fetch] $1"
-        fetch "$2" "$dest"
-    fi
-    got="$(sha256_of "$dest")"
-    [ "$got" = "$3" ] || die "SHA-256 mismatch for $1: got $got want $3 - refusing (pinned inputs only)"
-    logerr "[ok] $1 SHA-256 verified"
-    printf '%s' "$dest"
+    local dest="$WORK/$1" part="$WORK/$1.part" got attempt
+    for attempt in 1 2; do
+        if [ ! -f "$dest" ]; then
+            # Download to .part and rename only on success: a killed transfer used to
+            # leave a truncated file at $dest, and the existence check then made every
+            # later run report a pinned-input SHA-256 mismatch instead of re-fetching
+            # (issue #59).
+            rm -f "$part"
+            if [ "$attempt" -eq 1 ]; then logerr "[fetch] $1"; else logerr "[fetch] $1 (retry)"; fi
+            if ! fetch "$2" "$part"; then
+                rm -f "$part"
+                [ "$attempt" -eq 2 ] && die "download failed twice: $1 ($2)"
+                continue
+            fi
+            mv -f "$part" "$dest"
+        fi
+        got="$(sha256_of "$dest")"
+        if [ "$got" = "$3" ]; then
+            logerr "[ok] $1 SHA-256 verified"
+            printf '%s' "$dest"
+            return 0
+        fi
+        # A stale local file must not masquerade as a pin mismatch; the hash still
+        # gates the result, so re-fetching once is safe and self-heals the work dir.
+        logerr "[warn] $1 hash mismatch on attempt $attempt - discarding and re-fetching"
+        rm -f "$dest"
+        if [ "$attempt" -eq 2 ]; then
+            die "SHA-256 mismatch for $1: got $got want $3 - refusing (pinned inputs only)"
+        fi
+    done
+    die "fetch failed: $1"
 }
 
 SRC_TAR="$(fetch_verify "$SRC1_NAME" "$SRC1_URL" "$SRC1_SHA")"
