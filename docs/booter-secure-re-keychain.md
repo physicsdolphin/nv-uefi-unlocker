@@ -43,8 +43,28 @@ HF TOTORONG/AD103_win_unlocker 与本地克隆逐字节同版，无隐藏明文/
 2. 近程判别仍靠现场：`\tx-bootvec-sec.txt`（桩 vs 安全段）+ v2.1.8 默认轮；**新增一个值得加的消融**：把 radix/boot image 与 meta 一起压低带（`\tx-low-staging.txt` 全局低位）在 #57/#82 上各跑一轮——若 0x0B/0x11 消失，bringup 阶段假说即闭环（这两台此前只在 v2.1.6 时代试过全局低位且当时死于 0x91=meta 读锁；v2.1.8 的 FWSEC-低+meta-高的新默认组合未曾测过，正好补这个矩阵格）。
 3. TU10x 字典的最终钥匙 = TU debug key（§3）；GA 系明文（§2）可先建全调用图作结构参照——后续工作项。
 
-## 6. 后续工作项（不在本轮）
+## 6. 源码级实证（2026-11-01，GA102/AD102/GA100 明文全量反汇编）
 
-- GA102/AD102/GA100 明文全量 envydis 注释（结构参照：wpr_desc_validate/bringup 全调用图）。
+> 方法：open-gpu-kernel-modules generated bindata → raw-DEFLATE 解出 IMAGE_DBG/HEADER_DBG → AES-128-ECB（§2 密钥）解密安全段 → envydis `-V fuc5` 全量反汇编（GA102 11342 行 / AD102 10681 / GA100 10919）。本仓流程脚本：`C:\Users\YLW-DORM\AppData\Local\Temp\booterhunt\extract.py`（AES 控制值内置自验）。列表文件在同目录 `*_sec.lst`。
+
+**逐条实证（GA102 偏移，AD102 同构）**：
+
+| # | 结论 | 源码证据 |
+|---|---|---|
+| 1 | 安全段入口镜像 NS 桩惯用式 | `0x0: mov $r9 0x1000; iords` → I/O 0x1000/0x1100 快照存 DMEM 0x1660/0x1668；SP=0x10000；随后 `f5 3c xx` 特权指令群=密码单元编程（16 条成对模式）；I/O 0x9100 引擎门握手（bit31 读/bit30 写） |
+| 2 | **meta 以完整 64 位地址 DMA 读入** | `0x2355: lo=D[0x1660], hi=D[0x1664]|D[0x1668]`（两处 hi 快照**按位或**）→ `lcall 0x5b9(lo,hi,dst=0x400,len=0x100)`——**无 32 位截断**（#74 的"邮箱只装 32 位"推断源码级证伪） |
+| 3 | WPR_META_MAGIC 逐字节一致 | `0x2388/0x2395: cmp D[0x400]==0x371a60b3 / D[0x404]==0xdc3aae21`——与我们 loader 写入的 magic 相同（即 VRAM staging 校验读回的那对值） |
+| 4 | 0x89/0x8a=meta 校验族码 | `0x2784: mov $r0 0x89`（二次魔数比对失败路径）；`0x278b: mov $r0 0x8a`（描述符字段 D[+0xac] 比对失败） |
+| 5 | **0x91=WPR 窗口几何校验失败（对账活寄存器）** | `0x1fa824/0x1fa828`（WPR2 lo/hi）作为字面量被读出与描述符重建比对；`0x288e-0x28b6`: 两 64 位量做减法，**差值必须恰为 0x100000（1 MiB）**，否则 `mov $r10 0x91`。**⇒ B0 因果链源码闭环：FWSEC 未收尾→WPR2/MMU 寄存器半编程→几何校验失败→0x91**（#62 的竞态修复与此逐位吻合） |
+| 6 | 金丝雀护 DMA helper（ROP 机制） | `0x5b9`（sysmem DMA 读 helper）内部与每个错误收尾都比对 `D[0x6140]`（GA102 全局 canary；AD102=0x5f50）；**canary 完整→带码返回；canary 破坏→`lcall 0x7ed3` 校验响应**（0x7ed3=141 调用点的验签包装） |
+| 7 | **0x0B/0x11=bringup 阶段索引（字典 v3）** | `0x2b69(stage_id,…)`=表驱动阶段分发器（17 调用点）；`0x2d79/0x2d90/0x2da7: mov $r10 0xa/0xb/0xc` 后跟 `lcall 0x2b69` 与失败共跳 `0x35ad`（阶段错误收尾：canary 查→带阶段返回值返回）。**小字面量 0x0a/0x0b/0x0c/0x10/0x11/0x12/0x15 全部是阶段号**——⇒ TU 终值 0x0B/0x11 最可能是"死在第 0x0B/0x11 号 bringup 步"的阶段报告，非独立错误码（与 cmp170hx wiki"0x11∈tgt_falcon_bringup"互证） |
+| 8 | mailbox0=I/O 0x1000（跨族常量） | TU NS 桩 `mov $r15 0x31; iowrs I[0x1000]`；GA 安全段 `0x7de1: mov $r15 0x47; mov $r9 0x1000; iowrs I[$r9] $r15` |
+| 9 | GA 以干净 `exit` 终止（22 处） | TU 特有的 INV_INS@0x100 自毁终态是 TU 代际行为，非跨族 |
+
+**含义**：①#57/#82 的 0x0B/0x11 应按"bringup 阶段号"重新解读——0x91 修复（等 HALT）已在 v2.1.8 默认，剩下的 B 类死亡点在 bringup 步骤（radix/boot image 交接的 DMA 阶段——与 #74 的"签名/radix ≥4GiB→bringup 挂死"同域）；②#74 的 meta≥4G→0x89 在 GA 码表上=meta 读回不符（平台不可达的读失败恰好落进 0x89 族，非邮箱宽度问题）；③stage 表的逐号语义（0x0B/0x11 各对应哪一步）需 TU 明文或 GA 递归下降全注释——后续工作。
+
+## 7. 后续工作项（不在本轮）
+
+- GA 系递归下降全注释（stage 表逐号语义 → 0x0B/0x11 具体步骤名）；envydis 线性扫描在变长指令流有失同步区，正式注释需分支锚定。
 - TU key 线索跟踪（Lapsus 树/社区 key 表）。
-- 若 TU key 到手：解密 TU102 IMAGE_DBG → 检索 `mov $r10 0x0b`/`0x11`/`0x91` 字面量 → 字典闭环。
+- 若 TU key 到手：解密 TU102 IMAGE_DBG → 直接检索 TU 码表与 stage 表闭环。
