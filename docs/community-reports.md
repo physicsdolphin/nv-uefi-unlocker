@@ -31,6 +31,10 @@
 
 以下记录补足兼容性矩阵所引用的实验条件；单位为 TFLOPS，数值仅代表对应平台和方法。
 
+### RTX 4060 Ti 8GB · AD106 `2803`（首个 8 GB `2803` 数据点）
+
+来源：[PR #87](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/87)，报告者 @fujiaghost789-glitch。ASUS PRIME B760M-F D4（Intel B760/AMI），8 GB `2803`——此前所有 `2803` 报告均为 16 GB。解锁读回通过（PLM 开、SS0/SS1=`0x88888888`/`0x8`、READOUT_1=0），cuBLAS 4096³ 三次取中位：FP16 45.59→77.36（+69.7%）、BF16 45.64→77.74（+70.3%）、TF32 20.06→41.91（+108.9%），FP32 对照为噪声。**附带修复**：该机 VT-d 关闭后上游桥 `8086:a70d` 以 BME 清零态起步，暴露 `BridgeMaster` guard 在 else 块内提前 Drop 的缺陷（booter `0x89` 家族）——修复随 PR #87 落入 main（ae7b128），对 BME 已开的既有验证配置为无操作。
+
 ### RTX 4070 · AD103 `2709`
 
 来源：[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)。B760 台式独显直连，四写读回通过，选择器在 FLR 后保留。系统侧 sm_89 MMA 微基准：FP16 约 61→123.91、BF16 118.90、FP8 243.55，报告的倍率均约 2.0×。
