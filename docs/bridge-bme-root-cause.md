@@ -4,6 +4,8 @@
 本文覆盖：现象、误诊史、证据链、Bus Master 机理、为何台式固件默认关、
 修复方式、以及"显存 staging 绕过"备选线为何走不通。
 
+问题发现与修复贡献：[8bit2qubit](https://github.com/8bit2qubit)（PR #5）。
+
 ## 1. 结论
 
 booter 阶段的 meta DMA 是全链**第一笔设备发起的主机内存读**。台式机固件在

@@ -1,6 +1,6 @@
-# 社区验证汇总与文档勘误
+# 社区硬件与第三方方案记录
 
-截至 2026-10-31，本文汇总仓库 issue 和已合入报告中的社区实测，按型号列出平台、EFI 读回和系统侧性能结果。
+本文保留独立社区实验的平台、版本、EFI 读回与性能数据。现行支持结论见[兼容性矩阵](compatibility.md)，操作与排障见 [FAQ](faq.md)。表中的版本和结果只描述对应实验。
 
 ## 硬件记录
 
@@ -25,7 +25,35 @@
 | [#70](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70) | RTX 3060 12GB，GA106 `2504`（SUBSYS 1043:8818，REV A1）；v2.1.6（`-Family ga102`），驱动 617.42 | ASUS ROG STRIX X470-F GAMING（AMI 6223）+ Ryzen 5 5500，独显直连；Windows 10 Pro 22H2 19045.6466 | 第一跑：wait_plm PLM 翻转 ~151 ms、SS0/SS1=0x88888888/0x8、FLR 后 AON 存活——**事务全绿后递归 `ConnectController` 复位平台**（#13 缺陷首个 AMD 平台复现，跨芯片组确认）；第二跑 `\no-reconnect.txt`：完整成功链回 bootmgfw（NVIDIA 显示自动跳过）；ssdiag `VERDICT [ampere]: UNLOCKED`（FUSE_VER=0x3、PMC_BOOT_0=0xb76000a1、FB 0x3000 MiB） | torch 2.12.1+cu130 FP32 累加：FP16 4096 25.37→45.79（**1.80×**）、BF16 46.31（1.83×）、FP16 8192 46.90（1.82×）、BF16 8192 47.56（1.82×）；ComfyUI anima BF16 ×1.62–1.75；峰值功耗 147.9→170.2 W（TGP 墙）、SM 频率 −5%、温度 +3 °C——"频率降、功耗涨、吞吐翻"指纹。stock 25.3–26.1 与官方标称 25.6 吻合。**GA106 首个全链跑通**（此前 2560 被旧判据误杀、25A2 有入口竞态）。两轮均见 `scrubber did not complete (ETimeout) - proceeding`（社区链形态）后事务成功，GA106 是否稳定特征待更多样本；两份 loader.log 归档在 issue |
 | [#71](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/71) | RTX 3060 12GB，GA106 `2520`（SUBSYS 000010DE；报告标题自述 VRAM 改动卡"3060m 12G"）；v2.1.6（`-Family ga102`，**Google Colab 构建**） | HUANANZHI X99-4MT V1.0，Secure Boot 关；Windows 10 Enterprise LTSC 19044，驱动 610.47 | 解锁成功，PyTorch GEMM 对比：FP16 **≈1.83×**、BF16 **≈1.86×**、FP32 high ≈1.60×；FP32 highest/INT8/SDPA 基本不变（报告者已注明：INT4/2/1 与 FP8 条目为量化输入走 FP16 GEMM，非原生吞吐） | **首例 Colab（云端 Linux）构建 ga102 资产→U 盘引导**的成功报告，构建流程可复现；before/after 截图归档在 issue。报告者注明结果只代表该卡该配置 |
 
-已有的 [#8（4070 `2709`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#11（3060 Ti LHR `2489`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#12（2060 Super `1f06`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)记录保留在 README；[#2](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/2) 的 Turing 计算解锁与 BAR1 扩展是不同工作，后者没有随计算解锁一并实现。
+已有的 [#8（4070 `2709`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#11（3060 Ti LHR `2489`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#12（2060 Super `1f06`）](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)记录见[完整兼容性矩阵](compatibility.md)；[#2](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/2) 的 Turing 计算解锁与 BAR1 扩展是不同工作，后者没有随计算解锁一并实现。
+
+## 补充实测数据
+
+以下记录补足兼容性矩阵所引用的实验条件；单位为 TFLOPS，数值仅代表对应平台和方法。
+
+### RTX 4070 · AD103 `2709`
+
+来源：[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)。B760 台式独显直连，四写读回通过，选择器在 FLR 后保留。系统侧 sm_89 MMA 微基准：FP16 约 61→123.91、BF16 118.90、FP8 243.55，报告的倍率均约 2.0×。
+
+### RTX 3080 LHR · GA102 `2216`
+
+来源：[#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15)。B550、无 iGPU、单显示卡。FP16 GEMM 8192 为 57.72→94.0–96.9（+63~68%），BF16 +74~79%，TF32 +52~67%，ComfyUI SDXL +28.8%；per-SM 速率与 3090 Ti 参考卡同带。
+
+### RTX 3060 Ti LHR · GA104 `2489`
+
+来源：[#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)，报告者 @hunan-NRT，实测版本 v2.1.0。B450M 迫击炮 + 5700X3D，使用跨厂映众冰龙 3060 Ti VBIOS。PLM `0xffffff8f`→`0xffffffff` 翻转读回约 149 ms；SS0/SS1=`0x88888888`/`0x8`，FEAT_READOUT_1=0，Windows 交棒正常。
+
+### RTX 3070 · GA104 `2484`（Thunderbolt 3）
+
+来源：[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。v0.2.0 本地构建的 EFI 全链成功，FLR 后选择器保留，但进入 Windows 后状态不保留。同机 Linux `host_reset=N` 路径可保留，该结果不等同于本工具的 Windows 交棒成功。
+
+### RTX 2060 Super · TU106 `1f06`
+
+来源：[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)，报告者 @vadash，实测版本 v0.2.0。AMD AM4/Promontory 平台、8 GB SKU；FWSEC、WPR2、BOOT_DIRECT booter 与 PLM 开启通过，SS0/SS1=`0x88888888`/`0x8`，签名恢复、PLM 重锁后值保留，解锁路径跳过 FLR，Windows 交棒正常。
+
+### 上游互连条件观察
+
+[cmp170hx](https://github.com/Consensus-Protocol/cmp170hx) 的 Thunderbolt 3 eGPU 记录为 `Booter Load 0x15`，Oculink 路径可用。这是上游工具的互连观察，不等同于本 EFI 工具在所有 Oculink 平台上的验证。
 
 ## 社区免 U 盘工具记录（非官方，不背书）
 
@@ -36,22 +64,10 @@
 
 ## 仍待复测的反馈
 
-- [#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6)：GA10x 原先等待 HALT/marker 的误判已改为 PLM 翻转判据。但另一台 Hasee/Clevo、无 MUX 的混合输出 `249d` 在 v2.1.0 EFI 成功后进入 Windows 无收益。可用 [Windows ssdiag](../tools/ssdiag/README.md) 或 Linux `tools/diag-unlock.py` 与 HANDOFF-OUT 对照，区分选择器被重写、PLM 重锁或设备失电；该机器的后续复测待回传。PLM 仍开放时，可用 `--reapply` 重写选择器并读回。
-- [#10](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/10)：`2820` 已纳入 AD106 路由，该魔改卡的复测结果待回传。
-- [#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14)、[#17](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/17)、[#19](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/19)：早期 HIGH 标签不等于实际地址超过 4 GiB。v2.1.2 改用 GetMemoryMap + AllocateAddress；#17 已确认实际高地址分配成功，仍返回 0x91，22GB 卡却使用 8GB 布局。v2.1.4 已提供容量覆盖标记，下一次复测可同时核对实际地址、显存布局和最终读回，继续定位 0x91。
-- [#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69)：钉频归一化已定案——同频（1500 MHz、210 W 余量）下每时钟每 SM 归一化达成理论 2.00×，功耗墙确认为 boost 频率原始数字的压制原因；gated 路径同频下 ~67% 的残留差距在该 issue 继续跟进。
+逐卡状态与例外统一列在[兼容性矩阵](compatibility.md#reports)。系统内无收益按 [FAQ 读回检查](faq.md#ssdiag)定位，Turing `0x91` 的研究见[取证矩阵](tu10x-booter-0x91-matrix.md)。
 
 ## 使用说明与实现边界
 
-- USB 启动文件位于 `\EFI\BOOT\BOOTX64.EFI`，资产与标记文件位于盘根。maker 当前平铺输出，还保留中间文件；按所选家族的 `expected` 清单复制，另建 EFI 启动目录。#28/#29 均指出了这处歧义。
-- 普通确认只接受空格；回车、其他键或 30 秒超时均中止事务。存在 `i_know_what_i_am_doing.txt` 时改为 5 秒自动运行，任意键中止。回放模式执行签名固件事务和复位；只读采样使用 `cargo efi` 构建。
-- #29 报告 Windows 10 / PowerShell 5.1 的 TLS 握手失败，可尝试 WSL/Git Bash 运行 bash maker。两种 maker 使用相同的钉版输入与 hash 校验。scrubber 的 handoff=1 警告在部分成功报告中也出现；完成情况可从后续 FWSEC、家族执行判据、选择器和交棒结果确认。
-- [#4](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/4)：超时确认语义已修复；GA10x/Ada 的 WPR2 守卫取决于本轮是否执行 pre-FLR，Turing 当前仍允许 WPR2 已建立的入口。守卫前的 detach/claim 包含配置写入；“零写中止”适用于确认界面中止或严格 D0 入口检查等对应路径。
-- 当前 loader 按家族路由，并记录 PROM CRC32 采样指纹；安全宪法中的逐卡 ROM/PROM SHA-256 校验仍待实现。
-- [#20](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/20)：现行 loader 使用 portal 装载；仓库同时保留了 Falcon DMA 实验代码，后者尚待验证。[#25](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/25)：host 描述符解析实现 V2/V3，V1 尚未实现；encrypted 位解析后未保留或强制检查。
-- [#22](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/22)：模拟器目前从故障开关生成部分 verdict，并在模拟侧写入 marker；判据独立性和复位模型的改进见该 issue。真机实验继续以寄存器读回验收。
-- [#18](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/18) 的诊断字节偏移/掩码、[#21](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/21) 的 ROM 边界检查、[#23](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/23) 的 bash 多卡 GSP 门、[#24](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/24) 的 LIC 描述符处理仍有开放问题。各项进度见对应 issue。
-
-## 历史记录如何阅读
-
-早期报告中的 IOMMU/TSME 对 0x89 的归因已被后续桥 BME 实验推翻，详见[根因报告](bridge-bme-root-cause.md)。Turing 的真 FEAT 块位于 `0x4096xx`；早期 `0x823xxx` 的 BADF 记录来自另一个地址块。各报告保留原始采样，并在文首注明后续结论。
+- [USB 布局、确认键、回放与高级选项](faq.md#usb)
+- [安全约束与实现边界](faq.md#safety)
+- [家族执行与交棒判据](faq.md#mechanism)

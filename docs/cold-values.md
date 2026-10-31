@@ -36,7 +36,7 @@ GA106 卡在库未采样，本节待实机后补。
 dGPU 非 console owner，1 个 GOP 句柄）。首张台式 AD107 样本，6GB 与 28a1 同
 几何。采样当时事务被**平台固件 IOMMU（AMD-Vi）**挡在 booter（status 0x89 =
 wpr_desc_validate 拒收 WprMeta DMA 读回）；报告者关闭 BIOS 相关选项后全链
-通过——平台 DMA 前提见 README"已知平台限制"节。
+通过——平台 DMA 前提见 [桥 BME 根因](faq.md#bridge-bme)。
 
 | 寄存器 | 值 | 解读 |
 |---|---|---|

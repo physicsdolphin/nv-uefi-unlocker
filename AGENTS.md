@@ -1,5 +1,7 @@
 # UEFI 预驱动 GPU 解锁器——开发代理任务书（v1，2026-10-25）
 
+> Deployment agents: use [AGENTS.deploy.md](AGENTS.deploy.md) for the installation workflow and current documentation index. This file remains the development task brief.
+
 > 用法：把本文整篇作为新项目开发代理的首条指令（或放入其 AGENTS.md）。任务书自包含；所有外部仓库给公开 URL，需自行 clone 到本地 `reference/` 目录。本任务书源于 NVOC 项目的生态考察与规划（docs/reverse-engineering/uefi/windows-uefi-pre-driver-unlocker-dev-plan.md），技术事实均已实测或三源交叉核实。
 
 ---

@@ -1,9 +1,8 @@
-# ssdiag v0.2 — in-OS NVIDIA register diagnosis + separate-lock re-apply (Windows)
+# ssdiag — in-OS NVIDIA register diagnosis and selector repair (Windows)
 
-Reads the NVIDIA registers the EFI unlock stage touches — from inside the
-running OS — and, where the EFI chain left the FEAT PLM gate open (Ampere/Ada
-AON behavior), re-applies the SS override values **without a reboot**
-("separate-lock" method, issue #6).
+Reads the NVIDIA registers touched by the EFI unlock stage from Windows. It can restore SS overrides without rebooting on Ampere/Ada when the FEAT PLM gate remains open.
+
+For read-back verdicts, Turing behavior, Linux checks and handoff diagnosis, use the [FAQ](../../docs/faq.en.md#ssdiag). This page covers the tool's register surface, driver lifecycle and build.
 
 ## What it dumps
 
@@ -18,12 +17,8 @@ AON behavior), re-applies the SS override values **without a reboot**
   64G-BAR1 line (CYA/CFG/XVE/BAR1 cap mirror), the cmp170hx 26-register
   PLM survey, and the Ampere/Ada FEAT sweep — the union of the register
   surfaces the reference unlockers touch.
-- FEAT cluster of BOTH families (Turing 0x4096xx + Ampere/Ada 0x823xxx) on
-  every chip, so nothing depends on getting the family route right.
-- Verdict: SS override values live = unlocked; gate open + stock values =
-  `--reapply` applies (repair path after devinit re-derivation, driver init,
-  sleep, or a rail-up Thunderbolt re-enumeration); gate closed (Turing relock
-  chain) = read-only by design, re-run the USB unlock.
+
+Architecture identification covers Maxwell through Rubin; the FEAT unlock verdict is available only for the mapped Turing/Ampere/Ada families. Output uses colored addresses and verdicts on a console; pipes or `NO_COLOR` select plain text. Parked GPUs can be woken through NVAPI GC6Control.
 
 ## Driver: embedded, strict remove-when-done
 
@@ -49,14 +44,12 @@ ssdiag --reapply                    # + SS0=0x88888888 SS1=0x8 per card where th
 ssdiag --select 1F07                # narrow to functions whose DeviceID matches
 ```
 
-`--bar0` was removed in v0.3: physical assignments change between UEFI and
-Windows (a stale base once hard-hung a machine), so the tool discovers each
-GPU's ranges from the OS itself and refuses anything it did not discover.
+BAR0 is discovered from the OS for each GPU. Manually supplied physical bases are not accepted; the mapping can differ between EFI, Windows and subsequent boots.
 
 ## Build
 
 ```text
-cargo build --release        # any Windows MSVC host; no cross toolchain needed
+cargo build --release        # run from tools/ssdiag on a Windows MSVC host
 ```
 
 ## Caveats
@@ -69,4 +62,8 @@ cargo build --release        # any Windows MSVC host; no cross toolchain needed
   simultaneous anti-cheat session may still complain.
 - The transport protocol is copied byte-for-byte from nvoc
   `core/src/kmd/pmxdrv.rs` (reverse-engineered + live-verified there); the
-  code table was once mis-derived by hand — do not re-derive it.
+  transport definitions must match the driver protocol.
+
+## Example output
+
+<img width="750" height="780" alt="ssdiag register dump and unlock verdict" src="https://github.com/user-attachments/assets/d475654e-bc0a-4def-b48a-05ff6095b118" />

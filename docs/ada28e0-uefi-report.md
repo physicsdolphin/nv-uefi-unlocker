@@ -40,8 +40,7 @@ ASUS 移动端）。本报告将其补上。解锁为易失性质：每次冷启
 [Skyworks-Neo/nvoc](https://github.com/Skyworks-Neo/nvoc) 的 kmd 功耗墙解锁
 （OS 侧，解除功耗/电压墙）正交可叠加。组合实测：FP16 GEMM 8192 达
 60–63 TFLOPS、芯片功耗 ~163.7 W、Hot Spot 104.4 °C、PerCap Reason=Pwr
-持续——远超原厂 TGP 包络，散热与供电自担，物理损坏概不负责（见 README
-警告）。
+持续——远超原厂 TGP 包络，散热与供电自担，物理损坏概不负责（见 [组合测试风险说明](faq.md#nvoc-results)）。
 
 ## 与 Linux kmod 路径的差异（为什么这条链不同）
 
@@ -170,3 +169,37 @@ payload 永不入库；一切资产从钉 SHA-256 的公开输入本地再生；
 只能来自 segmentation 掩码放行后**完整晶体管不再空转**——被砍的 lane
 原本在时钟照打的前提下周期性执行 NOP/挂起槽位，放行后这些槽位装载真实
 指令。不是超频，不是功率换性能（stock 在更高频率且不撞墙时也只有 35.9 T）。
+
+## 组合测量明细与配图
+
+本节保存同一台 G614JV / RTX 4060 Laptop `28e0` 的完整测量条件和读数。吞吐由 [nvoc 的 cli-stressor-cuda-rs](https://github.com/Skyworks-Neo/nvoc/tree/main/cli-stressor-cuda-rs) 测得；4096 与 8192 的数据对应不同规模，不作为同条件倍率对照。
+
+| 工况 | 数值 |
+| --- | --- |
+| FP16 GEMM 4096（仅本工具解锁） | 49.0–49.3 TFLOPS（stock 29.89，1.65×） |
+| FP16 GEMM 8192（+nvoc 功耗墙） | **60.8–63.1 TFLOPS**（相对 stock ≈ **2.1×**） |
+| GPU 核心时钟峰值 | **3045 MHz** @ 1.200 V |
+| 板级功耗峰值 | **206.8 W**（芯片 ~163.7 W + 显存 21.8 W + PWR_SRC 24.8 W；16-pin 164.4 W @ 19.8 V） |
+| 温度 | Hot Spot 峰值 **101.8–104.4 °C**，核心 79–81 °C，显存 58–66 °C |
+| 限流原因 | PerCap Reason 在 **Pwr**（功耗墙）与 **Thrm**（热墙）间切换 |
+
+同卡、同 FP16 精度的发射率与功耗控制对照：
+
+| 状态 | 频率 | 芯片功耗 | 墙 | FP16 tensor |
+| --- | --- | --- | --- | --- |
+| stock | **2.52 GHz** | 95~105 W | **电压墙** | 30.5 TFLOPS |
+| 只解锁 SM 发射率 | **2.37 GHz** | 130-140 W | **撞功耗墙** | 47.50 TFLOPS |
+| 只解锁功率（+nvoc 放开电压墙+极限超频） | **3.00 GHz** | 155–160 W | **不撞功耗墙** | 35.9 TFLOPS |
+| 解锁 SM 发射率+功率（+nvoc 放开电压墙+极限超频） | 平均 **2.89 GHz** | 190–208 W | 撞温度墙+供电极限 | **64.30 TFLOPS** |
+
+组合测试中，限流原因在功耗墙与热墙间切换。供电与温度值只描述这台机器的测试，不是其他显卡的推荐配置。原测试特别关注液金/硅脂、风扇、均热板/热管、适配器、VRM 与电源链路温升，并将 Hot Spot 与核心温差超过 20 °C、Hot Spot 持续超过 100 °C 作为散热风险提示。
+
+组合测试截图：
+
+<img width="1280" height="595" alt="RTX 4060 Laptop 与 nvoc 组合测试截图" src="https://github.com/user-attachments/assets/1f60b619-b367-4823-9764-1caa44575501" />
+
+温度与供电监测截图：
+
+<img width="287" height="520" alt="RTX 4060 Laptop 组合测试监测截图" src="https://github.com/user-attachments/assets/d5e5fb50-4504-4b76-ba43-56e5db078b8b" />
+
+nvoc 由 [physicsdolphin](https://github.com/physicsdolphin) 主导开发。报告中 10/20 系桌面卡只有驱动读回、未验证软件解除功耗墙后的性能效果：报告者持有的这类卡已做 shunt 改造并显示“0 W”，不具备对应软件操作的对照条件。原组合说明涉及电压控制的 slot 0/1/2、Target Wall、VBIOS Wall 和 VRM Max Wall（Vop）；具体命令及可写项目以 nvoc 的文档和设备读回为准。
