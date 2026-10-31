@@ -21,6 +21,8 @@ Windows Boot Manager。
 v2.1.0 起 30 系全系兼容。** 支持矩阵：
 
 - **RTX 20 系（Turing）✅ 全系兼容 实测支持（v0.2.0）**——RTX 2070（TU106, `10de:1f07`）
+  - ⚠️ RTX 2080（TU104-400, `10de:1e87`）v2.1.1~v2.1.6 实测 booter 不起（mailbox0=0x91），
+    与 2080 Super（`1e81`）逐项对齐后仍失败，排查中（[issue #62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62)）。
   全链解锁：**FP32 累加 GEMM 36 → 60–63 TFLOPS（+67~75%）**；2060 Super
   （`10de:1f06`）社区实测同链通过（[issue #12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)）。
   **Turing 用户
