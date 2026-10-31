@@ -147,57 +147,6 @@ mod reg {
 
 const HKEY_LOCAL_MACHINE: isize = 0x8000_0002;
 const RRF_RT_REG_DWORD: u32 = 0x0000_0010;
-const RRF_RT_REG_SZ: u32 = 0x0000_0002;
-
-/// One HKEY_LOCAL_MACHINE string value (REG_SZ), for the PCI LocationInformation.
-fn hklm_string(subkey: &str, value: &str) -> Option<String> {
-    let sub = wide(subkey);
-    let val = wide(value);
-    let mut cb: u32 = 0;
-    // size query first: RegGetValueW wants a big-enough buffer, and a NULL
-    // buffer with cb=0 returns the required byte count
-    let rc = unsafe {
-        reg::RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            sub.as_ptr(),
-            val.as_ptr(),
-            RRF_RT_REG_SZ,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            &mut cb,
-        )
-    };
-    if rc != 0 || cb == 0 {
-        return None;
-    }
-    let mut data = vec![0u8; cb as usize];
-    let rc = unsafe {
-        reg::RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            sub.as_ptr(),
-            val.as_ptr(),
-            RRF_RT_REG_SZ,
-            core::ptr::null_mut(),
-            data.as_mut_ptr().cast(),
-            &mut cb,
-        )
-    };
-    if rc != 0 {
-        return None;
-    }
-    // cb counts bytes including the NUL; UTF-16 pairs
-    let words: Vec<u16> = data[..(cb as usize & !1)]
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .collect();
-    let s = String::from_utf16_lossy(&words);
-    let s = s.trim_end_matches('\0').trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
-}
 
 /// None = the value is absent (or unreadable), which the caller must print as
 /// "unknown" rather than as a pass.
@@ -744,6 +693,9 @@ struct Gpu {
     id: String,
     /// sorted (start, end) memory ranges
     ranges: Vec<(u64, u64)>,
+    /// PCI (bus, device, function) from the PnP bus/address properties, with
+    /// the LocationInfo string as fallback - None if neither parsed.
+    bdf: Option<(u32, u32, u32)>,
 }
 
 impl Gpu {
@@ -772,9 +724,19 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
     // Dependent/Antecedent are embedded CimInstance objects - property access,
     // not string regex (the Dependent.ToString path does not round-trip).
     // Display-class filter keeps companion functions (audio/USB-C) out.
+    // The trailing BDF lines carry the PnP bus/address properties (the PCI
+    // Address packs (device << 16) | function) plus the raw LocationInfo
+    // string as fallback - LocationInformation in the registry is NOT
+    // guaranteed to exist (field-verified absent on a TU106 machine).
     let ps = "$disp = Get-PnpDevice -Class Display | Where-Object InstanceId -match 'VEN_10DE' | Select-Object -ExpandProperty InstanceId
               $r = Get-CimInstance Win32_PnPAllocatedResource | Where-Object { $_.Dependent -match 'VEN_10DE' -and $_.Antecedent -match 'Memory' }
-              $r | ForEach-Object { $id = $_.Dependent.DeviceID; if ($disp -ccontains $id) { $m = Get-CimInstance $_.Antecedent; \"{0}|{1}|{2}\" -f $id, $m.StartingAddress, $m.EndingAddress } }";
+              $r | ForEach-Object { $id = $_.Dependent.DeviceID; if ($disp -ccontains $id) { $m = Get-CimInstance $_.Antecedent; \"{0}|{1}|{2}\" -f $id, $m.StartingAddress, $m.EndingAddress } }
+              foreach ($id in $disp) {
+                $b = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_BusNumber' -ErrorAction SilentlyContinue
+                $a = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_Address' -ErrorAction SilentlyContinue
+                $l = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_LocationInfo' -ErrorAction SilentlyContinue
+                \"{0}|BDF|{1}|{2}|{3}\" -f $id, $b.Data, $a.Data, $l.Data
+              }";
     let out = std::process::Command::new("powershell")
         .args(["-NoProfile", "-Command", ps])
         .output()
@@ -788,18 +750,42 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
     let mut gpus: Vec<Gpu> = Vec::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
         let mut it = line.trim().split('|');
-        let (Some(id), Some(a), Some(b)) = (it.next(), it.next(), it.next()) else {
+        let Some(id) = it.next() else { continue };
+        if id.is_empty() {
+            continue;
+        }
+        // BDF lines: "id|BDF|bus|addr|location"
+        if it.next() == Some("BDF") {
+            let bus = it.next().and_then(|v| v.trim().parse::<u32>().ok());
+            let addr = it.next().and_then(|v| v.trim().parse::<u32>().ok());
+            let loc = it.next().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+            let bdf = match (bus, addr) {
+                (Some(b), Some(a)) if b <= 0xFF => {
+                    let d = (a >> 16) & 0x1F;
+                    let f = a & 0xF;
+                    if f <= 7 { Some((b, d, f)) } else { None }
+                }
+                _ => None,
+            };
+            let bdf = bdf.or_else(|| loc.as_deref().and_then(bdf_from_location));
+            match gpus.iter_mut().find(|g| g.id == id) {
+                Some(g) => g.bdf = bdf.or(g.bdf.take()),
+                None => gpus.push(Gpu { id: id.to_string(), ranges: vec![], bdf }),
+            }
+            continue;
+        }
+        let (Some(a), Some(b)) = (it.next(), it.next()) else {
             continue;
         };
         let (Ok(a), Ok(b)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>()) else {
             continue;
         };
-        if id.is_empty() || a == 0 || b < a {
+        if a == 0 || b < a {
             continue;
         }
         match gpus.iter_mut().find(|g| g.id == id) {
             Some(g) => g.ranges.push((a, b)),
-            None => gpus.push(Gpu { id: id.to_string(), ranges: vec![(a, b)] }),
+            None => gpus.push(Gpu { id: id.to_string(), ranges: vec![(a, b)], bdf: None }),
         }
     }
     for g in &mut gpus {
@@ -884,31 +870,23 @@ fn mcfg_base_for(bus: u32) -> Option<u64> {
 /// Read-only ReBAR extended-capability probe through ECAM. The driver only
 /// offers physical map/unmap, and config space on every modern x64 machine
 /// IS memory-mapped (MCFG/ECAM), so the probe needs no new driver surface:
-/// it maps exactly one 4 KiB page - the target function's own config space,
-/// located via the registry LocationInformation and validated against the
-/// DeviceID's VID/DID before anything is decoded. Nothing outside that page
-/// is ever touched (no bus scanning - unclaimed ECAM reads are the one
-/// platform quirk this avoids). Register layout identical to the loader's
-/// corrected decode (eb2bff5): {CAP, CTRL} pairs at +4/+8, count in first
-/// CTRL[7:5], per-pair CTRL[2:0] index / CTRL[12:8] size (1 MiB << n),
+/// it maps exactly one 4 KiB page - the target function's own config space
+/// (bdf resolved at discovery time from the PnP bus/address properties) and
+/// validates the DeviceID's VID/DID before anything is decoded. Nothing
+/// outside that page is ever touched (no bus scanning - unclaimed ECAM reads
+/// are the one platform quirk this avoids). Register layout identical to the
+/// loader's corrected decode (eb2bff5): {CAP, CTRL} pairs at +4/+8, count in
+/// first CTRL[7:5], per-pair CTRL[2:0] index / CTRL[12:8] size (1 MiB << n),
 /// CAP = supported-sizes bitmap (raw bit n = 2^n MB).
-fn print_config_rebar(drv: &PmxDrv, instance: &str) {
+fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>) {
     let Some(did) = dev_id_from(instance) else {
         println!("config-space ReBAR: no DEV_ in DeviceID - skipped");
         return;
     };
-    let loc = match hklm_string(
-        &format!("SYSTEM\\CurrentControlSet\\Enum\\PCI\\{}", instance),
-        "LocationInformation",
-    ) {
-        Some(l) => l,
-        None => {
-            println!("config-space ReBAR: no LocationInformation in registry - bdf unknown, skipped");
-            return;
-        }
-    };
-    let Some((bus, dev, func)) = bdf_from_location(&loc) else {
-        println!("config-space ReBAR: LocationInformation not parseable ({loc:?}) - skipped");
+    let Some((bus, dev, func)) = bdf else {
+        println!(
+            "config-space ReBAR: bdf not derivable from PnP bus/address properties - skipped"
+        );
         return;
     };
     let Some(mcfg) = mcfg_base_for(bus) else {
@@ -1412,7 +1390,7 @@ SSDIAG_COLOR=force pins on.",
         }
         // works even for a parked card (config space answers regardless of
         // D0/MEM decode) - hence before the BAR0 walk, not after
-        print_config_rebar(&drv, &g.id);
+        print_config_rebar(&drv, &g.id, g.bdf);
         let mut picked = walk_candidates(&drv, g);
         // degenerate reads (GC6/GCOFF park, D3, MEM decode off) -> one NVAPI
         // driver-mediated wake, then a single re-walk
