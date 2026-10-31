@@ -28,3 +28,15 @@
 GSP 模式注册表切换**必须 Restart**：休眠恢复从镜像还原驱动、不重新初始化，
 切换不生效。流程=运行 enable-turing-unlock.ps1 → 重启（可顺路进 U 盘解锁）
 → Windows 验证。
+
+## 解锁前后截图
+
+与上述 RTX 2070 实测结果对应的截图：
+
+解锁前：
+
+<img width="800" height="400" alt="RTX 2070 解锁前测试截图" src="https://github.com/user-attachments/assets/6e61c642-7202-47a6-b6a0-cc2d986892d3" />
+
+解锁后：
+
+<img width="800" height="450" alt="RTX 2070 解锁后测试截图" src="https://github.com/user-attachments/assets/8c103363-8e44-4d46-ab47-a6c063ae1e6f" />

@@ -1,6 +1,6 @@
 # 链条分步对照：我们 / TOTORONG / Linux kernel（gpu-unlock-ada）
 
-> 勘误（2026-10-28）：本文是 2026-10-26 的过程记录。顶部对 28e1 的 IOMMU 归因已被后续桥 BME 实验推翻，见[根因报告](bridge-bme-root-cause.md)。当前家族判据和实现限制见[社区汇总](community-reports.md)。
+> 勘误（2026-10-28）：本文是 2026-10-26 的过程记录。顶部对 28e1 的 IOMMU 归因已被后续桥 BME 实验推翻，见[根因报告](bridge-bme-root-cause.md)。当前家族判据见 [FAQ](faq.md#mechanism)，实现限制见[安全与边界](faq.md#safety)。
 
 日期：2026-10-26。依据：gpu-unlock-ada 全家桶（unlock_610.c + 15 卡报告）、
 TOTORONG AD103_win_unlocker 源码、我们 28e0 实测日志（至 EFI c0fce9ac）。
@@ -10,7 +10,7 @@ TOTORONG AD103_win_unlocker 源码、我们 28e0 实测日志（至 EFI c0fce9ac
 > scrubber 与 booter 同一修复受益）+ **内核同款 scrubber 跑通 BSI handoff
 > （SCRATCH_15 1→3，SEC2/GSP 域解锁）**；此后 CPUCTL START 正常生效
 > （start-probe: pre=0x50 → started → HALT）。M3 回放（MAILBOX0=0，28e0
-> 硅验证；28e1 因平台固件 IOMMU 阻断在 booter，见 README 已知限制）与
+> 硅验证；28e1 因平台固件 IOMMU 阻断在 booter，见 [桥 BME 根因](faq.md#bridge-bme)）与
 > M4 payload（marker+四写：28e0 1.65×、28a1 1.7~1.9×）均已硅验证。
 > §二–§四保留为卡点过程记录，§五行动清单已被上述结果取代。
 
