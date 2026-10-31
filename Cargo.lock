@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "assets"
-version = "2.1.8"
+version = "2.1.9"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -168,7 +168,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "loader"
-version = "2.1.8"
+version = "2.1.9"
 dependencies = [
  "log",
  "uefi",
@@ -282,7 +282,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sim"
-version = "2.1.8"
+version = "2.1.9"
 
 [[package]]
 name = "syn"

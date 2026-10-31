@@ -793,6 +793,38 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     }
     core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
+    // \tx-fwsec-vram-staging.txt (issue #89-proven vehicle): some hosts cannot
+    // DMA the FWSEC image from sysmem at ALL (not just >=4GiB - #89's 1f03
+    // died with EXCI 0x009003ff even on the v2.1.8 low-band default). The
+    // field-proven shape: copy the image into the framebuffer via BAR1, point
+    // the BL's codeDma/dataDma at the FB offset, and switch the GSP FBIF
+    // TRANSCFG4 aperture to LOCAL_FB ((t4&!7)|4). The meta itself MUST stay
+    // in sysmem (the booter reads it through the sysmem aperture - VRAM meta
+    // reads back as garbage and exits 0x89, #89 measured). Default OFF.
+    let vram_staging = crate::tx::probe_file("\\tx-fwsec-vram-staging.txt");
+    const FWSEC_VRAM_OFF: u64 = 0x0100_0000; // 16 MiB into FB (BAR1 window)
+    if vram_staging {
+        let img = unsafe { core::slice::from_raw_parts(dma.host, fw.image_size as usize) };
+        let st = gpu.pci.bar_write_buf(1, FWSEC_VRAM_OFF, img);
+        let (rb0, rb1) = (
+            gpu.pci.bar_read_u32(1, FWSEC_VRAM_OFF),
+            gpu.pci.bar_read_u32(1, FWSEC_VRAM_OFF + 4),
+        );
+        let want0 = u32::from_le_bytes([img[0], img[1], img[2], img[3]]);
+        let want1 = u32::from_le_bytes([img[4], img[5], img[6], img[7]]);
+        if st != uefi::Status::SUCCESS || rb0 != want0 || rb1 != want1 {
+            info!(
+                "FWSEC-TU10X: VRAM staging FAILED (write {st:?} readback {rb0:#010x}/{rb1:#010x} want {want0:#010x}/{want1:#010x}) - aborting before any GSP interaction"
+            );
+            let _ = dma.release(gpu.pci);
+            return Err(TxError::EIO);
+        }
+        info!(
+            "FWSEC-TU10X: image staged in VRAM at FB {FWSEC_VRAM_OFF:#x} ({} bytes, readback ok) - BL will fetch via LOCAL_FB aperture",
+            fw.image_size
+        );
+    }
+
     // 1. GSP reset, Turing order (50HX): IRQMSET=0 -> reset/scrub/BCR=Falcon
     //    (falcon_reset; TU106 GSP is RISC-V so the BCR forces Falcon) ->
     //    FALCON_RM = chipId0 (PMC_BOOT_0: TU102 0x162000A1 / TU106 0x166000A1).
@@ -813,17 +845,25 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     gpu.write32(GSP + 0x624, ctl | 1 << 7); // FBIF_CTL DISABLE_CTX_REQ
     gpu.write32(GSP + 0x10C, 0); // DMACTL
     gpu.write32(GSP + 0x600, 0x15); // TRANSCFG0 = COHERENT_SYSMEM|PHYSICAL
-    gpu.write32(GSP + 0x610, 0x15); // TRANSCFG4 (the BL's ctxDma index)
+    if vram_staging {
+        gpu.write32(GSP + 0x610, (0x15 & !7) | 4); // TRANSCFG4 -> LOCAL_FB (issue #89 shape)
+    } else {
+        gpu.write32(GSP + 0x610, 0x15); // TRANSCFG4 (the BL's ctxDma index)
+    }
     let t4 = gpu.read32(GSP + 0x610)?;
-    info!("FWSEC-TU10X: FBIF trans4={t4:#010x} (want 0x15) dmactl cleared");
+    info!("FWSEC-TU10X: FBIF trans4={t4:#010x} dmactl cleared (vram_staging={vram_staging})");
 
     // 3. BL DESC (RM_FLCN_BL_DMEM_DESC, 0x54 bytes) -> DMEM 0.
     let mut desc = [0u8; 0x54];
     let put32 = |d: &mut [u8], off: usize, v: u32| d[off..off + 4].copy_from_slice(&v.to_le_bytes());
-    let data_phys = dma.dev + fw.data_off as u64;
+    let (code_dev, data_phys) = if vram_staging {
+        (FWSEC_VRAM_OFF, FWSEC_VRAM_OFF + fw.data_off as u64)
+    } else {
+        (dma.dev, dma.dev + fw.data_off as u64)
+    };
     put32(&mut desc, 0x20, 4); // ctxDma (TRANSCFG index 4)
-    put32(&mut desc, 0x24, dma.dev as u32); // codeDma lo
-    put32(&mut desc, 0x28, (dma.dev >> 32) as u32); // codeDma hi
+    put32(&mut desc, 0x24, code_dev as u32); // codeDma lo
+    put32(&mut desc, 0x28, (code_dev >> 32) as u32); // codeDma hi
     put32(&mut desc, 0x2C, 0); // nsOff (imemNsPa)
     put32(&mut desc, 0x30, fw.imem_sec_base); // nsSize
     put32(&mut desc, 0x34, fw.imem_sec_base); // secOff (imemSecPa)
@@ -900,6 +940,10 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     if crate::tx::probe_file("\\tx-no-gsp-halt-gate.txt") {
         info!("FWSEC-TU10X: \\tx-no-gsp-halt-gate.txt present - legacy completion (WPR2 match only, no HALT wait, no result check)");
         let _ = dma.release(gpu.pci);
+        if vram_staging {
+            gpu.write32(GSP + 0x610, 0x15); // restore sysmem aperture for later stages
+            info!("FWSEC-TU10X: TRANSCFG4 restored to 0x15 (sysmem) after VRAM-staged FWSEC");
+        }
         info!("FWSEC-TU10X: WPR2 verified (FRTS at {:#x}) [legacy gate]", layout.frts_offset);
         return Ok(());
     }
@@ -944,6 +988,10 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
         return Err(TxError::EIO);
     }
     let _ = dma.release(gpu.pci);
+    if vram_staging {
+        gpu.write32(GSP + 0x610, 0x15); // restore sysmem aperture for later stages
+        info!("FWSEC-TU10X: TRANSCFG4 restored to 0x15 (sysmem) after VRAM-staged FWSEC");
+    }
     info!("FWSEC-TU10X: WPR2 verified (FRTS at {:#x}) [GSP-HALT gate]", layout.frts_offset);
     Ok(())
 }

@@ -1091,6 +1091,26 @@ fn wpr_desc_rejected_hint(mbox0: u32, meta: &[u8]) {
     if mbox0 == 0x31 {
         info!("POST-BOOT: status 0x31 = NS-stub pre-secure marker (final) - the secure entry never executed (placement/entry level, see PR #67 D/E rounds)");
     }
+    // Full 256B meta dump (issue #91): the booter validates this page against
+    // the LIVE WPR2 registers (GA/TU plaintext RE: magic @0x00/0x04, format
+    // @0x08, signature address @0x48, +0xac descriptor field, +0xf8/0xfc must
+    // be 0xa0a0a0a0). The booter's sanitize wipes DMEM on death, so the HOST
+    // view of the published page paired with the GSP-HALT gate's live-register
+    // line is the actionable A/B pair for cross-machine comparison.
+    if (0x89..=0x91).contains(&mbox0) && meta.len() >= 256 {
+        info!("POST-BOOT: META dump (published page, host view; booter-relevant: +0x00 magic, +0x48 sig addr, +0xac field, +0xf8 = 0xa0a0a0a0):");
+        for row in 0..8usize {
+            let mut w = [0u32; 8];
+            for (i, word) in w.iter_mut().enumerate() {
+                let at = row * 32 + i * 4;
+                *word = u32::from_le_bytes(meta[at..at + 4].try_into().unwrap());
+            }
+            info!(
+                "POST-BOOT: META[{:#05x}]: {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x}",
+                row * 32, w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]
+            );
+        }
+    }
     if (0x89..=0x90).contains(&mbox0) {
         info!("POST-BOOT: status 0x89-0x90 = WPR descriptor (WprMeta) rejected on DMA readback");
         info!("POST-BOOT: known causes (>=3, issue #74 rounds 15-28): 1) a bridge on the path without bus master (check the DMA-PATH lines; PR #5 family), 2) the meta address in a band this platform cannot DMA (>=4GiB on TB tunnels; the mirror-image sub-4GB booter locks also land here), 3) firmware IOMMU (AMD-Vi) remap - try it OFF (SVM/AMD-V and Intel VT-x/VT-d are verified harmless)");
