@@ -28,17 +28,48 @@ const FLUSH_MARKERS: &[&str] = &[
     "SELECTOR", "HANDOFF", "WATCHDOG", "AUTH-SCAN end",
 ];
 
+/// Console whitelist for quiet mode (issue #38): with `\tx-quiet.txt` on
+/// the stick root, only lines carrying one of these substrings are mirrored
+/// to the screen; every line still goes to the file first. Deliberately
+/// tighter than FLUSH_MARKERS - the file keeps its full evidence cadence,
+/// the screen only keeps operator-facing verdicts (on an iGPU GOP that
+/// renders ~1 line/s the full mirror cost minutes per run; the TU106 stick
+/// logged 415+ flushed lines). Textually mirrored in sim/src/log_gate.rs
+/// for shape tests.
+const CONSOLE_QUIET_MARKERS: &[&str] = &[
+    "nv-uefi-unlocker", "TX BUILD", // version + build-class banner
+    "PROMPT", "CONFIRM", // interaction
+    "PHASE", "SELECTOR", "HANDOFF", // stage boundaries
+    "RESULT", "FINAL", "TX:", "CHAIN", "QUIET", // verdicts
+];
+
+/// Pure matcher for [`CONSOLE_QUIET_MARKERS`]; the sim mirror
+/// (sim/src/log_gate.rs) must stay textually identical.
+fn console_visible(line: &str) -> bool {
+    CONSOLE_QUIET_MARKERS.iter().any(|m| line.contains(m))
+}
+
+/// Quiet only takes effect while the file log is alive: when the file
+/// could not be opened the console is the only record and must stay
+/// complete. Pure decision, mirrored in sim/src/log_gate.rs.
+fn quiet_effective(request: bool, file_open: bool) -> bool {
+    request && file_open
+}
+
 struct DualLogger {
     file: UnsafeCell<Option<RegularFile>>,
     // set after a failed open so we log the reason exactly once
     file_error_reported: UnsafeCell<bool>,
     lines: UnsafeCell<usize>,
+    // issue #38: skip the console mirror for non-verdict lines
+    quiet: UnsafeCell<bool>,
 }
 
 static LOGGER: DualLogger = DualLogger {
     file: UnsafeCell::new(None),
     file_error_reported: UnsafeCell::new(false),
     lines: UnsafeCell::new(0),
+    quiet: UnsafeCell::new(false),
 };
 
 // Safety: UEFI applications are single-threaded during boot services.
@@ -54,12 +85,21 @@ impl Log for DualLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let line = format!(
-            "[{:5}] {}: {}\r\n",
-            record.level(),
-            record.target(),
-            record.args()
-        );
+        // Stage timing (issue #38): a calibrated stamp per line separates
+        // slow-GOP echo cost from real transaction waits in the record.
+        let line = match crate::timing::ms_since_entry() {
+            Some(ms) => format!(
+                "[{ms:>7}ms] {:5}: {}\r\n",
+                record.level(),
+                format_args!("{}: {}", record.target(), record.args())
+            ),
+            None => format!(
+                "[{:5}] {}: {}\r\n",
+                record.level(),
+                record.target(),
+                record.args()
+            ),
+        };
 
         // File mirror FIRST, then console: a dangling console chain is
         // itself a suspected crash site, so the stick must already hold the
@@ -79,11 +119,15 @@ impl Log for DualLogger {
             }
         }
 
-        // Console mirror.
-        if let Ok(s) = CString16::try_from(line.as_str()) {
-            system::with_stdout(|out| {
-                let _ = out.output_string_lossy(&s);
-            });
+        // Console mirror. Quiet mode (issue #38) keeps verdict-class lines
+        // only; the stick already holds every line (file mirror ran first).
+        let quiet = unsafe { *self.quiet.get() };
+        if !quiet || console_visible(&line) {
+            if let Ok(s) = CString16::try_from(line.as_str()) {
+                system::with_stdout(|out| {
+                    let _ = out.output_string_lossy(&s);
+                });
+            }
         }
     }
 
@@ -119,6 +163,28 @@ pub fn finish() {
     // Safety: single-threaded; take() drops (close = flush per spec).
     let taken = unsafe { (*LOGGER.file.get()).take() };
     drop(taken);
+}
+
+/// Console-suppression gate (issue #38): `\tx-quiet.txt` opts the run into
+/// verdict-lines-only console output. The file always records everything;
+/// quiet only gates the mirror. Refused while the log file is closed - the
+/// console is then the only record and must stay complete. Returns whether
+/// quiet took effect.
+pub fn set_quiet(quiet: bool) -> bool {
+    let effective = quiet_effective(quiet, file_open());
+    // Safety: single-threaded boot services; pointer use confined here.
+    unsafe {
+        *LOGGER.quiet.get() = effective;
+    }
+    effective
+}
+
+/// Current quiet state (banner slimming reads it; the only caller is
+/// tx-build-only, so read-only builds carry it unused).
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+pub fn is_quiet() -> bool {
+    // Safety: single-threaded boot services.
+    unsafe { *LOGGER.quiet.get() }
 }
 
 fn file_open() -> bool {

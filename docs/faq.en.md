@@ -48,8 +48,10 @@ Optional markers go in the stick root; normal use needs none:
 | `chain-target.txt` | First nonempty, non-`#` line specifies an EFI path tried on each volume before the default order; missing path is logged and falls back |
 | `no-reconnect.txt` | Skip target GOP reconnect for a post-transaction reconnect hang/reset |
 | `i_know_what_i_am_doing.txt` | Auto-run after 5 seconds, any key aborts; existence enables it, contents ignored |
+| `tx-quiet.txt` | Quiet mode (issue #38): the console mirrors verdict lines only (banner/confirm/per-card target and result/HANDOFF/FINAL/CHAIN) while `loader.log` still records every line; if the log file cannot be opened the console stays complete. Turns minutes of echo into seconds on iGPUs that render ~1 line/s; combined with `i_know_what_i_am_doing.txt` it is a fully unattended fast run. A frozen screen during the transaction is normal, not a hang |
+| `tx-gop-disconnect.txt` | Diagnostic switch: disconnect every GOP handle (including the iGPU) instead of only the target card. **Not a speed lever** - once the console is silent it buys nothing, and the other card's console is never restored by the loader (it depends on bootmgfw rebuilding it; a known Code 12 risk shape, see issue #35) |
 
-Without the auto-run marker, only Space or Enter confirms; another key or a 30-second timeout aborts. Chainload order: Windows Boot Manager → supported Linux shim/grub/systemd-boot/Limine → generic `EFI/BOOT/BOOTX64.EFI`. The last tier offers a 5-second key-to-exit window.
+Without the auto-run marker, only Space or Enter confirms; another key or a 30-second timeout aborts. Chainload order: Windows Boot Manager → supported Linux shim/grub/systemd-boot/Limine → generic `EFI/BOOT/BOOTX64.EFI`. The last tier offers a 5-second key-to-exit window. Slow-console speedup is the `tx-quiet.txt` console whitelist (issue #38), not async output - UEFI boot services are single-threaded and GOP text rendering is a synchronous call, so asynchrony cannot raise throughput; every log line carries a `[+ms]` stage-timing prefix so echo cost and transaction waits separate in `loader.log`.
 
 Multi-GPU default: process all supported cards in firmware order; skip unsupported/already-unlocked cards, handle a card's failure without retrying it. Pin the BDF when only one card is intended.
 
