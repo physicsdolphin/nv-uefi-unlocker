@@ -35,3 +35,14 @@
 ## 4. AD102 L2 扩容（72→96 MiB）—— 不能落地
 
 博客自身结论即失败：LTC/LTS 禁用=熔丝层|软件掩码，0x822080 只能 OR 进更多禁用；GA100 RIR 永久改写读出是唯一剩余路径=OTP 烧写，违反本项目"易失覆盖、每次引导重放、可逆"的纪律且有变砖风险（作者本人已停手）。不立项。
+
+## 5. 原始论文评估：A Canary in the Crypto Mine（Zenodo 10.5281/zenodo.20916112，Jon Pry，2026-06-26）
+
+CMP 170HX（=A100 同芯，三轴 fuse-crippled：SM 速率钳 1/32、显存 10→80GB、PCIe Gen1）的学术化拆解，CC-BY-4.0。与本项目相关的四点：
+
+1. **金丝雀防御无效的更尖锐表述**：stack-protector 的参考字本身就在同一溢出可及的可写 DMEM 里——"secrecy and entropy are irrelevant"，无需猜测原值，同一次溢出同时覆盖参考字与保存槽即可通过校验。这把我们对 §7.4"均匀性攻法"（0xc0deca7e 覆盖全局+保存槽）从经验规律升级为机制解释，且跨代通用（Golden eye 序列的 booter 都用同族 stack protector）。
+2. **HS 代码执行面是 booter 回归（regression）**：存在于 open-kernel-modules 时代的较新 booter、较旧 booter 无此洞——"version currency is not a security gradient"。对我们资产管线的含义：解锁面依赖钉版 booter 的具体版本，资产审计必须记录"该版本含无界签名 DMA"这一事实本身；钉版换版时把可利用性当一级属性复查。
+3. **论文 defeated 的三轴 = 速率/容量/链路 Gen2，从未攻 SM 数量**：170HX 的 70-SM 配置不在攻击面内。这与本文件 §2 的判定互证——连最完整的学术处理也只解到 config 层的钳制（速率/容量/Gen2），熔丝层数量配置无人攻破；PR #55 的"+4 SM"仍是唯一无证据的例外主张。三轴 resisted（Gen3、on-die ECC、HBM retiming）中 Gen3 与 §1 一致；ECC 后来被 cmpunlocker 于 2026-10 经驱动补丁路线解决（3c52ad37），说明"resisted"≠"死"，但那条路是 GSP-RM 补丁，不是我们易失覆盖的形状。
+4. **对 Feature A 的增益**：论文独立确认 Gen1→Gen2 是纯固件门（软件可破）且 2× 实测，Gen3 是另一堵墙（fuses+DevInit+GSP 补丁）；离线仿真确定性微码后构造"合法续延镜像"的方法论 = 我们 sim/ 先行纪律的学术同构。
+
+结论不变：§1 探索、§2 不落地、§3 已落地（PR #95）、§4 不立项；论文为 §1/§2 提供机制层背书。
