@@ -940,7 +940,11 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
                         if !supported.is_empty() {
                             supported.push('/');
                         }
-                        let mib = 1u64 << (bit - 4 + 20);
+                        // raw bit (n+4) = 2^n MiB (linux bytes_to_size =
+                        // log2(bytes) - 20); CTRL[12:8] size_idx likewise -
+                        // field round 2: 1f07 reads size_idx 4/8/5 with live
+                        // windows 16/256/32 MiB, confirming 2^n MiB
+                        let mib = 1u64 << (bit - 4);
                         if mib >= 1024 {
                             supported.push_str(&format!("{}G", mib / 1024));
                         } else {
@@ -952,7 +956,7 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
                     "  BAR{} supported [{}] current {} MiB (size_idx {})",
                     ctrl & 0x7,
                     supported,
-                    1u64 << (20 + size_idx),
+                    1u64 << size_idx,
                     size_idx
                 );
             }
@@ -966,7 +970,7 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
     }
     if !found {
         println!(
-            "config-space ReBAR (bus {bus} dev {dev} fn {func}): no 0x15 capability - card does not advertise resizable BAR (A4G/ReBAR board settings cannot resize this card's BAR1; expected on Turing)"
+            "config-space ReBAR (bus {bus} dev {dev} fn {func}): no 0x15 capability - card does not advertise resizable BAR (A4G/ReBAR board settings cannot resize this card's BAR1)"
         );
     }
     drv.unmap_physical(va);

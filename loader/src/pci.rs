@@ -1096,7 +1096,9 @@ fn describe_nvidia(pci: &PciIo, seg: usize, bus: usize, dev: usize, fun: usize, 
                             if !supported.is_empty() {
                                 supported.push('/');
                             }
-                            let mib = 1u64 << (bit - 4 + 20);
+                            // raw bit (n+4) = 2^n MiB (linux bytes_to_size =
+                            // log2(bytes) - 20); CTRL[12:8] size_idx likewise
+                            let mib = 1u64 << (bit - 4);
                             if mib >= 1024 {
                                 supported.push_str(&alloc::format!("{}G", mib / 1024));
                             } else {
@@ -1108,7 +1110,7 @@ fn describe_nvidia(pci: &PciIo, seg: usize, bus: usize, dev: usize, fun: usize, 
                         "    BAR{} supported [{}] current {} MiB (size_idx {}, ctrl {:#010x} cap {:#010x})",
                         ctrl & 0x7,
                         supported,
-                        1u64 << (20 + size_idx),
+                        1u64 << size_idx,
                         size_idx,
                         ctrl,
                         cap
