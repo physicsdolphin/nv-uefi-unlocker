@@ -282,3 +282,31 @@ fn t26_ga102_shape_rejected_by_ada_triad_proves_the_shapes_differ() {
     assert_eq!(err.phase, "verify");
     assert!(err.reason.contains("triad"), "Ada triad must NOT pass a GA102 self-loop run: {err:?}");
 }
+
+/// Report fields must describe the model's state, not the `Faults` the test
+/// constructed. These four used to be `true` literals or `!faults.x`; the
+/// assertions below are anchored on registers the transaction actually read,
+/// so a state machine that skips a phase can no longer report it as done.
+#[test]
+fn t27_report_fields_come_from_reads_not_faults() {
+    // Happy path: every phase ran, the triad was read back.
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let report = Transaction::new(&mut gpu, Faults::default())
+        .run()
+        .expect("happy path");
+    assert!(report.fwsec_fired, "fwsec ran");
+    assert!(report.booter_fired, "booter ran");
+    assert!(report.marker_seen, "marker was read back");
+    assert!(report.halt_seen, "HALT was read back");
+    assert!(report.plm_open_verified, "PLM was read back open");
+
+    // Replay: stock booter halts with no marker and leaves the PLM locked.
+    let mut gpu2 = FakeGpu::new_locked_cold(None);
+    let replay = Transaction::new_replay(&mut gpu2, Faults::default())
+        .run()
+        .expect("replay");
+    assert!(replay.fwsec_fired && replay.booter_fired, "both phases still ran");
+    assert!(!replay.marker_seen, "no marker in replay - it must not be invented");
+    assert!(replay.halt_seen, "the stock booter halts");
+    assert!(!replay.plm_open_verified, "replay leaves the PLM locked");
+}

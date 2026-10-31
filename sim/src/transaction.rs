@@ -100,6 +100,13 @@ pub struct Transaction<'a> {
     dma_frees: usize,
     bme_set: bool,
     bme_was_dirty: bool,
+    // Execution evidence as READ, never recomputed from Faults: the Report has to
+    // describe the model's state, not the switches the test constructed.
+    last_marker: Option<u32>,
+    last_cpuctl: Option<u32>,
+    last_plm: Option<u32>,
+    fwsec_done: bool,
+    booter_done: bool,
     log: Vec<String>,
 }
 
@@ -111,6 +118,11 @@ impl<'a> Transaction<'a> {
             payload: true,
             shape: PayloadShape::AdaTriad,
             dma_live: 0,
+            last_marker: None,
+            last_cpuctl: None,
+            last_plm: None,
+            fwsec_done: false,
+            booter_done: false,
             dma_allocs: 0,
             dma_frees: 0,
             bme_set: false,
@@ -207,6 +219,7 @@ impl<'a> Transaction<'a> {
                 "WPR2 mismatch: installed {lo:#x}/{hi:#x}, wanted {:#x}/{:#x}", want.0, want.1
             )));
         }
+        self.fwsec_done = true;
         self.note("fwsec fired, WPR2 verified");
         Ok(want)
     }
@@ -286,6 +299,10 @@ impl<'a> Transaction<'a> {
             if plm == 0xffff_ffff {
                 return Err(PhaseError::new("verify", "replay: PLM opened by a stock boot (unexpected)"));
             }
+            self.last_marker = Some(mbox0);
+            self.last_cpuctl = Some(if halt { regs::CPUCTL_HALTED } else { 0 });
+            self.last_plm = Some(plm);
+            self.booter_done = true;
             self.note("replay verified (mbox0=0 + HALT + WPR2 up, PLM stays locked)");
             return Ok(());
         }
@@ -298,6 +315,9 @@ impl<'a> Transaction<'a> {
             let cpuctl = self.gpu.read(regs::SEC2_CPUCTL);
             let halted = cpuctl & 0x10 != 0;
             if plm == 0xffff_ffff && plm_entry != 0xffff_ffff {
+                self.last_cpuctl = Some(cpuctl);
+                self.last_plm = Some(plm);
+                self.booter_done = true;
                 self.note("GA102 payload verified: PLM flip, no halt expected (fill self-loop tail)");
                 return Ok(());
             }
@@ -323,6 +343,9 @@ impl<'a> Transaction<'a> {
         let marker = self.gpu.read(SEC2_MAILBOX0);
         let cpuctl = self.gpu.read(regs::SEC2_CPUCTL);
         let plm = self.gpu.read(regs::FEAT_PLM);
+        self.last_marker = Some(marker);
+        self.last_cpuctl = Some(cpuctl);
+        self.last_plm = Some(plm);
         let marker_seen = marker == MARKER_OK;
         let halt_seen = cpuctl & 0x10 != 0;
         let plm_open = plm == 0xffff_ffff;
@@ -331,6 +354,7 @@ impl<'a> Transaction<'a> {
                 "triad incomplete: marker={marker:#x} halt={halt_seen} plm={plm:#x}"
             )));
         }
+        self.booter_done = true;
         self.note("execution triad verified (marker+halt+plm)");
         Ok(())
     }
@@ -419,25 +443,16 @@ impl<'a> Transaction<'a> {
             Ok(())
         })();
         let unwound = self.unwind(result);
-        let ga102 = self.shape == PayloadShape::Ga102SelfLoop;
         unwound.map(|_| Report {
             dma_pages_allocated: self.dma_allocs,
             dma_pages_freed: self.dma_frees,
-            fwsec_fired: true,
-            booter_fired: true,
-            marker_seen: self.payload && !ga102 && !self.faults.marker_missing,
+            fwsec_fired: self.fwsec_done,
+            booter_fired: self.booter_done,
+            marker_seen: self.last_marker == Some(MARKER_OK),
             // GA102 canonical: no halt will ever come (self-loop tail) -
             // its absence is the design, not a fault.
-            halt_seen: !ga102 && !self.faults.halt_not_set,
-            plm_open_verified: self.payload
-                && match self.shape {
-                    PayloadShape::Ga102SelfLoop => {
-                        !self.faults.plm_missing && !self.faults.plm_flip_missing
-                    }
-                    PayloadShape::AdaTriad => {
-                        !self.faults.marker_missing && !self.faults.halt_not_set
-                    }
-                },
+            halt_seen: matches!(self.last_cpuctl, Some(c) if c & 0x10 != 0),
+            plm_open_verified: self.last_plm == Some(0xffff_ffff),
             selectors_written: self.payload,
             bme_restored: !self.bme_set,
             flr_done: !self.faults.fail_flr,
