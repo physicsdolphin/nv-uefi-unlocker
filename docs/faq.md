@@ -57,6 +57,8 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 
 异机制盘先显式指定 `-Family`（或用 `-Family all`），Turing 检查不适用时可用 `-SkipGspCheck` / `--skip-gsp-check` 跳过制盘机检查，但目标机仍须满足 GSP 前置。离线 Turing 引导归档 `gsp_rm_boot_dbg.bin` 用 `-ProvenBlob` / `--proven-blob` 指定；长度和 hash 校验仍有效。下载或校验失败时不要换版本或绕过检查。Windows PowerShell TLS 下载失败时可用 WSL / Git Bash 运行 bash maker。
 
+**中国大陆网络**（2026-11-01 实测）：`raw.githubusercontent.com` 被阻断，Turing 引导归档的抓取会自动依次回退到 jsDelivr CDN 与代理传输（同一对象，钉定 SHA-256 逐字节把关）；`download.nvidia.com` 与 `archive.cachyos.org` 当前可直连，暂无镜像回退。任何钉定文件都可以离线获得后直接放进 `inputs/`（哈希匹配即接受）——这是官方认可的离线路径。某传输源失效时不要换版本，换源或离线投放皆可。PowerShell 内建 `curl` 别名与下载脚本无关：maker 的 PowerShell 版只用 `Invoke-WebRequest`，bash 版用真实 `curl`/`wget`。
+
 <a id="turing"></a>
 
 ## Turing 为什么要先启用 GSP？

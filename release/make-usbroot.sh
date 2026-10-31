@@ -86,11 +86,11 @@ have() { command -v "$1" >/dev/null 2>&1; }
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 size_of() { stat -c %s "$1"; }
 
-fetch() { # fetch <url> <dest>
+fetch() { # fetch <url> <dest> -> nonzero on failure (caller decides next step)
     if have curl; then
-        curl -fsSL --retry 3 -o "$2" "$1" || die "download failed: $1"
+        curl -fsSL --retry 3 -o "$2" "$1"
     elif have wget; then
-        wget -q -O "$2" "$1" || die "download failed: $1"
+        wget -q -O "$2" "$1"
     else
         die "need curl or wget to download $1"
     fi
@@ -120,9 +120,21 @@ SRC2_SHA="e17e7c92eeffa178b0fe1f40eb17a47095f8fc3ce4a77bf115cf5bd5a4df86e9"
 # (2026-10-27, attempt 13: "gsp_boot_tu10x.bin loaded 24576/24576 bytes").
 # The GSP ELF's first 0x6000 bytes (c76c43b1...) is NOT the same image and
 # must not ship.
+#
+# Transport mirrors: the SHA-256 pin is the only authority - any source
+# serving byte-identical bytes is acceptable, and a download failure never
+# justifies a different version (constitution 6). raw.githubusercontent.com
+# is DNS-poisoned/SNI-reset behind the Chinese mainland firewall, so the
+# jsDelivr CDNs and a gh-proxy relay are pinned as verified transports for
+# the SAME object (all three re-hashed to fa43239b... on 2026-11-01).
 PROVEN_NAME="gsp_rm_boot_dbg.bin"
 PROVEN_SRC_SHA="fa43239bcee7b97ca62f007cc68487560a39e19f74f3dde7486db3f98df8e471"
-PROVEN_URL="https://raw.githubusercontent.com/xrip/cmp50hx-unlock/master/efi-unlock/blobs/gsp_rm_boot_dbg.bin"
+PROVEN_URLS=(
+    "https://raw.githubusercontent.com/xrip/cmp50hx-unlock/master/efi-unlock/blobs/gsp_rm_boot_dbg.bin"
+    "https://fastly.jsdelivr.net/gh/xrip/cmp50hx-unlock@master/efi-unlock/blobs/gsp_rm_boot_dbg.bin"
+    "https://cdn.jsdelivr.net/gh/xrip/cmp50hx-unlock@master/efi-unlock/blobs/gsp_rm_boot_dbg.bin"
+    "https://gh-proxy.com/https://raw.githubusercontent.com/xrip/cmp50hx-unlock/master/efi-unlock/blobs/gsp_rm_boot_dbg.bin"
+)
 PROVEN_SLICE_LEN=24576   # 0x6000
 PROVEN_SLICE_SHA="de676bae28a480011d3d012db14bef539324e62a841a9627863c689bea168af3"
 
@@ -424,42 +436,49 @@ for fam in "${FAMILIES[@]}"; do
 done
 if [ "$RUN_TURING_GATE" -eq 1 ]; then check_turing_gate "$GATE_STRICT"; fi
 
-fetch_verify() { # <name> <url> <sha> -> echoes dest path (logs go to stderr)
-    local dest="$WORK/$1" part="$WORK/$1.part" got attempt
-    for attempt in 1 2; do
-        if [ ! -f "$dest" ]; then
-            # Download to .part and rename only on success: a killed transfer used to
-            # leave a truncated file at $dest, and the existence check then made every
-            # later run report a pinned-input SHA-256 mismatch instead of re-fetching
-            # (issue #59).
+fetch_verify() { # <name> <sha> <url> [url...] -> echoes dest path (logs to stderr)
+    local dest="$WORK/$1" part="$WORK/$1.part" got pass url
+    local sha="$2"
+    shift 2
+    # A file already in the work dir with the pinned hash is accepted as-is:
+    # that is the sanctioned offline path (obtain the exact bytes by any
+    # transport, drop them here, build).
+    if [ -f "$dest" ] && [ "$(sha256_of "$dest")" = "$sha" ]; then
+        logerr "[ok] $1 SHA-256 verified (cached)"
+        printf '%s' "$dest"
+        return 0
+    fi
+    rm -f "$dest"
+    # The SHA-256 pin is the authority, not the URL: try every transport.
+    # Download to .part and hash it there - a killed or corrupted transfer
+    # never lands at $dest (issue #59).
+    for pass in 1 2; do
+        for url in "$@"; do
             rm -f "$part"
-            if [ "$attempt" -eq 1 ]; then logerr "[fetch] $1"; else logerr "[fetch] $1 (retry)"; fi
-            if ! fetch "$2" "$part"; then
-                rm -f "$part"
-                [ "$attempt" -eq 2 ] && die "download failed twice: $1 ($2)"
-                continue
+            if [ "$pass" -eq 2 ]; then
+                logerr "[fetch] $1 <- ${url#https://} (retry)"
+            else
+                logerr "[fetch] $1 <- ${url#https://}"
             fi
-            mv -f "$part" "$dest"
-        fi
-        got="$(sha256_of "$dest")"
-        if [ "$got" = "$3" ]; then
-            logerr "[ok] $1 SHA-256 verified"
-            printf '%s' "$dest"
-            return 0
-        fi
-        # A stale local file must not masquerade as a pin mismatch; the hash still
-        # gates the result, so re-fetching once is safe and self-heals the work dir.
-        logerr "[warn] $1 hash mismatch on attempt $attempt - discarding and re-fetching"
-        rm -f "$dest"
-        if [ "$attempt" -eq 2 ]; then
-            die "SHA-256 mismatch for $1: got $got want $3 - refusing (pinned inputs only)"
-        fi
+            fetch "$url" "$part" || { rm -f "$part"; continue; }
+            got="$(sha256_of "$part")"
+            if [ "$got" = "$sha" ]; then
+                mv -f "$part" "$dest"
+                logerr "[ok] $1 SHA-256 verified"
+                printf '%s' "$dest"
+                return 0
+            fi
+            logerr "[warn] $1 hash mismatch from ${url#https://} - refusing this copy, trying next source"
+            rm -f "$part"
+        done
     done
-    die "fetch failed: $1"
+    rm -f "$part"
+    die "download failed for $1: no pinned source served the pinned bytes (sha256 $sha).
+Drop the exact file into $WORK/ yourself and re-run to build offline."
 }
 
-SRC_TAR="$(fetch_verify "$SRC1_NAME" "$SRC1_URL" "$SRC1_SHA")"
-UTILS_ZST="$(fetch_verify "$SRC2_NAME" "$SRC2_URL" "$SRC2_SHA")"
+SRC_TAR="$(fetch_verify "$SRC1_NAME" "$SRC1_SHA" "$SRC1_URL")"
+UTILS_ZST="$(fetch_verify "$SRC2_NAME" "$SRC2_SHA" "$SRC2_URL")"
 
 # Remove assets from an earlier run so a root cannot end up as a half-old,
 # half-new mix (e.g. a 40-series v67 payload next to a 20-series booter).
@@ -550,9 +569,13 @@ for fam in "${FAMILIES[@]}"; do
             done
             if [ -z "$blob" ]; then
                 blob="$WORK/$PROVEN_NAME"
-                log "[fetch] $PROVEN_NAME (proven GspRmBoot archive)"
-                fetch "$PROVEN_URL" "$blob"
+                for purl in "${PROVEN_URLS[@]}"; do
+                    log "[fetch] $PROVEN_NAME <- ${purl#https://}"
+                    fetch "$purl" "$blob" && break
+                    rm -f "$blob"
+                done
             fi
+            [ -f "$blob" ] || die "could not fetch $PROVEN_NAME from any pinned transport; drop the exact file (sha256 $PROVEN_SRC_SHA) into $WORK/ and re-run"
             blob_hash="$(sha256_of "$blob")"
             [ "$blob_hash" = "$PROVEN_SRC_SHA" ] || die "proven GspRmBoot blob mismatch: got $blob_hash want $PROVEN_SRC_SHA ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
             log "[ok] proven GspRmBoot archive SHA-256 verified ($(size_of "$blob") bytes)"

@@ -126,16 +126,18 @@ this machine. Use an explicit -Family (ad102 | ga102 | tu10x) or -Family all."
     $Families = @($normalized)
 }
 
-# Pinned public inputs (see AGENTS.md / assets/src/manifest.rs).
+# Pinned public inputs (see AGENTS.md / assets/src/manifest.rs). The
+# SHA-256 pin is the only authority: a mirror serving byte-identical bytes
+# is acceptable, a download failure never justifies a different version.
 $Sources = @(
     @{
         Name = "NVIDIA-kernel-module-source-610.43.03.tar.xz"
-        Url  = "https://download.nvidia.com/XFree86/NVIDIA-kernel-module-source/NVIDIA-kernel-module-source-610.43.03.tar.xz"
+        Urls = @("https://download.nvidia.com/XFree86/NVIDIA-kernel-module-source/NVIDIA-kernel-module-source-610.43.03.tar.xz")
         Sha256 = "7E118923C7A23EDC36114D63273A46E3E04E9AF98695A42203E7AC2DFE9FC1DC"
     },
     @{
         Name = "nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
-        Url  = "https://archive.cachyos.org/archive/cachyos-v3/nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
+        Urls = @("https://archive.cachyos.org/archive/cachyos-v3/nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst")
         Sha256 = "E17E7C92EEFFA178B0FE1F40EB17A47095F8FC3CE4A77BF115CF5BD5A4DF86E9"
     }
 )
@@ -147,9 +149,20 @@ $Sources = @(
 # The slice (de676bae...) fired the successful TU106 run (2026-10-27,
 # attempt 13: "gsp_boot_tu10x.bin loaded 24576/24576 bytes"). The GSP ELF's
 # first 0x6000 bytes (c76c43b1...) is NOT the same image and must not ship.
+# Transport mirrors: the SHA-256 pin is the only authority - any source
+# serving byte-identical bytes is acceptable, and a download failure never
+# justifies a different version (constitution 6). raw.githubusercontent.com
+# is DNS-poisoned/SNI-reset behind the Chinese mainland firewall, so the
+# jsDelivr CDNs and a gh-proxy relay are pinned as verified transports for
+# the SAME object (all three re-hashed to fa43239b... on 2026-11-01).
 $ProvenBlobName = "gsp_rm_boot_dbg.bin"
 $ProvenBlobSrcSha256 = "FA43239BCEE7B97CA62F007CC68487560A39E19F74F3DDE7486DB3F98DF8E471"
-$ProvenBlobUrl = "https://raw.githubusercontent.com/xrip/cmp50hx-unlock/master/efi-unlock/blobs/gsp_rm_boot_dbg.bin"
+$ProvenBlobUrls = @(
+    "https://raw.githubusercontent.com/xrip/cmp50hx-unlock/master/efi-unlock/blobs/gsp_rm_boot_dbg.bin",
+    "https://fastly.jsdelivr.net/gh/xrip/cmp50hx-unlock@master/efi-unlock/blobs/gsp_rm_boot_dbg.bin",
+    "https://cdn.jsdelivr.net/gh/xrip/cmp50hx-unlock@master/efi-unlock/blobs/gsp_rm_boot_dbg.bin",
+    "https://gh-proxy.com/https://raw.githubusercontent.com/xrip/cmp50hx-unlock/master/efi-unlock/blobs/gsp_rm_boot_dbg.bin"
+)
 $ProvenSliceLen = 0x6000
 $ProvenSliceSha256 = "de676bae28a480011d3d012db14bef539324e62a841a9627863c689bea168af3"
 
@@ -271,35 +284,44 @@ New-Item -ItemType Directory -Force -Path $Work, $Out | Out-Null
 foreach ($s in $Sources) {
     $dest = Join-Path $Work $s.Name
     $part = "$dest.part"
-    foreach ($attempt in 1..2) {
-        if (-not (Test-Path $dest)) {
-            # Never write to $dest directly: an interrupted transfer used to leave a
-            # partial file there, and the "already downloaded" check below then made
-            # every later run report a pinned-input SHA-256 mismatch instead of
-            # re-fetching (issue #59).
+    # A file already in the work dir with the pinned hash is accepted as-is:
+    # that is the sanctioned offline path (obtain the exact bytes by any
+    # transport, drop them here, build).
+    if ((Test-Path $dest) -and (Get-FileHash -Algorithm SHA256 $dest).Hash -eq $s.Sha256) {
+        Write-Host "[ok] $($s.Name) SHA-256 verified (cached)"
+        continue
+    }
+    Remove-Item $dest -Force -ErrorAction SilentlyContinue
+    # The SHA-256 pin is the authority, not the URL: try every transport.
+    # Download to .part and hash it there - a killed or corrupted transfer
+    # never lands at $dest (issue #59).
+    $done = $false
+    foreach ($pass in 1..2) {
+        foreach ($u in $s.Urls) {
             if (Test-Path $part) { Remove-Item $part -Force }
-            Write-Host ("[fetch] {0}{1}" -f $s.Name, $(if ($attempt -gt 1) { " (retry)" } else { "" }))
+            Write-Host ("[fetch] {0} <- {1}{2}" -f $s.Name, $u, $(if ($pass -gt 1) { " (retry)" } else { "" }))
             try {
-                Invoke-WebRequest -Uri $s.Url -OutFile $part
-                Move-Item -Force $part $dest
+                Invoke-WebRequest -Uri $u -OutFile $part
             } catch {
                 Remove-Item $part -Force -ErrorAction SilentlyContinue
-                if ($attempt -eq 2) { throw }
                 continue
             }
+            $hash = (Get-FileHash -Algorithm SHA256 $part).Hash
+            if ($hash -eq $s.Sha256) {
+                Move-Item -Force $part $dest
+                $done = $true
+                break
+            }
+            Write-Host "[warn] $($s.Name) hash mismatch from $u - refusing this copy, trying next source"
+            Remove-Item $part -Force
         }
-        $hash = (Get-FileHash -Algorithm SHA256 $dest).Hash
-        if ($hash -eq $s.Sha256) { break }
-        # A stale/corrupt local file must not masquerade as a pin mismatch: drop it
-        # and fetch once more. The pinned hash still gates the result either way.
-        Write-Host "[warn] $($s.Name) hash mismatch on attempt $attempt - discarding and re-fetching"
-        Remove-Item $dest -Force
-        if ($attempt -eq 2) {
-            throw "SHA-256 mismatch for $($s.Name): got $hash want $($s.Sha256) - refusing (pinned inputs only)"
-        }
+        if ($done) { break }
     }
-    # Reaching here means the loop exited via break on a matching hash - every
-    # other exit path throws, so the [ok] line is unconditional.
+    if (-not $done) {
+        Remove-Item $part -Force -ErrorAction SilentlyContinue
+        throw "download failed for $($s.Name): no pinned source served the pinned bytes ($($s.Sha256)).
+Drop the exact file into $Work yourself and re-run to build offline."
+    }
     Write-Host "[ok] $($s.Name) SHA-256 verified"
 }
 
@@ -402,8 +424,18 @@ foreach ($fam in $Families) {
             ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
             if (-not $blob) {
                 $blob = Join-Path $Work $ProvenBlobName
-                Write-Host "[fetch] $ProvenBlobName (proven GspRmBoot archive)"
-                Invoke-WebRequest -Uri $ProvenBlobUrl -OutFile $blob
+                foreach ($u in $ProvenBlobUrls) {
+                    Write-Host "[fetch] $ProvenBlobName <- $u"
+                    try {
+                        Invoke-WebRequest -Uri $u -OutFile $blob
+                        break
+                    } catch {
+                        Remove-Item $blob -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+            if (-not (Test-Path $blob)) {
+                throw "could not fetch $ProvenBlobName from any pinned transport; drop the exact file (sha256 $ProvenBlobSrcSha256) into $Work and re-run"
             }
             $blobHash = (Get-FileHash -Algorithm SHA256 $blob).Hash
             if ($blobHash -ne $ProvenBlobSrcSha256) {
