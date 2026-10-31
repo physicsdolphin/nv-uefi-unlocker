@@ -4,7 +4,7 @@
 
 **GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解锁工具。**
 
-解开 NVIDIA 显卡的 Tensor 计算性能限制。从 U 盘启动，解锁后自动进入 Windows 或 Linux，无需刷写 VBIOS；断电后恢复原状。
+解开 NVIDIA 显卡的 Tensor 计算性能限制。从 U 盘启动，解锁后自动进入 Windows 或 Linux 或任意操作系统，无需刷写 VBIOS；断电后恢复原状。
 
 [观看项目宣传片 ↗](https://www.bilibili.com/video/BV1d6xN66ECM/)
 
