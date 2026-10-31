@@ -308,6 +308,32 @@ pub struct LayoutOut {
     pub nonwpr_start: u64,
 }
 
+/// Turing SKU geometry, used ONLY when both FB_SIZE_MIB and
+/// LOCAL_MEMORY_RANGE are unreadable (PLM-locked), so nothing here can
+/// override a register that decoded.
+///
+/// This replaces a single `FB_MIB_TU106_1F07 = 8192` constant that the log
+/// line itself described as "using SKU geometry 8192 MiB (10de:1f07); refuse
+/// and extend the table for other TU106 SKUs" - i.e. every Turing die that
+/// reached the fallback was given 8 GiB. An 11 GiB `10de:1e07` (2080 Ti) was
+/// only able to boot after the user wrote 11 into \tu10x-fb-gb.txt, and a
+/// 22 GiB TU102 (#17) is in the same position.
+///
+/// Deliberately short: an id that is not here keeps the previous behaviour
+/// (8192 MiB plus the loud message), so this cannot invent a geometry for a
+/// card nobody has measured. Extend it only with a card that reported its own
+/// capacity in a field log.
+fn turing_sku_fb_mib(dev: u16) -> Option<u32> {
+    Some(match dev {
+        0x1e02 => 24 * 1024,           // TU102 - TITAN RTX
+        0x1e04 | 0x1e07 => 11 * 1024,  // TU102 - 2080 Ti
+        0x1e87 => 8 * 1024,            // TU104 - 2080 (#62)
+        0x1f06 => 8 * 1024,            // TU106 - 2060 Super
+        0x1f07 => 8 * 1024,            // TU106
+        _ => return None,
+    })
+}
+
 pub fn layout_from_registers(
     gpu: &TxGpu,
     family: &str,
@@ -372,10 +398,18 @@ pub fn layout_from_registers(
                             (gib * 1024) as u32
                         }
                         None => {
+                            // Device id: PCI config 0x00 is vendor|device<<16.
+                            let dev = (gpu.pci.config_read_u32(0) >> 16) as u16;
+                            let sku = turing_sku_fb_mib(dev);
+                            let mib = sku.unwrap_or(FB_MIB_TU106_1F07);
                             info!(
-                                "layout: FB_SIZE_MIB PLM-locked on Turing ({fb_raw:#010x}), LOCAL_MEMORY_RANGE {lmr:#010x} undecodable - using SKU geometry 8192 MiB (10de:1f07); refuse and extend the table for other TU106 SKUs"
+                                "layout: FB_SIZE_MIB PLM-locked on Turing ({fb_raw:#010x}), LOCAL_MEMORY_RANGE {lmr:#010x} undecodable - SKU geometry {mib} MiB for 10de:{dev:04x} ({}); \\tu10x-fb-gb.txt overrides this",
+                                match sku {
+                                    Some(_) => "table",
+                                    None => "NOT in the table - keeping the 8 GiB fallback, extend it with a measured card",
+                                }
                             );
-                            FB_MIB_TU106_1F07
+                            mib
                         }
                     }
                 }
