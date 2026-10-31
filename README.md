@@ -2,7 +2,17 @@
 
 [中文](README.md) | [English](README.en.md)
 
-**GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解锁工具。**
+**你的 GeForce 正以半速跑 AI——这个工具在驱动加载前把它修复。**
+
+[![version](https://img.shields.io/badge/version-2.1.8-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
+[![GeForce](https://img.shields.io/badge/GeForce-GTX%2016%20%7C%20RTX%2020%2F30%2F40-green)](docs/compatibility.md)
+[![platform](https://img.shields.io/badge/platform-UEFI%20%E9%A2%84%E9%A9%B1%E5%8A%A8%20%7C%20Win%20%2F%20Linux%20%2F%20Hackintosh-blue)](docs/faq.md)
+[![license](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
+[![stars](https://img.shields.io/github/stars/physicsdolphin/nv-uefi-unlocker?label=stars&color=yellow)](https://github.com/physicsdolphin/nv-uefi-unlocker/stargazers)
+
+**实测 FP16 / BF16 / TF32 张量吞吐最高约 2× · 图像生成 +30–50% · 无 VBIOS 刷写，断电即复原**（逐卡数据见[兼容性矩阵](docs/compatibility.md)；增益受功耗墙制约）
+
+GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解锁工具。
 
 解开 NVIDIA 显卡的 Tensor 计算性能限制。从 U 盘启动，解锁后自动进入 Windows 或 Linux 或任意操作系统，无需刷写 VBIOS；断电后恢复原状。
 

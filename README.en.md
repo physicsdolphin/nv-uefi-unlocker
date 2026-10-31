@@ -2,7 +2,17 @@
 
 [中文](README.md) | [English](README.en.md)
 
-**A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 and RTX 20, 30, and 40 series.**
+**Your GeForce runs AI at half speed — this fixes it before the driver even loads.**
+
+[![version](https://img.shields.io/badge/version-2.1.8-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
+[![GeForce](https://img.shields.io/badge/GeForce-GTX%2016%20%7C%20RTX%2020%2F30%2F40-green)](docs/compatibility.en.md)
+[![platform](https://img.shields.io/badge/platform-UEFI%20pre%20driver%20%7C%20Win%20%2F%20Linux%20%2F%20Hackintosh-blue)](docs/faq.en.md)
+[![license](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
+[![stars](https://img.shields.io/github/stars/physicsdolphin/nv-uefi-unlocker?label=stars&color=yellow)](https://github.com/physicsdolphin/nv-uefi-unlocker/stargazers)
+
+**Measured up to ~2× FP16 / BF16 / TF32 tensor throughput · +30–50% image generation · no VBIOS flashing, cleared by power-off** (per-board data in the [compatibility matrix](docs/compatibility.en.md); gains are bounded by power limits)
+
+A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 and RTX 20, 30, and 40 series.
 
 Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, unlock, and continue into Windows or Linux. No VBIOS flashing is needed; powering off clears the unlock.
 
