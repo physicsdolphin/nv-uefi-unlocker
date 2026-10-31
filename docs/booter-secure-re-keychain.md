@@ -17,13 +17,12 @@
 
 HF TOTORONG/AD103_win_unlocker 与本地克隆逐字节同版，无隐藏明文/key。
 
-## 2. GA 系 debug 密钥（公开，已三重验证）
+## 2. GA 系 debug 密钥（公开，已三重验证；**本仓库不收录密钥字节**）
 
-- Key（gist nvlight/fc7479…，"recovered by BlackSun"，ada-port.md 钉版收录）：
-  `REDACTED-GA-DEBUG-KEY-SEE-GIST`（AES-128，ECB，作用于 IMAGE_DBG[0x100:f2]）
-- 控制值：`AES(key, 00×16)=717d1494eaca317ff106195258b38377`（GA100/GA102/AD102 DBG padding 实测同值）；`AES(key, FF×16)=fd7e5b57768a309baabcc6903118c8f5`。
+- Key 出处（指针引用，宪法 §1.6"密钥永不入库"——密钥字节请从原 gist 获取）：gist `nvlight/fc7479629b0ace094873e58ba7d75eb2`（标注 "recovered by BlackSun"，gpu-unlock-ada `ada-port.md` 钉版收录第 "Debug csecret(37)" 行）。
+- 独立验证控制值（拿到 key 后自验，本仓库不提供 key）：`AES(key, 00×16)=717d1494eaca317ff106195258b38377`（GA100/GA102/AD102 DBG padding 实测同值）；`AES(key, FF×16)=fd7e5b57768a309baabcc6903118c8f5`。
 - 字节级终验：AD102 解密结果 @0x31b5 与 TOTORONG 发表的 status writer 逐字节相同；GA102 差异仅 canary 槽位 0x6140 vs 0x5f50（芯片差异）。
-- 复现流程（未落盘、全内存）：bindata 数组（NvU8/NvU64，raw-DEFLATE+CRC 尾）→ 解出 IMAGE_DBG → `[0x100:hdr.f2]` AES-ECB 解密（DMEM 不解、NS 前缀保留）→ entropy/SHA/控制值三验。
+- 复现流程（未落盘、全内存）：bindata 数组（NvU8/NvU64，raw-DEFLATE+CRC 尾）→ 解出 IMAGE_DBG → 按 HEADER_DBG 字段 `[sec_off : sec_off+sec_size]` AES-ECB 解密（DMEM 不解、NS 前缀保留）→ entropy/SHA/控制值三验。**解密产物与全量反汇编列表只在本地工作目录，永不入库。**
 
 ## 3. TU10x 密钥缺口
 

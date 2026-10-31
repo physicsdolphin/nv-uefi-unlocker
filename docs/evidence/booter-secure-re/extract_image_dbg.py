@@ -162,8 +162,15 @@ def raw_inflate(blob, want):
 def main():
     gen = sys.argv[1]
     outdir = sys.argv[2]
+    # GA-line debug test key: NOT stored in this repo (constitution: keys
+    # never enter git). Pass it as argv[3]; source pointer is the public
+    # gist nvlight/fc7479629b0ace094873e58ba7d75eb2 ("recovered by
+    # BlackSun"), also archived in gpu-unlock-ada docs/ada-port.md.
+    if len(sys.argv) < 4:
+        sys.exit("usage: extract_image_dbg.py <generated-dir> <outdir> <key-hex>\n"
+                 "  the key never enters git; fetch it from the gist above")
+    key = bytes.fromhex(sys.argv[3])
     fams = ["GA102", "AD102", "GA100", "TU102"]
-    key = bytes.fromhex("REDACTED-GA-DEBUG-KEY-SEE-GIST")
     ke = expand(key)
     # AES sanity: encrypt/decrypt roundtrip + published controls
     enc0 = aes_enc_block(ke, bytes(16))
