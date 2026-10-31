@@ -25,6 +25,9 @@ pub mod regs {
     pub const GFW_BOOT: u32 = 0x0011_8234;
     pub const GFW_CPUCTL: u32 = 0x0011_0100;
     pub const FB_SIZE_MIB: u32 = 0x0011_83a4;
+    /// BSI_SCRATCH15: bits 31:29 = scrubber/handoff state (1 = DONE, the
+    /// firmware-window state the community chains enter through).
+    pub const BSI_SCRATCH15: u32 = 0x0011_80fc;
     pub const MMU_PLM: u32 = 0x001f_a7c8;
     pub const WPR2_LO: u32 = 0x001f_a824;
     pub const WPR2_HI: u32 = 0x001f_a828;
@@ -467,10 +470,24 @@ pub fn hs_prevalidate(
     Ok(code_src)
 }
 
+/// Issue #4.2 escape hatch: Turing entry with WPR2 up but WITHOUT the
+/// firmware-window evidence pair (GFW completed + BSI handoff DONE, GSP not
+/// started) refuses unless the operator drops this marker on the stick root -
+/// a deliberate, per-stick accept of the ambiguous warm state.
+pub const ACCEPT_WARM_WPR2_MARKER: &str = "\\tx-accept-warm-wpr2.txt";
+
 /// Cold-state guards (task brief 9.6 semantics).
 /// `post_flr`: we just FLR'd the function ourselves - the GPU's own re-boot
 /// re-provisions WPR2 (measured 0xe00), which is NOT the "already used"
 /// dirty state the guard exists to catch. PLM check stays.
+/// Turing + WPR2-up without a self-FLR (issue #4.2): WPR2-up at entry is the
+/// mainline provisioned state there, but WPR2 alone cannot tell a firmware
+/// window from "a driver used this card this power cycle". The old code
+/// blanket-accepted the whole family; the accept is now evidence-based: the
+/// firmware-window pair (GFW_BOOT completed + BSI handoff DONE, GSP not
+/// started - the same entry state the community chains run through) accepts
+/// with the evidence logged, a still-started GSP or missing evidence refuses
+/// (-EBUSY) unless `ACCEPT_WARM_WPR2_MARKER` opts in per stick.
 pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxError> {
     // Preflight: is BAR0 decoding at all? Right after the MEM enable a powered
     // dGPU answers; one parked by the EC in D3cold (iGPU-only boot: no GOP on
@@ -498,12 +515,36 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     }
     let hi = gpu.read32(regs::WPR2_HI)?;
     if hi != 0 && !post_flr {
-        info!("claim: EBUSY (WPR2 hi={hi:#x})");
-        return Err(TxError::EBusy);
-    }
-    if hi != 0 {
+        if family != "tu10x" {
+            info!("claim: EBUSY (WPR2 hi={hi:#x})");
+            return Err(TxError::EBusy);
+        }
+        // Turing triage (issue #4.2): gather the evidence, log it, decide.
+        let lo = gpu.read32(regs::WPR2_LO)?;
+        let gfw = gpu.read32(regs::GFW_BOOT)?;
+        let bsi = gpu.read32(regs::BSI_SCRATCH15)?;
+        let handoff = bsi >> 29 & 7;
+        let cpuctl = gpu.read32(regs::GFW_CPUCTL)?;
+        info!(
+            "claim: Turing WPR2-up triage: lo={lo:#x} hi={hi:#x} GFW_BOOT={gfw:#x} BSI handoff={handoff} GSP CPUCTL={cpuctl:#010x}"
+        );
+        // START bits (bit0 canonical, bit1 the TU106-measured alias path) -
+        // either still set means a GSP image is executing on this card.
+        if cpuctl & 0x3 != 0 {
+            info!("claim: EBUSY (GSP CPUCTL shows a started GSP session, CPUCTL={cpuctl:#x}) - a driver-era GSP may still hold the card; power off first");
+            return Err(TxError::EBusy);
+        }
+        if gfw == regs::GFW_BOOT_COMPLETED && handoff == 1 {
+            info!("claim: WPR2 up at entry, firmware-window state PROVEN (GFW completed + BSI handoff DONE, GSP idle) - accepted");
+        } else if probe_file(ACCEPT_WARM_WPR2_MARKER) {
+            info!("claim: WPR2 up at entry, evidence inconclusive (GFW_BOOT={gfw:#x}, handoff={handoff}) - accepted by operator marker {ACCEPT_WARM_WPR2_MARKER}");
+        } else {
+            info!("claim: EBUSY (Turing WPR2-up without firmware-window evidence: GFW_BOOT={gfw:#x}, BSI handoff={handoff}) - power-cycle the machine first, or drop {ACCEPT_WARM_WPR2_MARKER} on the stick to accept the warm state deliberately");
+            return Err(TxError::EBusy);
+        }
+    } else if hi != 0 {
         if family == "tu10x" {
-            info!("claim: WPR2 hi={hi:#x} up at entry (Turing mainline: POST/FLR provisioned - accepted)");
+            info!("claim: WPR2 hi={hi:#x} up at entry (self-FLR re-provisioned - accepted)");
         } else {
             info!("claim: post-FLR WPR2 hi={hi:#x} (self-induced, accepted)");
         }
@@ -652,7 +693,7 @@ pub fn falcon_hs(
     boot::stall(core::time::Duration::from_millis(250));
     let imemc0 = gpu.pci.bar_read_u32(gpu.bar, (base + 0x180) as u64);
     let hw = gpu.read32(base + 0xf4)?;
-    let bsi = gpu.pci.bar_read_u32(gpu.bar, 0x0011_80fc);
+    let bsi = gpu.pci.bar_read_u32(gpu.bar, regs::BSI_SCRATCH15.into());
     info!(
         "Falcon HS: post-reset IMEMC0={imemc0:#010x} (secret={} scrub_active={} blk={}) HWCFG={hw:#010x} BSI_SCRATCH15={bsi:#010x} (scrubber_handoff={})",
         imemc0 >> 28 & 1,
@@ -818,7 +859,7 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
     if !settled {
         info!("PRE-FLR: GFW did not re-complete within 10s - continuing anyway");
     }
-    let bsi = scoped.bar_read_u32(0, 0x0011_80fc);
+    let bsi = scoped.bar_read_u32(0, regs::BSI_SCRATCH15.into());
     info!("PRE-FLR: post-settle BSI_SCRATCH15={bsi:#010x} (handoff={})", bsi >> 29 & 7);
     true
 }
@@ -1055,12 +1096,12 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let pre_flr_did_flr = pre_flr_experiment(pci_handle);
 
     // WPR2 cold-state guard (issue #4.2): only a pre-FLR WE performed makes
-    // an up WPR2 "self-induced" - without the marker the canonical -EBUSY
-    // applies (a driver already used the card this power cycle; power off
-    // first). Turing keeps the unconditional accept: WPR2-up is the
-    // MAINLINE entry there (POST/FLR-reboot provisioned; the FWSEC-fire
-    // skip below depends on it).
-    let post_flr = pre_flr_did_flr || assets.family == "tu10x";
+    // an up WPR2 "self-induced" - anything else goes through the guards.
+    // Turing no longer blanket-accepts a family-wide bypass: WPR2-up at
+    // entry is triaged inside claim_guards on firmware-window evidence
+    // (GFW/BSI proof accepts, warm-driver residue refuses unless
+    // \tx-accept-warm-wpr2.txt opts in).
+    let post_flr = pre_flr_did_flr;
     claim_guards(gpu, assets.family, post_flr)?;
 
     // Differential authority map while both engines sit in the as-booted

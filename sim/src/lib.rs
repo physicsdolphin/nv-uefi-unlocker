@@ -21,6 +21,8 @@ pub mod regs {
     pub const GFW_BOOT: u32 = 0x0011_8234;
     pub const GFW_CPUCTL: u32 = 0x0011_0100;
     pub const FB_SIZE_MIB: u32 = 0x0011_83a4;
+    /// BSI_SCRATCH15: bits 31:29 = handoff state (1 = DONE).
+    pub const BSI_SCRATCH15: u32 = 0x0011_80fc;
     pub const MMU_PLM: u32 = 0x001f_a7c8;
     pub const WPR2_LO: u32 = 0x001f_a824;
     pub const WPR2_HI: u32 = 0x001f_a828;
