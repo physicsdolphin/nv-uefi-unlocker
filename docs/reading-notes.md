@@ -225,10 +225,14 @@ PLM 模型预测严格同构，是"跨族移植=重抽重审"的又一实例。
    （枚举相位内），PciBus 同轮分窗口；EFI **app**（我们）运行在枚举后，
    改 BAR 后需自重配 root bridge aperture——把 NvStrapsReBar 节"记录不
    立项"的裁决机制化。若未来真要做，唯一正路是 DXE 驱动载具，不是 app。
-2. **M1/ssdiag 增量采样点**：只读 ReBAR 扩展能力（config space 走链找
-   cap 0x15 → 读 CAP sizes + CTRL）即可逐卡回答"是否自报 ReBAR、支持
-   域多大"——TU106 预期缺席/单值、GA106 预期有域，把 #88"ReBAR 非硬
-   前提"裁决变成逐卡可读数。
+2. **M1 探测纠错（已落地，eb2bff5）**：对照 ReBarUEFI/Linux 布局发现
+   M0 时代的 ext-cap ReBAR 解码（pci.rs，自初始 commit 未复核）读错了
+   寄存器——BAR 数量取自 CAP bits[4:0]（那是支持尺寸位图）、尺寸取自
+   下一对 CAP 低位，步进/字段全错位。已改为 {CAP,CTRL} 对链正确解码
+   （首对 CTRL[7:5]=BAR 数、CTRL[2:0]=序号、CTRL[12:8]=当前尺寸
+   1MiB<<n、CAP=支持位图 raw bit n=2^n MB），并新增支持域打印。ssdiag/
+   diag-unlock.py 侧仍无 config-space ReBAR 读（Linux sysfs config 易加；
+   Windows 需驱动侧 BUS_INTERFACE_STANDARD，挂起）。
 3. **GA10x + A4G/ReBAR 板的 BAR1 大孔径**对 `\tx-meta-in-vram` 的
    BAR1 批量拷贝是纯加速（84MB 少换窗）；与 booter 0x91 的 >4GB staging
    需求**正交**（booter 读 sysmem 走设备 DMA，不经 BAR1 孔径）——勿混。
