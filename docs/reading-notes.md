@@ -212,13 +212,26 @@ twice so we will do same"），差别全部在**设备侧旋钮**：
 | 代际 | 旋钮 | 可达性 | 载具 |
 |---|---|---|---|
 | RTX 30 系+（Ampere+）/现代 AMD | PCIe ReBAR 扩展能力（cap ID 0x15）：`PCI_REBAR_CAP` 广播支持尺寸、`PCI_REBAR_CTRL` 写选定值 | 配置空间，PL0 可写，**设备自报尺寸域** | ReBarUEFI，328 行 C，完全 GPU 无关（仅一个 AMD cap dword quirk） |
-| Turing（20/16 系） | PSTRAPS（PEXTDEV 0x101000，SET0[15:14]+SET1[22:20]） | BAR0 MMIO，PL0 可写，但位义逐代不同且**无 ReBAR cap 广播** | NvStrapsReBar fork（strap 改写 + 枚举期载具不变） |
+| Turing（20/16 系） | PSTRAPS（PEXTDEV 0x101000，SET0[15:14]+SET1[22:20]）；**cap 0x15 存在但域小**（2026-11-01 TU106 实测修正，见下） | BAR0 MMIO + 配置空间，PL0 可写；广播域由 straps 决定、出厂顶到 256 MiB | NvStrapsReBar fork（strap 改写 + 枚举期载具不变） |
 | Pascal- | straps 可写但 ReBAR cap 不存在 | 只能固定大 BAR，Windows 驱动 BSOD | 不支持 resize |
 | AD10x 超广播域（64G） | CYA 0x88724 / CFG 0x88dcc | **PLM 锁死，SEC2 heavy-secure 内写** | gpu-unlock-bar1 谱系（本仓库 M5 线） |
 
 即同一"改 BAR1"目标在四代硬件上是四种机制——旋钮从配置空间（自报域内）
 → straps（自报域外但 PL0 可达）→ PLM 锁死（必须让已签固件代写），与
 PLM 模型预测严格同构，是"跨族移植=重抽重审"的又一实例。
+
+**ReBAR 实测修正（2026-11-01，TU106 1f07 field round，ssdiag v0.5.0）**：
+本机 2070 的 config space **确实有** ReBAR cap（@0x0bb0，3 个 resizable BAR）
+——"Turing 无 cap"的先验错了，Turing 的限制是**广播域小**：BAR1 支持
+{64M/128M/256M}（当前 256 MiB，与活窗 0xc0000000-0xcfffffff 精确吻合）、
+BAR0 {16M}、BAR3 {32M}。 Ampere 同 cap 结构但域顶到 32G+——两代差异是
+**域宽**，不是能力有无。随之 **PSTRAPS 之谜闭环**：straps 字段读数
+（和值 0 = 64 MiB）是**上电默认尺寸**，活窗 256 MiB 来自 vBIOS/驱动在
+枚举期经 cap 的 CTRL 写（size_idx 8）——"出厂 2070 = 和值 2"的旧预期
+作废，straps 与活窗本就不必相等。这也解释了 NvStrapsReBar 为何必须
+在枚举前改 straps：straps 决定 cap 广播域，域不放大，CTRL 写不进更
+大值；枚举期是唯一窗口。解码单位两处笔误（字节数标 MiB）已修
+（62c2a67，loader+ssdiag 同款）。
 
 **对我们的增量信息**：
 1. **枚举期是硬约束**：resize 必须发生在 `PreprocessController`
