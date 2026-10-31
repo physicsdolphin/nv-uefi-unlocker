@@ -587,7 +587,10 @@ fn install_crash_cleanup() {
         default_hook(info);
     }));
     // Safety: the handler only calls cleanup_driver(), which re-opens the SCM
-    // itself and is idempotent; it runs on the process's control thread.
+    // itself and is idempotent; it runs on the process's control thread. It can
+    // race an in-flight ensure_driver() (Ctrl-C mid-deploy runs cleanup
+    // concurrently with StartService/retry-open); the worst case is the old
+    // behavior - a stale service - so the race is accepted, not synchronized.
     unsafe {
         win::SetConsoleCtrlHandler(Some(console_ctrl), 1);
     }
@@ -1003,8 +1006,11 @@ fn main() {
     let code = run();
     // strict remove-when-done: our own service and temp file never outlive
     // this process - cleanup runs on every path that got past arg parsing.
-    cleanup_driver();
+    // Gated on DRIVER_TOUCHED: a --dry-run (or any exit before deploy) has
+    // nothing to remove and must not burn the 10 x 200 ms retry loop on a
+    // temp .sys that never existed.
     if DRIVER_TOUCHED.load(std::sync::atomic::Ordering::Relaxed) {
+        cleanup_driver();
         println!("driver service removed (remove-when-done)");
     }
     std::process::exit(code);
