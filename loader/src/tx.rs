@@ -1229,11 +1229,17 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // T3): on boards whose bridges already carry BME the enable is a no-op
     // anyway - the marker exists to rule the write itself out on boards where
     // the log above shows it actually set a bit.
+    // The guard is hoisted out of the branch so it lives until run_transaction
+    // returns, as the comment above promises - bound inside the else block it
+    // would drop at the closing brace and clear BME again before the booter
+    // fires (booter 0x89 family, PR #87).
     crate::pci::log_dma_path("before-bridge-bme", gpu.pci);
+    let _bridge_master;
     if probe_file("\\tx-no-bridge-master.txt") {
         info!("TX: \\tx-no-bridge-master.txt present - BridgeMaster::enable skipped (guarded-overlay parity)");
+        _bridge_master = None;
     } else {
-        let _bridge_master = crate::pci::BridgeMaster::enable(gpu.pci);
+        _bridge_master = Some(crate::pci::BridgeMaster::enable(gpu.pci));
     }
     crate::pci::log_dma_path("after-bridge-bme", gpu.pci);
 
