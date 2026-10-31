@@ -282,7 +282,10 @@ impl<'a> Transaction<'a> {
                 self.gpu.force_write(regs::SEC2_CPUCTL, regs::CPUCTL_HALTED);
             }
             let mbox0 = self.gpu.read(SEC2_MAILBOX0);
-            let halt = self.gpu.read(regs::SEC2_CPUCTL) & 0x10 != 0;
+            // Raw read goes into the Report verbatim; the halt predicate
+            // projects bit 0x10 from it. Never store a recomputed value.
+            let cpuctl = self.gpu.read(regs::SEC2_CPUCTL);
+            let halt = cpuctl & 0x10 != 0;
             let plm = self.gpu.read(regs::FEAT_PLM);
             let wpr_hi = self.gpu.read(regs::WPR2_HI);
             if mbox0 != 0 {
@@ -300,7 +303,7 @@ impl<'a> Transaction<'a> {
                 return Err(PhaseError::new("verify", "replay: PLM opened by a stock boot (unexpected)"));
             }
             self.last_marker = Some(mbox0);
-            self.last_cpuctl = Some(if halt { regs::CPUCTL_HALTED } else { 0 });
+            self.last_cpuctl = Some(cpuctl);
             self.last_plm = Some(plm);
             self.booter_done = true;
             self.note("replay verified (mbox0=0 + HALT + WPR2 up, PLM stays locked)");

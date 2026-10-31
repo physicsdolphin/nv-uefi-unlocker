@@ -14,6 +14,7 @@ pub enum VbiosError {
     NoFalconTable,
     NoFwsecEntry { debug: bool },
     UnsupportedDescVersion(u8),
+    FwsecDescVersion { version: u8 },
     Truncated,
 }
 
@@ -26,6 +27,11 @@ impl std::fmt::Display for VbiosError {
             Self::NoFalconTable => write!(f, "falcon ucode table (token 0x70 v2) not found"),
             Self::NoFwsecEntry { debug } => write!(f, "no FWSEC_{} entry", if *debug { "DBG" } else { "PROD" }),
             Self::UnsupportedDescVersion(v) => write!(f, "unsupported descriptor version {v}"),
+            Self::FwsecDescVersion { version } => write!(
+                f,
+                "FWSEC with descriptor V{version} - kernel_gsp_fwsec.c accepts V2/V3 only \
+                 (\"FWSEC should be either V2 or V3\"); extraction refused at the source"
+            ),
             Self::Truncated => write!(f, "image truncated"),
         }
     }
@@ -310,6 +316,15 @@ pub fn find_fwsec(image: &[u8], debug: bool) -> Result<(UcodeEntry, Desc), Vbios
             continue;
         }
         let desc = parse_desc(image, expansion, &e)?;
+        // OpenRM's kernel_gsp_fwsec.c parses only V2/V3 for FWSEC and defines no
+        // V1 struct (V1/V4 exist only as version macros), so a V1-labeled FWSEC
+        // is never a valid extraction. Before the V1 arm existed this failed as
+        // UnsupportedDescVersion; now that V1 parses, refuse it explicitly here
+        // so a 0x85/V1 combination stays a loud failure at extraction time
+        // instead of a silent package the loader would have to reject later.
+        if let Desc::V1(DescV1 { .. }) = desc {
+            return Err(VbiosError::FwsecDescVersion { version: 1 });
+        }
         return Ok((e, desc));
     }
     Err(VbiosError::NoFwsecEntry { debug })
@@ -452,6 +467,16 @@ mod tests {
     /// image, although AGENTS 7.3 documents the layout in full. Field-by-field
     /// pin against that table: Stored@4 Uncompressed@8 VirtualEntry@12
     /// IMEMPhys@16 IMEMLoad@20 DMEMPhys@32 DMEMLoad@36.
+    ///
+    /// Primary-source bounds on this arm (verified against OpenRM, 2026-10-29):
+    /// kernel_gsp_fwsec.c parses only V2 (60B) and V3 (44B) for FWSEC - verbatim
+    /// "FWSEC should be either V2 or V3" - and defines no V1 struct (V1/V4
+    /// survive only as version macros). NVIDIA's Tegra nvgpu does parse a
+    /// falcon_ucode_desc_v1, but its is 48 bytes WITH interface_offset and word
+    /// 0 unioned with stored_size - so "V1" is not one stable layout even across
+    /// NVIDIA's own drivers. The 40-byte/no-interface table remains unverified
+    /// against discrete Pascal silicon; this arm is inspection-only and
+    /// find_fwsec refuses a V1-labeled FWSEC (see fwsec_v1_is_refused).
     #[test]
     fn desc_v1_layout_is_decoded() {
         let mut rom = vec![0u8; 0x80];
@@ -479,7 +504,21 @@ mod tests {
         }
     }
 
-    /// vDesc bit2 marks an AES-ciphertext image (the key lives in the fuses).
+    /// A FWSEC (0x85) entry carrying a V1 descriptor is not a valid extraction:
+    /// the FWSEC parser in kernel_gsp_fwsec.c accepts V2/V3 only. Before the V1
+    /// arm existed this failed as UnsupportedDescVersion; now that V1 parses,
+    /// the guard keeps the failure loud at extraction time.
+    #[test]
+    fn fwsec_v1_is_refused() {
+        let mut rom = synthetic_vbios_lic_then_fwsec();
+        // Swap entry 1's descriptor from V2 (60B) to V1 (40B), same offset.
+        rom[0x780..0x784].copy_from_slice(&0x0028_0101u32.to_le_bytes());
+        match find_fwsec(&rom, false) {
+            Err(VbiosError::FwsecDescVersion { version }) => assert_eq!(version, 1),
+            Ok(_) => panic!("V1-labeled FWSEC must be refused"),
+            Err(other) => panic!("expected FwsecDescVersion, got {other}"),
+        }
+    }
     /// It used to be parsed and dropped, so a ciphertext FWSEC could be packaged
     /// as if it were usable.
     #[test]
