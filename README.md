@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-**GTX 16 至 RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解锁工具。**
+**GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解锁工具。**
 
 解开 NVIDIA 显卡的 Tensor 计算性能限制。从 U 盘启动，解锁后自动进入 Windows 或 Linux，无需刷写 VBIOS；断电后恢复原状。
 
@@ -14,7 +14,7 @@
 | --- | --- |
 | GTX 16 · Turing | 理论兼容，欢迎实机验证 |
 | RTX 20 · Turing | 全系兼容；部分型号有已知问题，见完整矩阵 |
-| RTX 30 · Ampere GA10x | 全系兼容 |
+| RTX 30 · Ampere GA10x | 全系兼容，支持笔记本与台式 |
 | RTX 40 · Ada | 全系兼容，支持笔记本与台式 |
 | Pascal 及更早 / GA100 / RTX 50 | 不支持 |
 
