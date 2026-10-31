@@ -55,3 +55,15 @@ pcie/gen2 探测并集首轮（零写入，BAR0+ECAM 双传输）：
 2. **XP3G_PLM0 在 TU106 读作 0xffffffff（OPEN）**——与 50HX 卡的 0xffffff8f 相反；XP3G 状态/覆盖/值寄存器全部 PL0 可读（0）。PLM4/8/C、XVE_D0/D4/D8/C、AD1X_XVE_PLM 均为 badf5040；XVE_B（0x88ab4）可读 0xffffff8f。逐 die 的 XP3G/XVE PLM 页面映射差异是 Gen2 探索的下一轮输入：Turing consumer 的 XP3G 门可能无需载荷内打开（50HX 的 closed 是矿卡配置层的产物？待 40HX 卡对照）。
 3. **OPT 熔丝区（0x820350/520/57c/580）+ GA100 SM banks（0x820a40/0x820c38）+ L2 掩码区在 TU106 全部 badf5040** = PLM 门控（寄存器解码存在，非 floorswept）——PL0 只读轮回答"被门控"，内容需 M3 窗口内读；PR#55 式覆盖寄存器在 Turing 的存在性判定要靠带窗读。
 4. **XVE 镜像地址表双传输互证**：BAR0 LNKCAP=0x00453d03（Gen3 x16）与 ECAM LnkCap 解码一致；BAR0 LNKCAP2=0x0e（bits1-3）与 ECAM [Gen1,Gen2,Gen3] 一致。本轮快照 LnkSta=Gen2 x16（平台训练态，TLS=Gen3）——LnkSta/LnkCap/LnkCtl2 三寄存器在两个传输上逐位对上，XVE shadow 基址 0x88000 的镜像映射正确。
+
+## 7. Gen2 可破、Gen3 不可破的机制分层（cmp170hx frontier/pcie-gen3-gen4 全文 + 24 条被驳方法目录）
+
+**判据尺子：寄存器破解的威力边界 = "锁落在哪一层"。配置层钳制（DevInit 落进可重写寄存器）→ 可破（SS 速率 ✓ / Gen2 ✓ / 170HX 显存几何 ✓）；熔丝层配置（无写端口反射 / 签名固件 / RM 运行期重推导）→ 不可破（SM 数量 ✗ / Gen3/4 ✗ / L2 slices ✗）。**
+
+Gen2 能破的三步逻辑：① Gen1→Gen2 的锁是**纯策略**——同芯 A100 跑 Gen4，5GT/s 模拟前端完好，DevInit 只是往寄存器写锁死表（LINK_CONFIG_0 MAX_RATE、CYA_0 DIS_G2 chicken bit、PRIV_MISC_1、XP3G 覆盖槽关）；② LnkCap/LnkCap2 是 **PHY 反射**，从策略配置再生，不直接读熔丝；③ booter 原语开 PLM 改策略 → 反射再生 Gen2。决定性证据：OPT_GEN23 熔丝位全程未清（写失败、无写端口），Gen2 照样成——熔丝只是被策略层消费的输入。
+
+Gen3 不可破的四重独立墙（每重都有实测）：① **无写端口熔丝反射**——OPT_GEN3 0x820580=0x1（A100 全系=0）；LnkCap2 标 R-EVF 无写端口（"开 PLM 也没用"）；HS 权限把 XP3G PHY rate 强写成 Gen3 值读回成功、链路纹丝不动。② **允许代际掩码 RM 每次重训练重推导**——0x85084 [3:0] 由 GSP-RM 从 0x85080 重算（注入点读=BADF1100，HS 够不着）；LnkCtl2 被直接硬件掩码钳在 Gen2；round-3 伪造实验（LnkCap←Gen4 + LnkCap2←全向量）被硬件裁回 Gen2/0x6。③ **签名 DevInit 抑制位**——Gen4 编程块（写-only 0x88CE0/0x88CE4 + LTSSM 超时表）在镜像里存在但被表 +0x0F suppress 标志（CMP=0x01，A100=0x00）分支跳过；5 个 PCIe 字节 100% 落在 Davies-Meyer csecret(2) MAC 区间（2^128 二次原像，RSA 拒收=不启动）；strap 字段单调限制性（0=全开/3=钳位/0xF=非法——抬上限要写更小的值，无写端口）；FUSE_EN_SW_OVERRIDE=0+FUSE_DIS_SW_OVR=1（软件覆盖路径本身被熔丝关死）。④ **GSP-RM 策略层**——gsp.bin 内定位到熔丝读跳转表（li a2,0x580/0x57c），维护者定论"Gen3 需要 GSP 补丁"且"无人做出过可用的 GSP 补丁"（GSP 加密区不可读）。PHY 侧证据：Gen2-trained 卡 LnkSta2 EqualizationComplete-/Phase1-——Gen3 强制均衡从未运行（EQ 预设未被加载）。
+
+被驳方法目录精华（24 条全文在 frontier 文档）：setpci LnkCap2（静默丢弃）、HS XP3G rate override（读回成功链路不动）、OPT_GEN23 三通道写（host/HS-ROP/booter 全败）、改 VBIOS devinit 5 字节（全在 MAC 区间）、刷 A100 VBIOS（实测失败）、A100 strap 复制（卡不识别）、redriver（只放大不伪造 TS1/TS2，须 retimer）、TOCTOU（Ampere 验签发生在 DMA 进 IMEM 期间、无窗口）、Device-ID 伪装（FUSE_DEVID_SW_OVR_DIS=1）、Gen4 fork 宣称（1 小时内被拆穿）。
+
+未做路径（按成本序，全无结果）：写 OPT_GEN3=0 一行实验（预期失败但值一行记录）；MAGIC_D 可写性 A/B（证据矛盾——一份标注 writable、一份实测只读）；HS 上下文读 0x85080/0x85084/0x881C0（定位真正 sourcing 向量的层）；0x823830-3C 覆盖组 HS 写测试；forced Gen3 时 dump LnkSta2 EQ 字段（**唯一翻案窗口**：若 GEN3_DIS 是 boot 时锁进可重写 PHY config 而非直接进模拟 PHY，则存在 post-boot 寄存器可覆盖）；GSP-RM 补丁；retimer 硬件（Astera Aries/TI DS160PR810 级，双向伪造 Rate-ID）。
