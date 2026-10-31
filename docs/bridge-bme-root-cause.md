@@ -1,10 +1,12 @@
 # booter status 0x89 根因：GPU 上游 PCI 桥的 Bus Master 未使能
 
-2026-10-27 定稿。状态：**根因闭环，修复已并入主线（PR #5，已合并）**。
+2026-10-27 定稿；2026-10-31 追记固件侧机制（§4.5）与守卫生命周期修复
+（§8，PR #87）。状态：**根因闭环，修复已并入主线（PR #5，已合并）**。
 本文覆盖：现象、误诊史、证据链、Bus Master 机理、为何台式固件默认关、
 修复方式、以及"显存 staging 绕过"备选线为何走不通。
 
 问题发现与修复贡献：[8bit2qubit](https://github.com/8bit2qubit)（PR #5）。
+守卫生命周期缺陷的报告与实机验证：[fujiaghost789-glitch](https://github.com/fujiaghost789-glitch)（PR #87）。
 
 ## 1. 结论
 
@@ -104,6 +106,42 @@ BME 的设计目的是权限控制：(a) 防止未完成初始化的设备误发
 无关但作用域重叠的层。真正针对解锁的机制（NVIDIA PLM/签名/熔丝）在本轮
 全部被证明执法有效——PLM 执法由 force-continue 选择器探针单独实证。
 
+### 4.5 固件侧的正规来源：BME DMA Mitigation（AMI/EDK2）
+
+台式固件"桥 BME=0"不是疏忽，多数情况下是一个**显式特性的工作状态**。
+EDK2 PciBusDxe 自 2020 年前后提供 BME DMA Mitigation（`PcdBmeDmaMitigation`），
+AMI Aptio 机型在 BIOS 里以独立选项暴露：
+
+```
+Advanced → PCI Devices Common Settings → BME DMA Mitigation [Enabled]
+```
+
+启用时，固件在 PCI 枚举与 Option ROM 执行期间把设备与桥的 COMMAND bit2
+压在 0（防未完成初始化的设备误发 DMA、防恶意 Option ROM/设备借 DMA 攻击
+内存），只在固件自己需要对设备做 DMA 时按需放开，SMM lock 后收回，**交
+OS 时默认清零态，由 OS 驱动自行置位**。选项帮助文本的措辞（"Re-enable …
+disabled during enumeration … after SMM lock"）说的就是这套开关节奏。
+
+这解释了 §4.3 的固件策略差异从何而来，并把两条路统一到同一冷态：
+
+- 服务器/工作站板（X99 及其后的 AMI 机型）几乎默认 Enabled——**BIOS 开关
+  直接压着**；
+- 消费台式板没有该选项时，行为等价但来源是固件策略；PR #87 的 B760 则是
+  VT-d 关闭触发重枚举后落到同一状态（`8086:a70d` 以 `command=0x0003`
+  起步）。
+
+排查与使用推论：
+
+1. **不要为了"保险"关掉它**。它是正当的安全特性，而 loader 的
+   `BridgeMaster` 链（§5）无论开关状态都会自己置位并读回；关掉它等于把
+   "固件保证的干净冷态"换成"上电链路里任意遗留的脏状态"，反而更接近
+   Supermicro X11 那类固件开着 BME 交棒、需要事务侧自行清理的情形。
+2. 遇到台式机 0x89 报告时，**"BME DMA Mitigation 是否 Enabled"可进首查
+   清单**：PR #5 + PR #87 之后理论上开关皆应通过，但该读数能给排查省一轮
+   归因。
+3. 实证方法：对照 `DMA-PATH[before-bridge-bme]` 一行里桥的起始 command——
+   `0x0003`（无 bit2）即该缓解在工作，`0x0007` 则固件已替我们开了。
+
 ## 5. 修复（PR #5，已合并）
 
 `loader/src/pci.rs`：
@@ -115,7 +153,8 @@ BME 的设计目的是权限控制：(a) 防止未完成初始化的设备误发
 - `Drop`：事务结束（含早退）把置过的位**原样清回**——固件的 BME 状态不留给
   Windows（pci.sys 启动设备时会自行置位，实测无影响）。
 
-`loader/src/tx.rs`：`booter_fire` 之前建立守卫，活到 `run_transaction` 返回。
+`loader/src/tx.rs`：`booter_fire` 之前建立守卫，活到 `run_transaction` 返回
+（初版实现把守卫绑在探测分支内提前 Drop，2026-10-31 经 PR #87 修正，见 §8）。
 不改动 GPU 寄存器操作顺序、资产、booter 装载方式与解锁判定。
 
 ## 6. 历史勘误：两条被实验否定的路线
@@ -138,3 +177,24 @@ BME 的设计目的是权限控制：(a) 防止未完成初始化的设备误发
 - issue #4（banner 超时语义与 WPR2 冷态守卫）待单独核实。
 - 28e1 issue #1 中"关闭 BIOS 选项后修复"的确切机理未定（选项变动可能触发
   固件重枚举设了 BME），有该机复测数据可补。
+
+## 8. 追记（2026-10-31，PR #87）：守卫生命周期——0x89 的第二条路
+
+§5 的契约（"守卫活到 `run_transaction` 返回"）最初只写在注释里，代码并非
+如此：守卫被绑定在 `\tx-no-bridge-master.txt` 探测的 `else` 分支内，闭括号
+即 `Drop`——桥的 COMMAND 寄存器被复原、BME 在 booter 点火前再次清零。
+后果与 §1 同型：BME-clear 桥上 booter DMA 死于 0x89。
+
+该缺陷的隐蔽性来自分布：固件本就开着桥 BME 的板子上 `enable` 是 no-op，
+提前 Drop 复原不了任何位，完全不可见——PR #5/#33/#51/#56 的全部成功机恰
+好都属此类。换句话说，**PR #5 合并后桥 BME-clear 的桌面配置实际上从未被
+验证过**，直到 PR #87 的机器（ASUS PRIME B760M-F D4，VT-d 关闭后根端口
+`8086:a70d` 以 `command=0x0003` 起步，§4.5 的典型形态）暴露它。修复
+（main `ae7b128`）把绑定提出分支、用 `Option` 保持 marker 跳过路径；对
+BME 已开的既有验证配置是无操作。报告者同机前后对照日志：修复前
+`MAILBOX0=0x89`，修复后 `0x67b00001` + 四写读回全过（首个 8 GB `2803`
+数据点，已归档 [community-reports](community-reports.md)）。
+
+方法论注记：该 PR 的描述含完整代码 hunk 与测试声称，但分支实际只推了
+Markdown 文档——**评审 PR 时先核对 `gh pr diff` 与声称的改动一致**，再谈
+验证链。
