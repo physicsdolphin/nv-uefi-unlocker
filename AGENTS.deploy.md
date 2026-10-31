@@ -27,17 +27,17 @@ nv-uefi-unlocker is a UEFI pre-driver unlocker for GTX 16 and RTX 20/30/40 serie
 
 ## Generate assets
 
-From the extracted release directory, replace the example family with the identified family:
+Run the maker on the TARGET machine with no family argument: it enumerates the machine's NVIDIA GPUs (display-class registry on Windows, `nvidia-smi`/`lspci` on Linux) and builds exactly the RTX 20/30/40 families found:
 
 ```powershell
-$gpuFamily = "ad102"
-.\make-usbroot.ps1 -Family $gpuFamily
+.\make-usbroot.ps1
 ```
 
 ```bash
-gpu_family=ad102
-bash make-usbroot.sh --family "$gpu_family"
+bash make-usbroot.sh
 ```
+
+Only when the maker runs on a DIFFERENT machine than the target, pass the identified family explicitly (`-Family ad102|ga102|tu10x`, aliases `40`/`30`/`20`) — or `-Family all` / `--family all` to build all three families onto one stick.
 
 Default output/work directories are `usbroot` / `inputs`. Windows needs PowerShell 5+; the prebuilt Linux assets binary needs glibc ≥ 2.34 (bash maker also requires bash 4+, GNU utilities, curl or wget). On Windows TLS failures, consult the FAQ's WSL/Git Bash alternative. A pinned input download/hash failure is a hard stop: do not replace versions or disable validation.
 
@@ -58,7 +58,7 @@ The maker output is **flat and contains intermediates**. Use its final `expected
 | USB root, `ad102` / `ga102` | `scrubber_ad10x.bin` |
 | USB root, `tu10x` | `sec2_bl_tu10x.bin`; preserve generated `gsp-gate.txt` as the build record |
 
-Verify the destination set and family against maker output before calling media preparation complete. Never mix families or copy extraction intermediates as loader assets. Missing `v67-F-four-plm.bin` means replay, which still performs GPU writes/firmware execution/reset; it is not read-only diagnosis.
+Verify the destination set and family against maker output before calling media preparation complete. Never mix families within a single-family build; the only sanctioned multi-family form is an explicit `-Family all` / `--family all` stick shipped as the full expected union. Do not copy extraction intermediates as loader assets. Missing `v67-F-four-plm.bin` means replay, which still performs GPU writes/firmware execution/reset; it is not read-only diagnosis.
 
 Do not write the system ESP, change NVRAM BootOrder, install a resident boot entry or format/repartition disks as part of the default workflow. Inspect existing markers before handoff; normal deployment must leave `i_know_what_i_am_doing.txt` absent (it enables automatic execution after 5 seconds). Back up an existing armed marker outside the USB root before removing it; retain armed mode only for an explicit unattended-operation request. Preserve normal manual confirmation. Advanced markers such as `no-reconnect.txt` need a matching FAQ symptom; do not blanket-enable workarounds.
 

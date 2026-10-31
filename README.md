@@ -38,21 +38,21 @@
 
 ### 2. 制作启动 U 盘
 
-在解压目录运行下面的命令。40 系选择 `40`，30 系改为 `30`，20 / 16 系改为 `20`。
+在**目标机**（要解锁的机器）的解压目录直接运行：脚本自动识别本机显卡代际，只生成并下载对应固件。
 
 Windows PowerShell：
 
 ```powershell
-$gpuSeries = "40"
-.\make-usbroot.ps1 -Family $gpuSeries
+.\make-usbroot.ps1
 ```
 
 Linux / WSL / Git Bash：
 
 ```bash
-gpu_series=40
-bash make-usbroot.sh --family "$gpu_series"
+bash make-usbroot.sh
 ```
+
+在另一台机器上制作时显式指定代际：40 系 `-Family 40`，30 系 `30`，20 / 16 系 `20`。`-Family all` 把三代固件全部打进同一张 U 盘（一条命令即可服务多种卡）。
 
 Windows 需要 PowerShell 5+；Linux 版需要 glibc ≥ 2.34（如 Ubuntu 22.04+ / Debian 12+）。首次生成需要联网，下载或校验失败时先处理错误，不要换固件版本。
 

@@ -247,7 +247,7 @@ fn extract_scrub(source: &Path, outdir: &Path) -> Result<(), String> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> | vbios <rom>>";
+    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> [all | family...] | vbios <rom>>";
     let result = match args.get(1).map(String::as_str) {
         Some("generate") => {
             let out: PathBuf = args
@@ -312,8 +312,21 @@ fn main() {
             (Some(src), Some(out)) => extract_ad102(Path::new(src), Path::new(out)),
             _ => Err(usage.to_string()),
         },
+        // gsp-sections <gsp.bin> <outdir> [all | family...]
+        // Default export set = IN_SCOPE_SECTION_FAMILIES (RTX 20-40 only);
+        // `all` or an explicit family list overrides for forensics.
         Some("gsp-sections") => match (args.get(2), args.get(3)) {
-            (Some(src), Some(out)) => gsp_sections(Path::new(src), Path::new(out)),
+            (Some(s), Some(o)) => {
+                let rest = &args[4..];
+                let families: Vec<String> = if rest.iter().any(|a| a == "all") {
+                    Vec::new() // empty = every .fwsignature_ section in the ELF
+                } else if rest.is_empty() {
+                    IN_SCOPE_SECTION_FAMILIES.iter().map(|f| f.to_string()).collect()
+                } else {
+                    rest.to_vec()
+                };
+                gsp_sections(Path::new(s), Path::new(o), &families)
+            }
             _ => Err(usage.to_string()),
         },
         Some("vbios") => match args.get(2) {
@@ -363,13 +376,28 @@ fn extract_ad102(source: &Path, outdir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn gsp_sections(gsp_bin: &Path, outdir: &Path) -> Result<(), String> {
+// The pinned 610 GSP ELF carries .fwsignature_ sections for every silicon
+// family that driver supports - including Blackwell (gb10x/gb20x/gb10y/
+// gb20y), Hopper (gh100), Grace (gr10x) and their cc_ confidential-compute
+// variants. This project drives RTX 20-40 only, and make-usbroot points
+// gsp-sections straight at the USB root, so the default export set is
+// scoped to the in-scope families; `all` (or an explicit family list)
+// restores the full export for forensics.
+const IN_SCOPE_SECTION_FAMILIES: [&str; 5] = ["tu10x", "tu11x", "ga100", "ga10x", "ad10x"];
+
+fn gsp_sections(gsp_bin: &Path, outdir: &Path, families: &[String]) -> Result<(), String> {
     let img = std::fs::read(gsp_bin).map_err(|e| format!("read: {e}"))?;
     std::fs::create_dir_all(outdir).map_err(|e| e.to_string())?;
-    // Export EVERY family signature section plus the image, named for the
-    // loader's per-family lookup (fwimage_<fam>.bin / fwsignature_<fam>.bin).
+    // Export the requested family signature sections plus the image, named
+    // for the loader's per-family lookup (fwimage_<fam>.bin /
+    // fwsignature_<fam>.bin). An empty list = every section in the ELF.
+    let wanted = |fam: &str| families.is_empty() || families.iter().any(|f| f == fam);
     for s in assets::elf::sections(&img).map_err(|e| e.to_string())? {
         if let Some(fam) = s.name.strip_prefix(".fwsignature_") {
+            if !wanted(fam) {
+                println!("skipped fwsignature_{fam}: outside the RTX 20-40 export scope");
+                continue;
+            }
             let data = assets::elf::section_bytes(&img, &s.name).map_err(|e| e.to_string())?;
             std::fs::write(outdir.join(format!("fwsignature_{fam}.bin")), data)
                 .map_err(|e| e.to_string())?;
@@ -381,6 +409,9 @@ fn gsp_sections(gsp_bin: &Path, outdir: &Path) -> Result<(), String> {
     // present so each family dir is self-contained.
     for s in assets::elf::sections(&img).map_err(|e| e.to_string())? {
         if let Some(fam) = s.name.strip_prefix(".fwsignature_") {
+            if !wanted(fam) {
+                continue;
+            }
             std::fs::write(outdir.join(format!("fwimage_{fam}.bin")), fwimage)
                 .map_err(|e| e.to_string())?;
             println!("fwimage_{fam}.bin: {} bytes (same image)", fwimage.len());

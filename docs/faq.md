@@ -23,7 +23,9 @@
 
 maker 在本地 `usbroot/` 平铺输出文件。按脚本末尾清单复制所选家族的文件，另建 `EFI/BOOT/` 放启动程序；不要把抽取中间文件当作运行资产复制。
 
-`F` 为 `ad102`（40 系）、`ga102`（30 系）或 `tu10x`（20 / 16 系）：
+maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只生成对应家族；`-Family` / `--family` 可显式指定 `ad102`（40 系）、`ga102`（30 系）、`tu10x`（20 / 16 系）或 `all`（三代全家桶，一张盘服务多种卡）。多家族盘的文件是各家族清单的并集。
+
+`F` 为 `ad102`、`ga102` 或 `tu10x`：
 
 | 位置 | 文件 | 用途 |
 | --- | --- | --- |
@@ -53,7 +55,7 @@ maker 在本地 `usbroot/` 平铺输出文件。按脚本末尾清单复制所�
 
 多卡默认按固件枚举顺序处理所有受支持的卡；已解锁或不支持的卡跳过，单卡失败按失败路径处理，不重试该卡。只想解锁其中一张时必须明确指定 BDF。
 
-异机制盘可用 `-SkipGspCheck` / `--skip-gsp-check` 跳过制盘机检查，但目标机仍须满足 GSP 前置。离线 Turing 引导归档 `gsp_rm_boot_dbg.bin` 用 `-ProvenBlob` / `--proven-blob` 指定；长度和 hash 校验仍有效。下载或校验失败时不要换版本或绕过检查。Windows PowerShell TLS 下载失败时可用 WSL / Git Bash 运行 bash maker。
+异机制盘先显式指定 `-Family`（或用 `-Family all`），Turing 检查不适用时可用 `-SkipGspCheck` / `--skip-gsp-check` 跳过制盘机检查，但目标机仍须满足 GSP 前置。离线 Turing 引导归档 `gsp_rm_boot_dbg.bin` 用 `-ProvenBlob` / `--proven-blob` 指定；长度和 hash 校验仍有效。下载或校验失败时不要换版本或绕过检查。Windows PowerShell TLS 下载失败时可用 WSL / Git Bash 运行 bash maker。
 
 <a id="turing"></a>
 

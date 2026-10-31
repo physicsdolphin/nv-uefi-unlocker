@@ -7,12 +7,17 @@
 # file the EFI application needs for the chosen GPU family.
 #
 # Usage:
-#   ./make-usbroot.sh                          (ad102)
+#   ./make-usbroot.sh                          (localhost: detect this machine's GPUs)
 #   ./make-usbroot.sh --family tu10x --out /media/usb
+#   ./make-usbroot.sh --family all             (every RTX 20/30/40 family)
 #
 # Options (1:1 with the PowerShell twin's parameters):
-#   --family F        ad102 | ga102 | tu10x (aliases rtx40/40, rtx30/30, rtx20/20;
-#                     default ad102)
+#   --family F        ad102 | ga102 | tu10x | all | localhost
+#                     (aliases rtx40/40, rtx30/30, rtx20/20; default localhost)
+#                     localhost = enumerate the NVIDIA GPUs in THIS machine
+#                     (nvidia-smi, else lspci) and build exactly the families
+#                     found there; dies when no RTX 20/30/40 card is present.
+#                     all = build all three 20-40 series families on one stick.
 #   --out DIR         output root (default ./usbroot)
 #   --work DIR        download/verify work dir (default ./inputs)
 #   --assets PATH     assets pipeline binary. Resolution order: this flag /
@@ -38,6 +43,10 @@
 #                     old, or NVreg_EnableGpuFirmware=0 forced in a modprobe
 #                     config. Building for a DIFFERENT machine? Pass
 #                     --skip-gsp-check.
+#   all    tu10x + ga102 + ad102 payloads on one stick. The Turing GSP gate
+#                     runs in lenient mode: still refuses when a LOCAL Turing
+#                     card sits in legacy mode, but skips (no prompt) when
+#                     this host has no Turing adapter at all.
 #
 # RTD3 notice (issue #9): when the HOST runs with runtime D3 enabled
 # (DynamicPowerManagement 0x02/0x03), the script prints a loud warning -
@@ -50,7 +59,7 @@
 
 set -euo pipefail
 
-FAMILY="ad102"
+FAMILY="localhost"
 OUT="./usbroot"
 WORK="./inputs"
 ASSETS_BIN="${ASSETS_BIN:-}"
@@ -139,11 +148,85 @@ while [ $# -gt 0 ]; do
 done
 
 FAMILY="${FAMILY,,}"
+
+# ---------- device id -> build family (same ranges as loader/src/main.rs) ----------
+family_of_dev() { # $1 = device id accepted by $(( )); echoes family or nothing
+    local dv=$(( "$1" ))
+    if   (( dv >= 0x1E02 && dv <= 0x1FFF )) || (( dv >= 0x2182 && dv <= 0x21D1 )); then echo "tu10x"
+    elif (( dv >= 0x2200 && dv <= 0x22FF )) || (( dv >= 0x2400 && dv <= 0x25FF )); then echo "ga102"
+    elif (( dv >= 0x2600 && dv <= 0x28FF )); then echo "ad102"
+    fi
+}
+
+# ---------- localhost: enumerate THIS machine's NVIDIA GPUs ----------
+detect_local_families() { # echoes the build families found here, one per line
+    local rows="" dev fam line name has_tu=0 has_ga=0 has_ad=0
+    if have nvidia-smi; then
+        # pci.device_id prints device+vendor concatenated ("0x1F0710DE"):
+        # strip 0x, keep the FIRST 4 hex digits (the device id).
+        while IFS=, read -r dev name; do
+            dev="${dev,,}"; dev="${dev// /}"; dev="${dev#*0x}"; dev="${dev:0:4}"
+            [ "${#dev}" -eq 4 ] || continue
+            rows+="${dev}|${name# }"$'\n'
+        done < <(nvidia-smi --query-gpu=pci.device_id,name --format=csv,noheader 2>/dev/null || true)
+    fi
+    if [ -z "$rows" ] && have lspci; then
+        # Fallback for driverless hosts: display-class PCI probes. Audio
+        # functions on the GPU (10de:10f1 etc.) do not map to any family and
+        # are ignored by the range check below.
+        while IFS= read -r line; do
+            dev="$(printf '%s\n' "$line" | grep -oE '\[10de:[0-9A-Fa-f]{4}\]' | head -n1)"
+            [ -n "$dev" ] || continue
+            dev="${dev%%]*}"; dev="${dev##*:}"
+            rows+="${dev}|${line}"$'\n'
+        done < <(lspci -nn -d 10de: 2>/dev/null | grep -Ei 'VGA |3D controller' || true)
+    fi
+    while IFS='|' read -r dev name; do
+        [ -n "$dev" ] || continue
+        fam="$(family_of_dev "0x$dev")"
+        if [ -z "$fam" ]; then
+            logerr "[localhost] 10de:$dev - outside RTX 20/30/40 series, ignoring (${name:-unknown device})"
+            continue
+        fi
+        # Human-readable lines go to stderr: this function's stdout IS the
+        # family list consumed by the caller.
+        logerr "[localhost] 10de:$dev -> $fam (${name:-unknown device})"
+        case "$fam" in
+            tu10x) has_tu=1 ;;
+            ga102) has_ga=1 ;;
+            ad102) has_ad=1 ;;
+        esac
+    done <<< "$rows"
+    [ "$has_tu" -eq 1 ] && echo "tu10x"
+    [ "$has_ga" -eq 1 ] && echo "ga102"
+    [ "$has_ad" -eq 1 ] && echo "ad102"
+    return 0
+}
+
+# ---------- resolve the family argument into a build list ----------
+GATE_STRICT=1
+FAMILIES=()
 case "$FAMILY" in
-    ad102|rtx40|40) FAMILY="ad102" ;;
-    ga102|rtx30|30) FAMILY="ga102" ;;
-    tu10x|rtx20|20) FAMILY="tu10x" ;;
-    *) die "unknown family: $FAMILY (ad102 | ga102 | tu10x)" ;;
+    ad102|rtx40|40) FAMILIES=(ad102) ;;
+    ga102|rtx30|30) FAMILIES=(ga102) ;;
+    tu10x|rtx20|20) FAMILIES=(tu10x) ;;
+    all)
+        # One stick with every 20-40 series family. May target a machine
+        # other than this one, so the Turing GSP gate runs lenient below.
+        FAMILIES=(tu10x ga102 ad102)
+        GATE_STRICT=0
+        ;;
+    localhost)
+        while IFS= read -r fam; do
+            FAMILIES+=("$fam")
+        done < <(detect_local_families)
+        if [ "${#FAMILIES[@]}" -eq 0 ]; then
+            die "localhost: no supported NVIDIA adapter (RTX 20/30/40 series) found on
+this machine. Use an explicit --family (ad102 | ga102 | tu10x) or --family all."
+        fi
+        log "[localhost] building for: ${FAMILIES[*]}"
+        ;;
+    *) die "unknown family: $FAMILY (ad102 | ga102 | tu10x | all | localhost)" ;;
 esac
 
 # ---------- tools ----------
@@ -235,7 +318,8 @@ gsp_state() { # echoes: active | inactive | unknown | failed  (nvidia-smi must e
     [ "$any_inactive" -eq 1 ] && echo "inactive" || echo "active"
 }
 
-check_turing_gate() {
+check_turing_gate() { # $1 = 1 strict (explicit/localhost tu10x) | 0 lenient (all)
+    local strict="${1:-1}"
     GSP_GATE_STATUS="skipped"
     if [ "$SKIP_GSP_CHECK" -eq 1 ]; then
         log "[gate] Turing GSP check skipped (--skip-gsp-check)"
@@ -267,9 +351,14 @@ check_turing_gate() {
         done <<< "$inv"
 
         if [ "$is_turing" -eq 0 ]; then
-            log "[gate] No NVIDIA Turing adapter found on THIS machine."
-            log "       If the unlock target is a different machine, that is fine."
-            prompt_continue || die "Aborted by user."
+            if [ "$strict" -eq 1 ]; then
+                log "[gate] No NVIDIA Turing adapter found on THIS machine."
+                log "       If the unlock target is a different machine, that is fine."
+                prompt_continue || die "Aborted by user."
+            else
+                # --family all may target a machine other than this one.
+                log "[gate] no Turing adapter on this host - GSP check not applicable (--family all)"
+            fi
             GSP_GATE_STATUS="no-turing"
             log "[gate] skipped (no Turing adapter on this host)"
             return 0
@@ -327,7 +416,13 @@ or pass --boot-efi."
 mkdir -p "$OUT" "$WORK"
 log "[assets] $ASSETS_BIN"
 rtd3_notice
-if [ "$FAMILY" = "tu10x" ]; then check_turing_gate; fi
+# Turing GSP gate: strict for an explicit/localhost tu10x build (refuse on a
+# legacy-mode local card), lenient for --family all (may target another box).
+RUN_TURING_GATE=0
+for fam in "${FAMILIES[@]}"; do
+    if [ "$fam" = "tu10x" ]; then RUN_TURING_GATE=1; fi
+done
+if [ "$RUN_TURING_GATE" -eq 1 ]; then check_turing_gate "$GATE_STRICT"; fi
 
 fetch_verify() { # <name> <url> <sha> -> echoes dest path (logs go to stderr)
     local dest="$WORK/$1" part="$WORK/$1.part" got attempt
@@ -378,101 +473,118 @@ for f in "$OUT"/*; do
 done
 shopt -u nullglob
 
+# ---------- shared extraction (one pass for the whole build) ----------
+# fw always extracts BOTH GSP ELFs (gsp_ga10x.bin + gsp_tu10x.bin) in a
+# single zst pass, so it runs once no matter how many families build. The
+# scrubber is family-neutral too and shared by the ad102/ga102 branches.
+log "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
+assets_run fw "$UTILS_ZST" "$OUT"
+
+needs_scrub=0
+for fam in "${FAMILIES[@]}"; do
+    if [ "$fam" != "tu10x" ]; then needs_scrub=1; fi
+done
+if [ "$needs_scrub" -eq 1 ]; then
+    log "[extract] SEC2 scrubber (shared: ad102/ga102)"
+    assets_run extract-scrub "$SRC_TAR" "$OUT"
+fi
+
 # ---------- per-family extraction ----------
 expected=()
-unlock_file=""
-case "$FAMILY" in
-    ad102)
-        log "[extract] AD102 booter / GSP boot / scrubber"
-        assets_run extract-ad102 "$SRC_TAR" "$OUT"
-        assets_run extract-scrub "$SRC_TAR" "$OUT"
-        log "[extract] GSP firmware images (gsp_ga10x)"
-        assets_run fw "$UTILS_ZST" "$OUT"
-        log "[extract] fwimage / fwsignature sections"
-        assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT"
-        log "[generate] V67 AD102 four-write payload"
-        assets_run generate-ad102 "$OUT/v67-ad102-four-plm.bin"
-        # gsp-sections emits the ELF section family name (ad10x); the loader
-        # looks the device family up as ad102.
-        cp -f "$OUT/fwimage_ad10x.bin" "$OUT/fwimage_ad102.bin"
-        cp -f "$OUT/fwsignature_ad10x.bin" "$OUT/fwsignature_ad102.bin"
-        expected=(booter_load_ad102.bin gsp_boot_desc_ad102.bin gsp_boot_ad102.bin
-                  fwimage_ad102.bin fwsignature_ad102.bin scrubber_ad10x.bin
-                  v67-ad102-four-plm.bin)
-        unlock_file="v67-ad102-four-plm.bin"
-        ;;
-    ga102)
-        log "[extract] GA102 booter / GSP boot / scrubber"
-        assets_run extract "$SRC_TAR" "$OUT"
-        assets_run extract-scrub "$SRC_TAR" "$OUT"
-        log "[extract] GSP firmware images (gsp_ga10x)"
-        assets_run fw "$UTILS_ZST" "$OUT"
-        log "[extract] fwimage / fwsignature sections"
-        assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT"
-        log "[generate] V67 GA102 payload"
-        assets_run generate "$OUT/v67-ga102-four-plm.bin"
-        cp -f "$OUT/fwimage_ga10x.bin" "$OUT/fwimage_ga102.bin"
-        cp -f "$OUT/fwsignature_ga10x.bin" "$OUT/fwsignature_ga102.bin"
-        expected=(booter_load_ga102.bin gsp_boot_desc_ga102.bin gsp_boot_ga102.bin
-                  fwimage_ga102.bin fwsignature_ga102.bin scrubber_ad10x.bin
-                  v67-ga102-four-plm.bin)
-        unlock_file="v67-ga102-four-plm.bin"
-        ;;
-    tu10x)
-        log "[extract] TU102 booter (BOOT_DIRECT) / generic BL"
-        assets_run extract-tu10x "$SRC_TAR" "$OUT"
-        log "[extract] GSP firmware images (gsp_tu10x)"
-        assets_run fw "$UTILS_ZST" "$OUT"
-        log "[extract] fwimage / fwsignature sections"
-        assets_run gsp-sections "$OUT/gsp_tu10x.bin" "$OUT"
-        log "[generate] V67 TU10x payload"
-        assets_run generate-tu10x "$OUT/v67-tu10x-four-plm.bin"
+unlock_files=()
+ga10x_sections_done=0
+for fam in "${FAMILIES[@]}"; do
+    case "$fam" in
+        ad102)
+            log "[extract] AD102 booter / GSP boot"
+            assets_run extract-ad102 "$SRC_TAR" "$OUT"
+            if [ "$ga10x_sections_done" -eq 0 ]; then
+                log "[extract] fwimage / fwsignature sections (ga10x ELF)"
+                assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT"
+                ga10x_sections_done=1
+            fi
+            log "[generate] V67 AD102 four-write payload"
+            assets_run generate-ad102 "$OUT/v67-ad102-four-plm.bin"
+            # gsp-sections emits the ELF section family name (ad10x); the loader
+            # looks the device family up as ad102.
+            cp -f "$OUT/fwimage_ad10x.bin" "$OUT/fwimage_ad102.bin"
+            cp -f "$OUT/fwsignature_ad10x.bin" "$OUT/fwsignature_ad102.bin"
+            expected+=(booter_load_ad102.bin gsp_boot_desc_ad102.bin gsp_boot_ad102.bin
+                       fwimage_ad102.bin fwsignature_ad102.bin scrubber_ad10x.bin
+                       v67-ad102-four-plm.bin)
+            unlock_files+=("v67-ad102-four-plm.bin")
+            ;;
+        ga102)
+            log "[extract] GA102 booter / GSP boot"
+            assets_run extract "$SRC_TAR" "$OUT"
+            if [ "$ga10x_sections_done" -eq 0 ]; then
+                log "[extract] fwimage / fwsignature sections (ga10x ELF)"
+                assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT"
+                ga10x_sections_done=1
+            fi
+            log "[generate] V67 GA102 payload"
+            assets_run generate "$OUT/v67-ga102-four-plm.bin"
+            cp -f "$OUT/fwimage_ga10x.bin" "$OUT/fwimage_ga102.bin"
+            cp -f "$OUT/fwsignature_ga10x.bin" "$OUT/fwsignature_ga102.bin"
+            expected+=(booter_load_ga102.bin gsp_boot_desc_ga102.bin gsp_boot_ga102.bin
+                       fwimage_ga102.bin fwsignature_ga102.bin scrubber_ad10x.bin
+                       v67-ga102-four-plm.bin)
+            unlock_files+=("v67-ga102-four-plm.bin")
+            ;;
+        tu10x)
+            log "[extract] TU102 booter (BOOT_DIRECT) / generic BL"
+            assets_run extract-tu10x "$SRC_TAR" "$OUT"
+            log "[extract] fwimage / fwsignature sections (tu10x ELF)"
+            assets_run gsp-sections "$OUT/gsp_tu10x.bin" "$OUT"
+            log "[generate] V67 TU10x payload"
+            assets_run generate-tu10x "$OUT/v67-tu10x-four-plm.bin"
 
-        # Resolve the proven GspRmBoot archive: explicit path, next to this
-        # script, reference checkout, work dir, then the pinned URL.
-        blob=""
-        for cand in "$PROVEN_BLOB" \
-                    "$SCRIPT_DIR/$PROVEN_NAME" \
-                    "$SCRIPT_DIR/../reference/cmp50hx-unlock/efi-unlock/blobs/$PROVEN_NAME" \
-                    "$WORK/$PROVEN_NAME"; do
-            if [ -n "$cand" ] && [ -f "$cand" ]; then blob="$cand"; break; fi
-        done
-        if [ -z "$blob" ]; then
-            blob="$WORK/$PROVEN_NAME"
-            log "[fetch] $PROVEN_NAME (proven GspRmBoot archive)"
-            fetch "$PROVEN_URL" "$blob"
-        fi
-        blob_hash="$(sha256_of "$blob")"
-        [ "$blob_hash" = "$PROVEN_SRC_SHA" ] || die "proven GspRmBoot blob mismatch: got $blob_hash want $PROVEN_SRC_SHA ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
-        log "[ok] proven GspRmBoot archive SHA-256 verified ($(size_of "$blob") bytes)"
-        log "[slice] first 0x6000 bytes -> gsp_boot_tu10x.bin"
-        assets_run slice-proven-rm-boot "$blob" "$OUT"
+            # Resolve the proven GspRmBoot archive: explicit path, next to this
+            # script, reference checkout, work dir, then the pinned URL.
+            blob=""
+            for cand in "$PROVEN_BLOB" \
+                        "$SCRIPT_DIR/$PROVEN_NAME" \
+                        "$SCRIPT_DIR/../reference/cmp50hx-unlock/efi-unlock/blobs/$PROVEN_NAME" \
+                        "$WORK/$PROVEN_NAME"; do
+                if [ -n "$cand" ] && [ -f "$cand" ]; then blob="$cand"; break; fi
+            done
+            if [ -z "$blob" ]; then
+                blob="$WORK/$PROVEN_NAME"
+                log "[fetch] $PROVEN_NAME (proven GspRmBoot archive)"
+                fetch "$PROVEN_URL" "$blob"
+            fi
+            blob_hash="$(sha256_of "$blob")"
+            [ "$blob_hash" = "$PROVEN_SRC_SHA" ] || die "proven GspRmBoot blob mismatch: got $blob_hash want $PROVEN_SRC_SHA ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
+            log "[ok] proven GspRmBoot archive SHA-256 verified ($(size_of "$blob") bytes)"
+            log "[slice] first 0x6000 bytes -> gsp_boot_tu10x.bin"
+            assets_run slice-proven-rm-boot "$blob" "$OUT"
 
-        # The proven slice is byte-pinned: exactly 0x6000 bytes, de676bae... A
-        # 4 KiB v4 BINDATA image or the GSP ELF's first 0x6000 (c76c43b1...)
-        # must never ship.
-        boot_out="$OUT/gsp_boot_tu10x.bin"
-        len="$(size_of "$boot_out")"
-        [ "$len" -eq "$PROVEN_SLICE_LEN" ] || die "gsp_boot_tu10x.bin is $len bytes, want $PROVEN_SLICE_LEN (0x6000): trimmed proven GspRmBoot slice only"
-        boot_hash="$(sha256_of "$boot_out")"
-        [ "$boot_hash" = "$PROVEN_SLICE_SHA" ] || die "gsp_boot_tu10x.bin hash $boot_hash != pinned $PROVEN_SLICE_SHA"
-        log "[ok] gsp_boot_tu10x.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
+            # The proven slice is byte-pinned: exactly 0x6000 bytes, de676bae... A
+            # 4 KiB v4 BINDATA image or the GSP ELF's first 0x6000 (c76c43b1...)
+            # must never ship.
+            boot_out="$OUT/gsp_boot_tu10x.bin"
+            len="$(size_of "$boot_out")"
+            [ "$len" -eq "$PROVEN_SLICE_LEN" ] || die "gsp_boot_tu10x.bin is $len bytes, want $PROVEN_SLICE_LEN (0x6000): trimmed proven GspRmBoot slice only"
+            boot_hash="$(sha256_of "$boot_out")"
+            [ "$boot_hash" = "$PROVEN_SLICE_SHA" ] || die "gsp_boot_tu10x.bin hash $boot_hash != pinned $PROVEN_SLICE_SHA"
+            log "[ok] gsp_boot_tu10x.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
 
-        expected=(booter_load_tu10x.bin gsp_boot_desc_tu10x.bin gsp_boot_tu10x.bin
-                  fwimage_tu10x.bin fwsignature_tu10x.bin sec2_bl_tu10x.bin
-                  v67-tu10x-four-plm.bin)
-        unlock_file="v67-tu10x-four-plm.bin"
-        {
-            echo "nv-uefi-unlocker Turing GSP gate"
-            echo "time: $(date -Is)"
-            echo "host: $(hostname)"
-            echo "family: tu10x"
-            echo "gate: $GSP_GATE_STATUS"
-            echo "adapters:"
-            if [ -n "$ADAPTER_LINES" ]; then printf '%s\n' "$ADAPTER_LINES"; else echo "  (none detected on this host)"; fi
-        } > "$OUT/gsp-gate.txt"
-        ;;
-esac
+            expected+=(booter_load_tu10x.bin gsp_boot_desc_tu10x.bin gsp_boot_tu10x.bin
+                       fwimage_tu10x.bin fwsignature_tu10x.bin sec2_bl_tu10x.bin
+                       v67-tu10x-four-plm.bin)
+            unlock_files+=("v67-tu10x-four-plm.bin")
+            {
+                echo "nv-uefi-unlocker Turing GSP gate"
+                echo "time: $(date -Is)"
+                echo "host: $(hostname)"
+                echo "family: tu10x"
+                echo "gate: $GSP_GATE_STATUS"
+                echo "adapters:"
+                if [ -n "$ADAPTER_LINES" ]; then printf '%s\n' "$ADAPTER_LINES"; else echo "  (none detected on this host)"; fi
+            } > "$OUT/gsp-gate.txt"
+            ;;
+    esac
+done
 
 cp -f "$BOOT_EFI" "$OUT/BOOTX64.EFI"
 expected+=("BOOTX64.EFI")
@@ -483,11 +595,12 @@ for f in "${expected[@]}"; do
 done
 
 log ""
-log "DONE ($FAMILY). Copy the CONTENTS of $OUT to a FAT32 USB stick root."
+log "DONE (${FAMILIES[*]}). Copy the CONTENTS of $OUT to a FAT32 USB stick root."
 log "Format hint (Linux): sudo mkfs.fat -F 32 /dev/sdXN   # wipes the stick!"
-log "Unlock mode requires $unlock_file on the stick;"
-log "removing it switches the EFI into replay/diagnostic mode."
-if [ "$FAMILY" = "tu10x" ]; then
+log "Unlock mode requires the v67-*.bin payload for the target card's family"
+log "(${unlock_files[*]}); removing it switches the EFI into replay/diagnostic"
+log "mode for that family."
+if [ "$RUN_TURING_GATE" -eq 1 ]; then
     log ""
     log "Turing reminder: the TARGET machine must run GSP-RM firmware mode and"
     log "the unlock session must follow a RESTART - a hibernate resume does not"
