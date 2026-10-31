@@ -263,3 +263,70 @@ BAR0 {16M}、BAR3 {32M}。 Ampere 同 cap 结构但域顶到 32G+——两代差
    力仍是独立变量。
 6. Linux 免刷 BIOS 路径（4G decoding + `pci=realloc` 自动 resize）——
    RTD3/Linux 线（issue #9）的背景资料。
+
+## 消费卡 PCIe P2P 考据（2026-11-01，四源交叉 + open-gpu-kernel-modules 一手源码）
+
+**用户问题**：rtx-p2p（kacper-daftcode）/ forkProj open-gpu-kernel-modules-P2P /
+club-3090 #70 / harrychen 5090 博文这类"消费卡 P2P 解锁"，能否在我们层级
+（EFI pre-driver）打穿？EFI 是否天生优于系统内驱动？
+
+**裁决：打不穿主体，且此处层级优势恰好反转。** 判别标准：我们的层级优势
+只在"门=PLM 保护的**持久硅态**"上成立（FEAT/SM 速率：EFI 经签名固件 ROP
+写入，驱动只是发现者）。P2P 的门是**运行期策略**，不是硅态：
+
+### 门的三层解剖
+
+1. **GSP-RM 固件 SKU 门（主体）**：GeForce feature gate + ebreak 崩溃守卫
+   压住专业卡代码路径（P2P setup 是其中之一），全在闭源 `gsp_elf_*.bin` 内。
+   rtx-p2p 用 Ghidra RISC-V RE 出固件内 ~850 键注册表解析器，其中
+   `RMDisableFeatureDisablement=1` 一个键同时绕过 SKU 门与 ebreak 守卫——
+   **该键在 open-gpu-kernel-modules 全树零命中（2026-11-01 实查）**，纯固件
+   内键。kernel 侧 `p2pGetCapsStatus`（src/nvidia/src/kernel/platform/p2p/
+   p2p_caps.c:804）按 C2C→NVLink→PCIe→PCIe BAR1 顺序查询、regkey 可覆盖，
+   但 GSP 管理卡（Turing+ 全部）的实际 caps 出自固件。
+2. **BAR1 孔径**：消费卡可行传输只有 `P2P_CONNECTIVITY_PCIE_BAR1`
+   （p2p_caps.c:105/942）——peer VRAM 经 peer 的 BAR1 窗口访问。
+   MAILBOXP2P/`GMMU_APERTURE_PEER` 是 pro 卡硬件（4090 缺；tinygrad fork
+   550 用 `kbusEnableStaticBar1Mapping_GH100` 全 VRAM 静态 BAR1 + GMMU
+   PEER→SYS_NONCOH 重写绕过；590 起固件侧一键搞定，无需补丁）。全 VRAM
+   BAR1=ReBAR：4090/5090 官方支持；Turing/Ampere straps 域受限（TU106 顶
+   256 MiB，见 ReBarUEFI 考据节）。
+3. **平台层**：ACS/IOMMU 关闭（路由质量）+ NCCL_P2P_LEVEL。
+
+### 为什么 EFI 打不穿
+
+- 门在 GSP-RM **每次 bring-up 从 SKU 身份重算**，非持久寄存器。EFI 事例的
+  GSP（M3 自 bring-up）与驱动事例无关——驱动 FLR 后自 bring-up（"驱动永不
+  收养 EFI 阶段 GSP 镜像"已实证）。
+- 旁路钥匙虽在固件手里，**递送通道是 OS 注册表→驱动→RPC→GSP**；EFI 阶段
+  该通道不存在（无 OS、无驱动）。
+- Windows 额外一层：WDDM 闭源前端 + CUDA runtime 自查
+  （cudaDeviceCanAccessPeer）。四源全是 Linux；Windows 侧 `nvlddmkm`
+  RegistryDwords 机制存在但 GSP 是否同样响应未验证（可测，非本项目杠杆）。
+
+### EFI 侧真实杠杆
+
+- **BAR1（唯一 EFI-native 件）**：我们的 PSTRAPS/CTRL 写技术正对路，但
+  4090/5090 官方 ReBAR 使其无增益；Turing/Ampere 域小仍是瓶颈；且 3090
+  实测 256 MiB BAR1 也能跑（窗口化）→ 只是带宽/覆盖因子。
+- ACS config space 理论可写但 OS 重管（社区直接 BIOS 关）→ 顶多 ssdiag 加
+  诊断字段，不值。
+- **方法论收获（真价值）**：GSP 固件内存在 ~850 键注册表解析器 +
+  "feature disablement 总闸"，与 OPT_FEATURE_FUSES 哲学同构。若 M3 自
+  bring-up GSP-RM，可向**自己的 GSP 事例**喂任意 registry dwords 做侦察
+  （枚举专业特性可翻性）——侦察仪器，非交付机制。
+
+### 各源速记
+
+| 源 | 卡/平台 | 手段 | 结果 |
+|---|---|---|---|
+| forkProj/open-gpu-kernel-modules-P2P（tinygrad 谱系，550.54.15） | 4090×6 Linux | 内核补丁：强制 GH100 BAR1P2P + GMMU PEER→SYS_NONCOH | 24 GB/s 单向，~50 双向，NCCL 24.5 busbw |
+| aikitoria fork（harrychen 8×5090，590.48.01） | 5090×8 EPYC | ~100 行补丁去检查+vtable 换 datacenter 实现；关 ACS/IOMMU、ReBAR | 48.5/97.4 GB/s，NCCL 2.8×；P2P 进程退出后利用率泄漏坑 |
+| rtx-p2p（kacper-daftcode，590.48.01） | 5090 | **零补丁**：modprobe 传 RMDisableFeatureDisablement=1 + EnableResizableBar=1（固件内键） | 未给基准数 |
+| club-3090 #70（3090 双卡无 NVLink） | 3090×2 | aikitoria 补丁驱动 + NCCL_P2P_LEVEL=PHB | 纯 decode +2%/+9%，spec-decode +22%/+19%（NVLink 对照 +58%） |
+
+**结论**：不立项。与使命（PLM 硅态解锁）正交；受益场景（单机多卡推理）
+本 fleet 不具备；Linux 侧方案已三线铺满，Windows 侧闭源 WDDM 是硬天花板。
+"运行期策略门 vs 持久硅态门"的判别框架收进裁决工具箱（§10 判例）：拿到
+任何"NVIDIA 又锁了 X"的问题，第一步先定位门在哪层——硅态门才轮到 EFI
+层级出手。
