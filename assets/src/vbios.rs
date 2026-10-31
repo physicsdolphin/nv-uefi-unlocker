@@ -76,7 +76,7 @@ pub fn find_expansion_offset(image: &[u8]) -> Result<usize, VbiosError> {
         let npde_at = (p + slen + 0xf) & !0xf;
         if image.get(npde_at..npde_at + 4) == Some(b"NPDE".as_slice()) {
             let rev = u16v(image, npde_at + 4).unwrap_or(0);
-            if rev == 0x10 || rev == 0x11 {
+            if rev == 0x100 || rev == 0x101 {
                 sub = u16v(image, npde_at + 8).unwrap_or(0) as usize;
             }
         }
@@ -126,7 +126,8 @@ pub fn find_ucode_table(image: &[u8]) -> Result<(Vec<UcodeEntry>, usize, usize),
     let bit = find_bit_header(image)?;
     let header_size = u8v(image, bit + 8).unwrap() as usize;
     let token_size = u8v(image, bit + 9).unwrap() as usize;
-    let token_entries = u16v(image, bit + 10).unwrap_or(0) as usize;
+    // BIT_HEADER_V1_00.TokenEntries is one byte; +11 is HeaderChksum.
+    let token_entries = u8v(image, bit + 10).unwrap_or(0) as usize;
     if !(6..=8).contains(&token_size) {
         return Err(VbiosError::NoFalconTable);
     }
