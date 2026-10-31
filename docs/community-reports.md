@@ -64,6 +64,7 @@
 §1.4 对项目交付物绝对（决策记录见 [#73](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/73)）：本项目不收录常驻引导项 installer，也不提供官方教程。以下社区方案仅作存在性记录——非官方、不背书、不承诺兼容；常驻启动项的风险模型（每次上电自动重放固件事务、chain-load 前失败即黑屏且需恢复介质或固件菜单）由使用者自担：
 
 - [#33 报告者的脚本](https://github.com/chungtair/rtx4060ti-auto-unlock)：数据盘 300 MB FAT32 分区 + `{fwbootmgr}` 固件启动项，AD106/MSI B550 实测（上表 #33 行；注意 B550 无视 Windows 写的启动顺序，须进 BIOS 手设 Boot Option #1）。
+- [#29 报告者的 ESP 实验](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)（GA102/Z490 实测，上表 #29 行）：把解锁器放进系统 ESP 的路径可行，但容量是硬约束——本机 ESP 仅 100 MB（初始空闲 69.1 MiB），ga102 载荷需 80.7 MiB（`fwimage_ga102.bin` 独占 80.3 MiB），差 11.6 MiB 放不下整包；报告者用 PE 盘 + diskgenius 扩容后重建引导跑通，另把确认倒计时自改 2 s。与 #73 downstream 工具"拒绝 ESP"的设计取舍一致：ESP 方案对载荷体积没有余量，独立分区路线更稳。
 - [#73 提案者发布的 downstream 工具](https://github.com/Catnip202X/nv-uefi-unlocker/tree/downstream)：`downstream/install-partition.ps1`，独立 FAT32 分区安装/卸载（SHA-256 逐文件校验、manifest 先于启动项写入、拒绝 ESP/可移动盘/部分资产集、`-AllowArmed` 门控自动确认）。作者如实声明脚本从未实际执行，首个真实运行即测试。
 
 ## 仍待复测的反馈
