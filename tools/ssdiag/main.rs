@@ -749,21 +749,24 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
     }
     let mut gpus: Vec<Gpu> = Vec::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let mut it = line.trim().split('|');
-        let Some(id) = it.next() else { continue };
+        // field-collect first: BDF lines are "id|BDF|bus|addr|location",
+        // range lines are "id|start|end" - indexing beats a streaming
+        // iterator here (the first fix consumed field 1 in the BDF check
+        // and silently dropped every range line)
+        let f: Vec<&str> = line.trim().split('|').collect();
+        let Some(id) = f.first().copied() else { continue };
         if id.is_empty() {
             continue;
         }
-        // BDF lines: "id|BDF|bus|addr|location"
-        if it.next() == Some("BDF") {
-            let bus = it.next().and_then(|v| v.trim().parse::<u32>().ok());
-            let addr = it.next().and_then(|v| v.trim().parse::<u32>().ok());
-            let loc = it.next().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        if f.get(1) == Some(&"BDF") {
+            let bus = f.get(2).and_then(|v| v.trim().parse::<u32>().ok());
+            let addr = f.get(3).and_then(|v| v.trim().parse::<u32>().ok());
+            let loc = f.get(4).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
             let bdf = match (bus, addr) {
                 (Some(b), Some(a)) if b <= 0xFF => {
                     let d = (a >> 16) & 0x1F;
-                    let f = a & 0xF;
-                    if f <= 7 { Some((b, d, f)) } else { None }
+                    let fn_ = a & 0xF;
+                    if fn_ <= 7 { Some((b, d, fn_)) } else { None }
                 }
                 _ => None,
             };
@@ -774,7 +777,7 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
             }
             continue;
         }
-        let (Some(a), Some(b)) = (it.next(), it.next()) else {
+        let (Some(a), Some(b)) = (f.get(1), f.get(2)) else {
             continue;
         };
         let (Ok(a), Ok(b)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>()) else {
