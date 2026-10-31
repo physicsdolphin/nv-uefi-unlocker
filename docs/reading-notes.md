@@ -230,9 +230,13 @@ PLM 模型预测严格同构，是"跨族移植=重抽重审"的又一实例。
    寄存器——BAR 数量取自 CAP bits[4:0]（那是支持尺寸位图）、尺寸取自
    下一对 CAP 低位，步进/字段全错位。已改为 {CAP,CTRL} 对链正确解码
    （首对 CTRL[7:5]=BAR 数、CTRL[2:0]=序号、CTRL[12:8]=当前尺寸
-   1MiB<<n、CAP=支持位图 raw bit n=2^n MB），并新增支持域打印。ssdiag/
-   diag-unlock.py 侧仍无 config-space ReBAR 读（Linux sysfs config 易加；
-   Windows 需驱动侧 BUS_INTERFACE_STANDARD，挂起）。
+   1MiB<<n、CAP=支持位图 raw bit n=2^n MB），并新增支持域打印。**ssdiag
+   v0.5.0 已跟进**（6e0521a）：pmxdrv 只有 map/unmap 物理，但 config space
+   在现代 x64 本就是内存映射（MCFG/ECAM）——从注册表 LocationInformation
+   取 bdf（取前三个整数 run，跨语言格式串参数序恒定）、GetSystemFirmwareTable
+   读 MCFG、只映射目标函数自己的 4KB config 页、VID/DID 对 DeviceID 校验后
+   再解码，不做任何总线扫描；停在 BAR0 walk 之前（停泊卡 config 仍可答）。
+   diag-unlock.py（Linux sysfs config）仍未加，易做。
 3. **GA10x + A4G/ReBAR 板的 BAR1 大孔径**对 `\tx-meta-in-vram` 的
    BAR1 批量拷贝是纯加速（84MB 少换窗）；与 booter 0x91 的 >4GB staging
    需求**正交**（booter 读 sysmem 走设备 DMA，不经 BAR1 孔径）——勿混。
