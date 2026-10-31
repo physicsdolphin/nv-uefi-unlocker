@@ -35,6 +35,15 @@ pub fn set_high_staging(on: bool) {
     TX_HIGH_STAGING.store(on, core::sync::atomic::Ordering::Relaxed);
 }
 
+/// Current above-4GB staging gate (read back for band decoupling: v2.1.8
+/// allocates the FWSEC staging in the LOW band by default - issue #74
+/// proved >=4GiB unreachable on TB platforms - and restores the gate for
+/// the meta/signature/radix allocations).
+#[cfg(feature = "tx")]
+pub fn high_staging() -> bool {
+    TX_HIGH_STAGING.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(feature = "tx")]
 static MEMMAP_CAPTURED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 

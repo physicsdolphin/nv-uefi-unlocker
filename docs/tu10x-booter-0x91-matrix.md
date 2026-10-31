@@ -187,6 +187,24 @@ travis 成功的额外信息：证明 C-load 成功**不需要** PTIMER 与 host
 5. **在册剩余变量=固件侧行为本身**：WPR2-up 0ms（ProxVZ）vs 3ms（#14/#17/travis）是"每台 FWSEC 行为不同"的直接可观测证据（同为 fwsec=ran、同为 8G、同为 1e81 族）；VBIOS/FWSEC profile（#17 .e9 vs travis .35 同 ID 不同 profile）+ POST 留下的引擎状态（3/4 败方无核显、POST 在 dGPU 上跑过 GOP）是当前唯二未排除的载体。22G/24G 的尾巴∝容量效应仍与超频失败一致，但 8G 败例说明存在不依赖容量的第二条入径。
 6. **含义**：R1（等 GSP HALT+读结果）仍是头号实验且现在更聚焦——它同时覆盖"尾巴未完"与"结果带错未查"两个剩余机制；R2 仅作对照。
 
+## 第一轮消融结果（R1/R2，2026-10-31 深夜回收）
+
+| 机器 | R1（gsp-halt） | 决定性读数 | 结论 |
+|---|---|---|---|
+| #62 TU104-400 1e87 | **转绿** | `WPR2 UP after 3ms` → `GSP-HALT gate halted after 156ms`——旧路径在 FWSEC 尾巴中段点火；booter `mailbox0=0x0`、`tu10x_unlock=true`、34.9→69 TFLOPS | **竞态实锤并修复**（v2.1.8 转正默认） |
+| #57 TITAN RTX 24G×2 | **双阴性** | 门控 87ms 生效（halt+scratch0e 全过），booter 仍 0x0B/0x11；R2 同形 | 竞态非本机病因——B 类独立存在 |
+| #82 2060M 6G 1f15 | **推进未治愈** | 0x91 → **0x0B**；FWSEC 全绿；`BOOTER-AUDIT: ns MATCH / dmem MATCH / sec 首字 0xdead5ec1`；R2 无变化 | 同 B 类 |
+| #74 TU102 22G+TB3 | 用户自解（第 16 轮单变量） | staging `dev=0x4b782000 [LOW]` ⇒ WPR2 0ms 起；`0x100000000`/`0x110000000` ⇒ `WPR2 never came up` | **FWSEC staging ≥4GiB 平台不可达**（与 cmp50hx v2.63 注释方向相反；booter 侧另证 meta ≥4GiB 32 位截断→0x89、签名/radix 高位→挂死） |
+| #89 2060 12G 1f03 | 未跑消融 | FWSEC 阶段死：`WPR2 never came up`，EXCI=0x00a003ff（PC 0x3ff MISS_INS）；staging 恰在 0x100000000 | A 类头号线索：`\tx-low-staging.txt` 未试 |
+| #90 2080Ti 11G X79 | 判读纠偏 | UEFI 侧实为成功（PLM 开+selector 写入+unlock_persist=true）；Windows 侧病态疑硬件混杂（630 条 WHEA；断电未跑工具仍病态） | E 类：先排硬件 |
+
+**三个跨机定案**：
+1. `BOOTER-AUDIT: sec readback MISMATCH(0xdead5ec1/fnv 0056bc76c5)` 在**成功机**（#62 R1）上同样出现且 fnv 逐位一致——Turing 安全段经 NS 读口回读一律 scrub 毒值；**sec 行无判别力，ns/dmem 行才是判据**（v2.1.8 文案已改）。
+2. diag 分支 `parse_num_ascii` 吃不掉 `0x` 前缀（"0x200" 无声失效、"512" 可用）——坑了 #57 的 E 轮；v2.1.8 修复+回归测试。
+3. `signature DMA never landed` verdict 是 V67 专用检查的恒假阴性（#14 成功轮、#90 实际成功皆有此行）——v2.1.8 文案已改。
+
+**残留类汇总（第二轮计划骨架，2026-10-31）**：A=FWSEC 死（staging 带，#89/#74）；B=安全段状态码 0x0B/0x11 语义未知（#57/#82，竞态排除后）；C=0x0+sanitize 误读（文案已修）；D=Windows 侧重编程（#82 评论3：GSP 615.78/驱动 617.42 init 重编程 FEAT/清 SS，WPR2_HI 尚在=GPU 未复位；成功例均 ≥621/620——advisory）；E=Windows 病态疑硬件（#90）。另：PR #87 修复了上轮 marker 引入的 BridgeMaster guard 作用域 bug（guard 绑在 else 分支内导致 Drop 提前恢复桥寄存器）。
+
 ## 维护结论（当前工作假设）
 
 - 硬核四例的共同点不是几何、地址、载荷、GOP、PTIMER/probe/静默（全部单变量证伪），而是：**NS 桩执行后跳安全段入口 0x100 取指 miss**（EXPC=0x100 不变；EXCAUSE 随放置动）。

@@ -1,34 +1,26 @@
-# TU10x 0x91 取证诊断轮协议（diag/tu10x-forensics，2026-10-31）
+# TU10x 取证诊断协议 v2（v2.1.8，2026-10-31 第二轮）
 
-> 诊断件：`release/BOOTX64.EFI.tu10x-forensics-diag`（分支 `diag/tu10x-forensics` 构建，TX 门控）。基线：v2.1.6 main + 本分支诊断与消融 marker。**普通用户无需任何 marker 即可运行**——所有常开诊断自动记录；marker 仅给失败案例的消融轮。
+> **v2.1.8 变更**：① GSP-HALT 判据（精确 WPR2 lo+hi + GSP HALT 10s + mailbox 回读 + scratch0e FRTS 错误码门控）**转正为 tu10x 默认**——#62 R1 场证明（`WPR2 UP 3ms` vs `HALT 156ms`，34.9→69 TFLOPS），`\tx-no-gsp-halt-gate.txt` 为逃生开关（恢复旧行为，仅消融用）；② **FWSEC staging 默认改低位**——#74 第 15-28 轮单变量实锤 ≥4GiB 在 TB 平台全链不可达（`WPR2 never came up` 零残影），而 sub-4GB FWSEC 在 #16/#12/#14/#74 全绿零反例；meta/sig/radix 维持 >4GB 门控，`\tx-fwsec-high-staging.txt` 恢复旧高位（消融用）；③ `\tx-fwsec-gsp-halt.txt`/`\tx-fwsec-hold-dma.txt` 退役（已转正/页复用轴证伪）；④ `\tx-sec-base.txt` 的 `0x` 前缀解析修复（曾无声失效，坑了 #57 E 轮——`0x200` 与 `512` 现在等价）；⑤ 0x89 提示扩为三成因（桥 BME/地址带不可达/固件 IOMMU——#74 实证 BME 全开仍 0x89）。
 >
-> 背景：[tu10x-booter-0x91-matrix.md](tu10x-booter-0x91-matrix.md)（成败总表）、[tu10x-c-parity-diff.md](tu10x-c-parity-diff.md)（根因差分）、[tu10x-booter-nsstub-disasm.md](tu10x-booter-nsstub-disasm.md)（mailbox/EXCI 字典）。
+> 配套：[tu10x-booter-0x91-matrix.md](tu10x-booter-0x91-matrix.md)（成败矩阵+第一轮结果+指纹）、[tu10x-booter-nsstub-disasm.md](tu10x-booter-nsstub-disasm.md)（mailbox/EXCI 字典）。
 
-## 每次运行自动新增的日志行（回收清单）
+## 每次运行自动记录（回收清单不变，另加）
 
-| 行前缀 | 内容 | 用途 |
-|---|---|---|
-| `TX-tu10x: entry WPR2 … [fwsec=ran/skipped]` | 入口 WPR2 与 FWSEC 是否由 loader 点火 | 成败两组的冷/热分布（矩阵 A4-5） |
-| `FWSEC-TU10X: *** WPR2 UP … after Nms ***` | START→WPR2 出现耗时 | FWSEC 速度分档 |
-| `BOOTER-PLACE: …` | NS/安全段 dest/tag、BOOTVEC、开关状态 | 放置维（#67 谱系） |
-| `BOOTER-AUDIT: ns/sec/dmem readback MATCH/MISMATCH/DENIED (fnv …)` | **START 前全段读回**（安全段为密文，读回即所写密文） | 区分"写入丢失"与"取指侧差异" |
-| `BOOTER: EXCI decode: EXPC=… EXCAUSE=… (INV_INS…)` | 权威位域解码（[24:20]，9=INV_INS） | 替代旧 0x10 误读 |
-| `BOOTER: mailbox0 verdict: 0x31/0x91/…` | NS 桩字典（0x31=安全段没跑；0x91=跑了且拒收） | 失败分级 |
-| `GSP-HALT gate: …halted=true after Nms` | （marker 开启时）FWSEC 收尾确认 | 头号消融轴 |
+- `GSP-HALT gate: … halted=true after Nms` + `FWSEC result (kernel shape): … frts_err=…`——**默认开启**；Nms 是该机 FWSEC 尾巴时长的直接测量。
+- `BOOTER-AUDIT: ns/dmem readback MATCH` 为有效判据；**sec 行在 Turing 上一律返回 scrub 毒值（成功机实证），无判别力**。
+- `signature DMA never landed` verdict 仅 V67 模式有意义；replay/快速 sanitize 下是已知假阴性。
 
-## 失败案例消融轮（每轮一次冷启动，一个变量）
+## 按残留类的第二轮消融（每轮一次冷启动、一个变量）
 
-按 [tu10x-c-parity-diff.md](tu10x-c-parity-diff.md) B4 优先级，U 盘根目录放 marker 文件（空文件即可，除注明内容外）：
+**A 类（FWSEC 死：`WPR2 never came up`）——#89**：
+1. **v2.1.8 默认已修**（FWSEC staging 低位化）——直接跑无 marker 默认路径，预期 WPR2 起来。
+2. 若仍死 → `\tx-low-staging.txt`（全局低位含 meta/radix）排除其余缓冲的地址带问题；若 booter 阶段变 0x91/0x89（#16 型 sub-4GB meta 锁），回报即可（混合带机器的存在性本身是重要数据）。
 
-1. **R1（头号假设）**：`\tx-fwsec-gsp-halt.txt` —— FWSEC 完成判据改为精确 WPR2（lo+hi）**且 GSP HALT**（10s 预算），HALT 前不点火、不释放 staging。三个成功实现（nlzy Linux/PR #49/travis guarded）全部使用此判据。
-2. **R2（分解轴）**：`\tx-fwsec-hold-dma.txt` —— 只延迟释放 staging 到重启，不加 HALT 等待。R1 成 R2 败→"提前点火"为主因；R1/R2 都成→"页复用"即足够。
-3. **R3（弱嫌疑，仅 R1/R2 阴性时）**：`\tx-no-pm-preflight.txt`。（~~`\tx-no-bridge-master.txt`~~ **已撤销 2026-10-31**：BridgeMaster 是 PR #5/issue #1 场验证的必要修复——上游桥 BME 未开=booter 0x89 族；跳过要么 no-op 要么引入 0x89，不判别 0x91。请勿使用。）
-4. **入口维（可选，对应 #67 D/E 轮复现）**：`\tx-sec-base.txt`（内容如 `0x200`，256 对齐）搬安全段 dest+tag；`\tx-bootvec-sec.txt` BOOTVEC 直入安全段。
+**B 类（FWSEC 全绿但终值 0x0B/0x11）——#57、#82**：
+1. `\tx-bootvec-sec.txt`（跳 NS 桩直入安全段）——区分"桩的环境块被拒"vs"安全码自身拒"。
+2. `\tx-sec-base.txt` 搬址轮重做（`0x200` 前缀 bug 已修，#57 的 E 轮作废重跑）。
+3. Windows 侧（#82）：升级 GSP≥620/驱动≥621 后复测（D 类预防——615.78/617.42 已实证 init 重编程 FEAT）。
 
-**纪律**：每轮完整冷启动（彻底断电）；同会话失败绝不重试；回收完整 `loader.log`（新诊断行全在）。R1 预期：若硬核案例（#17/#62/#57/ProxVirtualZone）任一转绿→根因闭环，B0 差分表收束为单变量。
+**E 类（Windows 病态）——#90**：先跑 stock 基线三件套（不插 U 盘正常启动 + ssdiag 读数 + VRAM/内存测试排 WHEA）再谈软件。
 
-## 安全边界
-
-- 所有消融 marker 默认关闭；无 marker 行为=main v2.1.6 + 只读诊断。
-- `\tx-fwsec-hold-dma.txt` 故意保留 ~28MiB staging 至重启（无 Drop、无持久固件改动）。
-- 安全段读回为读操作；`DENIED` 是有效观测不判失败。
+**纪律**：彻底断电冷启动；同会话失败不重试；回收完整 loader.log。
