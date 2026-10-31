@@ -5,9 +5,10 @@ Reads the FEAT cluster straight off BAR0 via sysfs (no driver needed):
 mmap /sys/bus/pci/devices/<bdf>/resource0 and read dwords. Root required.
 
 Families (PMC_BOOT_0 bits [31:20]):
-  Turing  (0x160..0x16F)  FEAT_PLM 0x00409650 / SS0 0x00409664 / SS1 0x0040966C
+  Turing  (0x160..0x16F)  FEAT_PLM 0x00409650 / SS0 0x00409664 / SS1 0x0040966C / READOUT 0x00409668
   Ampere/Ada (0x170..0x17F, 0x220..0x22F, 0x100)  0x00823804 / 0x0082381C / 0x00823820
-  (+ READOUT_1 0x00823818 on the 0x823xxx block; unknown on Turing)
+  (+ READOUT_1 0x00823818 on the 0x823xxx block; 0x00409668 on Turing, per
+  nlzy/turing-unlock - same constant ssdiag carries, issue #42)
 
 Why this exists (issue #6): the EFI unlock's volatile state is only useful if
 it survives into the OS. This tool answers, from inside the running system:
