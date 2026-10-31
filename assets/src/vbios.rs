@@ -171,8 +171,27 @@ pub fn find_ucode_table(image: &[u8]) -> Result<(Vec<UcodeEntry>, usize, usize),
 }
 
 /// Descriptor V2 (60B, Turing) per FALCON_UCODE_DESC_V2.
+/// Descriptor V1 (40 bytes, Pascal and older) - AGENTS 7.3:
+/// Stored@4 / Uncompressed@8 / VirtualEntry@12 / IMEMPhys@16 / IMEMLoad@20 /
+/// DMEMPhys@32 / DMEMLoad@36. Documented since the first task brief and, until
+/// now, not implemented: every V1 image returned UnsupportedDescVersion.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DescV1 {
+    /// vDesc bit2: the image is AES ciphertext (key lives in the fuses).
+    pub encrypted: bool,
+    pub stored_size: u32,
+    pub uncompressed_size: u32,
+    pub virtual_entry: u32,
+    pub imem_phys_base: u32,
+    pub imem_load_size: u32,
+    pub dmem_phys_base: u32,
+    pub dmem_load_size: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DescV2 {
+    /// vDesc bit2: see DescV1::encrypted.
+    pub encrypted: bool,
     pub stored_size: u32,
     pub uncompressed_size: u32,
     pub virtual_entry: u32,
@@ -190,6 +209,8 @@ pub struct DescV2 {
 /// Descriptor V3 (44B, GA10x+) per FALCON_UCODE_DESC_V3.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DescV3 {
+    /// vDesc bit2: see DescV1::encrypted.
+    pub encrypted: bool,
     pub stored_size: u32,
     pub pkc_data_offset: u32,
     pub interface_offset: u32,
@@ -206,6 +227,7 @@ pub struct DescV3 {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Desc {
+    V1(DescV1),
     V2(DescV2),
     V3(DescV3),
 }
@@ -215,12 +237,31 @@ pub fn parse_desc(image: &[u8], expansion: usize, entry: &UcodeEntry) -> Result<
     let vdesc = u32v(image, at).ok_or(VbiosError::Truncated)?;
     let version = ((vdesc >> 8) & 0xFF) as u8;
     let size = (vdesc >> 16) as u16 as usize;
+    // Brief 7.3 makes encryption the first classification step ("any blob gets
+    // an entropy/header judgement before analysis"): a ciphertext FWSEC must not
+    // be packaged as if it were usable, and the caller cannot tell unless the bit
+    // is surfaced. Recorded on every variant.
     let encrypted = vdesc & (1 << 2) != 0;
-    let _ = encrypted; // recorded, not enforced (kernel driver doesn't either)
     match version {
+        1 if size >= 40 && at + 40 <= image.len() => {
+            let f = |i: usize| u32v(image, at + 4 + i * 4).unwrap_or(0);
+            Ok(Desc::V1(DescV1 {
+                encrypted,
+                stored_size: f(0),
+                uncompressed_size: f(1),
+                virtual_entry: f(2),
+                imem_phys_base: f(3),
+                imem_load_size: f(4),
+                // words 5/6 are undocumented in 7.3's V1 layout; DMEM sits at
+                // byte 32/36, i.e. words 7 and 8.
+                dmem_phys_base: u32v(image, at + 32).unwrap_or(0),
+                dmem_load_size: u32v(image, at + 36).unwrap_or(0),
+            }))
+        }
         2 if size >= 60 && at + 60 <= image.len() => {
             let f = |i: usize| u32v(image, at + 4 + i * 4).unwrap_or(0);
             Ok(Desc::V2(DescV2 {
+                encrypted,
                 stored_size: f(0),
                 uncompressed_size: f(1),
                 virtual_entry: f(2),
@@ -236,6 +277,7 @@ pub fn parse_desc(image: &[u8], expansion: usize, entry: &UcodeEntry) -> Result<
             }))
         }
         3 if size >= 44 && at + 44 <= image.len() => Ok(Desc::V3(DescV3 {
+            encrypted,
             stored_size: u32v(image, at + 4).unwrap_or(0),
             pkc_data_offset: u32v(image, at + 8).unwrap_or(0),
             interface_offset: u32v(image, at + 12).unwrap_or(0),
@@ -406,4 +448,51 @@ mod tests {
             other => panic!("expected the V2 descriptor, got {other:?}"),
         }
     }
+    /// V1 (40-byte) descriptors used to return UnsupportedDescVersion for every
+    /// image, although AGENTS 7.3 documents the layout in full. Field-by-field
+    /// pin against that table: Stored@4 Uncompressed@8 VirtualEntry@12
+    /// IMEMPhys@16 IMEMLoad@20 DMEMPhys@32 DMEMLoad@36.
+    #[test]
+    fn desc_v1_layout_is_decoded() {
+        let mut rom = vec![0u8; 0x80];
+        rom[0..4].copy_from_slice(&0x0028_0101u32.to_le_bytes()); // 40B, ver 1, header
+        rom[4..8].copy_from_slice(&0x1111_1111u32.to_le_bytes()); // stored
+        rom[8..12].copy_from_slice(&0x2222_2222u32.to_le_bytes()); // uncompressed
+        rom[12..16].copy_from_slice(&0x3333_3333u32.to_le_bytes()); // virtual entry
+        rom[16..20].copy_from_slice(&0x4444_4444u32.to_le_bytes()); // imem phys
+        rom[20..24].copy_from_slice(&0x5555_5555u32.to_le_bytes()); // imem load
+        rom[32..36].copy_from_slice(&0x7777_7777u32.to_le_bytes()); // dmem phys
+        rom[36..40].copy_from_slice(&0x8888_8888u32.to_le_bytes()); // dmem load
+        let entry = UcodeEntry { app_id: APP_ID_FWSEC_PROD, target_id: 0, desc_off: 0 };
+        match parse_desc(&rom, 0, &entry).expect("V1 must parse") {
+            Desc::V1(d) => {
+                assert_eq!(d.stored_size, 0x1111_1111);
+                assert_eq!(d.uncompressed_size, 0x2222_2222);
+                assert_eq!(d.virtual_entry, 0x3333_3333);
+                assert_eq!(d.imem_phys_base, 0x4444_4444);
+                assert_eq!(d.imem_load_size, 0x5555_5555);
+                assert_eq!(d.dmem_phys_base, 0x7777_7777);
+                assert_eq!(d.dmem_load_size, 0x8888_8888);
+                assert!(!d.encrypted, "bit2 clear in this fixture");
+            }
+            other => panic!("expected V1, got {other:?}"),
+        }
+    }
+
+    /// vDesc bit2 marks an AES-ciphertext image (the key lives in the fuses).
+    /// It used to be parsed and dropped, so a ciphertext FWSEC could be packaged
+    /// as if it were usable.
+    #[test]
+    fn desc_encrypted_bit_is_surfaced() {
+        let mut rom = vec![0u8; 0x80];
+        // 60-byte V2 descriptor, header bit + encrypted bit set.
+        rom[0..4].copy_from_slice(&0x003C_0205u32.to_le_bytes());
+        rom[4..8].copy_from_slice(&0x1000u32.to_le_bytes());
+        let entry = UcodeEntry { app_id: APP_ID_FWSEC_PROD, target_id: 0, desc_off: 0 };
+        match parse_desc(&rom, 0, &entry).expect("V2 must parse") {
+            Desc::V2(d) => assert!(d.encrypted, "bit2 must surface as encrypted=true"),
+            other => panic!("expected V2, got {other:?}"),
+        }
+    }
+
 }

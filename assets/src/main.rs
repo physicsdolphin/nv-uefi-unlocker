@@ -117,6 +117,11 @@ fn vbios(rom: &Path) -> Result<(), String> {
         };
         let desc = vbios::parse_desc(img, expansion, e);
         let extra = match desc {
+            Ok(vbios::Desc::V1(d)) => format!(
+                "V1{} stored {:#x} imem {:#x} dmem {:#x}",
+                if d.encrypted { " [ENCRYPTED]" } else { "" },
+                d.stored_size, d.imem_load_size, d.dmem_load_size
+            ),
             Ok(vbios::Desc::V2(d)) => format!(
                 "V2 stored {:#x} imem {:#x} dmem {:#x} sec {:#x}+{:#x}",
                 d.stored_size, d.imem_load_size, d.dmem_load_size, d.imem_sec_base, d.imem_sec_size
