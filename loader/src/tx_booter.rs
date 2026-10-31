@@ -9,6 +9,9 @@ use log::info;
 use crate::tx::{TxError, TxGpu};
 use crate::tx_fwsec::LayoutOut;
 
+#[path = "btl1_signature.rs"]
+mod btl1_signature;
+
 pub const WPR_META_MAGIC: u64 = 0xdc3a_ae21_371a_60b3;
 pub const WPR_META_SIZE: usize = 256;
 pub const V67_SIZE: usize = 0xfa00;
@@ -131,6 +134,15 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
     let h = |i: usize| le32(bundle, 8 + i * 4);
     let image_size = le32(bundle, 8 + 14 * 4);
     let sig_total = le32(bundle, 8 + 15 * 4);
+    // BTL1 field 13 stores the TOTAL signature bytes, like trailer field 15.
+    // Downstream booter_patch_stock needs a SINGLE signature's byte length.
+    let sig_bytes = match btl1_signature::per_signature_size(h(12), h(13), sig_total) {
+        Some(bytes) => bytes,
+        None => {
+            info!("Booter: signature table inconsistent");
+            return Err(TxError::EInval);
+        }
+    };
     let hdr = BooterHdr {
         imem_ns_off: h(0),
         imem_ns_size: h(1),
@@ -142,13 +154,11 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
         ucode_id: h(10),
         engine_id: h(11),
         num_sigs: h(12),
-        sig_bytes: h(13),
+        sig_bytes,
     };
-    // Kernel checks: numSigs > 0, total % numSigs == 0, patch inside image.
-    if hdr.num_sigs == 0
-        || sig_total == 0
-        || sig_total % hdr.num_sigs != 0
-        || hdr.patch_loc as u64 + (sig_total / hdr.num_sigs) as u64 > image_size as u64
+    // The metadata helper validates numSigs, both totals, and divisibility.
+    // Ensure the selected stock signature patch fits the image.
+    if hdr.patch_loc as u64 + hdr.sig_bytes as u64 > image_size as u64
     {
         info!("Booter: signature table inconsistent");
         return Err(TxError::EInval);
