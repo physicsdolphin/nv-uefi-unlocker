@@ -291,6 +291,7 @@ mod scenarios2;
 
 pub mod devpath;
 pub mod log_gate;
+pub mod gate_parse;
 pub mod dma;
 pub mod layout;
 pub mod radix;
