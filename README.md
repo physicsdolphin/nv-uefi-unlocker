@@ -79,7 +79,7 @@ U 盘（FAT32）
 
 让 Agent 帮忙部署：[部署指南](AGENTS.deploy.md)。可以直接把下面这句话交给它：
 
-> 请根据 https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/AGENTS.deploy.md， 帮我安装 nv-uefi-unlocker，为我的显卡解锁。
+> 请根据 https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/AGENTS.deploy.md ，帮我安装 nv-uefi-unlocker，为我的显卡解锁。
 
 ## 自行构建（可选）
 
