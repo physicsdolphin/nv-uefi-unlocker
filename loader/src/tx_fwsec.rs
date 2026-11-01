@@ -1004,7 +1004,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
 /// BINDATA → BTL1, `\\scrubber_ad10x.bin`): image 7424B, ucode 0xd, 2×RSA-384.
 /// The VBIOS PROM app 0x49 we tried first is a DIFFERENT ucode (22528B) that
 /// is not what advances the handoff (measured 2026-10-26).
-pub fn scrubber_if_needed(gpu: &TxGpu) -> Result<(), TxError> {
+pub fn scrubber_if_needed(gpu: &TxGpu, bundle: Option<&[u8]>) -> Result<(), TxError> {
     const SEC2_BASE: u32 = 0x0084_0000;
     const SEC2_FBIF: u32 = 0x0084_0600;
     const SEC2_FALCON2: u32 = 0x0084_1000;
@@ -1017,18 +1017,8 @@ pub fn scrubber_if_needed(gpu: &TxGpu) -> Result<(), TxError> {
         return Ok(());
     }
 
-    let bundle = match crate::tx::read_asset("\\scrubber_ad10x.bin") {
-        Ok(Some(b)) => b,
-        Ok(None) => {
-            info!("SCRUB: \\scrubber_ad10x.bin missing on boot volume");
-            return Err(TxError::ENodev);
-        }
-        Err(()) => {
-            info!("SCRUB: \\scrubber_ad10x.bin is present but unreadable - refusing to fire a partial image");
-            return Err(TxError::ENodev);
-        }
-    };
-    let (hdr, image, sigs) = crate::tx_booter::load_booter(&bundle, "scrub")?;
+    let bundle = bundle.ok_or(TxError::ENodev)?;
+    let (hdr, image, sigs) = crate::tx_booter::load_booter(bundle, "scrub")?;
     info!(
         "SCRUB: bundle ok - code {:#x}+{:#x}@va{:#x} data {:#x}+{:#x} patch {:#x} ucode {:#x}",
         hdr.app_code_off, hdr.app_code_size, hdr.app_code_off, hdr.data_off, hdr.data_size, hdr.patch_loc, hdr.ucode_id

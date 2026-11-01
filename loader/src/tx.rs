@@ -4,6 +4,7 @@
 //! uefi-rs PciIo BAR0 window. Compiled ONLY with `--features tx`;
 //! the default shipped binary carries zero GPU-write paths (constitution 1.7).
 
+use core::cell::UnsafeCell;
 use core::time::Duration;
 use uefi::boot;
 use log::info;
@@ -507,7 +508,7 @@ pub fn list_root_entries() {
     // (3x u64 = 24), 3x Time (16B each = 48), attribute u64 = 72, name
     // UCS-2 from offset 80. This bypasses uefi's entry API, whose error
     // path instantiates CStr16 helpers that reference wcslen under LTO.
-    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
+    let Ok(mut fs) = crate::volumes::marker_fs() else {
         info!("TX-ASSET-DIAG: get_image_file_system FAILED");
         return;
     };
@@ -618,11 +619,14 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
 /// "absent" silently disables them. Kept separate from the asset reader, whose
 /// size rules are about DMA windows, not about intent.
 pub fn probe_file(path: &str) -> bool {
+    if crate::volumes::armed().is_some() && path.ends_with(".txt") {
+        return crate::volumes::policy_file(path).is_some();
+    }
     let Ok(path_c) = uefi::CString16::try_from(path) else {
         return false;
     };
     use uefi::proto::media::file::{File, FileMode};
-    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
+    let Ok(mut fs) = crate::volumes::marker_fs() else {
         return false;
     };
     let Ok(mut dir) = fs.open_volume() else {
@@ -632,6 +636,87 @@ pub fn probe_file(path: &str) -> bool {
         .is_ok()
 }
 
+
+/// Asset paths that MUST exist for one family's transaction (the optional
+/// `\v67-direct-ss.bin` override is deliberately not probed: its absence is
+/// a legitimate chain-replay configuration).
+fn family_asset_paths(family: &str) -> alloc::vec::Vec<alloc::string::String> {
+    let mut v = alloc::vec::Vec::new();
+    for p in [
+        "\\booter_load_{}.bin",
+        "\\gsp_boot_desc_{}.bin",
+        "\\gsp_boot_{}.bin",
+        "\\fwimage_{}.bin",
+        "\\fwsignature_{}.bin",
+    ] {
+        v.push(alloc::format!("{}", p.replacen("{}", family, 1)));
+    }
+    if family == "tu10x" {
+        v.push("\\sec2_bl_tu10x.bin".into());
+    } else {
+        v.push("\\scrubber_ad10x.bin".into());
+    }
+    v
+}
+
+/// Live media re-probe (audit N7): the read-through cache makes the
+/// transaction immune to media removal AFTER the prefetch - by design
+/// (issue #38) - so the documented "pulled media aborts before GPU
+/// interaction" property is restored by re-opening each required asset
+/// file right before the transaction. Failure here aborts the card before
+/// any GPU interaction instead of proceeding on stale bytes.
+pub fn live_asset_presence(family: &str) -> bool {
+    family_asset_paths(family).iter().all(|path| {
+        let ok = probe_file(path);
+        if !ok {
+            info!("TX-ASSET-DIAG: {path} vanished between prep and run (media pulled?)");
+        }
+        ok
+    })
+}
+
+/// Startup line enumerating which guard-override markers were active on the
+/// armed volume for this run (audit N4: overrides are authority, not bytes;
+/// after the F1 fix they can only come from the operator-authorized volume,
+/// and they must be visible in the flushed evidence either way).
+pub fn log_overrides() {
+    const OVERRIDES: &[&str] = &[
+        "\\tx-accept-warm-wpr2.txt",
+        "\\tx-force-continue.txt",
+        "\\tx-low-staging.txt",
+        "\\tx-no-pm-preflight.txt",
+        "\\pre-flr-on.txt",
+        "\\tx-require-d0.txt",
+        "\\tx-gop-disconnect.txt",
+        "\\no-reconnect.txt",
+        "\\tu10x-no-reconnect.txt",
+        "\\tu10x-no-ss.txt",
+        "\\tx-fwsec-high-staging.txt",
+        "\\tx-fwsec-vram-staging.txt",
+        "\\tx-no-gsp-halt-gate.txt",
+    ];
+    let active: alloc::vec::Vec<&str> =
+        OVERRIDES.iter().copied().filter(|p| probe_file(p)).collect();
+    if active.is_empty() {
+        info!("OVERRIDES: none");
+    } else {
+        info!("OVERRIDES: {}", active.join(" "));
+    }
+}
+
+/// Asset integrity for the driver form (audit M1): the maker writes
+/// `\dxe-manifest.txt` (sha256sum-style `<hex>  <path>` lines); the driver
+/// form refuses to touch the GPU unless every asset it is about to use
+/// matches the manifest. The application form keeps its stick-trust
+/// semantics (the operator holds the stick they prepared; the maker
+/// verified at build time).
+pub fn verify_asset_digests<'a>(
+    entries: impl Iterator<Item = (&'a str, Option<&'a [u8]>)>,
+) -> Result<(), &'static str> {
+    let manifest = crate::volumes::policy_file(crate::dxe_policy::MANIFEST)
+        .ok_or("no authorized dxe-manifest.txt")?;
+    crate::dxe_policy::verify_assets(&manifest, entries)
+}
 
 /// Read one ASSET (never a marker) with the three states kept apart:
 /// `Ok(None)` = not on the stick (the caller may legitimately run without it),
@@ -652,10 +737,70 @@ pub fn read_asset_fmt(pattern: &str, family: &str) -> Result<Option<alloc::vec::
     read_asset(&path)
 }
 
+#[derive(Clone)]
 enum Inner {
     Absent,
     Failed,
     Content(alloc::vec::Vec<u8>),
+}
+
+/// Read-through cache over the boot volume's asset reads (issue #38
+/// follow-up): the armed-countdown prep warms the family's files into RAM
+/// while the wait window still has time to give, so the post-countdown
+/// transaction pays memory speed instead of USB. Keyed by path, written
+/// once per path, hits hand out a reference-counted clone of the retained
+/// copy (a 29 MB fwimage memcpy is single digit milliseconds; the Arc keeps
+/// the RETAINED side single so residency is bytes-once - audit M4).
+/// Deliberately NOT covering `probe_file` - UI switches are zero-byte
+/// markers whose presence checks keep their own live-open semantics.
+/// Aggregate retention is capped (audit M4: the cache lives in a resident
+/// component; multi-family prefetch must not accumulate unbounded) and the
+/// whole cache is dropped once the phases end (`asset_cache_clear`).
+struct AssetCacheCell(UnsafeCell<AssetCache>);
+
+struct AssetCache {
+    entries: alloc::vec::Vec<(alloc::string::String, alloc::sync::Arc<Inner>)>,
+    bytes: usize,
+}
+
+// Safety: UEFI applications are single-threaded during boot services.
+unsafe impl Sync for AssetCacheCell {}
+unsafe impl Send for AssetCacheCell {}
+
+/// Retention budget for the read-through cache (audit M4).
+const ASSET_CACHE_CAP_BYTES: usize = 256 << 20;
+
+static ASSET_CACHE: AssetCacheCell =
+    AssetCacheCell(UnsafeCell::new(AssetCache { entries: alloc::vec::Vec::new(), bytes: 0 }));
+
+/// Drop the whole read-through cache (audit M4: the DXE driver stays
+/// resident for the rest of the boot; the prep's justification is that it
+/// is discardable, so its memory is).
+pub fn asset_cache_clear() {
+    // Safety: single-threaded boot services; pointer use confined here.
+    let cache = unsafe { &mut *ASSET_CACHE.0.get() };
+    cache.entries.clear();
+    cache.entries.shrink_to_fit();
+    cache.bytes = 0;
+}
+
+/// Warm the read-through cache with one family's whole asset set, exactly
+/// the files tx_one_card will ask for next (each surfaces its own
+/// TX-ASSET-DIAG line; failures are cached too, so "present but unreadable"
+/// still aborts at use time, never degrades). All read-only; safe to call
+/// before any GPU interaction.
+pub fn prefetch_family_assets(family: &str) {
+    let _ = read_asset_fmt("\\booter_load_{}.bin", family);
+    let _ = read_asset_fmt("\\gsp_boot_desc_{}.bin", family);
+    let _ = read_asset_fmt("\\gsp_boot_{}.bin", family);
+    let _ = read_asset_fmt("\\fwimage_{}.bin", family);
+    let _ = read_asset_fmt("\\fwsignature_{}.bin", family);
+    if family != "tu10x" { let _ = read_asset("\\scrubber_ad10x.bin"); }
+    let _ = read_asset("\\v67-direct-ss.bin");
+    let _ = read_asset_fmt("\\v67-{}-four-plm.bin", family);
+    if family == "tu10x" {
+        let _ = read_asset("\\sec2_bl_tu10x.bin");
+    }
 }
 
 /// Read one file from the boot volume with per-step diagnostics.
@@ -667,6 +812,34 @@ pub fn read_boot_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_boot_file_inner(path: &str) -> Inner {
+    if crate::volumes::armed().is_some() && path.ends_with(".txt") {
+        return match crate::volumes::policy_file(path) {
+            Some(bytes) => Inner::Content(bytes),
+            None => Inner::Absent,
+        };
+    }
+    // Read-through cache first (armed prep warms it; see AssetCacheCell).
+    // Safety: single-threaded boot services; pointer use confined here.
+    let cache = unsafe { &mut *ASSET_CACHE.0.get() };
+    if let Some((_, hit)) = cache.entries.iter().find(|(p, _)| p == path) {
+        return hit.as_ref().clone();
+    }
+    let fresh = read_boot_file_uncached(path);
+    // Retention cap (audit M4): keep the aggregate bounded. Content-size
+    // assets only; failure states are tiny and always cached (their abort
+    // semantics must survive a later cap).
+    let retain_bytes = match &fresh {
+        Inner::Content(v) => v.len(),
+        Inner::Absent | Inner::Failed => 0,
+    };
+    if cache.bytes + retain_bytes <= ASSET_CACHE_CAP_BYTES {
+        cache.bytes += retain_bytes;
+        cache.entries.push((alloc::string::String::from(path), alloc::sync::Arc::new(fresh.clone())));
+    }
+    fresh
+}
+
+fn read_boot_file_uncached(path: &str) -> Inner {
     // Runtime path: CString16::try_from (cstr16! only takes literals).
     let path_c = match uefi::CString16::try_from(path) {
         Ok(p) => p,
@@ -676,7 +849,7 @@ fn read_boot_file_inner(path: &str) -> Inner {
     use alloc::vec::Vec;
     use uefi::proto::media::file::{File, FileInfo, FileMode, FileAttribute};
 
-    let mut fs = match boot::get_image_file_system(boot::image_handle()) {
+    let mut fs = match crate::volumes::marker_fs() {
         Ok(fs) => fs,
         Err(e) => { info!("TX-ASSET-DIAG: {path} fs open failed {:?}", e.status()); return Inner::Failed; }
     };
@@ -750,6 +923,8 @@ pub struct TxAssets {
     /// Generic falcon BL (sec2_bl_tu10x.bin, 768B) - Turing FWSEC
     /// BOOT_WITH_LOADER only; the GA10x/Ada HS path ignores it.
     pub bl: Option<alloc::vec::Vec<u8>>,
+    /// Scrubber bytes loaded and authenticated before any GPU interaction.
+    pub scrubber: Option<alloc::vec::Vec<u8>>,
 }
 
 /// Asset size validation BEFORE any GPU interaction (issue #4.3): the DMA
@@ -877,7 +1052,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // (first fire 2026-10-27) - don't fire a foreign binary at it.
     if assets.family == "tu10x" {
         info!("TX-tu10x: scrubber step skipped (not part of the proven Turing chain; BSI handoff state logged above)");
-    } else if let Err(e) = crate::tx_fwsec::scrubber_if_needed(gpu) {
+    } else if let Err(e) = crate::tx_fwsec::scrubber_if_needed(gpu, assets.scrubber.as_deref()) {
         info!(
             "TX: scrubber did not complete ({e:?}) - proceeding without it (community chain shape)"
         );

@@ -108,6 +108,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffspack"
+version = "2.1.9"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -171,6 +178,7 @@ name = "loader"
 version = "2.1.9"
 dependencies = [
  "log",
+ "sha2",
  "uefi",
 ]
 
@@ -283,6 +291,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "sim"
 version = "2.1.9"
+dependencies = [
+ "sha2",
+]
 
 [[package]]
 name = "syn"

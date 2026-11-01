@@ -26,3 +26,6 @@ payload_*
 
 # qemu disk image (test fixture, may contain firmware copies)
 /sim/qemu/usb.img
+
+# isolated QEMU DXE harness build
+/tools/dxe-smoke/target/

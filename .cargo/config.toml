@@ -2,7 +2,13 @@
 # EFI loader (release, UEFI target) -> target/x86_64-unknown-uefi/release/loader.efi
 efi = "build --release -p loader --target x86_64-unknown-uefi"
 efi-debug = "build -p loader --target x86_64-unknown-uefi"
+# firmware-resident DXE driver form (read-only) ->
+# target/x86_64-unknown-uefi/release/nvunlock-dxe.efi; ffspack turns it into
+# NvUnlockDxe.efi/.ffs (subsystem 0x0B + FFS wrapper)
+efi-dxe = "build --release -p loader --target x86_64-unknown-uefi --bin nvunlock-dxe"
 # host-side crates + all tests
 xt = "test --workspace --exclude loader"
 # gated transaction build (GPU-write paths; flash only with the explicit user go)
 efi-tx = "build --release -p loader --target x86_64-unknown-uefi --features tx"
+# gated DXE driver transaction build - same gating rules as efi-tx
+efi-dxe-tx = "build --release -p loader --target x86_64-unknown-uefi --features tx --bin nvunlock-dxe"

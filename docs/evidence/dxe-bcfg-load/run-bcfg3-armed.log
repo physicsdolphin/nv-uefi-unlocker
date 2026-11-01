@@ -1,0 +1,782 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[11;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Target = 000B.
+bcfg: Add Driver000B as 0
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[11;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Target = 000C.
+bcfg: Add Driver000C as 0
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[11;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Target = 000D.
+bcfg: Add Driver000D as 0
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000D [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0D[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[11;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000D [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0D[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Target = 000E.
+bcfg: Add Driver000E as 0
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000E [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000D [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0D[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0E[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[11;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000E [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000D [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0D[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0E[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Target = 000F.
+bcfg: Add Driver000F as 0
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000F [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000E [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000D [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0D[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0E[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0F[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[11;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver000F [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000E [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000D [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0D[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0E[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0F[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Target = 0010.
+bcfg: Add Driver0010 as 0
+Option: [1m[34m[40m00[0m[37m[40m. Variable: [1m[34m[40mDriver0010 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m01[0m[37m[40m. Variable: [1m[34m[40mDriver000F [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m02[0m[37m[40m. Variable: [1m[34m[40mDriver000E [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m03[0m[37m[40m. Variable: [1m[34m[40mDriver000D [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m04[0m[37m[40m. Variable: [1m[34m[40mDriver000C [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m05[0m[37m[40m. Variable: [1m[34m[40mDriver000B [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m06[0m[37m[40m. Variable: [1m[34m[40mDriver000A [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m07[0m[37m[40m. Variable: [1m[34m[40mDriver0009 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m08[0m[37m[40m. Variable: [1m[34m[40mDriver0008 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m09[0m[37m[40m. Variable: [1m[34m[40mDriver0007 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0A[0m[37m[40m. Variable: [1m[34m[40mDriver0006 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0B[0m[37m[40m. Variable: [1m[34m[40mDriver0005 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0C[0m[37m[40m. Variable: [1m[34m[40mDriver0004 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0D[0m[37m[40m. Variable: [1m[34m[40mDriver0003 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0E[0m[37m[40m. Variable: [1m[34m[40mDriver0002 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m0F[0m[37m[40m. Variable: [1m[34m[40mDriver0001 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+Option: [1m[34m[40m10[0m[37m[40m. Variable: [1m[34m[40mDriver0000 [0m[37m[40m
+  Desc    - NvUnlockDxe
+  DevPath - PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)/\NvUnlockDxe-readonly.efi
+  Optional- N
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: failed to load Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0): Not Found
+BdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0x00000000,0x800,0x20000)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[11;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[11;01HPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
