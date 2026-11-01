@@ -23,9 +23,22 @@ pub const LOG_PATH: &CStr16 = cstr16!(r"\loader.log");
 /// visible on slow USB media (the TU106 run of 2026-10-28 spent noticeable
 /// seconds on ~415 flushed lines).
 const FLUSH_EVERY_LINES: usize = 16;
+// Boundary coverage (P1-6, nv_unlock_win 0.2.14 discipline): every
+// transaction verdict/phase line flushes, so a mid-call reset always
+// leaves the last boundary on the stick. Mapping to the six transaction
+// boundaries: claim verdicts -> "claim:", FWSEC ignition return ->
+// "FWSEC:" (colon form: FWSEC-TU*/FWSEC-TRACE diagnostics stay on the
+// every-16 cadence), booter START/staging -> "BOOTER:", selectors ->
+// "SELECTOR", FLR -> "FLR" + "POST-", StartImage -> "CHAIN" + the
+// finish() close. Deliberately NOT added: FWSEC-TU/FWSEC-TRACE/
+// BOOTER-AUDIT/TX-ASSET-DIAG/SCRUB progress streams (issue #38 budget:
+// per-line flush cost ~5-10 ms each on USB BOT; this set adds <=~50
+// flushed lines = ~0.3-0.5 s worst case - the real-machine ablation
+// round must confirm no new 1.25 s BOT stalls appear, else revert).
 const FLUSH_MARKERS: &[&str] = &[
     "PHASE", "RESULT", "POST-", "FINAL", "RECONNECT", "DETACH", "CHAIN",
     "SELECTOR", "HANDOFF", "WATCHDOG", "AUTH-SCAN end",
+    "claim:", "FLR", "BOOTER:", "FWSEC:",
 ];
 
 struct DualLogger {

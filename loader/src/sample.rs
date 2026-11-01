@@ -53,6 +53,29 @@ const TABLE: &[Reg] = &[
     // carries). Cold-state read doubles as the #10 factory-clamp probe once
     // a payload run opens the gate.
     Reg("TU10x FEAT_READOUT 0x409668", 0x0040_9668),
+    // XP3G privilege domain + XVE config mirror + gated link-policy set
+    // (inventory: cmp90hx-unlock 76940ae GEN3ADV rounds; ssdiag has carried
+    // the same union Windows-side since field round 3 - this EFI-side cold
+    // read is the pre-driver half of the answer). Open question #12: TU106
+    // reads XP3G_PLM0 OPEN (cmp-features round) - what is still unknown is
+    // whether the policy set behind the gate is live pre-driver or dead
+    // (GA102 shape: host writes rejected even after FEAT/SEC2-ROP opens).
+    // Readback here also seeds the relock-variance comparison: cold PLM
+    // vs the driver's post-init value vs the post-handoff relock value.
+    Reg("XP3G PLM0 0x8e1b0", 0x0008_e1b0),
+    Reg("XP3G PLMC 0x8e1bc", 0x0008_e1bc),
+    Reg("XP3G OVR0 0x8e110", 0x0008_e110),
+    Reg("XP3G VAL0 0x8e120", 0x0008_e120),
+    Reg("XVE LNKCAP 0x88084", 0x0008_8084),
+    Reg("XVE LNKCTL 0x88088", 0x0008_8088),
+    Reg("XVE LNKCAP2 0x880a4", 0x0008_80a4),
+    Reg("XVE LNKCTL2 0x880a8", 0x0008_80a8),
+    Reg("LNK MISC_1 0x8841c", 0x0008_841c),
+    Reg("LNK VSEC_HIER 0x88610", 0x0008_8610),
+    Reg("LNK LTSSM_KICK 0x8872c", 0x0008_872c),
+    Reg("LNK LINK_CONFIG_0 0x8c040", 0x0008_c040),
+    Reg("LNK PL_LINK_RATE 0x8c1c0", 0x0008_c1c0),
+    Reg("LNK CYA_DISG2 0x8c2c0", 0x0008_c2c0),
 ];
 
 /// FEAT override cluster, dword sweep (task brief: 0x823804-0x823820 focus;

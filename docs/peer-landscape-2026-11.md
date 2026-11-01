@@ -96,6 +96,17 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 - **B 站生态信任事件**：上传者苦楝籽连发两条撤 retract（BV15Vx36WEDW 10-26、BV1JQsX61EY7 10-28，"内容有误/乌龙抱歉"）；AI小蔡狗 40 系解锁视频 BV1iHxM6nEjE 达 83,926 播放——中文生态热度与信息质量同步上涨。
 - **impacifist/windows-GPU-UNLOCK 不署名上游**：README/provenance 全文 grep 仅致谢 Zagitta 与 rough2515-hub，未见 chenxluo/TOTORONG/我方（README.md:260 + release/provenance.json）。
 
+### 2.6 第二轮发现（2026-11-03 补扫，11-01~11-03 窗口）
+
+第一轮漏网 1 + 新现 3：
+
+1. **Cyridd/cmpunlocker**（b7eb5ed，77★，created 08-21——第一轮重大漏网）：CMP 40HX（**TU106 硅**，10de:1f0b）双 OS 解锁。Linux=开源内核补丁 + **自研 CPU-RM 预驱动内核模块**（专有驱动绑定前跑签好 610.43.03 Booter+selector，GSP OFF + **1 MiB 临时 WPR 堆**、WPR 起址移 0x1fe000000——资源极简变体）；Windows=UEFI app + Go 安装器。声称：clpeak WMMA FP16 1.04→66.16 TFLOPS/INT8 2.07→131 TOPS（163,840 输出零错）、**PCIe Gen1→Gen2 x16 重训练在 TU106 上成立**、8 GiB ReBAR 经 TU106 XVE 门+ACPI 桥窗解析、Vulkan MME 节流经 libnvidia-glcore 补丁绕过、GRID 19.6 兼容报告。证据质量高（前后 clpeak 截图 + **主动勘误过一次错误 FP32 声明**）。自带钉版资产管线。
+2. **seti9585/RTX4080SUPER-Tensor-Core-Unlocker**（d6bc544，0★，10-31）：4080S AD103 2702 单机 UEFI；独特点=**FLR 后从本卡 Option ROM 自恢复 GOP**（单卡无 iGPU 无需第二卡）；FP16 91.45→167.19 / **FP8 179.85→360.22（翻倍）**；兼容性声明异常克制但零社区验证。
+3. **Anrk11/Windows-EFI-gpu_unlock**（1★）：GA106 2503 单机重打包，血统自白 UPSTREAM.json（钉 impacifist @1f8776e + ada @4e7fefc）——第三方 provenance 指针样本。
+4. **BrightRaider/ada-4090-universal-unlock** 转向**二进制分发**（v1.2 加 GA102、v1.3 称 Authenticode 签名过 Secure Boot+8 输出拓扑）——若签名 SB 声明为真将是生态首例，但闭源 zip+营销腔，LOW-MEDIUM，观察。
+
+渠道空结果（明确记录）：GitHub created:2026-11-02 索引当日不可查（校准：created:2026-11-01+nvda=82 仓）；B 站 API 反爬；Gitee 无镜像；知乎/Chiphell/巴哈仅讨论已知项目；11-02~03 无新媒体报道（仍是 10 月底波及我方的长尾）；TOTORONG 无新载荷。
+
 ### 2.5 我方媒体波收录状态（本轮普查核实）
 
 已收录（普查前）：TechPowerUp 354316（EN）、wccftech（EN）、r/overclocking 1xj5jp3（EN）、搜狐（ZH）。
@@ -126,13 +137,15 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 | 9 | cmp50hx-unlock df2fe11 | GSP-RM TU10x **610.43.03** IDA 库（恰同钉版）+"I—IDA"证据分级法 | RE 工具链无 GSP-RM 库 | 本地引入（334MB LFS 不入库）+分级法写进 RE 惯例 | 低 | **P2** |
 | 10 | 上游 kmod resume 语义 | resume 自动重放（+1s）、D3cold 旋钮 NVreg_DynamicPowerManagement=0x00、休眠不覆盖 | RTD3 擦解锁已定（issue#9），Windows 有 --reapply | docs 交叉引用 Linux 经验（本轮一句话落地） | 零 | **P2** |
 | 11 | KohakUnloak 方法论 | 上游 mmapeak 编译期零输入坍缩——基准工具可能虚高 | README 口径用系统级实测（张量~2.6×） | 基准纪律补一句教训（本轮） | 零 | **P2** |
-| 12 | KohakUnlock | 唯一 NCCL 双卡实证（2×2080Ti 22G，64MiB 36.77GB/s） | 多卡顺序解锁无双卡数值实证 | 列为未来实验候选（需双卡机器） | 高 | **P3** |
-| 13 | aarvsn | WDM 下层过滤驱动+resume 重放声称（零证据，★0） | — | 观察其是否出证据 | 零 | **P3** |
-| 14 | 上游 2.0 回归 | recipes 丢 GA106M/GA107 条目，用户靠手补 | 全段放行天然免疫 | 观察上游修复；作为全段放行论据记录（本轮已写） | 零 | **P3** |
-| 15 | 上游 #238 笔记本新增 | 27e0 首报/2860 D3cold/25a2/2560 SB-on 成功 | 我方对应 ID 🟡 待复测 | 排进复测队列（2560 优先） | 中（需实机） | **P3** |
-| 16 | X-WIDE 载具 | 三计划任务+脏关机守卫"屏幕一定回来"的恢复措辞；rescue 分层 | — | 记录措辞与任务编队形态 | 零 | **P4** |
-| 17 | chenxluo | 内置 ESP **BootNext 一次性**安装（无常驻项）；三处链回 bug 修复记录 | 交付物=USB（#73 裁决不动） | 仅记录生态形态；链回 bug 教训归档 | 零 | **P4** |
+| 12 | KohakUnlock | 唯一 NCCL 双卡实证（2×2080Ti 22G，64MiB 36.77GB/s） | 多卡顺序解锁无双卡数值实证 | 列为未来实验候选（需双卡机器） | 高 | **P3→P4（11-02 复核降级）**：多卡共存字段证据已在案（2803/2805"双卡环境"，#51/#33/#56），缺口仅 NCCL 数值=Linux 算力 niche，非本载具 lane，不为它购置双图灵 |
+| 13 | aarvsn | WDM 下层过滤驱动+resume 重放声称（零证据，★0） | — | 观察其是否出证据 | 零 | **P3（保留观察）**：唯一在试 Windows resume 自动重放的形态；我方系统内对应物=ssdiag --reapply（已存在，勿建常驻项） |
+| 14 | 上游 2.0 回归 | recipes 丢 GA106M/GA107 条目，用户靠手补 | 全段放行天然免疫 | 观察上游修复；作为全段放行论据记录（本轮已写） | 零 | **P3（存续+升格）**：11-02 核查 upstream 7eb51bc 后 5 天零新提交——回归未修，3050/3060M 用户在 upstream 2.0 上会撞墙，我方全段放行=替代路径（竞争面事实） |
+| 15 | 上游 #238 笔记本新增 | 27e0 首报/2860 D3cold/25a2/2560 SB-on 成功 | 我方对应 ID 🟡 待复测 | 排进复测队列（2560 优先） | 中（需实机） | **P3（文档层已吸收）**：11-02 矩阵已补 2860 🟢、27e0/27a0 显式三源复核；残值=纯硬件复测队列（2560 有 SB-on 配方：Dell G15 5520/Bazzite/580.178.04；25a2；2820 魔改） |
+| 16 | X-WIDE 载具 | 三计划任务+脏关机守卫"屏幕一定回来"的恢复措辞；rescue 分层 | — | 记录措辞与任务编队形态 | 零 | **P4→P5（11-02 复核降级）**：rescue 分层=载具固有（我方失败态=安全冷态+链回继续，无此需求）；恢复措辞 README 三场景手册已覆盖；形态与宪法冲突维持不采纳（并入 #21） |
+| 17 | chenxluo | 内置 ESP **BootNext 一次性**安装（无常驻项）；三处链回 bug 修复记录 | 交付物=USB（#73 裁决不动） | 仅记录生态形态；链回 bug 教训归档 | 零 | **P4→关闭（11-02 复核）**：三 bug 逐条对照已吸收——RAM 载入→我方本就 DevicePath 文件载入；GPT 缺 HD 节点→我方 splice 拒绝非预期布局+双信号指纹；BAR0 双基→n/a。BootNext 形态已存档 §2.1 |
 | 18 | 170hx-rir-tool/ga100-fuse-re | **不可逆 OTP 烧写已在生态内实证**；FF 池/RIR 布局破解；RIR 烧写清单勘误 | 宪法 §1.6 永不烧写 | 宪法引文补一句生态现实（本轮） | 零 | **P4** |
+| 24 | Cyridd/cmpunlocker（11-03 补扫） | 40HX=TU106 硅上的 FEAT/selector/Gen2 重训练/8G ReBAR 全套实测；CPU-RM 预驱动模块的 **1 MiB 临时 WPR** 资源极简变体；主动勘误文化 | 我方 TU106 #10（consumer 钳制态）、#11（BAR1）、P1-4（XP3G/Gen2 前门）各缺同 die 对照数据 | M1 采样后与其 40HX 公开值做同 die 交叉对照；1 MiB temp-WPR 记入 staging 设计备选 | 零（对照）/低（备选） | **P3** |
+| 25 | seti9585（11-03 补扫） | **FLR 后从本卡 Option ROM 自恢复 GOP**——单卡无 iGPU 机的显示恢复路径；FP8 翻倍数据点 | P2-8 无头/单显线目前只覆盖"跳过断连"与固件重绑两条路 | P2-8 立项时评估"自 ROM 恢复 GOP"为第三条路（单卡机 reconnect 失败的兜底） | 低（评估） | **P3** |
 | 19 | X-WIDE "GA104/106/107 做不了" | 被上游+impacifist+nv_unlock_win 多方证伪（§2.4） | — | 反例存档，答复社区引用时注明 | 零 | **P5** |
 | 20 | X-WIDE A6000 行 | 专业卡无钳制（上游原话 "runs at full rate"），预期增益≈0，无 A6000 实测证据 | 我方矩阵只收有解锁收益的卡 | 反例存档 | 零 | **P5** |
 | 21 | X-WIDE 载具前提 | testsigning+关 SB+预构建 sys 分发（pmxdrv/#40 定谳同构） | 宪法 §9 冲突 | 明确不采纳 | 零 | **P5** |
@@ -170,6 +183,22 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 - **风险（必须消融）**：#38 轮已证逐行 flush=变慢主因、13 次停顿全锁 1.23-1.27s=USB BOT 固定超时——边界 flush 点若落在 BOT 敏感窗会复现停顿。设计约束：边界数少、消融轮对比总耗时与停顿计数，超 1 次新增停顿即回退。
 - 验收：QEMU 负控（FLR 后模拟掉电，日志最后条=FLR 前边界）；真机回归 22.1s 基线不劣化 >0.5s。
 - 成本：中（实现半天+消融一轮）。
+
+### 4.0 执行状态回写（2026-11-02，landscape-p1p2 分支）
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| P1-2 | ✅ 已落 main（8dbe2ce） | community-reports 新增 X99 CSM 旁证小节 |
+| P1-3 | ✅ 已落 main（8dbe2ce） | cold-values TU102 回锁对照小节 + open-questions #12 |
+| P2-10/P2-11 | ✅ 已落 main（8dbe2ce） | warm-resume-entry Linux 对照节 + faq 基准工具注记 |
+| P1-4 | ✅ 代码落地（df27304） | sample.rs XP3G/XVE/link-policy 14 行（ssdiag 第三轮已含同并集，无需改）；真机采样轮待跑 |
+| P1-1 | ✅ 代码落地（c443722） | release/make-provenance.ps1，usbroot 实跑 18 文件、双跑 hash 幂等 |
+| P1-6 | ✅ 代码落地（f06a953） | FLUSH_MARKERS +claim:/FLR/BOOTER:/FWSEC:（≤+50 行 flush，消融红线入注释）；sim 14 绿 |
+| P2-7 | ✅ 代码落地（5655f12） | 预载+PE 结构探针+回退路径+\tx-no-preload.txt；双特性零 warning；**QEMU 引导回归+真机轮待跑** |
+| P2-8 前置 | ✅ **发现已修复** | path_belongs_to 节点对齐版已在主线（tx_detach.rs 52-71），28B→36B AcpiAdr 形状用例在 sim/src/devpath.rs（sim --lib 74 测试全绿）——记忆中"待修"已过时 |
+| P2-9 | ✅ 已引入本地 | gsp_tu10x_610.43.03.elf.i64 318MiB 落盘 nv-uefi-re 参考目录（LFS，不入库） |
+| P2-23 | ✅ 代码落地（1dd4a70） | tools/collect_compat.py，合成 TU106 日志验证通过 |
+| 待真机/QEMU | ⏳ 登记在案 | P1-4 采样轮、P1-6 消融、P2-7 QEMU 引导+真机回归（一轮 TU106 可覆盖前三者） |
 
 ### 4.2 P2 明细（立项登记）
 
