@@ -48,10 +48,10 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 | AD107 | 4060 Laptop **28e0** | ✅ 28e0 · [Details](#device-1) |
 | AD107 | 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1 | ✅ 28a0; 🟢 2882/28e1 · [Details](#device-2) |
 | AD107 | 4050 Laptop **28a1** | ✅ 28a1 · [Details](#device-3) |
-| AD106 | 4060Ti 2803 / 4060Ti 16G 2805 | ✅ 2803/2805 · [Details](#device-4) |
-| AD106 | 4070 Laptop **2820** (same ID on modded cards) | 🟡 Unverified · [Details](#device-5) |
-| AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 | ✅ 2783; others retain upstream tier · [Details](#device-6) |
-| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / **4090M 2757** | ✅ 2704/2705/2709/2757; 🟢 2702 · [Details](#device-7) |
+| AD106 | 4060Ti 2803 / 4060Ti 16G 2805 / 4060 **2808** | ✅ 2803/2805; 🟢 2808 · [Details](#device-4) |
+| AD106 | 4070 Laptop **2820** (same ID on modded cards) / **2860** | 🟡 2820; 🟢 2860 · [Details](#device-5) |
+| AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788** (AD104 refresh) / 4080 Laptop **27a0 / 27e0** | ✅ 2783; others retain upstream tier · [Details](#device-6) |
+| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2704/2705/2709/2757; 🟢 2702/2717 · [Details](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689** | ✅ 2684/2689; 🟢 2685 · [Details](#device-8) |
 | GA102 | 3090 2204 / **3080 2206** / **3080 LHR 2216** / 3080 Ti 2208 / 3070 Ti 2205 etc. (whole 0x22xx range routed) | ✅ 2206/2216; others fully routed · [Details](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [Details](#device-10) |
@@ -88,27 +88,29 @@ Full chain, selector read-backs, post-FLR survival and computation integrity che
 
 <a id="device-4"></a>
 
-### AD106 · 4060Ti 2803 / 4060Ti 16G 2805
+### AD106 · 4060Ti 2803 / 4060Ti 16G 2805 / 4060 2808
 
-`2803` / `2805` pass full-chain and in-OS performance verification on Intel, AMD, single-GPU/no-iGPU and dual-GPU systems. Some AMI platforms require [skipping GOP reconnect](faq.en.md#reconnect). Sources: [2803 report](evidence/ad106-4060ti-desktop/report.md), [2805 report](evidence/ad106-2805-nuc13/report.md), [#51](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/51), [#33](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/33), [#56](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/56).
+`2803` / `2805` pass full-chain and in-OS performance verification on Intel, AMD, single-GPU/no-iGPU and dual-GPU systems. Some AMI platforms require [skipping GOP reconnect](faq.en.md#reconnect). `2808` is the original AD106-die 4060 variant (the AD107-die version is `2882`); upstream silicon tier. Sources: [2803 report](evidence/ad106-4060ti-desktop/report.md), [2805 report](evidence/ad106-2805-nuc13/report.md), [#51](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/51), [#33](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/33), [#56](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/56).
 
 <a id="device-5"></a>
 
-### AD106 · 4070 Laptop 2820 (same ID on modded cards)
+### AD106 · 4070 Laptop 2820 / 2860
 
-Family routing and assets are available; EFI hardware verification is pending. Modded-card reports need the original model, VBIOS and full `loader.log`. Source: [#10](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/10).
+`2820` is the official RTX 4070 Laptop ID (reused by modded cards): family routing and assets are available; EFI hardware verification is pending. Modded-card reports need the original model, VBIOS and full `loader.log`. Source: [#10](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/10).
+
+`2860` is the other official ID of the same card, double-sourced against the open-gpu-kernel-modules compatible-GPUs table and pci.ids (2026-11-02); the runtime whitelist span `0x2600..=0x28ff` already covers it, no change needed to run. The reporter, [JerryHelper](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/101), volunteered a first-run `loader.log` - once it lands the row upgrades to the measured tier.
 
 <a id="device-6"></a>
 
-### AD104 · 4070Ti 2782 / 4070S 2783 / 4070 2786
+### AD104 · 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti 2788 / 4080 Laptop 27a0 / 27e0
 
-`2783` passes replay, unlock read-backs, FLR survival and Windows performance verification. `2782` / `2786` retain upstream silicon evidence. Source: [#3](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/3).
+`2783` passes replay, unlock read-backs, FLR survival and Windows performance verification. The others retain upstream silicon evidence. `2788` is the AD104-die refresh variant of the 4060 Ti; `27a0` / `27e0` are the two RTX 4080 Laptop IDs (triple-sourced, 2026-11-02). Source: [#3](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/3).
 
 <a id="device-7"></a>
 
-### AD103 · 4080S 2702 / 4080 2704 / 4070TiS 2705 / 4070 2709 / 4090M 2757
+### AD103 · 4080S 2702 / 4080 2704 / 4070TiS 2705 / 4070 2709 / 4090M 2757 / 2717
 
-`2704` / `2705` / `2709` / `2757` pass full-chain and in-OS performance verification. `2702` has upstream silicon evidence. The 2757 Alienware m18 R1 result (Windows 11; FP16/BF16/FP8 ~2x, controls flat) is in [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md). Sources: [#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53), [#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36), [Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72), [#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8), [#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110), [gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132).
+`2704` / `2705` / `2709` / `2757` pass full-chain and in-OS performance verification. `2702` / `2717` have upstream silicon evidence. `2717` is the other RTX 4090 Laptop ID (same card as `2757`; triple-sourced, 2026-11-02). The 2757 Alienware m18 R1 result (Windows 11; FP16/BF16/FP8 ~2x, controls flat) is in [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md). Sources: [#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53), [#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36), [Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72), [#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8), [#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110), [gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132).
 
 <a id="device-8"></a>
 
