@@ -239,9 +239,9 @@ bash release/make-usbroot.sh --family 40 \
   [GizNewsDaily](https://giznewsdaily.com/nvidia-gpu-unlocker-at-uefi-pre-driver-level-released-for-rtx-2xxx-4xxx/)（EN） ·
   [ProfesionalReview](https://www.profesionalreview.com/2026/11/01/nv-uefi-unlocker-75-mas-rendimiento-ia-rtx-20-30-40/)（ES） ·
   [Facebook/ComfyUI 群组](https://www.facebook.com/groups/comfyui/posts/1122947967144569/)（EN） ·
-  [Sohu](https://m.sohu.com/a/1095783758_163726)（ZH） ·
-  [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html)（ZH） ·
-  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717)（EN） ·
+  [搜狐](https://m.sohu.com/a/1095783758_163726)（ZH） ·
+  [网易](https://www.163.com/dy/article/LAM8N7DS05527PMU.html)（ZH） ·
+  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717)（ZH） ·
   [PCGH Extreme 论坛](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/)（DE） ·
   [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/)（EN）
 

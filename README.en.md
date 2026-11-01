@@ -265,7 +265,7 @@ repository.
   [Facebook/ComfyUI community](https://www.facebook.com/groups/comfyui/posts/1122947967144569/) (EN) ·
   [Sohu](https://m.sohu.com/a/1095783758_163726) (ZH) ·
   [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html) (ZH) ·
-  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (EN) ·
+  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (ZH) ·
   [PCGH Extreme forum](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/) (DE) ·
   [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (EN)
 
