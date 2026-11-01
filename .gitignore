@@ -42,3 +42,4 @@ payload_*
 /release/assets-tu10x/
 /release/assets-x86_64-windows.exe
 /release/assets-x86_64-linux
+romcore/testdata/
