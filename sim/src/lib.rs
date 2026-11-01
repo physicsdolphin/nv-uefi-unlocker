@@ -197,11 +197,20 @@ impl FakeGpu {
 
         self.w32(off, v);
 
-        // Engine reset: arm propagation delay when asserting.
-        if off == regs::SEC2_RESET && v & 1 != 0 && self.reset_delay > 0 {
+        // Engine reset: arm propagation delay when asserting; de-assert is
+        // immediate (the modelled hardware invariant, AGENTS §9.2: the real
+        // ksec2ResetHw_TU102 ENDS at RESET_FALSE - a reset left asserted
+        // makes later host reads return FECS_PRI_RESET and the scrub wait
+        // never completes, which the model must be able to represent).
+        if off == regs::SEC2_RESET && self.reset_delay > 0 {
             let i = self.idx(off);
-            self.regs[i] = 0;
-            self.reset_pending[0] = Some((i, 0));
+            if v & 1 != 0 {
+                self.regs[i] = 0;
+                self.reset_pending[0] = Some((i, 0));
+            } else {
+                self.regs[i] = 0;
+                self.reset_pending[0] = None;
+            }
         }
 
         // GSP start (FWSEC BOOT_WITH_LOADER analog): install WPR2.

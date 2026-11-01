@@ -44,6 +44,11 @@ pub struct Faults {
     pub post_flr_alien_wpr: bool,
     /// Signature restoration into the meta fails to land the stock bytes.
     pub signature_restore_fail: bool,
+    /// DMA free at `fail_free_at` (1-based) fails - makes the unwind phase
+    /// genuinely fallible (issue #22: the drain loop previously could not
+    /// fail, so the "unwind" phase error was unproducible and t18 was a
+    /// tautology).
+    pub fail_free_at: Option<u32>,
 }
 
 /// Payload return-path shape (canonical falcon_hs `wait_plm` split).
@@ -293,6 +298,13 @@ impl<'a> Transaction<'a> {
         if self.gpu.read(regs::SEC2_RESET) & 1 == 0 {
             return Err(PhaseError::new("booter", "reset never propagated"));
         }
+        // De-assert (ksec2ResetHw_TU102 ENDS at RESET_FALSE - AGENTS §9.2);
+        // a reset left asserted would poison every later host read with
+        // FECS_PRI_RESET bits. De-assertion is read-back verified too.
+        self.gpu.write(regs::SEC2_RESET, 0);
+        if self.gpu.read(regs::SEC2_RESET) & 1 != 0 {
+            return Err(PhaseError::new("booter", "reset never de-asserted"));
+        }
         // Fire. Replay uses the stock-booter behavior (Halt mode: SEC2
         // halts, nothing else written) - Full mode would model the payload
         // opening the PLM, which a stock boot never does.
@@ -462,7 +474,14 @@ impl<'a> Transaction<'a> {
 
     /// Full unwind: free DMA, restore BME. Nothing may leak.
     fn unwind(&mut self, mut result: Result<(), PhaseError>) -> Result<(), PhaseError> {
-        for _ in 0..self.dma_live {
+        // Freeing is fallible (fail_free_at = 1-based index): a failed free
+        // stops the drain, leaks the rest, and reports the unwind phase -
+        // this is the branch the old unconditional drain could never reach.
+        let n = self.dma_live;
+        for k in 0..n as u32 {
+            if self.faults.fail_free_at == Some(k + 1) {
+                break;
+            }
             self.dma_live -= 1;
             self.dma_frees += 1;
         }
