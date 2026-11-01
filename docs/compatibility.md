@@ -126,6 +126,8 @@
 
 平台注记（2026-11-03 补）：`2204`（3090）在 ASUS X570 出现事务成功后 ConnectController 卡死（[#106](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/106)，`tx-reconnect-nonrecursive.txt` 不解，`no-reconnect.txt` 路径待回传——与 #52/#35/#61 重连卡死族同形，CSM 兼容方案见 #107 轨道）；3080 20GB 魔改卡在 Z390P 出现 GSP devinit 把 SS0/SS1 打回厂值（[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109)，30 系**不应**开 Turing 的 GSP 注册表开关，关闭后待复测；同报告另证实 Z390P/AMI 平台在列）。
 
+**3090 20GB 形态 ×2 成功（2026-11-02，"超龙" OEM 版 + B 站评论区）**：基准 FP16 +48.9% / TF32 +79.9%（撞功耗墙形态，同 #29）。**ID 待回传**——若报 `2204` 则为屏蔽修复卡（24GB 芯片修至 20GB）数据点；若报 `2205`/`222b` 等 ES 段则对应 ES 行直接升级实机（鉴别命令见社区报告行）。
+
 2026-11-02 pci.ids 复核纠错：旧表"3070 Ti 2205"有误——零售 3070 Ti 为 GA104 `2482`，`2205` / `2207` 是取消的 GA102 ES SKU（3080 Ti 20GB / GA102 版 3070 Ti），已按 ES 显式收录上表。运行时段同步收口为 `0x2200..=0x223f`（旧 `0x22..ff` 尾段经查无 GA102 核心，只有音频功能、Tegra/THOR/GB10 ARM 块与 H100 NVSwitch）。ES/取消 SKU（`222b` 3090 ES、`222f` 3080 11/12GB ES、`2205`、`2207`）同为 GA102 核心且在段内，持有者可直接运行；证据层级一律 🟢（上游硅验证），首个实机报告升级。来源：[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)、[#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15)。
 
 <a id="device-10"></a>
