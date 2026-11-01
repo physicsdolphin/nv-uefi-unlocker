@@ -13,7 +13,7 @@
 | 系列 | 支持情况 | 前置条件 |
 | --- | --- | --- |
 | GTX 16 | 理论兼容，待实机验证 | GSP-RM |
-| RTX 20 | 全系兼容；部分型号有已知问题 | GSP-RM，启用后必须重启 |
+| RTX 20 | 全系兼容；0x91 家族已定位修复，近期驱动复位问题调查中 | GSP-RM，启用后必须重启 |
 | RTX 30 GA10x | 全系兼容 | 无需 Turing 的 Windows 注册表前置 |
 | RTX 40 | 全系兼容，支持笔记本与台式 | 入口时 GPU 有电且完成初始化 |
 | Turing 之前 / GA100 / RTX 50 | 不支持 | — |
@@ -51,7 +51,7 @@
 | AD106 | 4060Ti 2803 / 4060Ti 16G 2805 / 4060 **2808** | ✅ 2803/2805；🟢 2808 · [详情](#device-4) |
 | AD106 | 4070 Laptop **2820**（魔改卡同 ID）/ **2860** | 🟡 2820；🟢 2860 · [详情](#device-5) |
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788**（AD104 刷新版）/ 4080 Laptop **27a0 / 27e0**；ES：AC AD104 20GB **2785** | ✅ 2783；其余保留上游层级 · [详情](#device-6) |
-| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2704/2705/2709/2757；🟢 2702/2717 · [详情](#device-7) |
+| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2702/2704/2705/2709/2757；🟢 2717 · [详情](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**；ES：TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689；🟢 2685/2681/26af · [详情](#device-8) |
 | GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
@@ -59,8 +59,8 @@
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
 | GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520；🟢 其余；2560 待复测 · [详情](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9** / MX570 25a6 / 3050 Laptop **25a2** 等 | 🟡 待验证 · [详情](#device-14) |
-| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03** | ✅ 1f07/1f06；🟢 1f03 · [详情](#device-15) |
-| TU102/TU104/TU116（20 系其余/16 系，含 TITAN RTX 1e02） | 1e02–1fff、2182–21d1 等 | 🟢 社区同链；EFI 交棒仍有问题 · [详情](#device-16) |
+| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14** | ✅ 1f07/1f06/1f03/1f14 · [详情](#device-15) |
+| TU102/TU104/TU116（20 系其余/16 系，含 TITAN RTX 1e02） | 2080 Ti 1e07 / 2080 Super 1e81 / 2080 1e87 等 | ✅ 1e07（原厂 11GB）/1e81/1e87；TU116/GTX 16 仍 🟢 · [详情](#device-16) |
 | Turing 之前（Pascal…） | — | ❌ 无事务轨 · [详情](#device-17) |
 | Blackwell (50 系) / GA100 | — | ❌ 链路不同 · [详情](#device-18) |
 
@@ -104,13 +104,13 @@
 
 ### AD104 · 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti 2788 / 4080 Laptop 27a0 / 27e0
 
-`2783` 通过回放、解锁读回、FLR 存活和 Windows 性能验证；其余保留上游硅验证层级。`2788` 为 4060 Ti 的 AD104-die 刷新变体；`27a0` / `27e0` 为 4080 Laptop 的两个 ID（三源复核，2026-11-02）。来源：[#3](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/3)。
+`2783` 通过回放、解锁读回、FLR 存活和 Windows 性能验证；其余保留上游硅验证层级。`2782`（4070 Ti，PNY，H670）已有首份实机日志：v2.1.8 事务路径在位，回放模式出现 Windows 侧黑屏（[#105](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/105)，三屏独显直连，排查中）——定级待复测。`2788` 为 4060 Ti 的 AD104-die 刷新变体；`27a0` / `27e0` 为 4080 Laptop 的两个 ID（三源复核，2026-11-02）。来源：[#3](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/3)。
 
 <a id="device-7"></a>
 
 ### AD103 · 4080S 2702 / 4080 2704 / 4070TiS 2705 / 4070 2709 / 4090M 2757 / 2717
 
-`2704` / `2705` / `2709` / `2757` 通过全链及系统侧性能验证；`2702` / `2717` 为上游硅验证。`2717` 为 4090 Laptop 的另一 ID（同 `2757` 卡型，三源复核，2026-11-02）。`2757` 的 Alienware m18 R1 实测（Windows 11；FP16/BF16/FP8 约 2 倍，控制组持平）见 [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md)。来源：[#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53)、[#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36)、[Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72)、[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110)、[gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132)。
+`2702` / `2704` / `2705` / `2709` / `2757` 通过全链及系统侧性能验证；`2717` 为上游硅验证。`2702`（4080 SUPER）由 [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107) 实测：官方 v2.1.8，CSM off 下 GOP 恢复、系统侧验证与张量吞吐全部通过（报告者另贡献了 CSM-on 下从本卡 Option ROM 易失注入原厂 GOP 的恢复方法，已列入 [issue #107 轨道](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)）。`2717` 为 4090 Laptop 的另一 ID（同 `2757` 卡型，三源复核，2026-11-02）。`2757` 的 Alienware m18 R1 实测（Windows 11；FP16/BF16/FP8 约 2 倍，控制组持平）见 [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md)。来源：[#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53)、[#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36)、[Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72)、[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110)、[gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132)。
 
 <a id="device-8"></a>
 
@@ -123,6 +123,8 @@
 ### GA102 · 3090 Ti 2203 / 3090 2204 / 3080 2206 / 3080 12GB 220a / 3080 LHR 2216 / 3080 Ti 2208 / CMP 90HX 220d 等（0x2200..=0x223f 全段放行）
 
 `2206` / `2216` 通过固件读回与 Windows 性能验证；其余同族设备全段放行。实际收益受功耗和工作负载影响。
+
+平台注记（2026-11-03 补）：`2204`（3090）在 ASUS X570 出现事务成功后 ConnectController 卡死（[#106](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/106)，`tx-reconnect-nonrecursive.txt` 不解，`no-reconnect.txt` 路径待回传——与 #52/#35/#61 重连卡死族同形，CSM 兼容方案见 #107 轨道）；3080 20GB 魔改卡在 Z390P 出现 GSP devinit 把 SS0/SS1 打回厂值（[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109)，30 系**不应**开 Turing 的 GSP 注册表开关，关闭后待复测；同报告另证实 Z390P/AMI 平台在列）。
 
 2026-11-02 pci.ids 复核纠错：旧表"3070 Ti 2205"有误——零售 3070 Ti 为 GA104 `2482`，`2205` / `2207` 是取消的 GA102 ES SKU（3080 Ti 20GB / GA102 版 3070 Ti），已按 ES 显式收录上表。运行时段同步收口为 `0x2200..=0x223f`（旧 `0x22..ff` 尾段经查无 GA102 核心，只有音频功能、Tegra/THOR/GB10 ARM 块与 H100 NVSwitch）。ES/取消 SKU（`222b` 3090 ES、`222f` 3080 11/12GB ES、`2205`、`2207`）同为 GA102 核心且在段内，持有者可直接运行；证据层级一律 🟢（上游硅验证），首个实机报告升级。来源：[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)、[#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15)。
 
@@ -156,19 +158,19 @@
 
 旧表"3050 2507"归族有误：`2507` 是 GA106-150 die 的 3050 8GB（已移至 GA106 行）；GA107 die 的桌面 3050 为 `2582` / `2583` / `2584`，RTX 2050 为 `25a9`（另有 25ad/25ed），均 pci.ids + DeviceHunt 复核（2026-11-02）。
 
-家族路由存在，完整实机成功证据待补充。来源：[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)。
+家族路由存在。`25a2`（3050 Laptop 4GB，HP Victus）已有首份实机日志：v2.1.0 报 wait_plm 超时，但日志分析判定 **payload 大概率已执行、FEAT PLM 门已打开**——已知入口竞态（payload 翻门快于入口读，[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)；4GB 显存与该竞态无关）。待报告者按 issue 内步骤做 Windows 侧读回补写即可定级；修复排期见该 issue。
 
 <a id="device-15"></a>
 
-### TU106 · RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03
+### TU106 · RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14
 
-`1f03` 为 2060 12GB 刷新（pci.ids + DeviceHunt 复核，2026-11-02）。`1f07` / `1f06` 通过全链与 Windows 验证。Windows 必须启用 GSP-RM 并重启；交棒时 FEAT PLM 重锁、解锁值保留，解锁路径跳过 FLR。非标准显存容量应核对日志中的可用显存解码结果。来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[GSP 前置](faq.md#turing)。
+`1f07` / `1f06` / `1f03` / `1f14` 通过全链与系统侧验证。`1f03`（2060 12GB）在 v2.1.6 上 FWSEC 阶段 EXCI 失败，经 [issue #89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) 六轮受控实验定位为 4 GiB 边界 staging DMA 不可达（与 #74 同形），**FWSEC VRAM staging + BridgeMaster guard 修复后跑通**（2026-11-01）。`1f14`（2070 Laptop，炫龙 CNH5L 独显直连）为 0x91 家族修复验证（v2.1.3+，[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)）。Windows 必须启用 GSP-RM 并重启；交棒时 FEAT PLM 重锁、解锁值保留，解锁路径跳过 FLR。非标准显存容量应核对日志中的可用显存解码结果。**进行中**：驱动 621.01（GSP 620.67.01）与 630.20（GSP 630.03）下 Windows 侧出现 `nvlddmkm` PF FLR 复位冲回厂值（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)，1f06 与 1f07 双数据点，调查中）。来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89)、[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)、[GSP 前置](faq.md#turing)。
 
 <a id="device-16"></a>
 
 ### TU102/TU104/TU116（20 系其余/16 系） · 1e02–1fff、2182–21d1 等
 
-同族资产可用，有社区同链硅验证，但本工具尚无完整 EFI 至 Windows 成功交棒证据。已知问题：2080 Ti `1e07`、2080 `1e87` 返回 booter `0x91`；2080 Super `1e81` 在 EFI 解锁后 GSP 交棒蓝屏。来源：[#17](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/17)、[#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)。GTX 16 系仍待本工具实机验证。
+**0x91 家族已定位并修复**：根因是 Turing booter 对 sub-4GB meta/WPR staging 的读锁（v61 booter 行为；cmp50hx v2.63 注释独立佐证 "из <4ГБ чтение блокировано (exit 0x91)"），v2.1.2 起确定性 >4G 分配、v2.1.8 起 GSP-HALT 门 + 低位 staging 默认后收敛。已验证：`1e81`（2080 Super，v2.1.3，46→68 TFLOPS，[#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14)）、`1e87`（2080，v2.1.8，[#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62)）、`1e07`（**原厂 11GB** 2080 Ti，AMD 平台 + Linux 专有驱动存活，60.31→89.57 TFLOPS，[#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103)——首份非 22G 改卡的 TU102 全链记录）。仍在册的问题：`1e04` 22G 的 HANDOFF-OUT 状态判读（[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)）；双卡 1e07 NVLink 事务双成但 Windows 双 Code 12（[#116](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/116)）；TITAN RTX Linux 侧 0x0B/0x11（[#57](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/57)）；雷电视频下 v2.1.8 前版本 FWSEC/Booter 失败（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)，另一 C 实现低位 staging 可过）。GTX 16 系仍待本工具实机验证。
 
 无零售名的裸 die / 内部板（pci.ids 在档、段内可跑，层级 🟢，首报升级）：TU102GL `1e3c`/`1e3d`/`1e3e`；TU104M `1eab`、TU104GL `1eb9`/`1eba`（PG189 SKU600）/`1ebe`；TU106 `1f04`、TU106M `1f2e`；TU117 `1f81`、TU117M `1fa1`、TU117GL `1fae`/`1fbf`；TU116GL `21ae`/`21bf`、裸 TU116 `21c2`/`21c3`。Turing 段无 GA102 式 "Engineering Sample" 实名条目（pci.ids 2026-11-02 全段扫描）。
 
