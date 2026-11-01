@@ -136,6 +136,13 @@ tool is built on a "read-back verification + archived evidence" discipline;
 recovery procedures for failure scenarios are documented under
 [safety constraints](docs/faq.en.md#safety).
 
+AI coding assistants were used during development. As with all code in
+this repository, nothing they produced is trusted by default: the
+transaction core is a behavior-level port of the upstream GPL-2.0
+implementation, must pass the behavioral simulator before touching
+hardware, and every release claim is backed by real-machine read-back —
+the same rule for human- and AI-written code alike.
+
 ## References and repositories
 
 This project is a direct beneficiary and derivative of community work;
