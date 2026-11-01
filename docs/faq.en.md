@@ -47,6 +47,7 @@ Optional markers go in the stick root; normal use needs none:
 | `tx-select-bdf.txt` | Contents `bb:dd.f` or `dddd:bb:dd.f`; process only that card; invalid or absent target never selects another card |
 | `chain-target.txt` | First nonempty, non-`#` line specifies an EFI path tried on each volume before the default order; missing path is logged and falls back |
 | `no-reconnect.txt` | Skip target GOP reconnect for a post-transaction reconnect hang/reset |
+| `tx-native-gop.txt` (tx builds) | CSM machines stuck at `RECONNECT: ConnectController begin` (#107 class): starts the native GOP explicitly before the reconnect instead of the hanging generic one; falls back to bootmgfw on any failure. See docs/csm-compat.md |
 | `i_know_what_i_am_doing.txt` | Auto-run after 5 seconds, any key aborts; existence enables it, contents ignored |
 
 Without the auto-run marker, only Space or Enter confirms; another key or a 30-second timeout aborts. Chainload order: Windows Boot Manager → supported Linux shim/grub/systemd-boot/Limine → generic `EFI/BOOT/BOOTX64.EFI`. The last tier offers a 5-second key-to-exit window.
