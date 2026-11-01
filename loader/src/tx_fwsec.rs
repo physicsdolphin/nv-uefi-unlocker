@@ -25,7 +25,7 @@ pub struct FwsecInfo {
     pub engine_mask: u32,
     pub ucode_id: u32,
     pub sig_versions: u32,  // slot bitmap
-    pub sig_off: u32,       // signature area within the ROM (desc + 44)
+    pub sig_off: u32,       // signature area within the ROM (desc + desc_size: 44 on V3, 60 on V2)
     pub interface_off: u32, // FRTS interface block offset in DMEM
     pub imem_sec_base: u32, // V2 NS/SEC split: secure segment IMEM base (0 on V3)
     pub imem_sec_size: u32, // V2 secure segment size (0 on V3)
@@ -171,6 +171,10 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
                 // NVOC TU106 self-check: stored 0x9a10 = imemLoad 0x9600 +
                 // dmem 0x410. The old parse here read iface@12/imem@20/32 —
                 // those are VirtualEntry/IMEMPhys/IMEMSecBase, wrong slots.
+                // Issue #21: IMEMVirtBase lives at +28 (not +24, which is
+                // IMEMLoadSize - the old parse read the same field twice),
+                // and the signature area starts AFTER the 60-byte descriptor
+                // (the old +44 was the V3 value, pointing inside it).
                 if size < 60 || desc_off + 60 > rom.len() {
                     return None;
                 }
@@ -185,7 +189,7 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
                     stored_size: stored,
                     imem_pa: le32(rom, desc_off + 20),
                     imem_size: le32(rom, desc_off + 24),
-                    imem_va: le32(rom, desc_off + 24),
+                    imem_va: le32(rom, desc_off + 28),
                     dmem_pa: 0,
                     dmem_size: dmem_load,
                     data_off: dmem_off_img,
@@ -193,7 +197,7 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
                     engine_mask: 0x400,
                     ucode_id: 9,
                     sig_versions: 0,
-                    sig_off: desc_off as u32 + 44,
+                    sig_off: desc_off as u32 + 60,
                     interface_off: le32(rom, desc_off + 16),
                     imem_sec_base: sec_base,
                     imem_sec_size: sec_size,
@@ -287,17 +291,22 @@ pub fn fwsec_patch_frts(image: &mut [u8], fw: &FwsecInfo, frts_offset: u64) -> R
     for _ in 0..entries {
         let dest = le32(dmem, off + 4) as usize;
         if le32(dmem, off) == 4 {
+            // The mapper block we are about to patch must carry the audited
+            // V3 layout - validating at selection time (not after, as the C
+            // reference does) keeps a crafted descriptor from deferring its
+            // own rejection until after we have committed to it (#21).
             if mapper.is_some() || dest + 64 > dmem.len() {
                 return Err(TxError::EInval);
+            }
+            if le16(dmem, dest + 4) != 3 || le16(dmem, dest + 6) < 64 {
+                return Err(TxError::EIO); // only the audited V3 mapper layout
             }
             mapper = Some(dest);
         }
         off += 8;
     }
     let mapper = mapper.ok_or(TxError::EIO)?;
-    if le16(dmem, mapper + 4) != 3 || le16(dmem, mapper + 6) < 64 {
-        return Err(TxError::EIO); // only the audited V3 mapper layout
-    }
+    // (V3 layout already validated at selection time.)
     let cmd_off = le32(dmem, mapper + 8) as usize;
     let cmd_size = le32(dmem, mapper + 12) as usize;
     if cmd_size < 44 || cmd_off + cmd_size > dmem.len() {
@@ -581,6 +590,13 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
         fwsec_patch_frts(image, &fw, layout.frts_offset)?;
     }
 
+    // FUSE_OPT_FPF_GSP_UCODE_ID + 4*(ucodeId-1) - a zero ucode_id from a
+    // crafted descriptor would underflow into an unrelated fuse register,
+    // so refuse it instead (issue #21; 0 is not a valid ucode id).
+    if fw.ucode_id == 0 || fw.ucode_id > 16 {
+        info!("FWSEC: ucode_id {} out of the fuse-table range - refusing", fw.ucode_id);
+        return Err(TxError::EInval);
+    }
     let fuse_raw = gpu.read32(0x0082_41c0 + (fw.ucode_id - 1) * 4)?;
     let version = fuse_version(fuse_raw);
     info!("FWSEC fuse: raw={fuse_raw:#x} version={version}");
@@ -1036,6 +1052,13 @@ pub fn scrubber_if_needed(gpu: &TxGpu) -> Result<(), TxError> {
 
     // Signature slot: SEC2 per-ucode fuse (kernel ksec2ReadUcodeFuseVersion:
     // FUSE_OPT_FPF_SEC2_UCODE1_VERSION + 4*(ucodeId-1)), then stock patch.
+    // The bundle comes from our own builder (load_booter pins ucode_id=0xd),
+    // so this cannot fire on a real stick - the check documents the invariant
+    // and keeps a future descriptor change from underflowing (issue #21).
+    if hdr.ucode_id == 0 || hdr.ucode_id > 16 {
+        info!("SCRUB: ucode_id {} out of the fuse-table range - refusing", hdr.ucode_id);
+        return Err(TxError::EInval);
+    }
     let fuse_raw = gpu.read32(0x0082_4140 + (hdr.ucode_id - 1) * 4)?;
     let version = fuse_version(fuse_raw);
     info!("SCRUB: fuse_raw={fuse_raw:#010x} version={version} sigs={}", hdr.num_sigs);

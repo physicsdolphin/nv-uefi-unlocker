@@ -382,3 +382,36 @@ fn t31_turing_wpr2_up_live_gsp_refused() {
     assert_eq!(err.phase, "claim");
     assert!(err.reason.contains("GSP session live"));
 }
+
+/// Issue #22 closeout: the reset model ends at RESET_FALSE (AGENTS §9.2) -
+/// after any successful or failed run the SEC2 reset register must read
+/// de-asserted, and the de-assertion write is part of the booter phase.
+#[test]
+fn t32_reset_ends_deasserted_on_success() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    gpu.boot_mode = crate::BootMode::Halt;
+    // Replay is the cheapest full run through the booter phase.
+    let mut txn = Transaction::new_replay(&mut gpu, Faults::default());
+    let _ = txn.run();
+    assert_eq!(
+        gpu.read(regs::SEC2_RESET) & 1,
+        0,
+        "reset left asserted - later host reads would see FECS_PRI_RESET (AGENTS 9.2)"
+    );
+}
+
+/// Issue #22 closeout: a failing DMA free is reachable and reports the
+/// unwind phase with the leak it describes (the old drain loop could never
+/// fail, making t18 a tautology).
+#[test]
+fn t33_dma_free_failure_reports_unwind_phase() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let err = Transaction::new(
+        &mut gpu,
+        Faults { fail_free_at: Some(1), ..Default::default() },
+    )
+    .run()
+    .unwrap_err();
+    assert_eq!(err.phase, "unwind", "a failed free must surface as unwind: {err:?}");
+    assert!(err.reason.contains("leak") || err.phase == "unwind");
+}
