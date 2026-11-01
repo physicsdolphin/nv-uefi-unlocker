@@ -156,7 +156,8 @@ disabled during enumeration … after SMM lock"）说的就是这套开关节奏
   Windows（pci.sys 启动设备时会自行置位，实测无影响）。
 
 `loader/src/tx.rs`：`booter_fire` 之前建立守卫，活到 `run_transaction` 返回
-（初版实现把守卫绑在探测分支内提前 Drop，2026-10-31 经 PR #87 修正，见 §8）。
+（PR #5 起即为函数级绑定、与注释一致；绑定被移入探测分支的缺陷是 2026-10-31
+`4b7e955` 引入、同日经 PR #87 修正，见 §8 与 §9）。
 不改动 GPU 寄存器操作顺序、资产、booter 装载方式与解锁判定。
 
 ## 6. 历史勘误：两条被实验否定的路线
@@ -182,21 +183,43 @@ disabled during enumeration … after SMM lock"）说的就是这套开关节奏
 
 ## 8. 追记（2026-10-31，PR #87）：守卫生命周期——0x89 的第二条路
 
-§5 的契约（"守卫活到 `run_transaction` 返回"）最初只写在注释里，代码并非
-如此：守卫被绑定在 `\tx-no-bridge-master.txt` 探测的 `else` 分支内，闭括号
-即 `Drop`——桥的 COMMAND 寄存器被复原、BME 在 booter 点火前再次清零。
-后果与 §1 同型：BME-clear 桥上 booter DMA 死于 0x89。
+§5 的契约（"守卫活到 `run_transaction` 返回"）自 PR #5（`81e546a`）起就按
+注释实现为函数级绑定。缺陷由 2026-10-31 的 `4b7e955`（tu10x 0x91 取证轮）
+引入：加 `\tx-no-bridge-master.txt` 消融开关时，绑定被移入探测的 `else`
+分支内，闭括号即 `Drop`——桥的 COMMAND 寄存器被复原、BME 在 booter 点火
+前再次清零；原有三行注释原样保留，与代码脱节。后果与 §1 同型：BME-clear
+桥上 booter DMA 死于 0x89。
 
 该缺陷的隐蔽性来自分布：固件本就开着桥 BME 的板子上 `enable` 是 no-op，
-提前 Drop 复原不了任何位，完全不可见——PR #5/#33/#51/#56 的全部成功机恰
-好都属此类。换句话说，**PR #5 合并后桥 BME-clear 的桌面配置实际上从未被
-验证过**，直到 PR #87 的机器（ASUS PRIME B760M-F D4，VT-d 关闭后根端口
-`8086:a70d` 以 `command=0x0003` 起步，§4.5 的典型形态）暴露它。修复
-（main `ae7b128`）把绑定提出分支、用 `Option` 保持 marker 跳过路径；对
-BME 已开的既有验证配置是无操作。报告者同机前后对照日志：修复前
-`MAILBOX0=0x89`，修复后 `0x67b00001` + 四写读回全过（首个 8 GB `2803`
-数据点，已归档 [community-reports](community-reports.md)）。
+提前 Drop 复原不了任何位，完全不可见——#51 属此类（#56 的报告未记桥
+command，无法归类）。**#5 与 #33 的机器不属此类**：两机上游桥起始
+`command=0x0003`（PR #5 证据日志 `docs/evidence/ad106-4060ti-desktop/`、
+#33 报告原文），即 PR #5 修复正是在这两台 BME-clear 桌面配置上由
+前 0x89、后通过的前后对照直接验证的。缺陷窗口（`4b7e955`..`ae7b128`，
+2026-10-31，约 21 小时）内唯一的已发布构建是 `diag-tu10x-forensics-1`
+预发布（`2fd75e8`）；PR #87 的机器（ASUS PRIME B760M-F D4，VT-d 关闭后
+根端口 `8086:a70d` 以 `command=0x0003` 起步，§4.5 的典型形态）是第一台
+跑该构建的 BME-clear 配置，由此暴露缺陷。修复（main `ae7b128`）把绑定
+提出分支、用 `Option` 保持 marker 跳过路径；对 BME 已开的既有验证配置是
+无操作。报告者同机前后对照日志：修复前 `MAILBOX0=0x89`，修复后
+`0x67b00001` + 四写读回全过（首个 8 GB `2803` 数据点，已归档
+[community-reports](community-reports.md)）。
 
 方法论注记：该 PR 的描述含完整代码 hunk 与测试声称，但分支实际只推了
 Markdown 文档——**评审 PR 时先核对 `gh pr diff` 与声称的改动一致**，再谈
 验证链。
+
+## 9. 记录勘误（2026-11-01，issue #98）
+
+本文件旧稿（`78c9d51`）对缺陷引入时间与机器分类记错四处：§5 称"初版实现"
+把守卫绑在探测分支内（实为 PR #5 即函数级，缺陷 `4b7e955` 引入）；§8 称
+契约"最初只写在注释里，代码并非如此"；称 PR #5/#33/#51/#56 的成功机
+"全部"固件已开 BME（#5 与 #33 起始 `0x0003`，见 §8）；称"PR #5 合并后
+桥 BME-clear 的桌面配置实际上从未被验证过"（PR #5 与 #33 本身即该验证）。
+以上由 8bit2qubit 在 issue #98 逐条证伪：核对全部 release tag 的源码形态，
+并在 PR #5 机器（Intel H310，`8086:1901`，`2803`）上对 v2.1.6 与
+`diag-tu10x-forensics-1` 两个已发布二进制做同机冷启前后对照（仅换
+`BOOTX64.EFI`：前者全链过、后者 `MAILBOX0=0x89`）。本页现稿为勘误后
+版本，错误版本留档 `78c9d51`。规矩由此定案：**写"谁引入/谁修复"前先
+`git log -p` 核对历史；把报告声称与其所附证据对上才落笔；归因一律附
+commit hash 供复核。**
