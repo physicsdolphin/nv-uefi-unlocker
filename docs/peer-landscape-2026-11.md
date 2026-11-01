@@ -171,6 +171,22 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 - 验收：QEMU 负控（FLR 后模拟掉电，日志最后条=FLR 前边界）；真机回归 22.1s 基线不劣化 >0.5s。
 - 成本：中（实现半天+消融一轮）。
 
+### 4.0 执行状态回写（2026-11-02，landscape-p1p2 分支）
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| P1-2 | ✅ 已落 main（8dbe2ce） | community-reports 新增 X99 CSM 旁证小节 |
+| P1-3 | ✅ 已落 main（8dbe2ce） | cold-values TU102 回锁对照小节 + open-questions #12 |
+| P2-10/P2-11 | ✅ 已落 main（8dbe2ce） | warm-resume-entry Linux 对照节 + faq 基准工具注记 |
+| P1-4 | ✅ 代码落地（df27304） | sample.rs XP3G/XVE/link-policy 14 行（ssdiag 第三轮已含同并集，无需改）；真机采样轮待跑 |
+| P1-1 | ✅ 代码落地（c443722） | release/make-provenance.ps1，usbroot 实跑 18 文件、双跑 hash 幂等 |
+| P1-6 | ✅ 代码落地（f06a953） | FLUSH_MARKERS +claim:/FLR/BOOTER:/FWSEC:（≤+50 行 flush，消融红线入注释）；sim 14 绿 |
+| P2-7 | ✅ 代码落地（5655f12） | 预载+PE 结构探针+回退路径+\tx-no-preload.txt；双特性零 warning；**QEMU 引导回归+真机轮待跑** |
+| P2-8 前置 | ✅ **发现已修复** | path_belongs_to 节点对齐版已在主线（tx_detach.rs 52-71），28B→36B AcpiAdr 形状用例在 sim/src/devpath.rs（sim --lib 74 测试全绿）——记忆中"待修"已过时 |
+| P2-9 | ✅ 已引入本地 | gsp_tu10x_610.43.03.elf.i64 318MiB 落盘 nv-uefi-re 参考目录（LFS，不入库） |
+| P2-23 | ✅ 代码落地（1dd4a70） | tools/collect_compat.py，合成 TU106 日志验证通过 |
+| 待真机/QEMU | ⏳ 登记在案 | P1-4 采样轮、P1-6 消融、P2-7 QEMU 引导+真机回归（一轮 TU106 可覆盖前三者） |
+
 ### 4.2 P2 明细（立项登记）
 
 **P2-7 预载 bootmgfw 链回（源：TOTORONG 工艺 + nv_unlock_win 0.2.12 实证）**
