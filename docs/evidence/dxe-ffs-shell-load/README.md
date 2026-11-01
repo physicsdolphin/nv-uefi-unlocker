@@ -78,3 +78,16 @@ ReadyToBoot event path (needs firmware-image insertion; OVMF FVMAIN_COMPACT
 has no room - first validated on a real board at V3); tx builds on real
 hardware (V2, gated); multi-boot-option ReadyToBoot re-entry; the NVRAM
 fail-counter skip path after two failures (needs two injected failures).
+
+## Superseded in part by 4f688e7 (dxe-safety-review)
+
+The four runs above validate the c1bd161 remediation set and remain accurate
+for that commit (the FFS bytes never reached DxeCore's FFS verification in
+any of them - shell `load` bypasses it, which is also why the checksum-byte
+order bug fixed in 4f688e7 was not visible here). The authorization format
+has since moved NVUX1 → NVUX2 (full control-file snapshot digest, legacy
+grants rejected), dispatch is image-source-based, the ReadyToBoot callback
+no longer reads the keyboard, and the attempt budget is explicit. The
+current validation record is `docs/evidence/dxe-safety-review/` (7 QEMU
+scenarios + independent PI offset checks); re-run the install/armed flow
+from this directory's images only after re-staging with the NVUX2 installer.
