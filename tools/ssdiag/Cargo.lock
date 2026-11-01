@@ -75,7 +75,7 @@ dependencies = [
 
 [[package]]
 name = "ssdiag"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "sha2",
 ]
