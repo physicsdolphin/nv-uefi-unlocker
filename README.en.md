@@ -125,6 +125,17 @@ This tool unlocks Tensor compute performance. [nvoc](https://github.com/Skyworks
 
 Combined operation can substantially exceed stock power and thermal envelopes; check cooling and power-delivery headroom. [Combined test results and risks](docs/faq.en.md#nvoc-results).
 
+## About the author and team
+
+The author is a long-time overclocking and GPU-modding enthusiast who has
+serviced and operated over 1,000 NVIDIA cards (mining and modded cards
+included), with years of PC hardware repair and maintenance experience.
+This project is a student-run hobby research effort with the author's
+classmates. Accordingly, every write path in the
+tool is built on a "read-back verification + archived evidence" discipline;
+recovery procedures for failure scenarios are documented under
+[safety constraints](docs/faq.en.md#safety).
+
 ## References and repositories
 
 This project is a direct beneficiary and derivative of community work;
