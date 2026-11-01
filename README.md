@@ -251,7 +251,6 @@ bash release/make-usbroot.sh --family 40 \
   [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257)（ZH） ·
   [VideoCardz](https://videocardz.com/newz/modders-create-automated-tool-to-unlock-ai-performance-on-nvidia-geforce-rtx-20-30-and-40-series-gpus)（EN） ·
   [WindowsForum](https://windowsforum.com/news/nv-uefi-unlocker-lifts-rtx-20-30-and-40-tensor-core-limits-ai-gains-and-secure-boot-risks.450453/)（EN） ·
-  [Notebookcheck](https://www.notebookcheck.net/UEFI-level-pre-driver-Nvidia-GPU-unlocker-now-available-for-RTX-2xxx-3xxx-and-4xxx-GPUs-on-Windows-and-Linux.1438153.0.html)（EN） ·
   [Hacker News](https://news.ycombinator.com/item?id=50272846)（EN）
 
 ## Star History
