@@ -50,10 +50,10 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 | AD107 | 4050 Laptop **28a1** | ✅ 28a1 · [Details](#device-3) |
 | AD106 | 4060Ti 2803 / 4060Ti 16G 2805 / 4060 **2808** | ✅ 2803/2805; 🟢 2808 · [Details](#device-4) |
 | AD106 | 4070 Laptop **2820** (same ID on modded cards) / **2860** | 🟡 2820; 🟢 2860 · [Details](#device-5) |
-| AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788** (AD104 refresh) / 4080 Laptop **27a0 / 27e0** | ✅ 2783; others retain upstream tier · [Details](#device-6) |
+| AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788** (AD104 refresh) / 4080 Laptop **27a0 / 27e0**; ES: AC AD104 20GB **2785** | ✅ 2783; others retain upstream tier · [Details](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2704/2705/2709/2757; 🟢 2702/2717 · [Details](#device-7) |
-| AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689** | ✅ 2684/2689; 🟢 2685 · [Details](#device-8) |
-| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d** etc. (0x2200..=0x223f routed) | ✅ 2206/2216; others fully routed · [Details](#device-9) |
+| AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**; ES: TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689; 🟢 2685/2681/26af · [Details](#device-8) |
+| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d**; ES: 3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207** (0x2200..=0x223f routed) | ✅ 2206/2216; others fully routed · [Details](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [Details](#device-10) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** etc. (whole 0x24xx range routed) | ✅ 2489; 2484 EFI-only, lost in Windows · [Details](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d; hybrid exceptions · [Details](#device-12) |
@@ -116,7 +116,7 @@ Full chain, selector read-backs, post-FLR survival and computation integrity che
 
 ### AD102 · 4090 2684 / 4090D 2685 / 4070TiS 2689
 
-`2684` passes full-chain, Windows read-back and performance verification. Fixed-clock normalization supports the issue-rate unlock; boost-clock gains are power-limited, with a residual gap on some accumulation paths unresolved. `2689` has in-OS read-back and performance evidence, without an archived EFI log. `2685` has upstream silicon evidence. Sources: [#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69), [community records](community-reports.md).
+`2684` passes full-chain, Windows read-back and performance verification. Fixed-clock normalization supports the issue-rate unlock; boost-clock gains are power-limited, with a residual gap on some accumulation paths unresolved. `2689` has in-OS read-back and performance evidence, without an archived EFI log. `2685` has upstream silicon evidence. ES/prototypes: `2681` (RTX TITAN Ada) and `26af` (PG137 board) are pci.ids-listed AD102 silicon inside the runtime span; tier 🟢. Sources: [#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69), [community records](community-reports.md).
 
 <a id="device-9"></a>
 
@@ -124,7 +124,7 @@ Full chain, selector read-backs, post-FLR survival and computation integrity che
 
 `2206` / `2216` pass firmware read-backs and Windows performance verification; other same-family devices are fully routed. Gains depend on power and workload.
 
-2026-11-02 pci.ids correction: the old "3070 Ti 2205" entry was wrong - `2205` / `2207` are cancelled GA102 ES SKUs (RTX 3080 Ti 20GB / a GA102 3070 Ti); the shipping 3070 Ti is GA104 `2482`. The runtime span is narrowed to `0x2200..=0x223f` accordingly (the old 0x22..ff tail holds no GA102 cores - only HD-audio functions, Tegra/THOR/GB10 ARM blocks and H100 NVSwitch). Sources: [#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29), [#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15).
+2026-11-02 pci.ids correction: the old "3070 Ti 2205" entry was wrong - the shipping 3070 Ti is GA104 `2482`, while `2205` / `2207` are cancelled GA102 ES SKUs (RTX 3080 Ti 20GB / a GA102 3070 Ti), now listed explicitly as ES above. The runtime span is narrowed to `0x2200..=0x223f` accordingly (the old 0x22..ff tail holds no GA102 cores - only HD-audio functions, Tegra/THOR/GB10 ARM blocks and H100 NVSwitch). ES/cancelled SKUs (`222b` 3090 ES, `222f` 3080 11/12GB ES, `2205`, `2207`) are GA102 cores inside the span and run as-is for anyone holding one; tier 🟢 (upstream silicon) until a first hardware report. Sources: [#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29), [#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15).
 
 <a id="device-10"></a>
 
