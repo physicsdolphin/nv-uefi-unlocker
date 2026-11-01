@@ -145,7 +145,7 @@ impl Log for DualLogger {
         // Console mirror. Quiet mode (issue #38) keeps verdict-class lines
         // only; the stick already holds every line (file mirror ran first).
         let quiet = unsafe { *self.quiet.get() };
-        if !quiet || console_visible(&line) {
+        if crate::keywait::stdout_available() && (!quiet || console_visible(&line)) {
             if let Ok(s) = CString16::try_from(line.as_str()) {
                 system::with_stdout(|out| {
                     let _ = out.output_string_lossy(&s);

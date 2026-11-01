@@ -309,9 +309,10 @@ FFS file (24B header)
   这是该形态存在的目的（每次引导重放），非副作用。用户在 PR 评论中提出的
   **BCFG driver-load 备选**（Driver#### 指向可移动介质上的 FFS，拔盘即失效、零固件
   侵入）是降低 §1.4 张力的另一形态，待维护者裁决是否并行提供。
-- **§1.9（Secure Boot）**：驱动形态不经过 SB 验签链、其事务在 TPM SRTM 测量之外
-  （ReadyToBoot 前于 ExitBootServices）。SB-ON 机器"理论可用"的旧说法废止：
-  不是"兼容 SB"，而是"SB 对此形态不可见"——风险自负边界写在 README 前提处。
+- **§1.9（Secure Boot）**：固件内置驱动与从文件加载的驱动经过的验证路径不同，取决于
+  平台的固件验证、Secure Boot 和 TPM 测量策略。ReadyToBoot 早于 ExitBootServices
+  不能证明它处于 SRTM 测量之外，也不能据此宣称对 Secure Boot 不可见或兼容。
+  这些性质必须在目标平台单独验证；本轮没有验证 SB-ON 或 TPM/PCR 行为。
 - **资产完整性**：app 形态维持 stick-trust；驱动形态强制 manifest（11.3）。二者口径
   不同是**有意的**：无人在场的形态不允许信任一个可被任何进程投放文件的卷。
 
@@ -323,3 +324,46 @@ FFS file (24B header)
 - N4 的深度方案（override 标记要求回显 BDF）与轮换深度（多代日志）：留待实机反馈。
 - FV dispatch + ReadyToBoot 路径仍未执行（V3 首块真机）；模拟器标记数组漂移的
   CI 强制（N8 后半）为后续项，本轮已把 dxe 解析纳入 sim 镜像与测试。
+
+## 12. 安全复审修订（2026-11-01，以本节及代码为准）
+
+本节取代 §2.3、§5、§11 中的旧触发、授权、失败计数和 watchdog 语义。
+
+- **触发与 TPL**：BDS_ARCH 在 DXE 调度期即可存在，不能作为 BDS 已启动的证据。
+  FV 或未知来源的镜像只注册一次 ReadyToBoot 回调；具有 MEDIA_FILEPATH 的文件加载
+  镜像在 entry 的 TPL_APPLICATION 执行（Shell `load`、Driver#### 等）。事件回调处于
+  TPL_CALLBACK，禁止调用 APPLICATION-only 的 ReadKeyStroke，也不通过降低 TPL 绕过限制。
+  因此 **FV 自动路径必须明确授权 `\tx-dxe-noconfirm.txt` 无人值守模式**，否则跳过；
+  文件加载路径保留 1–30 秒任意键中止窗口，两种构建均在按键或输入错误时中止。
+- **授权**：旧 NVUX1 变量不再有效。NVUX2 保存分区身份和 SHA-256：摘要覆盖
+  `dxe-manifest.txt` 及 `dxe_policy::CONFIG_PATHS` 中所有控制文件的路径、存在状态和完整
+  内容。授权只接受普通文件，控制文件上限 4 KiB、manifest 上限 64 KiB，超限或读取错误
+  均拒绝，不接受截断前缀。驱动运行时重新校验，再固定内存快照；改变载荷与 manifest、
+  更换目标 BDF、添加危险覆盖项或取消确认标记均需重新授权。未知控制文件默认不生效。
+- **授权操作**：先准备好资产、manifest、`tx-dxe-arm.txt` 和所有控制文件，再放置
+  `tx-dxe-arm-install.txt` 并主动启动 app。授权使用独立的 Space/Enter 确认，其他键、
+  无输入或 30 秒超时均取消；不会被 app 的自动执行标记代替。授权后移除 install 标记。
+  `tx-dxe-arm-remove.txt` 删除 arm 变量；只读 app 构建仍可执行这些明确要求的 NVRAM 操作。
+- **边界**：摘要保护已授权卷上的文件投放/替换，不防拥有固件变量写权限的管理员或
+  已执行的恶意 UEFI 代码。分区 GUID/MBR 身份本身不是密码学身份。MBR 身份现在包含
+  完整 64 位起始 LBA 和类型标记。
+- **重试保护**：读取 latch 失败、写入失败或读回不符均拒绝执行，镜像内也有一次性守卫。
+  `NvUnlockDxeFail` 现在是严格解析的**尝试预算**，最多两次；在文件 I/O、时间校准和
+  控制台输出之前递增并读回。无论事务正常返回、报告失败、中止或后续 OS 黑屏，都不会
+  自动清零。达到两次后，在操作者确认系统/GPU 已恢复正常、再次通过 app 明确授权前
+  保持跳过。卷缺失或配置校验失败也可能消耗尝试；这是保守的恢复策略，不是 OS 健康检测。
+  重新授权不会清除本次引导的 latch。
+- **watchdog**：标准 EDK2 在 ReadyToBoot 之后、StartImage 之前才启动 OS-loader watchdog。
+  驱动必须自行成功设置 300 秒 watchdog 才继续；不支持或设置失败即跳过。正常返回保留
+  并刷新 300 秒，后续由 boot manager/OS 接管。没有通用 API 查询并恢复此前超时值。
+  该机制不替代硬件断电恢复，也不宣称覆盖固件变量服务自身的故障。
+- **控制台**：依据系统表的实际 stdin/stdout 判断可用性；无 stdout 时仍可写文件日志，
+  不再因为 logger 的 with_stdout 断言而 panic。
+- **资产**：scrubber 和其他资产一起在首次 GPU 写操作之前读取、验证，之后使用同一份
+  已验证的内存字节；不再于事务中途从卷上重新读取。manifest 同时约束 direct/family 两条载荷候选的内容与缺席，
+  防止删除预期 V67 后静默降级；有意的无 V67 replay 仍可使用（仍是写事务）。
+- **FFS**：PI 头布局为 Header checksum @16、File checksum @17；打包器及校验器已修正。
+  新增独立 wire-format 测试使用规范固定偏移，而不是复用实现常量。
+
+验证记录见 [DXE 安全修复验证](evidence/dxe-safety-review/README.md)。FV/ReadyToBoot 与
+真实 GPU 的验收范围必须分别说明；通过单元测试或无 NVIDIA 的 QEMU 不代表真机事务已验证。

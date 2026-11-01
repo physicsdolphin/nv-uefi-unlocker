@@ -11,6 +11,7 @@
 //! (our own image device path), because the handle-level match is not
 //! reliable across firmware implementations.
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use log::info;
 use uefi::boot::{self, LoadImageSource, OpenProtocolAttributes, OpenProtocolParams, SearchType};
@@ -211,6 +212,9 @@ const MARKER_READ_CAP: usize = 4096;
 /// silent; volume-level failures are logged (they explain a marker that
 /// "should have" engaged but did not).
 pub fn boot_volume_read(path: &CStr16) -> Option<alloc::vec::Vec<u8>> {
+    if crate::volumes::armed().is_some() {
+        return crate::volumes::policy_file(&path.to_string());
+    }
     let mut fs = match crate::volumes::marker_fs() {
         Ok(fs) => fs,
         Err(e) => {

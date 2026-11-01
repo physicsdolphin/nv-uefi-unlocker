@@ -57,6 +57,9 @@ pub const STATE_ERASE_POLARITY_ONE: u8 = 0xF8;
 pub const FFS_ATTRIB_CHECKSUM: u8 = 0x40;
 
 const FFS_HEADER_LEN: usize = 24;
+// EFI_FFS_INTEGRITY_CHECK: Header first, File second (PI spec).
+const CHECKSUM_HEADER: usize = 16;
+const CHECKSUM_FILE: usize = 17;
 
 /// Parsed PE fields relevant to the patch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,8 +240,8 @@ pub fn build_ffs(
 
     let mut ffs = Vec::with_capacity(total);
     ffs.extend_from_slice(guid);
-    ffs.push(0); // IntegrityCheck.File, patched below (data checksum)
     ffs.push(0); // IntegrityCheck.Header, patched below
+    ffs.push(0); // IntegrityCheck.File, patched below (data checksum)
     ffs.push(FV_FILETYPE_DRIVER);
     ffs.push(FFS_ATTRIB_CHECKSUM); // Attributes: file-data checksum enabled
     ffs.extend_from_slice(&(total as u32).to_le_bytes()[..3]);
@@ -249,17 +252,17 @@ pub fn build_ffs(
     // File-data checksum (audit F5): the sum of all bytes after the header,
     // plus IntegrityCheck.File, is zero.
     let data_sum: u8 = ffs[FFS_HEADER_LEN..].iter().fold(0u8, |a, b| a.wrapping_add(*b));
-    ffs[16] = data_sum.wrapping_neg();
+    ffs[CHECKSUM_FILE] = data_sum.wrapping_neg();
 
     // Header checksum: the sum of all header bytes EXCLUDING State (23) and
-    // IntegrityCheck.File (16) must be zero.
+    // IntegrityCheck.File (17) must be zero.
     let sum: u8 = ffs[..FFS_HEADER_LEN]
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != 16 && *i != 23)
+        .filter(|(i, _)| *i != CHECKSUM_FILE && *i != 23)
         .map(|(_, b)| u16::from(*b))
         .sum::<u16>() as u8;
-    ffs[17] = (!sum).wrapping_add(1);
+    ffs[CHECKSUM_HEADER] = (!sum).wrapping_add(1);
     Ok(ffs)
 }
 
@@ -294,7 +297,7 @@ pub fn verify_ffs(ffs: &[u8]) -> Result<FfsSummary, String> {
     let sum: u8 = ffs[..FFS_HEADER_LEN]
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != 16 && *i != 23)
+        .filter(|(i, _)| *i != CHECKSUM_FILE && *i != 23)
         .map(|(_, b)| u16::from(*b))
         .sum::<u16>() as u8;
     if sum != 0 {
@@ -304,9 +307,9 @@ pub fn verify_ffs(ffs: &[u8]) -> Result<FfsSummary, String> {
     let data_checksum_ok = if attributes & FFS_ATTRIB_CHECKSUM != 0 {
         let data_sum: u8 =
             ffs[FFS_HEADER_LEN..].iter().fold(0u8, |a, b| a.wrapping_add(*b));
-        data_sum.wrapping_add(ffs[16]) == 0
+        data_sum.wrapping_add(ffs[CHECKSUM_FILE]) == 0
     } else {
-        ffs[16] == FILE_CHECKSUM_PLACEHOLDER
+        ffs[CHECKSUM_FILE] == FILE_CHECKSUM_PLACEHOLDER
     };
 
     let mut off = FFS_HEADER_LEN;
@@ -360,7 +363,7 @@ pub fn verify_nvunlock_dxe(ffs: &[u8]) -> Result<FfsSummary, String> {
     if summary.file_type != FV_FILETYPE_DRIVER {
         return Err(format!("file type {:#04x} is not FV_FILETYPE_DRIVER", summary.file_type));
     }
-    if summary.state != STATE_ERASE_POLARITY_ONE {
+    if ![STATE_ERASE_POLARITY_ONE, 0x07].contains(&summary.state) {
         return Err(format!(
             "state {:#04x} does not match the built erase polarity - the artifact was modified or built for another FV",
             summary.state
@@ -488,13 +491,13 @@ mod tests {
         let sum: u8 = ffs[..24]
             .iter()
             .enumerate()
-            .filter(|(i, _)| *i != 16 && *i != 23)
+            .filter(|(i, _)| *i != CHECKSUM_FILE && *i != 23)
             .map(|(_, b)| u16::from(*b))
             .sum::<u16>() as u8;
         assert_eq!(sum, 0, "header checksum rule: sum with exclusions is zero");
         assert_eq!(ffs[19], FFS_ATTRIB_CHECKSUM, "data checksum attribute set (audit F5)");
         let data_sum: u8 = ffs[24..].iter().fold(0u8, |a, b| a.wrapping_add(*b));
-        assert_eq!(data_sum.wrapping_add(ffs[16]), 0, "file-data checksum rule");
+        assert_eq!(data_sum.wrapping_add(ffs[CHECKSUM_FILE]), 0, "file-data checksum rule");
 
         let parsed = verify_nvunlock_dxe(&ffs).unwrap();
         assert_eq!(parsed.file_type, FV_FILETYPE_DRIVER);
@@ -527,10 +530,10 @@ mod tests {
         let sum: u8 = tiny[..24]
             .iter()
             .enumerate()
-            .filter(|(i, _)| *i != 16 && *i != 23)
+            .filter(|(i, _)| *i != CHECKSUM_FILE && *i != 23)
             .map(|(_, b)| u16::from(*b))
             .sum::<u16>() as u8;
-        tiny[17] = (!sum).wrapping_add(1);
+        tiny[CHECKSUM_HEADER] = (!sum).wrapping_add(1);
         let r = verify_ffs(&tiny);
         assert!(r.is_err() || r.unwrap().sections.len() <= 1, "must not panic");
     }

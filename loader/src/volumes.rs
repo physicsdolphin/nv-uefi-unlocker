@@ -35,7 +35,6 @@ static ARMED: ArmedCell = ArmedCell(UnsafeCell::new(None));
 /// Device-path node constants used by the raw walk (`partition_guid`).
 const DEV_PATH_MEDIA: u8 = 0x04;
 const DEV_PATH_MEDIA_HARD_DRIVE: u8 = 0x01;
-const DEV_PATH_END: u8 = 0x7f;
 /// MEDIA_HARD_DRIVE signature types: 0x01 = PC-AT (MBR disk signature),
 /// 0x02 = 16-byte GPT GUID.
 const SIG_TYPE_MBR: u8 = 0x01;
@@ -74,35 +73,25 @@ pub fn partition_guid(handle: Handle) -> Option<[u8; 16]> {
         )
         .ok()?
     };
-    let mut p = dp.as_ffi_ptr().cast::<u8>();
-    // Safety: node lengths come from the firmware's own well-formed device
-    // path; the walk is length-bounded and stops at the END node.
-    loop {
-        let major = unsafe { *p };
-        let sub = unsafe { *p.add(1) };
-        let len = u16::from_le_bytes([unsafe { *p.add(2) }, unsafe { *p.add(3) }]) as usize;
-        if len < 4 {
-            return None;
-        }
-        if major == DEV_PATH_MEDIA && sub == DEV_PATH_MEDIA_HARD_DRIVE && len >= HARD_DRIVE_NODE_MIN_LEN {
-            let sig_type = unsafe { *p.add(41) };
+    for node in dp.node_iter() {
+        // The iterator provides a bounded node, including its 4-byte header.
+        let bytes = unsafe { core::slice::from_raw_parts(node.as_ffi_ptr().cast::<u8>(), node.length() as usize) };
+        if bytes[0] == DEV_PATH_MEDIA && bytes[1] == DEV_PATH_MEDIA_HARD_DRIVE
+            && bytes.len() >= HARD_DRIVE_NODE_MIN_LEN {
             let mut identity = [0u8; 16];
-            if sig_type == SIG_TYPE_GPT {
-                unsafe { core::ptr::copy_nonoverlapping(p.add(24), identity.as_mut_ptr(), 16) };
+            if bytes[41] == SIG_TYPE_GPT {
+                identity.copy_from_slice(&bytes[24..40]);
                 return Some(identity);
             }
-            if sig_type == SIG_TYPE_MBR {
-                // Identity = 4-byte disk signature ++ start LBA (LE) ++ pad.
-                unsafe { core::ptr::copy_nonoverlapping(p.add(24), identity.as_mut_ptr(), 4) };
-                unsafe { core::ptr::copy_nonoverlapping(p.add(8), identity.as_mut_ptr().add(4), 4) };
+            if bytes[41] == SIG_TYPE_MBR {
+                identity[..4].copy_from_slice(&bytes[24..28]);
+                identity[4..12].copy_from_slice(&bytes[8..16]);
+                identity[12] = SIG_TYPE_MBR;
                 return Some(identity);
             }
         }
-        if major == DEV_PATH_END {
-            return None;
-        }
-        p = unsafe { p.add(len) };
     }
+    None
 }
 
 /// Open the volume markers, assets and the log resolve against.
@@ -133,4 +122,57 @@ pub fn marker_fs() -> uefi::Result<ScopedProtocol<SimpleFileSystem>> {
         return Err(uefi::Status::NOT_FOUND.into());
     }
     boot::get_image_file_system(boot::image_handle())
+}
+
+struct PolicyCell(UnsafeCell<Option<crate::dxe_policy::Snapshot>>);
+// Published once before phases; no callbacks mutate this snapshot.
+unsafe impl Sync for PolicyCell {}
+static POLICY: PolicyCell = PolicyCell(UnsafeCell::new(None));
+
+/// Exact-size reads, including empty files; errors never become absence.
+/// Unlike the UI marker reader, oversized policy files are not truncated.
+pub fn read_small_file(path: &str, cap: usize) -> Result<Option<alloc::vec::Vec<u8>>, uefi::Status> {
+    use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode};
+    let path = uefi::CString16::try_from(path).map_err(|_| uefi::Status::INVALID_PARAMETER)?;
+    let mut fs = marker_fs().map_err(|e| e.status())?;
+    let mut root = fs.open_volume().map_err(|e| e.status())?;
+    let handle = match root.open(&path, FileMode::Read, FileAttribute::empty()) {
+        Ok(f) => f,
+        Err(e) if e.status() == uefi::Status::NOT_FOUND => return Ok(None),
+        Err(e) => return Err(e.status()),
+    };
+    let mut file = handle.into_regular_file().ok_or(uefi::Status::INVALID_PARAMETER)?;
+    let size = file.get_boxed_info::<FileInfo>().map_err(|e| e.status())?.file_size();
+    if size > cap as u64 { return Err(uefi::Status::BAD_BUFFER_SIZE); }
+    let mut out = alloc::vec![0; size as usize];
+    let mut got = 0;
+    while got < out.len() {
+        let n = file.read(&mut out[got..]).map_err(|e| e.status())?;
+        if n == 0 { return Err(uefi::Status::DEVICE_ERROR); }
+        got += n;
+    }
+    let mut tail = [0];
+    if file.read(&mut tail).map_err(|e| e.status())? != 0 {
+        return Err(uefi::Status::BAD_BUFFER_SIZE);
+    }
+    Ok(Some(out))
+}
+
+pub fn read_policy() -> Result<crate::dxe_policy::Snapshot, uefi::Status> {
+    crate::dxe_policy::CONFIG_PATHS.iter().map(|path| {
+        read_small_file(path, if *path == crate::dxe_policy::MANIFEST { 65536 } else { 4096 })
+    }).collect()
+}
+
+pub fn pin_policy(snapshot: crate::dxe_policy::Snapshot) {
+    // Single publisher before any transaction, boot latch acquired first.
+    unsafe { *POLICY.0.get() = Some(snapshot); }
+}
+
+/// Resident controls are immutable for the run. Unknown paths are absent,
+/// so introducing a new control cannot silently bypass reauthorization.
+pub fn policy_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
+    let policy = unsafe { &*POLICY.0.get() };
+    let i = crate::dxe_policy::CONFIG_PATHS.iter().position(|p| p.eq_ignore_ascii_case(path))?;
+    policy.as_ref()?.get(i)?.clone()
 }

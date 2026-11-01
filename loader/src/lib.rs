@@ -26,6 +26,7 @@ pub mod banner;
 // a lib-level module would be a dead third copy.
 pub mod chainload;
 pub mod dxe;
+pub mod dxe_policy;
 pub mod gop;
 pub mod keywait;
 pub mod logging;

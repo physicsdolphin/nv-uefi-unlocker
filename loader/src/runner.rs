@@ -183,20 +183,12 @@ fn tx_one_card(g: &pci::FoundGpu) {
     // 6514938280). This marker swaps ONLY the payload. Same strict
     // semantics as every other asset: present-but-unreadable aborts, it
     // never degrades to the family-pinned payload.
-    // Which v67 file the bytes came from (audit M1 digest check must verify
-    // the file that was actually used, not the family default).
-    let mut v67_name = alloc::format!("\\v67-{family}-four-plm.bin");
-    let v67 = match tx::read_asset("\\v67-direct-ss.bin") {
-        Ok(Some(v)) => {
-            v67_name = "\\v67-direct-ss.bin".into();
-            Some(v)
-        }
-        Ok(None) => must_asset!("v67 payload", tx::read_asset_fmt("\\v67-{}-four-plm.bin", family)),
-        Err(()) => {
-            info!("TX: \\v67-direct-ss.bin is present but unreadable (damaged stick or pulled media) - aborting before any GPU interaction");
-            return;
-        }
-    };
+    // Authenticate BOTH candidates, including their absence, before applying
+    // precedence. Deleting a direct override must never silently switch the
+    // authorized payload to a family default or to replay.
+    let direct_v67 = must_asset!("direct v67 payload", tx::read_asset("\\v67-direct-ss.bin"));
+    let family_v67 = must_asset!("family v67 payload", tx::read_asset_fmt("\\v67-{}-four-plm.bin", family));
+    let v67 = direct_v67.as_ref().or(family_v67.as_ref()).cloned();
     let bl = if family == "tu10x" {
         must_asset!("sec2_bl", tx::read_asset("\\sec2_bl_tu10x.bin"))
     } else {
@@ -221,26 +213,36 @@ fn tx_one_card(g: &pci::FoundGpu) {
     // falcon BL, BOOT_DIRECT booter fire, replay verdict mbox0==0 + WPR2.
     // First fire = chain-replay (no V67 at root) unless the payload file is
     // staged deliberately.
-    let assets = tx::TxAssets { family, booter, boot_desc, gsp_boot, gsp_image, stock_sig, v67, bl };
+    let scrubber = if family != "tu10x" {
+        match must_asset!("scrubber", tx::read_asset("\\scrubber_ad10x.bin")) {
+            Some(bytes) => Some(bytes),
+            None => { info!("TX: missing scrubber - refusing before GPU interaction"); return; }
+        }
+    } else { None };
+    let assets = tx::TxAssets { family, booter, boot_desc, gsp_boot, gsp_image, stock_sig, v67, bl, scrubber };
     // Asset digest verification, driver form only (audit M1): the armed
     // volume's \dxe-manifest.txt must match every byte that is about to be
     // DMA'd. The application form keeps stick-trust semantics.
     if crate::volumes::armed().is_some() {
-        let mut entries: alloc::vec::Vec<(alloc::string::String, &[u8])> = alloc::vec::Vec::new();
+        let mut entries: alloc::vec::Vec<(alloc::string::String, Option<&[u8]>)> = alloc::vec::Vec::new();
         for (name, bytes) in [
-            (alloc::format!("\\booter_load_{family}.bin"), assets.booter.as_slice()),
-            (alloc::format!("\\gsp_boot_desc_{family}.bin"), assets.boot_desc.as_deref().unwrap_or(&[])),
-            (alloc::format!("\\gsp_boot_{family}.bin"), assets.gsp_boot.as_slice()),
-            (alloc::format!("\\fwimage_{family}.bin"), assets.gsp_image.as_slice()),
-            (alloc::format!("\\fwsignature_{family}.bin"), assets.stock_sig.as_slice()),
-            (v67_name.clone(), assets.v67.as_deref().unwrap_or(&[])),
+            (alloc::format!("\\booter_load_{family}.bin"), Some(assets.booter.as_slice())),
+            (alloc::format!("\\gsp_boot_desc_{family}.bin"), assets.boot_desc.as_deref()),
+            (alloc::format!("\\gsp_boot_{family}.bin"), Some(assets.gsp_boot.as_slice())),
+            (alloc::format!("\\fwimage_{family}.bin"), Some(assets.gsp_image.as_slice())),
+            (alloc::format!("\\fwsignature_{family}.bin"), Some(assets.stock_sig.as_slice())),
+            (alloc::string::String::from("\\v67-direct-ss.bin"), direct_v67.as_deref()),
+            (alloc::format!("\\v67-{family}-four-plm.bin"), family_v67.as_deref()),
         ] {
             entries.push((name, bytes));
         }
         if assets.family == "tu10x" {
             if let Some(bl) = assets.bl.as_deref() {
-                entries.push(("\\sec2_bl_tu10x.bin".into(), bl));
+                entries.push(("\\sec2_bl_tu10x.bin".into(), Some(bl)));
             }
+        }
+        if assets.family != "tu10x" {
+            entries.push(("\\scrubber_ad10x.bin".into(), assets.scrubber.as_deref()));
         }
         if let Err(e) =
             tx::verify_asset_digests(entries.iter().map(|(p, b)| (p.as_str(), *b)))

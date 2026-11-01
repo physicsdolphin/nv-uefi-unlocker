@@ -903,6 +903,9 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
 /// "absent" silently disables them. Kept separate from the asset reader, whose
 /// size rules are about DMA windows, not about intent.
 pub fn probe_file(path: &str) -> bool {
+    if crate::volumes::armed().is_some() && path.ends_with(".txt") {
+        return crate::volumes::policy_file(path).is_some();
+    }
     let Ok(path_c) = uefi::CString16::try_from(path) else {
         return false;
     };
@@ -934,12 +937,13 @@ fn family_asset_paths(family: &str) -> alloc::vec::Vec<alloc::string::String> {
         "\\gsp_boot_{}.bin",
         "\\fwimage_{}.bin",
         "\\fwsignature_{}.bin",
-        "\\v67-{}-four-plm.bin",
     ] {
         v.push(alloc::format!("{}", p.replacen("{}", family, 1)));
     }
     if family == "tu10x" {
         v.push("\\sec2_bl_tu10x.bin".into());
+    } else {
+        v.push("\\scrubber_ad10x.bin".into());
     }
     v
 }
@@ -996,36 +1000,11 @@ pub fn log_overrides() {
 /// semantics (the operator holds the stick they prepared; the maker
 /// verified at build time).
 pub fn verify_asset_digests<'a>(
-    entries: impl Iterator<Item = (&'a str, &'a [u8])>,
+    entries: impl Iterator<Item = (&'a str, Option<&'a [u8]>)>,
 ) -> Result<(), &'static str> {
-    use sha2::{Digest, Sha256};
-
-    const MANIFEST_PATH: &str = "\\dxe-manifest.txt";
-    let manifest = read_boot_file(MANIFEST_PATH).ok_or(
-        "no \\dxe-manifest.txt on the armed volume (maker output) - the driver form refuses an unverified transaction (fail-closed)",
-    )?;
-    let text = core::str::from_utf8(&manifest).map_err(|_| "manifest is not UTF-8")?;
-
-    for (path, bytes) in entries {
-        let mut hasher = Sha256::new();
-        hasher.update(bytes);
-        let digest = hasher.finalize();
-        let mut hex = alloc::string::String::with_capacity(64);
-        for b in digest {
-            hex.push_str(&alloc::format!("{b:02x}"));
-        }
-        let found = text.lines().any(|line| {
-            line.len() >= 65
-                && line.as_bytes()[..64].iter().all(|b| b.is_ascii_hexdigit())
-                && line[64..].trim_start() == path
-                && &line[..64] == hex.as_str()
-        });
-        if !found {
-            info!("TX-ASSET-DIAG: {path} missing from \\dxe-manifest.txt or digest mismatch");
-            return Err("asset digest verification failed - refusing the transaction (fail-closed)");
-        }
-    }
-    Ok(())
+    let manifest = crate::volumes::policy_file(crate::dxe_policy::MANIFEST)
+        .ok_or("no authorized dxe-manifest.txt")?;
+    crate::dxe_policy::verify_assets(&manifest, entries)
 }
 
 /// Read one ASSET (never a marker) with the three states kept apart:
@@ -1105,6 +1084,7 @@ pub fn prefetch_family_assets(family: &str) {
     let _ = read_asset_fmt("\\gsp_boot_{}.bin", family);
     let _ = read_asset_fmt("\\fwimage_{}.bin", family);
     let _ = read_asset_fmt("\\fwsignature_{}.bin", family);
+    if family != "tu10x" { let _ = read_asset("\\scrubber_ad10x.bin"); }
     let _ = read_asset("\\v67-direct-ss.bin");
     let _ = read_asset_fmt("\\v67-{}-four-plm.bin", family);
     if family == "tu10x" {
@@ -1121,6 +1101,12 @@ pub fn read_boot_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_boot_file_inner(path: &str) -> Inner {
+    if crate::volumes::armed().is_some() && path.ends_with(".txt") {
+        return match crate::volumes::policy_file(path) {
+            Some(bytes) => Inner::Content(bytes),
+            None => Inner::Absent,
+        };
+    }
     // Read-through cache first (armed prep warms it; see AssetCacheCell).
     // Safety: single-threaded boot services; pointer use confined here.
     let cache = unsafe { &mut *ASSET_CACHE.0.get() };
@@ -1226,6 +1212,8 @@ pub struct TxAssets {
     /// Generic falcon BL (sec2_bl_tu10x.bin, 768B) - Turing FWSEC
     /// BOOT_WITH_LOADER only; the GA10x/Ada HS path ignores it.
     pub bl: Option<alloc::vec::Vec<u8>>,
+    /// Scrubber bytes loaded and authenticated before any GPU interaction.
+    pub scrubber: Option<alloc::vec::Vec<u8>>,
 }
 
 /// Asset size validation BEFORE any GPU interaction (issue #4.3): the DMA
@@ -1353,7 +1341,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // (first fire 2026-10-27) - don't fire a foreign binary at it.
     if assets.family == "tu10x" {
         info!("TX-tu10x: scrubber step skipped (not part of the proven Turing chain; BSI handoff state logged above)");
-    } else if let Err(e) = crate::tx_fwsec::scrubber_if_needed(gpu) {
+    } else if let Err(e) = crate::tx_fwsec::scrubber_if_needed(gpu, assets.scrubber.as_deref()) {
         info!(
             "TX: scrubber did not complete ({e:?}) - proceeding without it (community chain shape)"
         );

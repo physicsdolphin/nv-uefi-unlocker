@@ -28,23 +28,7 @@ const QUIET_MARKER: &CStr16 = cstr16!(r"\tx-quiet.txt");
 /// lines, 0 = stage-marker lines only; default 16). Marker-line flushes
 /// are unaffected - they are the crash-forensics anchors.
 const FLUSH_LINES_MARKER: &CStr16 = cstr16!(r"\tx-flush-lines.txt");
-/// DXE-driver arm installer (audit F1): presence arms the firmware-resident
-/// driver for THIS volume via the NVRAM variable; see the DXE-ARM phase.
-const INSTALL_MARKER: &CStr16 = cstr16!(r"\tx-dxe-arm-install.txt");
-/// Disarms the firmware-resident driver by deleting the NVRAM variable.
-const REMOVE_MARKER: &CStr16 = cstr16!(r"\tx-dxe-arm-remove.txt");
 const CONFIRM_WAIT: u64 = 30;
-
-/// GPT partition GUID of the application's own boot volume (the stick), from
-/// the loaded-image device handle's device path. `None` = no partition node
-/// (whole-disk FAT, CD) - such volumes cannot be armed.
-fn self_volume_partition_guid() -> Option<[u8; 16]> {
-    use uefi::proto::loaded_image::LoadedImage;
-    let device = uefi::boot::open_protocol_exclusive::<LoadedImage>(uefi::boot::image_handle())
-        .ok()?
-        .device()?;
-    loader::volumes::partition_guid(device)
-}
 
 #[entry]
 fn main() -> Status {
@@ -72,50 +56,7 @@ fn main() -> Status {
     }
     banner::print(VERSION);
 
-    // Phase: DXE-ARM installer (PR #100 audit F1/M1). The firmware-resident
-    // driver's arm authority is the NVRAM variable `NvUnlockDxeArm`, whose
-    // payload pins the GPT partition GUID of THIS volume - written only
-    // here, by the operator deliberately booting the stick they hold, with
-    // `\tx-dxe-arm-install.txt` on its root. A file dropped on any FAT
-    // volume cannot forge it. `\tx-dxe-arm-remove.txt` disarms. Both are
-    // best-effort honest: failures are logged, never silent. The variable
-    // GUID is the project FFS GUID, so `dmpstore -g` enumerates the whole
-    // set (arm/latch/fail).
-    if chainload::boot_volume_has(REMOVE_MARKER) {
-        match uefi::runtime::delete_variable(
-            dxe::ARM_VARIABLE,
-            &uefi::runtime::VariableVendor(dxe::ARM_VENDOR),
-        ) {
-            Ok(()) => info!("DXE-ARM: NVRAM variable removed - firmware-resident driver DISARMED"),
-            Err(e) if e.status() == uefi::Status::NOT_FOUND => {
-                info!("DXE-ARM: variable already absent - nothing to remove")
-            }
-            Err(e) => info!("DXE-ARM: remove failed: {:?}", e.status()),
-        }
-    } else if chainload::boot_volume_has(INSTALL_MARKER) {
-        match self_volume_partition_guid() {
-            None => info!(
-                "DXE-ARM: this volume has no GPT partition GUID (whole-disk FAT?) - refusing to arm; stage the driver volume as a partitioned disk"
-            ),
-            Some(guid) => {
-                let mut payload = alloc::vec::Vec::with_capacity(21);
-                payload.extend_from_slice(dxe::ARM_MAGIC);
-                payload.extend_from_slice(&guid);
-                match uefi::runtime::set_variable(
-                    dxe::ARM_VARIABLE,
-                    &uefi::runtime::VariableVendor(dxe::ARM_VENDOR),
-                    dxe::ATTRS_NV,
-                    &payload,
-                ) {
-                    Ok(()) => info!(
-                        "DXE-ARM: NVRAM variable set -> volume partition GUID {} - firmware-resident driver ARMED for this volume only",
-                        dxe::guid_hex(&guid)
-                    ),
-                    Err(e) => info!("DXE-ARM: variable write failed: {:?}", e.status()),
-                }
-            }
-        }
-    }
+    dxe::manage_arm();
 
     // Phase: FLUSH knob (issue #38 follow-up). Optional per-stick cadence
     // for the count-based log flushes; stage-marker flushes are unaffected.
