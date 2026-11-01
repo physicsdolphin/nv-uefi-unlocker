@@ -51,7 +51,7 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 | AD106 | 4060Ti 2803 / 4060Ti 16G 2805 | ✅ 2803/2805 · [Details](#device-4) |
 | AD106 | 4070 Laptop **2820** (same ID on modded cards) | 🟡 Unverified · [Details](#device-5) |
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 | ✅ 2783; others retain upstream tier · [Details](#device-6) |
-| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M 2757 | ✅ 2704/2705/2709; 🟢 2702/2757 · [Details](#device-7) |
+| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / **4090M 2757** | ✅ 2704/2705/2709/2757; 🟢 2702 · [Details](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689** | ✅ 2684/2689; 🟢 2685 · [Details](#device-8) |
 | GA102 | 3090 2204 / **3080 2206** / **3080 LHR 2216** / 3080 Ti 2208 / 3070 Ti 2205 etc. (whole 0x22xx range routed) | ✅ 2206/2216; others fully routed · [Details](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [Details](#device-10) |
@@ -108,7 +108,7 @@ Family routing and assets are available; EFI hardware verification is pending. M
 
 ### AD103 · 4080S 2702 / 4080 2704 / 4070TiS 2705 / 4070 2709 / 4090M 2757
 
-`2704` / `2705` / `2709` pass full-chain and in-OS performance verification. `2702` / `2757` have upstream silicon evidence. Sources: [#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53), [#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36), [Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72), [#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8).
+`2704` / `2705` / `2709` / `2757` pass full-chain and in-OS performance verification. `2702` has upstream silicon evidence. The 2757 Alienware m18 R1 result (Windows 11; FP16/BF16/FP8 ~2x, controls flat) is in [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md). Sources: [#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53), [#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36), [Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72), [#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8), [#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110), [gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132).
 
 <a id="device-8"></a>
 

@@ -28,7 +28,7 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | RTX 40 · Ada | Fully compatible on laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
 
-[Full compatibility matrix and field results](docs/compatibility.en.md) · [FAQ](docs/faq.en.md)
+[Full compatibility matrix and field results](docs/compatibility.en.md) (incl. 4090M 2757 / Alienware m18 R1 ~2x) · [FAQ](docs/faq.en.md)
 
 ## Get started
 
