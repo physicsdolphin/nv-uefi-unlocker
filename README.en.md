@@ -272,7 +272,10 @@ repository.
   [PixLib](https://pixlib.ru/article/nv-uefi-unlocker-kak-uskorit-tenzornye-yadra-rtx-do-75-v-zadachakh-ii) (RU) ·
   [ShiftDelete forum](https://shiftdelete.net/forum/konular/eski-rtx-kartlara-yapay-zeka-takviyesi-nv-uefi-unlocker.5000006) (TR) ·
   [NetEase](https://www.163.com/dy/article/LALVCN6L0556OH4N.html) (ZH) ·
-  [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257) (ZH)
+  [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257) (ZH) ·
+  [VideoCardz](https://videocardz.com/newz/modders-create-automated-tool-to-unlock-ai-performance-on-nvidia-geforce-rtx-20-30-and-40-series-gpus) (EN) ·
+  [WindowsForum](https://windowsforum.com/news/nv-uefi-unlocker-lifts-rtx-20-30-and-40-tensor-core-limits-ai-gains-and-secure-boot-risks.450453/) (EN) ·
+  [Hacker News](https://news.ycombinator.com/item?id=50272846) (EN)
 
 ## Star History
 
