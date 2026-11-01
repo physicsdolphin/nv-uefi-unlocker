@@ -254,9 +254,20 @@ repository.
   [GECID](https://ua.gecid.com/news/novij_nstrument_podvoyu_produktivn_st_tenzornih_yader_dlya_v_deokart_rtx_20_40_u_windows/) (UK) ·
   [DicasPC](https://dicaspc.com.br/noticias/nv-uefi-unlocker-libere-ate-75-mais-ia-na-sua-rtx/) (PT-BR) ·
   [Diario da Midia](https://diariodamidia.com.br/autor/thiago-nogueira) (PT-BR) ·
-  [GPU-Unlock.net](https://gpu-unlock.net/) (EN) ·
+  [GPU-Unlock.net](https://gpu-unlock.net/windows) (EN) ·
   [IT-SVR](https://it-svr.com/svrforum-news-3234984/) (KO) ·
-  [HKEPC](https://www.hkepc.com/27140/) (ZH-HK)
+  [HKEPC](https://www.hkepc.com/27140/) (ZH-HK) ·
+  [Facebook/PCMR HUB](https://www.facebook.com/PCMRHUB/posts/nv-uefi-unlocker-is-an-open-source-uefi-level-pre-driver-tool-that-removes-nvidi/1546978424130406/) (EN) ·
+  [ShiftDelete](https://shiftdelete.net/en/nv-uefi-unlocker) (EN) ·
+  [YouTube/Max Herrera](https://www.youtube.com/shorts/AMhmWjjpgFk) (EN) ·
+  [GizNewsDaily](https://giznewsdaily.com/nvidia-gpu-unlocker-at-uefi-pre-driver-level-released-for-rtx-2xxx-4xxx/) (EN) ·
+  [ProfesionalReview](https://www.profesionalreview.com/2026/11/01/nv-uefi-unlocker-75-mas-rendimiento-ia-rtx-20-30-40/) (ES) ·
+  [Facebook/ComfyUI community](https://www.facebook.com/groups/comfyui/posts/1122947967144569/) (EN) ·
+  [Sohu](https://m.sohu.com/a/1095783758_163726) (ZH) ·
+  [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html) (ZH) ·
+  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (EN) ·
+  [PCGH Extreme forum](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/) (DE) ·
+  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (EN)
 
 ## Star History
 
