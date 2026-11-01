@@ -267,7 +267,7 @@ repository.
   [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html) (ZH) ·
   [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (ZH) ·
   [PCGH Extreme forum](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/) (DE) ·
-  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (EN)
+  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (ZH-HK)
 
 ## Star History
 
