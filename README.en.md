@@ -255,7 +255,8 @@ repository.
   [DicasPC](https://dicaspc.com.br/noticias/nv-uefi-unlocker-libere-ate-75-mais-ia-na-sua-rtx/) (PT-BR) ·
   [Diario da Midia](https://diariodamidia.com.br/autor/thiago-nogueira) (PT-BR) ·
   [GPU-Unlock.net](https://gpu-unlock.net/) (EN) ·
-  [IT-SVR](https://it-svr.com/svrforum-news-3234984/) (KO)
+  [IT-SVR](https://it-svr.com/svrforum-news-3234984/) (KO) ·
+  [HKEPC](https://www.hkepc.com/27140/) (ZH-HK)
 
 ## Star History
 
