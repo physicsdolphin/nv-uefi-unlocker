@@ -1,0 +1,103 @@
+# For agents helping prepare an issue:
+# Use this form's headings when drafting the issue body.
+# If search is available, check related issues and link relevant ones.
+# Explain what this report adds: a different setup, reproduction, or new evidence.
+# Do not assume permission to edit other people's issues or manage labels.
+# Use information actually available to you; mark missing details as unknown.
+# Distinguish user-reported observations, tool output, and your own hypotheses.
+# Never invent logs, hardware tests, reproduction steps, or successful verification.
+# Start with a short summary; keep raw evidence separate from your analysis.
+# Keep different runs separate and identify their builds and changed settings.
+# If using gh, submit the Markdown body with --body-file.
+# Describe the known reproduction steps; do not run hardware experiments to fill gaps.
+# For a code-only finding, state that hardware reproduction was not performed.
+# If source is available, cite the commit and relevant code location.
+name: 故障报告 / Bug report
+description: 报告制盘、EFI 执行、系统交接或诊断工具的问题。 / Report preparation, EFI, OS handoff, or diagnostic tool failures.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请用“GPU 或组件 + 简短现象”作标题，先概述问题，再提供证据。未知填“未知”，不适用填 N/A。
+        Title: GPU or component + short symptom. Summarize the problem before the evidence. Use “unknown” or N/A where needed.
+
+        [FAQ 中文](https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/faq.md) · [FAQ English](https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/faq.en.md)
+        遇到 STOP、异常或黑屏卡死，同会话不要重试，按 FAQ 恢复。无需为了填写表单额外操作硬件。
+        After STOP, a fault, or a stuck black screen, do not retry in the same session; follow FAQ recovery. No extra hardware tests are needed to complete this form.
+  - type: input
+    id: version
+    attributes:
+      label: 工具版本 / Tool version
+      description: 发布版本或源码 commit；有自定义修改请说明。 / Release or source commit; mention local changes.
+      placeholder: "vX.Y.Z / commit SHA / unknown"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 问题组件 / Affected component
+      options:
+        - 制盘或资产生成 / USB preparation or assets
+        - EFI 执行 / EFI execution
+        - GOP 重连或系统交接 / GOP reconnect or OS handoff
+        - 系统内状态或性能 / In-OS state or performance
+        - Windows ssdiag
+        - Linux diag-unlock.py
+        - 构建、模拟器或其他 / Build, simulator, or other
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 实际与预期行为 / Actual and expected behavior
+      description: 简述现象及期望；观察与推测分开。 / Summarize the symptom and expectation; separate observations from hypotheses.
+      placeholder: |
+        实际 / Actual:
+        预期 / Expected:
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境 / Environment
+      description: 只填写已知信息；纯软件问题的硬件项可填 N/A。 / Supply known details only; hardware fields may be N/A for software-only findings.
+      placeholder: |
+        GPU 型号、PCI ID、显存、改卡情况 / GPU model, PCI ID, VRAM, modifications:
+        VBIOS / VBIOS:
+        CPU、主板或整机型号、BIOS / CPU, board or system model, BIOS:
+        OS、驱动版本 / OS, driver version:
+        显示连接、混合输出、多卡或 eGPU / Display connections, hybrid graphics, multiple GPUs or eGPU:
+        启动方式、Secure Boot、CSM、ReBAR / Boot entry method, Secure Boot, CSM, ReBAR:
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤 / Reproduction steps
+      description: 写出实际做过的步骤、命令、事务模式与所用 marker。静态代码发现请注明未实机复现。 / List steps actually taken, commands, transaction mode and markers. State if this is a static finding without hardware reproduction.
+      placeholder: |
+        1.
+        2.
+        最后完成的阶段 / Last completed phase:
+        恢复后状态（如已知） / State after recovery, if known:
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 原始日志与证据 / Raw logs and evidence
+      description: 上传或粘贴完整 loader.log；制盘失败提供命令与错误。长日志用附件或折叠；没有日志请说明原因。保留原始错误，分享前可脱敏。 / Attach or paste the full loader.log; for preparation failures, include the command and error. Attach or collapse long logs. Explain missing logs; preserve exact errors and redact private details as needed.
+    validations:
+      required: true
+  - type: textarea
+    id: os-diagnostics
+    attributes:
+      label: 系统侧诊断 / In-OS diagnostics
+      description: 如已有，附 ssdiag 或 diag-unlock.py 原始输出、设备错误码及 nvlddmkm/Xid 事件。未获取可留空。 / If available, include raw ssdiag or diag-unlock.py output, device error codes and nvlddmkm/Xid events. Leave blank if unavailable.
+  - type: textarea
+    id: context
+    attributes:
+      label: 已尝试措施与相关记录 / Attempts and related reports
+      description: 分开记录各次运行的版本、改动与结果，链接相关 issue 并说明新增证据；性能问题附同条件的负载、规模、精度、功耗、方法与前后数据。 / Separate builds, changes and results by run. Link related issues and explain the new evidence. For performance issues, include matched workload, size, precision, power settings, method and before/after data.

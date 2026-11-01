@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 常见问题 / FAQ
+    url: https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/faq.md
+    about: 制盘、诊断与恢复说明；页面提供英文版链接。 / Preparation, diagnostics and recovery; English linked on the page.
+  - name: 兼容性矩阵 / Compatibility matrix
+    url: https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/compatibility.md
+    about: 查看逐卡实测与已知问题；页面提供英文版链接。 / Device reports and known issues; English linked on the page.
+  - name: 使用咨询与讨论 / Questions and discussions
+    url: https://github.com/physicsdolphin/nv-uefi-unlocker/discussions
+    about: 普通使用咨询和开放讨论。 / General usage questions and open discussion.
