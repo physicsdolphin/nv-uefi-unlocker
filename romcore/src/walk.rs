@@ -44,6 +44,37 @@ fn u16v(d: &[u8], o: usize) -> Option<u16> {
     Some(u16::from_le_bytes(d.get(o..o + 2)?.try_into().ok()?))
 }
 
+/// Locate the real option-ROM start inside a dump. Some dump tools wrap
+/// the image (NVGI-style headers, euda padding); the discriminator is a
+/// 0xAA55 whose +0x18 PCIR pointer resolves to a real PCI data structure
+/// signature ("PCIR"/"NPDS"/"RGIS") - a bare 0xAA55 with pointer 0 or
+/// garbage (measured: Blackwell euda-wrapped dumps, AA55 at 0x33c00 with
+/// PCIR offset 0) does not qualify. Returns 0 when the file IS the ROM.
+pub fn locate_start(raw: &[u8]) -> usize {
+    let plausible = |off: usize| -> bool {
+        raw.get(off..off + 2) == Some(&[0x55, 0xaa][..])
+            && u16v(raw, off + 0x18)
+                .map(|p| {
+                    let p = p as usize;
+                    matches!(
+                        raw.get(off + p..off + p + 4),
+                        Some(b"PCIR") | Some(b"NPDS") | Some(b"RGIS")
+                    )
+                })
+                .unwrap_or(false)
+    };
+    if plausible(0) {
+        return 0;
+    }
+    // Dumps place the ROM at a 0x200-aligned offset within the first
+    // megabyte; fall back to a linear scan for degenerate wrappers.
+    (0..raw.len().saturating_sub(0x1000).min(0x1_0000))
+        .step_by(0x200)
+        .find(|&off| plausible(off))
+        .or_else(|| (0..raw.len().saturating_sub(2)).find(|&off| plausible(off)))
+        .unwrap_or(0)
+}
+
 /// Walk the PCIR image chain, returning every image with its extent.
 pub fn walk(rom: &[u8]) -> Result<Vec<RomImage>, WalkError> {
     if u16v(rom, 0) != Some(0xAA55) {

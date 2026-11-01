@@ -306,6 +306,7 @@ impl PciIo {
     }
 
 
+
     /// THE BAR write primitive — consumed only by `tx` builds. M0/M1
     /// binaries contain no call sites (constitution §1.7 audit anchor).
     #[cfg(feature = "tx")]

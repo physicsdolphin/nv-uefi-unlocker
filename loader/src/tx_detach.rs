@@ -126,16 +126,14 @@ fn log_openers(label: &str, handle: Handle, guid: &uefi::Guid) {
             // opaque agent pointer. Image base+size is a stable per-build
             // fingerprint; a recursive ConnectController hang log then shows
             // exactly which display driver was being (re)selected.
-            let image_note = match unsafe {
-                boot::open_protocol::<LoadedImage>(
-                    OpenProtocolParams {
-                        handle: Handle::from_ptr(e.agent.cast()).unwrap_or(handle),
-                        agent: boot::image_handle(),
-                        controller: None,
-                    },
-                    OpenProtocolAttributes::GetProtocol,
-                )
-            } {
+            let image_note = match boot::open_protocol::<LoadedImage>(
+                OpenProtocolParams {
+                    handle: Handle::from_ptr(e.agent.cast()).unwrap_or(handle),
+                    agent: boot::image_handle(),
+                    controller: None,
+                },
+                OpenProtocolAttributes::GetProtocol,
+            ) {
                 Ok(li) => alloc::format!(" image={:p}+{:#x}", (li.info().0).cast::<u8>(), li.info().1),
                 Err(_) => alloc::string::String::new(),
             };
