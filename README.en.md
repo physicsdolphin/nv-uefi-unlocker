@@ -10,7 +10,7 @@
 [![license](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
 [![stars](https://img.shields.io/github/stars/physicsdolphin/nv-uefi-unlocker?label=stars&color=yellow)](https://github.com/physicsdolphin/nv-uefi-unlocker/stargazers)
 
-**Measured up to ~2.6× FP16 / BF16 / TF32 tensor throughput · FP8 up to ~1.9× · +14–75% image / video generation · up to +94% DirectML inference kernels · no VBIOS flashing, cleared by power-off** (per-board data in the [compatibility matrix](docs/compatibility.en.md); gains are bounded by power limits and precision paths)
+**Measured up to ~2.6× FP16 / BF16 / TF32 tensor throughput · FP8 up to ~1.9× · +14–75% image / video generation · up to +94% DirectML inference kernels · LLM inference prefill up to +19% (decode +5%) · no VBIOS flashing, cleared by power-off** (per-board data in the [compatibility matrix](docs/compatibility.en.md); gains are bounded by power limits and precision paths — the LLM row is a dual-GPU MoE end-to-end measurement, not a microbenchmark extrapolation)
 
 A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 and RTX 20, 30, and 40 series.
 
