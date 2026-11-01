@@ -3,6 +3,8 @@
 # If search is available, check related issues and link relevant ones.
 # Explain what this report adds: a different setup, reproduction, or new evidence.
 # Do not assume permission to edit other people's issues or manage labels.
+# The report label is a report type, not proof of a successful unlock.
+# Maintainers apply status, GPU-family, and form-factor labels from the evidence.
 # Use information actually available to you; mark missing details as unknown.
 # Distinguish user-reported observations, tool output, and your own hypotheses.
 # Never invent logs, hardware tests, reproduction steps, or successful verification.
