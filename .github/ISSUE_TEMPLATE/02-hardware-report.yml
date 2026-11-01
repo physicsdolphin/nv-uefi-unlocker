@@ -1,0 +1,89 @@
+# For agents helping prepare an issue:
+# Use this form's headings when drafting the issue body.
+# If search is available, check related issues and link relevant ones.
+# Explain what this report adds: a different setup, reproduction, or new evidence.
+# Do not assume permission to edit other people's issues or manage labels.
+# The report label is a report type, not proof of a successful unlock.
+# Maintainers apply status, GPU-family, and form-factor labels from the evidence.
+# Use information actually available to you; mark missing details as unknown.
+# Distinguish user-reported observations, tool output, and your own hypotheses.
+# Never invent logs, hardware tests, reproduction steps, or successful verification.
+# Start with a short summary; keep raw evidence separate from your analysis.
+# Keep different runs separate and identify their builds and changed settings.
+# If using gh, submit the Markdown body with --body-file.
+# Report EFI execution, in-OS state, and performance as separate results.
+# Mark untested stages explicitly; do not infer OS survival from EFI completion.
+# Describe matched benchmark conditions when before/after measurements exist.
+name: 实测反馈 / Hardware report
+description: 分享兼容性、系统侧读回与性能实测。待排查的故障请选择故障报告。 / Share compatibility and measurements; use Bug report for failures needing investigation.
+title: "[Report] "
+labels: [report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        标题建议：“GPU + 平台 + 简短结果”。请分别记录 EFI、系统内状态和性能，未测部分填“未验证”。无需补跑实验。
+        Suggested title: GPU + platform + short result. Record EFI, in-OS state, and performance separately; mark untested parts “not verified”. No extra experiments are required.
+
+        [兼容性 / Compatibility 中文](https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/compatibility.md) · [English](https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/compatibility.en.md)
+        [系统内验证 / In-OS verification 中文](https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/faq.md#ssdiag) · [English](https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/docs/faq.en.md#ssdiag)
+  - type: input
+    id: version
+    attributes:
+      label: 工具版本 / Tool version
+      description: 发布版本或源码 commit；注明自定义修改。 / Release or source commit; mention local changes.
+      placeholder: "vX.Y.Z / commit SHA / unknown"
+    validations:
+      required: true
+  - type: textarea
+    id: platform
+    attributes:
+      label: GPU 与平台 / GPU and platform
+      description: 不知道的项目填“未知”。 / Mark unknown details explicitly.
+      placeholder: |
+        GPU 型号、PCI ID、显存、改卡情况 / GPU model, PCI ID, VRAM, modifications:
+        VBIOS / VBIOS:
+        CPU、主板或整机型号、BIOS / CPU, board or system model, BIOS:
+        OS、驱动版本 / OS, driver version:
+        显示连接、混合输出、多卡或 eGPU / Display connections, hybrid graphics, multiple GPUs or eGPU:
+        启动方式、Secure Boot、CSM、ReBAR / Boot entry method, Secure Boot, CSM, ReBAR:
+    validations:
+      required: true
+  - type: textarea
+    id: procedure
+    attributes:
+      label: 操作过程 / Procedure
+      description: 记录制盘命令、family、事务模式、marker 和实际启动过程。多次运行分别描述版本和设置。 / Record preparation command, family, transaction mode, markers and boot procedure. Separate builds and settings for different runs.
+    validations:
+      required: true
+  - type: textarea
+    id: efi-result
+    attributes:
+      label: EFI 执行结果 / EFI execution result
+      description: 简述完成阶段及读回结果。仅有 FINAL 成功信息不足以证明解锁。 / Summarize completed stages and read-backs. FINAL completion alone does not prove an unlock.
+    validations:
+      required: true
+  - type: textarea
+    id: os-result
+    attributes:
+      label: 系统内验证 / In-OS verification
+      description: 是否正常进入系统、驱动与显示状态，以及已有的 ssdiag 或 diag-unlock.py 结果。未测填“未验证”。 / Report OS boot, driver/display state and available ssdiag or diag-unlock.py results. Write “not verified” if untested.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 原始证据 / Raw evidence
+      description: 附完整 loader.log 和已有系统侧输出；长日志用附件或折叠。没有原始证据请说明原因，分享前可脱敏。 / Include the full loader.log and available OS output; attach or collapse long logs. Explain missing evidence and redact private details as needed.
+    validations:
+      required: true
+  - type: textarea
+    id: performance
+    attributes:
+      label: 性能对比 / Performance comparison
+      description: 可留空。记录工具版本、负载、规模、精度、功耗与时钟条件、计时方法及前后数据；注明与读回是否属于同次启动。 / Optional. Include tool versions, workload, size, precision, power/clock conditions, timing method and before/after data. State whether measurements and read-backs belong to the same boot.
+  - type: textarea
+    id: context
+    attributes:
+      label: 限制条件与相关记录 / Limitations and related reports
+      description: 记录尚未验证的部分、适用设置和相关 issue，说明新增了哪些信息。 / Note unverified parts, required settings and related issues; explain what this report adds.

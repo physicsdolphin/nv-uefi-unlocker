@@ -1,0 +1,59 @@
+# For agents helping prepare an issue:
+# Use this form's headings when drafting the issue body.
+# If search is available, check related issues and link relevant ones.
+# Explain what this report adds: a different setup, reproduction, or new evidence.
+# Do not assume permission to edit other people's issues or manage labels.
+# The report label is a report type, not proof of a successful unlock.
+# Maintainers apply status, GPU-family, and form-factor labels from the evidence.
+# Use information actually available to you; mark missing details as unknown.
+# Distinguish user-reported observations, tool output, and your own hypotheses.
+# Never invent logs, hardware tests, reproduction steps, or successful verification.
+# Start with a short summary; keep raw evidence separate from your analysis.
+# Keep different runs separate and identify their builds and changed settings.
+# If using gh, submit the Markdown body with --body-file.
+# Describe the concrete need, current limitation, and desired behavior.
+# A shared chip family is not evidence of verified support for a new PCI ID.
+name: 功能与文档建议 / Feature or documentation request
+description: 提出功能改进、文档修正或新型号支持需求。 / Request features, documentation changes, or support for a new device.
+title: "[Request] "
+labels: [request]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        标题请概括组件与需求。运行故障请选择“故障报告”，普通使用咨询也可前往 [Discussions](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions)。
+        Summarize the component and request in the title. Use Bug report for failures; general usage questions can also go to [Discussions](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions).
+  - type: dropdown
+    id: request-type
+    attributes:
+      label: 建议类型 / Request type
+      options:
+        - 功能改进 / Feature improvement
+        - 文档修正 / Documentation change
+        - 新型号支持 / New device support
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前问题与需求 / Current problem and need
+      description: 说明使用场景与现有限制；新型号需求附已知 GPU 型号和 PCI ID，未知请注明。 / Describe the use case and current limitation. For new devices, provide known GPU model and PCI ID; mark unknown details.
+    validations:
+      required: true
+  - type: textarea
+    id: desired-behavior
+    attributes:
+      label: 期望改进 / Desired improvement
+      description: 描述改进后的具体行为或建议修正的文字。 / Describe the desired behavior or proposed wording correction.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: 相关版本、文档与参考资料 / Versions, documentation and references
+      description: 如有，提供版本或 commit、文档位置及相关 issue；区分已验证事实和推测。 / If available, include version or commit, documentation location and related issues; distinguish verified facts from hypotheses.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案与补充信息 / Alternatives and additional context
+      description: 如有，说明现有替代方案及其局限。 / If available, describe existing alternatives and their limitations.
