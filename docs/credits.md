@@ -34,8 +34,11 @@ clone 位置 `reference/`（不入库）。
 
 ## 2. Turing 谱系与定址（0x4096xx FEAT 块）
 
-谱系源头：Jon Pry《A Canary in the Crypto Mine》（V67 canary 漏洞，DOI
-10.5281/zenodo.20916112）→ PZH1gdmu/CMP40HX-Unlock v3.0.0（TU106，
+谱系源头：Jon Pry《A Canary in the Crypto Mine: Defeating Stack Protection in a
+GPU Secure Coprocessor》（2026-06-26，Zenodo；V67 canary 漏洞。DOI
+10.5281/zenodo.20916112 = 含 debug booter 的版本记录（生态通行引用），概念 DOI
+10.5281/zenodo.20916111；[ResearchGate 408132536](https://www.researchgate.net/publication/408132536_A_Canary_in_the_Crypto_Mine_Defeating_Stack_Protection_in_a_GPU_Secure_Coprocessor)）
+→ PZH1gdmu/CMP40HX-Unlock v3.0.0（TU106，
 unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性由 40HX 项目
 实机证明。
 

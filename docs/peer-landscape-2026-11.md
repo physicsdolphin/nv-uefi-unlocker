@@ -98,8 +98,8 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 
 ### 2.5 我方媒体波收录状态（本轮普查核实）
 
-已收录：TechPowerUp 354316（EN）、wccftech（EN）、r/overclocking 1xj5jp3（EN）、搜狐（ZH）。
-**本轮核实新增候选**：VideoCardz "Modders create automated tool…"（EN，~11-01）、WindowsForum 450453（EN）、Tom's Hardware 转述（EN，待独立 URL 核实）。
+已收录（普查前）：TechPowerUp 354316（EN）、wccftech（EN）、r/overclocking 1xj5jp3（EN）、搜狐（ZH）。
+**本轮实际追加**（README.md + README.en.md，rebase 合流后）：VideoCardz（EN）、WindowsForum 450453（EN）、Notebookcheck（EN；zh 侧原本缺失）、Hacker News Show HN（EN）。**Tom's Hardware 由并行会话先行收录**（合流时去重保留单条）；并行会话同期另补 PixLib（RU）、ShiftDelete 论坛（TR）、网易二条（ZH）、X/xiax0603（ZH），并把 Instagram 条目改标 ZH-HK。
 **存在但 URL 未核实，暂不收录**：快科技/mydrivers（ZH，11-01）、新浪财经（ZH，11-01）——核实法要求逐条 URL 落实后再入表。
 ## §3 差距清单（五维，只列核实过的真实差距）
 
@@ -144,12 +144,47 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 
 **口径 B——社区报告总量**：上游 Zagitta "100+ 用户报告"（Ampere stable，50+ 条 #238 讨论、驱动跨 550–615、含 SB-on 成功与 8×4090/多卡 Proxmox），报告条数领先但 Turing 零、证据为论坛自述级；我方 README 收录 38 条媒体/12 语言+community-reports 24 行实证表。→ **报告总量口径上游更大，但证据密度与 Turing 深度我方独占**。
 
-**口径 C——理论支持面**：上游 recipes 87 ID > 我方全段放行映射（约 217 ID 路由、实机验证 22）——**理论路由宽度我方更大（全段 vs 逐 ID），实机验证深度我方更大（22 vs 上游 Turing 零/GA10x~AD10x 约 20 个有报告的 ID）**。
+**口径 C——理论支持面**：上游 recipes 87 ID（逐 ID 表，Release 2.0 重构时丢过 GA106M/GA107 条目）vs 我方全段路由（0x1e02..0x1fff|0x2182..0x21d1 / 0x2200..=0x223f|0x2400..=0x25ff / 0x2600..0x28ff；**0x2240..0x22ff 音频/Tegra/H100-NVSwitch 尾段已于 2026-11-02 按 pci.ids 剜出**（cc32265，纵深防御——class-03/function-0 枚举过滤器本就跳过它们），ES/原型 SKU 显式列出（a4f7a06），无零售名 Turing bare-die/内部板命名补齐（e890f18））——**理论路由宽度我方更大（全段+纵深防御 vs 逐 ID），实机验证深度我方更大（22 vs 上游 Turing 零/GA10x~AD10x 约 20 个有报告的 ID）**。
 
 **结论**：「全网最大覆盖矩阵兼容生态」在**口径 A（实机证据矩阵）+ Turing 深度 + 三族单工具**意义上**成立**；不成立的维度要如实说：**社区运营规模**（impacifist ★1465/Discord/逐机 profile 管线）与 **Linux 打包生态宽度**（上游发行版全家桶+周边 NixOS/群晖/Talos）被同行超越；我方的不可替代层=取证纪律（evidence-as-commits、0x91 矩阵、WPR2/守卫语义、ssdiag 系统内读回、TB4 低位 staging）、中文生态深度、以及 Turing-GSP 这条全网唯一有人走通的 Windows Turing 线。风险项：impacifist 不署名上游血统（含我方）且正在收编 Windows 用户心智，上游 FAQ 又把 Windows 用户导流给它——Windows 端话语权竞争加剧。
 
 ## §6 本轮已落地（文档级）
 
-1. README 媒体列表追加 5 条已核实 EN 条目（VideoCardz/WindowsForum/Tom's Hardware/Notebookcheck/HN，见 §2.5）。
-2. 本报告归档；reference/ 更新与特例处理见 §1（envytools 本地补丁入 stash、重复克隆已删）。
-3. P1 中 #1/#3/#4/#6/#8 的代码/采样级落地均**另行立项**，本轮不动 loader/sim/assets。
+1. README 媒体列表中英双语追加（rebase 合流去重）：VideoCardz/WindowsForum/Notebookcheck/Hacker News 由本轮核实追加；Tom's Hardware/PixLib/ShiftDelete 论坛/网易×2/X-xiax0603 由并行会话收录（见 §2.5）。
+2. 论文引用修正：docs/credits.md 与 docs/cmp-gen2-sm-unlock-assessment.md 的 Pry canary 论文条目补全题名/日期/双 DOI（概念 20916111 / 含 debug booter 版本记录 20916112）+ ResearchGate 链接（见 §7.1 注）。
+3. 本报告归档；reference/ 更新与特例处理见 §1（envytools 本地补丁入 stash、重复克隆已删）。
+4. P1 中 #1/#3/#4/#6/#8 的代码/采样级落地均**另行立项**，本轮不动 loader/sim/assets。
+
+## §7 全景时间线（公开参照版）
+
+> 用途：给后来者一张"NVIDIA 寄存器算力解锁"生态的演进图。日期一律以可归档证据（Zenodo DOI / 仓库首提交 hash / tag / 带日期报道）为准；口说日期不录。
+
+### 7.1 主线四阶段
+
+| 阶段 | 时间 | 事件 | 证据 |
+|---|---|---|---|
+| ① 机制论文 | **2026-06-26** | Jon Pry《A Canary in the Crypto Mine: Defeating Stack Protection in a GPU Secure Coprocessor》上 Zenodo：出厂 GSP debug booter 弱加密 + 栈保护击破，普通 root 主机完成 **FLR 存活的持久解锁**——V67 canary 理论源头（概念 DOI 10.5281/zenodo.20916111，含 debug booter 版本记录 20916112） | [Zenodo DOI](https://doi.org/10.5281/zenodo.20916111) · [ResearchGate 408132536](https://www.researchgate.net/publication/408132536_A_Canary_in_the_Crypto_Mine_Defeating_Stack_Protection_in_a_GPU_Secure_Coprocessor) |
+| ② 数据中心/矿卡算力解锁 | 2026-07-31 | CMP 170HX（GA100=A100 同硅）公开解锁线成型：Falcon BootROM `.fwsignature_ga100` 先载后验 → ROP → HS 写 PLM → 64GB HBM2e/满算力（cmpunlocker，Consensus-Protocol）；「Liberating the A100 beast」口径出圈 | cmp170hx 技术文档 README 07-31 版（本地 HEAD d923a25 08-22 加中文化 PR#1） |
+| ③ 机制深化与矿卡外溢 | 2026-08 ~ 10 | 08-18/08-21 hyper.ai、irz.fr 报道；08-22 cmp90hx-unlock（GA102 V67 链 + **XP3G PLM 发现**）与 cmp170hx 文档站同期；09-12 LTT Labs 170HX 文；09-18 gpcprobe；10-02 ga100-fuse-re（FF 池/RIR 布局）；10-10 cmp50hx-unlock IDA 库线 + 170hx-rir-tool（**不可逆 OTP 烧写实证**）；10-17 p104-gen2-unlock 公开（P104 Gen1x4→Gen2x4）→ 10-28 v3 双仓 + DaZuiZZZZ P106 Gen2/×16 两仓——**矿卡 PCIe 解锁线** | 各仓首提交 hash（见 §1/§2.2） |
+| ④ 消费级解锁高潮 | 2026-10-19 ~ 11-02 | USB/UEFI 预驱动载具爆发：两周内 ≥25 个公开实现/移植/打包仓 + 我方一线五版本 + 上游 Release 2.0 + 主流媒体四语种报道波；逐仓节点见 §7.2 | 各仓 tag/首提交 |
+
+注：坊间有「4 月论文」之说，公开检索（arXiv/Zenodo/ResearchGate）**落实到的最早机制论文即上述 06-26 Zenodo**；若另有所指（如中文社区私有渠道），拿到出处即可续表，宁可空一格也不写无证据日期。
+
+### 7.2 消费级高潮逐仓节点线（高竞争力 repo）
+
+| 仓 | 节点线（均 2026 年） |
+|---|---|
+| **windows-GPU-UNLOCK**（impacifist，★1465） | 10-19 基座 rough2515 v0.10（3080 2206 首报）→ 10-20 **v0.1.0 首发**（9c54159）→ 10-23 v0.2.0（英文化+兼容上报流程）→ 10-24 v0.3.0/v0.3.1 → 11-01 fd8bbea（PR#139 MSI 3080Ti）+ 转组织运营。12 天 118 commits/139 PRs |
+| **gpu-unlock**（Zagitta，Linux kmod 权威） | 本地浅克隆自 10-24（af28cbb，更早史不在本地）→ 10-26 GA106M 2560（PR#160）+ 3070 LHR 2488（PR#140）+ 3090 报告×4 + recipe 重构（09305c4）→ 10-27 **Release 2.0**（0532473）+ unraid 插件 + #238 成功报告帖 → 10-28 sparse/PMCSR-D0 修复。100+ 用户报告，Turing 零 |
+| **KohakUnlock** | 10-25 首发（guarded TU102 研究端口 bc0c727）+ TU104 2060 1e89 移植（13a615a）→ 10-27 headless-display PR#7（533013a）+ 免 U 盘 ESP/GUID 载荷分区四阶段 + auto-attempt → 10-29 TU102 2080Ti 1e04/子系统 12fa（effa3bb，@280W 网格 +74%）→ 11-01 双 PR 合并（1e89/driver_override）。唯一 NCCL 双卡实证 |
+| **nv_unlock_win** | 10-27 0.2.4（f78a0fb）→ 10-28 0.2.6 USB 引导列表 + 0.2.7 隐藏 ESP 脚本 → 10-29 **0.2.12 Ada 4080 MMA 验证**（2e7c95e，+63/66%）+ 0.2.13 白名单拦截 3050/未列名 Ampere → 10-30 0.2.14 逐行时间戳+三重 flush → 11-01 TITAN/3070Ti 口径修订 |
+| **TOTORONG**（AD103_win_unlocker，HF） | 10-23 v0.4.18/RUN19（3ac2fee 首提交同日）——AD103 Windows EFI 先例 + **唯一二进制分发先例**；此后无更新（单卡实验收束） |
+| **gpu-unlock-ada**（JustAResearcher） | 10-24 4e7fefc（AD102 四写链+验证纪律；PR#6 已合）→ 10-25 笔记本功耗基准修（d28c485）；其 brandonjank fork（10-24）开 Windows UEFI 实验支线 |
+| **X-WIDE-gpu-unlock-win** | 10-31 一小时 7 commits 冲出（自签内核驱动 gpuunlock.sys + 三计划任务 + 面板 v3）→ 11-01 整合包 v3.1.1 + 「GA104/106/107 做不了」矩阵（**被上游/impacifist/nv_unlock_win 多方证伪**，见 §2.4） |
+| **我方 nv-uefi-unlocker** | 10-26 首提交（1767113，M0-M4 全量落地）→ 10-28 **v2.1.0–v2.1.4 五连**（GA10x 全段放开+A6000/3050A 类内显卡修正）→ 10-29 v2.1.5（GA106 2504/2520 首批全链，#70/#71）→ 10-30 **v2.1.6 stable**（Code 12 定律收官+非递归重连，PR#66）+ TechPowerUp 报道 → 10-31 v2.1.8（GSP-HALT 门默认+FWSEC 低位 staging 默认，#14/#16 定案）→ 11-01 v2.1.9-rc1（WprMeta 转储+VRAM staging 载具，#89）+ VideoCardz/Tom's 报道 → 11-02 本轮普查（3747e3f）。**7 天 9 个版本 tag、22 实机 ID、12 语言报道** |
+
+### 7.3 读写这张图的三条规律
+
+1. **理论先行，产品滞后 3 个月**：06-26 论文 → 07-31 矿卡闭环 → 10 月消费级爆发；机制（canary/ROP/PLM）全程未变，变的只是载具（kmod→GRUB→UEFI USB→内核驱动）与工程化（守卫/白名单/日志/兼容上报）。
+2. **算力解锁与 PCIe/容量解锁是两棵树**：同源于 Pry 论文，但速率钳（消费级 tensor）、容量钳（170HX 显存）、链路钳（矿卡 Gen2）由不同 PLM/熔丝域把守（cmp90hx XP3G、ga100-fuse-re 分别证实 Gen3 与容量是另一堵墙）；跨树移植不成立（本报告 §2.2 XP3G 行）。
+3. **分发模式在分岔**：源码+钉输入自建（我方/上游/Kohak）、二进制直发（TOTORONG/craftingmod/X-WIDE 整合包）、社区流水线（impacifist LOCAL profile）——三者合规与安全姿态差异极大，上游 FAQ 已公开警告来路不明的 Windows 安装包。
