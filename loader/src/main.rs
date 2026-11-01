@@ -13,6 +13,7 @@ use uefi::CStr16;
 
 mod banner;
 mod chainload;
+mod nvram;
 mod gop;
 mod keywait;
 mod logging;
@@ -20,6 +21,8 @@ mod pci;
 mod sample;
 #[cfg(feature = "tx")]
 mod tx;
+#[cfg(feature = "tx")]
+mod gop_native;
 #[cfg(feature = "tx")]
 mod claim_plm;
 #[cfg(feature = "tx")]
@@ -68,6 +71,11 @@ fn main() -> Status {
         info!("CONFIRM: no armed marker - Space/Enter/{CONFIRM_WAIT}s confirm semantics");
         keywait::wait_confirm(CONFIRM_WAIT)
     };
+
+    // Phase: NVRAM-DRIVER (marker-gated Driver#### registration; no GPU
+    // access). Runs before enumeration so a registration-only boot is a
+    // short, well-defined run.
+    nvram::service_markers();
 
     // Phase: ENUMERATE (read-only). ALL NVIDIA display adapters, in
     // firmware enumeration order.

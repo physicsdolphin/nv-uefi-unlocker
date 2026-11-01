@@ -26,3 +26,4 @@ payload_*
 
 # qemu disk image (test fixture, may contain firmware copies)
 /sim/qemu/usb.img
+romcore/testdata/
