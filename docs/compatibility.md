@@ -51,7 +51,7 @@
 | AD106 | 4060Ti 2803 / 4060Ti 16G 2805 | ✅ 2803/2805 · [详情](#device-4) |
 | AD106 | 4070 Laptop **2820**（魔改卡同 ID） | 🟡 待验证 · [详情](#device-5) |
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 | ✅ 2783；其余保留上游层级 · [详情](#device-6) |
-| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M 2757 | ✅ 2704/2705/2709；🟢 2702/2757 · [详情](#device-7) |
+| AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / **4090M 2757** | ✅ 2704/2705/2709/2757；🟢 2702 · [详情](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689** | ✅ 2684/2689；🟢 2685 · [详情](#device-8) |
 | GA102 | 3090 2204 / **3080 2206** / **3080 LHR 2216** / 3080 Ti 2208 / 3070 Ti 2205 等（0x22xx 全段放行） | ✅ 2206/2216；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
@@ -108,7 +108,7 @@
 
 ### AD103 · 4080S 2702 / 4080 2704 / 4070TiS 2705 / 4070 2709 / 4090M 2757
 
-`2704` / `2705` / `2709` 通过全链及系统侧性能验证；`2702` / `2757` 为上游硅验证。来源：[#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53)、[#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36)、[Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72)、[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)。
+`2704` / `2705` / `2709` / `2757` 通过全链及系统侧性能验证；`2702` 为上游硅验证。`2757` 的 Alienware m18 R1 实测（Windows 11；FP16/BF16/FP8 约 2 倍，控制组持平）见 [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md)。来源：[#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53)、[#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36)、[Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72)、[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110)、[gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132)。
 
 <a id="device-8"></a>
 

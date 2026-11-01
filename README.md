@@ -28,7 +28,7 @@ GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解�
 | RTX 40 · Ada | 全系兼容，支持笔记本与台式 |
 | Pascal 及更早 / GA100 / RTX 50 | 不支持 |
 
-[完整兼容性矩阵与逐卡实测](docs/compatibility.md) · [常见问题](docs/faq.md)
+[完整兼容性矩阵与逐卡实测](docs/compatibility.md)（含 4090M 2757 / Alienware m18 R1 约 2 倍） · [常见问题](docs/faq.md)
 
 ## 开始使用
 
