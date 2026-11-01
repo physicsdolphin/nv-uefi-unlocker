@@ -11,6 +11,7 @@ pub enum VbiosError {
     NotAVbios,
     BitHeaderNotFound,
     BadChecksum,
+    UnsupportedBitHeaderSize(u8),
     NoFalconTable,
     NoFwsecEntry { debug: bool },
     UnsupportedDescVersion(u8),
@@ -23,6 +24,9 @@ impl std::fmt::Display for VbiosError {
         match self {
             Self::NotAVbios => write!(f, "not a VBIOS image (no 0xAA55)"),
             Self::BitHeaderNotFound => write!(f, "BIT header not found"),
+            Self::UnsupportedBitHeaderSize(size) => {
+                write!(f, "unsupported BIT header size {size}; expected 12")
+            }
             Self::BadChecksum => write!(f, "BIT header checksum mismatch"),
             Self::NoFalconTable => write!(f, "falcon ucode table (token 0x70 v2) not found"),
             Self::NoFwsecEntry { debug } => write!(f, "no FWSEC_{} entry", if *debug { "DBG" } else { "PROD" }),
@@ -65,38 +69,58 @@ pub fn find_expansion_offset(image: &[u8]) -> Result<usize, VbiosError> {
     let mut curr = 0usize;
     let mut base_size: Option<usize> = None;
     for _ in 0..16 {
-        let pcir = match u16v(image, curr + 0x18) {
-            Some(p) => p as usize,
-            None => break,
-        };
-        let p = curr + pcir;
-        match image.get(p..p + 4) {
-            Some(b"PCIR") | Some(b"NPDS") | Some(b"RGIS") => {}
+        let pcir = u16v(image, curr + 0x18).ok_or(VbiosError::Truncated)? as usize;
+        let p = curr.checked_add(pcir).ok_or(VbiosError::Truncated)?;
+        let pci = image.get(p..).and_then(|d| d.get(..0x16))
+            .ok_or(VbiosError::Truncated)?;
+        match &pci[..4] {
+            b"PCIR" | b"NPDS" | b"RGIS" => {}
             _ => break,
         }
-        let slen = u16v(image, p + 0x0a).unwrap_or(0) as usize;
-        let imglen = u16v(image, p + 0x10).unwrap_or(0) as usize;
-        let code = u8v(image, p + 0x14).unwrap_or(0);
+        let slen = u16v(pci, 0x0a).unwrap() as usize;
+        let imglen = u16v(pci, 0x10).unwrap() as usize;
+        let code = pci[0x14];
+        let mut last = pci[0x15] & 0x80 != 0;
         let mut sub = imglen;
-        // NVIDIA PCI Data Extension: SUBIMAGE_LEN overrides the stride.
-        let npde_at = (p + slen + 0xf) & !0xf;
-        if image.get(npde_at..npde_at + 4) == Some(b"NPDE".as_slice()) {
-            let rev = u16v(image, npde_at + 4).unwrap_or(0);
-            if rev == 0x10 || rev == 0x11 {
-                sub = u16v(image, npde_at + 8).unwrap_or(0) as usize;
+        let npde_at = p.checked_add(slen)
+            .and_then(|n| n.checked_add(0xf))
+            .ok_or(VbiosError::Truncated)? & !0xf;
+        let mut metadata_end = p.checked_add(slen.max(0x16))
+            .ok_or(VbiosError::Truncated)?;
+        if image.get(npde_at..).and_then(|d| d.get(..4)) == Some(b"NPDE".as_slice()) {
+            let ext = &image[npde_at..];
+            let rev = u16v(ext, 4).ok_or(VbiosError::Truncated)?;
+            let len = u16v(ext, 6).ok_or(VbiosError::Truncated)? as usize;
+            // Common prefix: subimageLen is in 512-byte blocks, not bytes.
+            // Unknown revisions require the termination byte as well.
+            if len < 10 || (rev != 0x100 && rev != 0x101 && len < 11) {
+                return Err(VbiosError::Truncated);
             }
+            ext.get(..len).ok_or(VbiosError::Truncated)?;
+            sub = u16v(ext, 8).ok_or(VbiosError::Truncated)? as usize;
+            if len >= 11 {
+                last = ext[10] & 0x80 != 0;
+            } else if sub < imglen {
+                last = false;
+            }
+            metadata_end = npde_at.checked_add(len).ok_or(VbiosError::Truncated)?;
+        }
+        let bytes = sub.checked_mul(512).ok_or(VbiosError::Truncated)?;
+        let next = curr.checked_add(bytes).ok_or(VbiosError::Truncated)?;
+        if bytes == 0 || next > image.len() || metadata_end > next {
+            return Err(VbiosError::Truncated);
         }
         if code == 0xE0 {
             let base = base_size.ok_or(VbiosError::BitHeaderNotFound)?;
-            return Ok(curr - base);
+            return curr.checked_sub(base).ok_or(VbiosError::Truncated);
         }
         if code == 0x00 && base_size.is_none() {
-            base_size = Some(sub * 512);
+            base_size = Some(bytes);
         }
-        if sub == 0 || curr + sub * 512 + 0x20 > image.len() {
+        if last {
             break;
         }
-        curr += sub * 512;
+        curr = next;
     }
     Err(VbiosError::BitHeaderNotFound)
 }
@@ -131,8 +155,13 @@ pub struct UcodeEntry {
 pub fn find_ucode_table(image: &[u8]) -> Result<(Vec<UcodeEntry>, usize, usize), VbiosError> {
     let bit = find_bit_header(image)?;
     let header_size = u8v(image, bit + 8).unwrap() as usize;
+    eprintln!("BIT: header at {bit:#x}, HeaderSize={header_size} (expected 12)");
+    if header_size != 12 {
+        return Err(VbiosError::UnsupportedBitHeaderSize(header_size as u8));
+    }
     let token_size = u8v(image, bit + 9).unwrap() as usize;
-    let token_entries = u16v(image, bit + 10).unwrap_or(0) as usize;
+    // BIT_HEADER_V1_00: TokenEntries is u8 at +10; +11 is HeaderChksum.
+    let token_entries = u8v(image, bit + 10).unwrap_or(0) as usize;
     if !(6..=8).contains(&token_size) {
         return Err(VbiosError::NoFalconTable);
     }
