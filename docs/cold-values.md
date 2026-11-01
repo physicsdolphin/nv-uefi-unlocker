@@ -23,6 +23,9 @@
 | AD1xx 名义寄存器 CYA/CFG/BAR1_CAP | 0x8 / 0x2 / 0x1c00 | Turing 上地址语义未核实，仅记录（跨族地址采样噪声） |
 | NV_PROM 64K | crc32 0x552e185c | 本卡身份 |
 | post-FLR GFW_BOOT | 0x101 卡住 | 与 AD107 一致（跨代 FLR 行为） |
+| **XP3G 冷态（v2.1.9 EFI 首采，2026-11-02）** | PLM0 `0x8e1b0`=**0xffffffff [NO_DECODE]**；PLMC `0x8e1bc`=badf5040（锁）；OVR0/VAL0=0 | PLM0 全一与"OPEN"读数歧义（开放问题 #12 输入）；对照 ssdiag Windows 侧同并集。XVE 镜像全可读：LNKCAP 0x00453d03 / LNKCTL 0x11010043 / LNKCAP2 0x0e / LNKCTL2 0x001f0003 |
+| **TU106 回锁值 = 0xffffffef**（v2.1.9 回归，事务后） | bits5/6 置位，与 TU102 MSI（2654419）跨 die 一致 | 回锁方差非单板特例；已列 known-good |
+| **出厂 FEAT_READOUT_1（payload 窗口捕获）** | `0x00400080`（POST-BOOT、selector 写前） | 开放问题 #10 的 TU106 consumer 出厂钳制态直接读回；解锁后归零 |
 | PSTRAPS SET0 0x101000 / SET1 0x10100c | **0x00400080 / 0x02013000（2026-10-27 实测，均可读）** | 按 SET0[15:14]+SET1[22:20] 和值解码 = **0 → 64MiB，override_en=0**——与运行时 BAR1（2070 标称 256MiB）不符。解读：这是 ROM 加载的**原始 straps 默认值**；NvStrapsReBar 在**枚举期（devinit 之前）**改写才生效，而我们的 app 在 GOP/devinit 之后采样，运行时的 256MiB 由 devinit 自行编程（或采样 straps 后按 VBIOS 表覆盖）。BAR0 索引 0（16MiB ✓ 与 BAR0 base 0xde000000 的 16MB 窗口一致）、BAR3=2×BAR0。**待办**：Windows 侧 `nvidia-smi -q` 的 BAR1 Memory Usage 实证运行时孔径；若做 straps 写实验须确认 devinit 时机 |
 
 ## GA106（RTX 3060，10de:2504）——未采样

@@ -6,3 +6,4 @@ docs/evidence/** -text
 
 # shell scripts must stay LF (make-usbroot.sh runs on Linux)
 *.sh text eol=lf
+docs/evidence/v219-tu106-regression/loader.log -text
