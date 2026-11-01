@@ -222,11 +222,18 @@ fn file_open() -> bool {
     unsafe { (*LOGGER.file.get()).is_some() }
 }
 
-/// Previous log archive (audit F3): each armed DXE boot used to destroy the
-/// only record of the previous run; now the old log is copied here (capped)
-/// before a fresh one is created. EFI has no rename, so this is a bounded
-/// copy: 1 MiB is far above any sane run and bounds the boot-time cost.
-const PREV_LOG_PATH: &CStr16 = cstr16!(r"\loader-prev.log");
+/// Log history (audit F3 + 2026-11-01 log-persistence round): each armed
+/// boot shifts a three-generation chain instead of destroying the previous
+/// record — `\loader.log` → `\loader-prev.log` → `\loader-prev2.log` →
+/// `\loader-prev3.log` (oldest dropped). EFI has no rename, so every shift
+/// is a bounded copy: 1 MiB per generation caps the worst case at ~3 MiB of
+/// volume I/O per armed boot.
+const LOG_HISTORY: usize = 3;
+const PREV_LOG_PATHS: [&CStr16; LOG_HISTORY] = [
+    cstr16!(r"\loader-prev.log"),
+    cstr16!(r"\loader-prev2.log"),
+    cstr16!(r"\loader-prev3.log"),
+];
 const PREV_LOG_CAP: usize = 1024 * 1024;
 
 fn open_fresh_log() -> Option<RegularFile> {
@@ -243,22 +250,35 @@ fn open_fresh_log() -> Option<RegularFile> {
     handle.into_regular_file()
 }
 
-/// Copy `\loader.log` to `\loader-prev.log` (capped), then delete the
-/// original so the new run starts clean.
+/// Shift the generation chain oldest-first (each copy's source still
+/// exists), then delete the original so the fresh log starts empty.
 fn rotate_previous_log(root: &mut uefi::proto::media::file::Directory) {
-    let Ok(handle) = root.open(LOG_PATH, FileMode::Read, FileAttribute::empty()) else {
-        return; // no previous log - normal case
-    };
-    let Some(mut old) = handle.into_regular_file() else { return };
-
-    // Remove a stale archive first (EFI open never truncates).
-    if let Ok(h) = root.open(PREV_LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
+    for gen in (1..LOG_HISTORY).rev() {
+        copy_capped(root, PREV_LOG_PATHS[gen - 1], PREV_LOG_PATHS[gen]);
+    }
+    copy_capped(root, LOG_PATH, PREV_LOG_PATHS[0]);
+    if let Ok(h) = root.open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
         if let Some(reg) = h.into_regular_file() {
             let _ = reg.delete();
         }
     }
-    let Ok(new_handle) = root.open(PREV_LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
-    else {
+}
+
+/// Bounded copy of one log generation: delete the destination (EFI open
+/// never truncates), copy up to `PREV_LOG_CAP`, flush via drop-close.
+/// Missing sources are the normal early-boot case and stay silent.
+fn copy_capped(root: &mut uefi::proto::media::file::Directory, src: &CStr16, dst: &CStr16) {
+    let Ok(handle) = root.open(src, FileMode::Read, FileAttribute::empty()) else {
+        return;
+    };
+    let Some(mut old) = handle.into_regular_file() else { return };
+
+    if let Ok(h) = root.open(dst, FileMode::ReadWrite, FileAttribute::empty()) {
+        if let Some(reg) = h.into_regular_file() {
+            let _ = reg.delete();
+        }
+    }
+    let Ok(new_handle) = root.open(dst, FileMode::CreateReadWrite, FileAttribute::empty()) else {
         return;
     };
     let Some(mut new) = new_handle.into_regular_file() else { return };
@@ -278,13 +298,7 @@ fn rotate_previous_log(root: &mut uefi::proto::media::file::Directory) {
             Err(_) => break,
         }
     }
-    // Drops close (and flush) both files; then the original goes away so
-    // the fresh log starts empty.
+    // Drops close (and flush) both files.
     drop(new);
     drop(old);
-    if let Ok(h) = root.open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
-        if let Some(reg) = h.into_regular_file() {
-            let _ = reg.delete();
-        }
-    }
 }

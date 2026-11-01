@@ -369,3 +369,21 @@ FFS file (24B header)
 
 验证记录见 [DXE 安全修复验证](evidence/dxe-safety-review/README.md)。FV/ReadyToBoot 与
 真实 GPU 的验收范围必须分别说明；通过单元测试或无 NVIDIA 的 QEMU 不代表真机事务已验证。
+
+### 11.7 日志持久化补充（2026-11-01，用户裁定 ①+③）
+
+驱动形态的日志本来就落 armed 卷（`\loader.log` + 轮换），但 4f688e7 的门序把预算/指纹/
+marker/noconfirm 四类拒绝放在 `logging::init` 之前——**十二个静默出口零痕迹**。补两件（不动
+"预算自增先于磁盘 I/O"的 N3 顺序）：
+
+1. **NVRAM 退出原因面包屑** `NvUnlockDxeExit`（项目 GUID，NV）：每个 pre-logging 出口写
+   `latch-write / counter-unreadable / counter-invalid / budget / counter-write / watchdog /
+   policy-mismatch / marker-unreadable / no-window`，进入执行写 `ran`、中止写 `aborted`；值不变
+   不重写（每次状态迁移一笔 NV 写）。装机器入口向操作者打印 `last driver exit reason`——
+   QEMU 实证：预算耗尽后装机引导报出 `'budget'`、武装执行后报出 `'ran'`。
+2. **三代日志轮换**：`\loader.log` → `\loader-prev.log` → `\loader-prev2.log` →
+   `\loader-prev3.log`（每代 1MiB 封顶，最坏 ~3MiB/引导的卷 I/O）；QEMU 实证 Driver 时点的
+   运行日志在 app 轮换后仍存活于 `\loader-prev.log`。
+
+未采纳：logging 提前覆盖静默窗（②）——与"预算自增先于一切磁盘 I/O"的 N3 窗口设计冲突，
+留给 Ajax 的门序设计意图优先；面包屑已覆盖同一证据需求。

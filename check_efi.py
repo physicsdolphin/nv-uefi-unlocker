@@ -21,7 +21,7 @@ path = sys.argv[1] if len(sys.argv) > 1 else "target/x86_64-unknown-uefi/release
 d = open(path, "rb").read()
 sub = subsystem(d)
 tx = b"TX BUILD: CONTAINS GPU-WRITE PATHS" in d
-ro = b"console output only; no GPU writes by design" in d
+ro = b"no GPU writes by design" in d  # app banner and driver log line share the tail
 print(f"{path}: {len(d)} bytes, PE subsystem 0x{sub:x}")
 print(f"  TX banner: {'YES' if tx else 'no'}")
 print(f"  read-only banner: {'YES' if ro else 'no'}")

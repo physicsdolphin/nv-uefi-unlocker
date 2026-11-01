@@ -127,7 +127,7 @@ reset                                  # 重启生效
 | 执行时机 | FvFile→ReadyToBoot 通知；或 OVMF 类即跑 | Driver-option 时点即跑（OVMF 类）/ ReadyToBoot 通知（stock）——`pci_live` 自动选择 |
 | 键盘中止窗 | Fv 路径无（TPL 纪律） | 仅当走立即路径（shell `load` 同款） |
 | **无人值守标记** | 建议 | **必须**：通知上下文没有键盘窗，无 `\tx-dxe-noconfirm.txt` = fail-closed 放弃并消耗尝试 |
-| 尝试预算 | 2 次/授权，app 重装复位 | **同**（环境未就绪的 fail-closed 也消耗——armed 卷放启动盘可避免） |
+| 尝试预算 | 2 次/授权，app 重装复位 | **同**（环境未就绪的 fail-closed 也消耗——armed 卷放启动盘可避免）；每次预日志出口都留 NVRAM 面包屑 `NvUnlockDxeExit` |
 | 日志 | armed 卷 `\loader.log`（轮换 prev） | 同；Driver-option 时点跑则仅文件（控制台未接） |
 
 ## 6. 恢复基线（症状 → 处置）
@@ -138,6 +138,7 @@ reset                                  # 重启生效
 | 想彻底卸载 | — | `bcfg driver rm <N>`（dump 确认清空）；Setup 恢复默认值也可清 Driver 变量 |
 | 驱动不再执行（`dump` 有选项） | 尝试预算耗尽（2 次）或 NVUX2 被删 | 重新走装机流程（app+`\tx-dxe-arm-install.txt`，Space 确认——同时复位预算） |
 | 想只停事务、保留登记 | — | 放 `\tx-dxe-arm-remove.txt` 后跑一次 app（删 NVUX2），或 `dmpstore -g 2E7F7609-… -d NvUnlockDxeArm` |
+| 驱动为何不执行（无日志可看） | 预算耗尽/指纹失配/缺 noconfirm 等 pre-logging 出口 | 读 NVRAM 面包屑 `NvUnlockDxeExit`（`dmpstore -g 2E7F7609-…`）；装机引导的 app 也会打印 `last driver exit reason` |
 | 控制文件集与装机时不一致 | 卷内容变动 | 恢复装机时的文件集，或重新装机（指纹=授权的一部分，fail-closed 是设计） |
 | BitLocker 恢复提示 | PCR1 变化 | 输恢复密钥一次，随后 suspend/重新封存 |
 

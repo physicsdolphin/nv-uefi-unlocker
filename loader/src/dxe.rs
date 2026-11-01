@@ -141,6 +141,29 @@ fn delete_verified(name: &CStr16) -> uefi::Result {
     }
 }
 
+/// Last pre-logging exit reason of this driver (log-persistence round,
+/// 2026-11-01): every gate that refuses work BEFORE `logging::init` writes a
+/// small breadcrumb here, so an inert driver is explainable from Windows
+/// (`GetFirmwareEnvironmentVariable`) or the Shell (`dmpstore -g`) without
+/// any on-disk log. Best-effort by design: a failed breadcrumb write never
+/// changes control flow, and the value is only rewritten when it changes
+/// (one NV write per state transition, not per boot).
+pub const EXIT_VARIABLE: &CStr16 = cstr16!("NvUnlockDxeExit");
+
+fn note_exit(reason: &str) {
+    if let Ok(Some(current)) = var_read(EXIT_VARIABLE) {
+        if &*current == reason.as_bytes() {
+            return;
+        }
+    }
+    let _ = runtime::set_variable(
+        EXIT_VARIABLE,
+        &VariableVendor(ARM_VENDOR),
+        ATTRS_NV,
+        reason.as_bytes(),
+    );
+}
+
 fn run_flow(in_notification: bool) {
     if ENTERED.swap(true, Ordering::SeqCst) {
         return;
@@ -157,6 +180,7 @@ fn run_flow(in_notification: bool) {
         return;
     };
     if write_verified(LATCH_VARIABLE, ATTRS_BS, b"1").is_err() {
+        note_exit("latch-write");
         return;
     }
 
@@ -164,11 +188,19 @@ fn run_flow(in_notification: bool) {
     // persistent attempt increment. Malformed counters also fail closed.
     let count = match var_read(FAIL_VARIABLE) {
         Ok(bytes) => policy::attempt_count(bytes.as_deref()),
-        Err(_) => None,
+        Err(_) => {
+            note_exit("counter-unreadable");
+            return;
+        }
     };
-    let Some(count) = count.filter(|n| *n < policy::ATTEMPT_LIMIT) else {
+    let Some(count) = count else {
+        note_exit("counter-invalid");
         return;
     };
+    if count >= policy::ATTEMPT_LIMIT {
+        note_exit("budget");
+        return;
+    }
     if write_verified(
         FAIL_VARIABLE,
         ATTRS_NV,
@@ -176,32 +208,40 @@ fn run_flow(in_notification: bool) {
     )
     .is_err()
     {
+        note_exit("counter-write");
         return;
     }
     // ReadyToBoot occurs BEFORE EDK2 enables the OS-loader watchdog.
     // Own a 300s timer explicitly; unsupported/failed timer means no run.
     if boot::set_watchdog_timer(300, 0x10001, None).is_err() {
+        note_exit("watchdog");
         return;
     }
 
     volumes::set_armed_volume(identity);
     let snapshot = match volumes::read_policy() {
         Ok(s) if policy::fingerprint(&s) == expected_policy => s,
-        _ => return,
+        _ => {
+            note_exit("policy-mismatch");
+            return;
+        }
     };
     volumes::pin_policy(snapshot);
     let Some(marker) = chainload::boot_volume_read(ARM_MARKER) else {
+        note_exit("marker-unreadable");
         return;
     };
     let unattended = chainload::boot_volume_has(NOCONFIRM_MARKER);
     // ReadKeyStroke is APPLICATION-only. An event notification cannot
     // provide an interactive abort window; never silently remove it.
     if !unattended && (in_notification || !keywait::stdin_available()) {
+        note_exit("no-window");
         return;
     }
 
     timing::init();
     logging::init(VERSION);
+    note_exit("ran");
     info!("FORM: firmware-resident DXE driver, build id '{DXE_BUILD_ID}', tx={}, notification={in_notification}", cfg!(feature = "tx"));
     info!(
         "ARM: NVUX2 volume {} + pinned manifest/control snapshot",
@@ -229,6 +269,7 @@ fn run_flow(in_notification: bool) {
         runner::phases(confirmed);
         info!("FINAL: driver phases returned; OS health unconfirmed, attempt count retained");
     } else {
+        note_exit("aborted");
         info!("CONFIRM: aborted - zero GPU writes; attempt count retained");
     }
     logging::finish();
@@ -242,6 +283,16 @@ fn run_flow(in_notification: bool) {
 pub fn manage_arm() {
     const INSTALL: &CStr16 = cstr16!(r"\tx-dxe-arm-install.txt");
     const REMOVE: &CStr16 = cstr16!(r"\tx-dxe-arm-remove.txt");
+    // Surface the driver's last pre-logging exit reason: the app is the one
+    // place an operator decides to re-arm, so the breadcrumb is reported
+    // here regardless of which branch this invocation takes.
+    if let Ok(Some(bytes)) = var_read(EXIT_VARIABLE) {
+        if let Ok(reason) = core::str::from_utf8(&bytes) {
+            if !reason.is_empty() {
+                info!("DXE-ARM: last driver exit reason: '{reason}'");
+            }
+        }
+    }
     if chainload::boot_volume_has(REMOVE) {
         let result = delete_verified(ARM_VARIABLE);
         info!("DXE-ARM: disarm result {result:?}");
