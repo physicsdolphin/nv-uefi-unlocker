@@ -1520,6 +1520,26 @@ SSDIAG_COLOR=force pins on.",
         }
     }
 
+    // Fast capability gate: deploying the driver needs SC_MANAGER_CREATE_SERVICE
+    // access, and this probe is the very call deploy_driver() makes - failing
+    // here predicts that failure exactly (same token, same access mask), so
+    // report it now instead of after the multi-second PowerShell discovery.
+    // The borrow path (a PMXDRV-class driver already running) needs no SCM
+    // access and stays open to a non-elevated run; --dry-run loads nothing.
+    if !dry && PmxDrv::try_open().is_none() {
+        let mgr = unsafe { win::OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CREATE_SERVICE) };
+        if mgr.is_null() {
+            eprintln!(
+                "OpenSCManager failed (admin required): win32 {} - re-run from an elevated prompt",
+                last_err()
+            );
+            return 2;
+        }
+        unsafe {
+            win::CloseServiceHandle(mgr);
+        }
+    }
+
     let mut gpus = match discover_gpus() {
         Ok(g) if !g.is_empty() => g,
         Ok(_) => {
