@@ -1594,14 +1594,20 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
 
 // Cumulative stage timing, the loader's issue#38 `[+ms]` convention: each
 // stage prints one cumulative-elapsed line, so a slow run shows exactly
-// where its time went without a second instrumented build.
+// where its time went without a second instrumented build. Opt-in since
+// v0.6.3: the release default output stays clean, `--timing` (or the
+// SSDIAG_TIMING env var) turns the lines on for slow-run diagnosis.
 static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+static TIMING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn t0_set() {
     let _ = T0.set(std::time::Instant::now());
 }
 
 fn stage(label: &str) {
+    if !TIMING.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     let ms = T0.get().map(|t| t.elapsed().as_millis()).unwrap_or(0);
     println!("[+{ms}ms] {label}");
 }
@@ -1630,9 +1636,13 @@ fn run() -> i32 {
     let mut dry = false;
     let mut select: Option<String> = None;
     let mut args = std::env::args().skip(1);
+    if std::env::var_os("SSDIAG_TIMING").is_some() {
+        TIMING.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     while let Some(a) = args.next() {
         match a.as_str() {
             "--reapply" => reapply = true,
+            "--timing" => TIMING.store(true, std::sync::atomic::Ordering::Relaxed),
             "--help" | "-h" => {
                 println!(
                     "ssdiag {ver} - in-OS NVIDIA register diagnosis + separate-lock re-apply
