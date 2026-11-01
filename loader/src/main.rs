@@ -88,17 +88,28 @@ fn main() -> Status {
     // (TOTORONG craft) - the screen goes dark from that card's transaction
     // until Windows boots. The log file keeps recording and is the
     // evidence record. Multi-GPU: every supported card runs in order.
+    // P2-7: LoadImage the OS loader before the transaction touches the GPU,
+    // so the post-FLR chain cannot fail on a degraded firmware allocation
+    // landscape (TOTORONG craft, nv_unlock_win 0.2.12 field-verified). Any
+    // preload problem falls back to the legacy post-transaction path. Pure
+    // chain-side behavior (no GPU writes), so it runs in every build.
+    let preloaded = if let keywait::Confirm::Proceed = confirmed {
+        chainload::preload_os_loader()
+    } else {
+        None
+    };
+
     #[cfg(feature = "tx")]
     if let keywait::Confirm::Proceed = confirmed {
         tx_phase(&gpus);
     }
     #[cfg(not(feature = "tx"))]
-    let _ = confirmed;
+    drop(confirmed);
 
     // Phase: CHAIN. Read-only LoadImage/StartImage of the ESP bootmgfw.efi.
     // The verdict lines above are in \loader.log; no pause before handing
     // off (the log file is the evidence record, not the screen).
-    match chainload::chain_load_bootmgfw() {
+    match chainload::chain_load_bootmgfw(preloaded) {
         Ok(()) => info!("CHAIN: bootmgfw returned unexpectedly"),
         Err(e) => info!("CHAIN: failed: {:?}", e.status()),
     }

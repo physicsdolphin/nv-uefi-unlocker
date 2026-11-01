@@ -65,8 +65,26 @@ fn is_nvidia_display(handle: uefi::Handle) -> bool {
     pci.config_read_u16(0x00) == crate::pci::NVIDIA_VENDOR_ID && pci.config_read_u32(0x08) >> 24 == 0x03
 }
 
-pub fn chain_load_bootmgfw() -> Result<()> {
+/// Chainload with an optional pre-transaction loader image (P2-7, the
+/// TOTORONG craft nv_unlock_win 0.2.12 field-verified on AD103): a verified
+/// preloaded image starts immediately, skipping the post-FLR volume scan
+/// entirely - the allocation-failure window that motivates the preload
+/// never gets a chance to strand the chain. Any preload problem (failed
+/// load, broken PE header at start time) falls back to the proven full
+/// path below, unchanged.
+pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
     info!("PHASE: CHAIN");
+    if let Some(pre) = pre.as_ref() {
+        if start_preloaded(pre).is_ok() {
+            return Ok(());
+        }
+        info!("CHAIN: preloaded start failed - falling back to the post-transaction volume scan");
+    }
+    chain_load_bootmgfw_inner()
+}
+
+fn chain_load_bootmgfw_inner() -> Result<()> {
+    // No PHASE line here: the fallback path already logged "PHASE: CHAIN".
     // The shell's `map -r` equivalent: before enumerating filesystems,
     // recursively reconnect every handle so block devices carry freshly
     // bound FAT/SFS instances (ours may have been torn down or left in an
@@ -507,4 +525,204 @@ fn splice_file_node(base: &DevicePath, path: &CStr16) -> Option<Vec<u8>> {
 
     out.extend_from_slice(&END_ENTIRE);
     Some(out)
+}
+
+// ---------------------------------------------------------------------------
+// P2-7: pre-transaction loader preload.
+//
+// TOTORONG's craft, field-verified by nv_unlock_win 0.2.12 (AD103, +63/66%
+// real run): LoadImage the OS loader BEFORE the transaction, StartImage it
+// AFTER the reconnect. The chain then cannot fail on a post-FLR LoadImage
+// (firmware allocation landscape degraded), and the post-FLR SFS storm is
+// skipped entirely. Risk model: the resident image pages live through the
+// GPU's DMA window - gross corruption is caught by a structural PE header
+// probe right before StartImage (relocation-proof: MZ + e_lfanew -> "PE\0\0",
+// never patched by the loader's relocation pass). Both peers have shipped
+// this shape across many real runs without an image-corruption incident.
+// Opt-out marker: \tx-no-preload.txt keeps the legacy post-transaction path.
+// ---------------------------------------------------------------------------
+
+/// An OS loader image loaded before the transaction.
+pub struct PreloadedOsLoader {
+    handle: uefi::Handle,
+    path: TargetPath,
+}
+
+/// The chain target as found: the pinned path (already UCS-2 converted) or
+/// a built-in candidate (static). Avoids a String -> CStr16 round-trip.
+enum TargetPath {
+    Pinned(uefi::CString16, alloc::string::String),
+    BuiltIn(&'static CStr16),
+}
+
+impl TargetPath {
+    fn cstr(&self) -> &CStr16 {
+        match self {
+            TargetPath::Pinned(c, _) => c,
+            TargetPath::BuiltIn(p) => p,
+        }
+    }
+    fn label(&self) -> alloc::string::String {
+        match self {
+            TargetPath::Pinned(_, s) => s.clone(),
+            TargetPath::BuiltIn(p) => alloc::format!("{p}"),
+        }
+    }
+}
+
+/// The specific-candidate scan (pinned pass 0 + built-in candidates pass 1),
+/// in preload form. Deliberately separate from the proven post-transaction
+/// scan in `chain_load_bootmgfw_inner` (no missed-count diagnostics, no
+/// generic-pass-2 key window): converging them is a follow-up refactor, not
+/// something to do surgically on a field-proven flow.
+fn find_loader_target() -> Option<(uefi::Handle, TargetPath)> {
+    let fs_handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID)).ok()?;
+    if let Some(target) = pinned_chain_target() {
+        if let Ok(target_c) = uefi::CString16::try_from(target.as_str()) {
+            let target_ref: &CStr16 = &target_c;
+            for handle in fs_handles.iter() {
+                let Some((mut dir, _)) = open_volume_logged(*handle) else {
+                    continue;
+                };
+                if dir.open(target_ref, FileMode::Read, FileAttribute::empty()).is_ok() {
+                    return Some((*handle, TargetPath::Pinned(target_c, target)));
+                }
+            }
+        }
+    }
+    for path in CANDIDATES {
+        for handle in fs_handles.iter() {
+            let Some((mut dir, _)) = open_volume_logged(*handle) else {
+                continue;
+            };
+            if dir.open(path, FileMode::Read, FileAttribute::empty()).is_ok() {
+                return Some((*handle, TargetPath::BuiltIn(path)));
+            }
+        }
+    }
+    None
+}
+
+/// `LoadedImage` base/size via the raw protocol (uefi 0.41 exposes no
+/// accessors; `repr(transparent)` makes the cast layout-identical).
+fn loaded_image_span(handle: uefi::Handle) -> Option<(usize, u64)> {
+    // Safety: GetProtocol discipline; the reference lives for this call only.
+    let li = unsafe {
+        boot::open_protocol::<LoadedImage>(
+            OpenProtocolParams {
+                handle,
+                agent: boot::image_handle(),
+                controller: None,
+            },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .ok()?;
+    let raw = &*li as *const LoadedImage as *const uefi_raw::protocol::loaded_image::LoadedImageProtocol;
+    // Safety: protocol memory, fields documented as the loaded-image span.
+    unsafe { Some(((*raw).image_base as usize, (*raw).image_size)) }
+}
+
+/// Structural PE header check (relocation-proof): MZ magic, sane e_lfanew,
+/// PE\0\0 signature. Reads only within [base, base+size).
+fn pe_header_ok(base: usize, size: u64) -> bool {
+    if size < 0x40 {
+        return false;
+    }
+    let p = base as *const u8;
+    // Safety: inside the firmware-allocated image span.
+    let b = unsafe { core::ptr::read(p as *const [u8; 0x40]) };
+    if &b[0..2] != b"MZ" {
+        return false;
+    }
+    let lfanew = u32::from_le_bytes([b[0x3c], b[0x3d], b[0x3e], b[0x3f]]) as usize;
+    if lfanew < 0x40 || lfanew as u64 + 4 > size {
+        return false;
+    }
+    // Safety: inside the span (checked above).
+    let sig = unsafe { core::ptr::read(p.add(lfanew) as *const [u8; 4]) };
+    sig == *b"PE\x00\x00"
+}
+
+/// LoadImage the OS loader now, before the transaction touches the GPU.
+/// None (with a logged reason) keeps the legacy post-transaction chain.
+pub fn preload_os_loader() -> Option<PreloadedOsLoader> {
+    if boot_volume_has(cstr16!(r"\tx-no-preload.txt")) {
+        info!("CHAIN-PRE: \\tx-no-preload.txt present - preload disabled, legacy chain path");
+        return None;
+    }
+    info!("CHAIN-PRE: pre-transaction loader preload begin");
+    let (handle, target) = find_loader_target()?;
+    let path = target.label();
+    let target_ref: &CStr16 = target.cstr();
+    // Safety: ByHandleProtocol discipline for the device path.
+    let dp = unsafe {
+        boot::open_protocol::<DevicePath>(
+            OpenProtocolParams {
+                handle,
+                agent: boot::image_handle(),
+                controller: None,
+            },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .ok()?;
+    let full = splice_file_node(&dp, target_ref)?;
+    // Safety: `full` outlives the load_image call; firmware parses it.
+    let full_dp = unsafe { DevicePath::from_ffi_ptr(full.as_ptr().cast()) };
+    info!("CHAIN-PRE: LoadImage '{}' (FromDevicePath)", path);
+    match boot::load_image(
+        boot::image_handle(),
+        LoadImageSource::FromDevicePath {
+            device_path: full_dp,
+            boot_policy: BootPolicy::ExactMatch,
+        },
+    ) {
+        Ok(img) => match loaded_image_span(img) {
+            Some((base, size)) if pe_header_ok(base, size) => {
+                info!(
+                    "CHAIN-PRE: '{}' resident at {:#x} ({size:#x} bytes), PE header probe ok",
+                    path, base
+                );
+                Some(PreloadedOsLoader { handle: img, path: target })
+            }
+            other => {
+                info!(
+                    "CHAIN-PRE: loaded image fails the PE header probe right after LoadImage ({other:?}) - discarding, legacy chain path"
+                );
+                let _ = boot::unload_image(img);
+                None
+            }
+        },
+        Err(e) => {
+            info!("CHAIN-PRE: LoadImage failed: {:?} - legacy chain path", e.status());
+            None
+        }
+    }
+}
+
+/// Verify the preloaded image still holds a valid PE header, then hand
+/// control to it. Failure = image suspect (discarded) and the caller falls
+/// back to the full post-transaction chain.
+fn start_preloaded(pre: &PreloadedOsLoader) -> Result<()> {
+    match loaded_image_span(pre.handle) {
+        Some((base, size)) if pe_header_ok(base, size) => {
+            info!(
+                "CHAIN-PRE: start-time PE header probe ok - StartImage the preloaded '{}'",
+                pre.path.label()
+            );
+            // Flush and close the USB log before handing control away.
+            crate::logging::finish();
+            let r = boot::start_image(pre.handle);
+            info!("CHAIN-PRE: preloaded loader returned: {:?}", r);
+            Ok(())
+        }
+        other => {
+            info!(
+                "CHAIN-PRE: start-time PE header probe failed ({other:?}) - image suspect, unloading"
+            );
+            let _ = boot::unload_image(pre.handle);
+            Err(uefi::Status::INCOMPATIBLE_VERSION.into())
+        }
+    }
 }

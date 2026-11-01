@@ -172,6 +172,7 @@ version = "2.1.9"
 dependencies = [
  "log",
  "uefi",
+ "uefi-raw",
 ]
 
 [[package]]

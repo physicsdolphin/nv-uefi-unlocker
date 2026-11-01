@@ -48,6 +48,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-require-d0.txt` | 入口非 D0 时中止，不进行 GPU 写入或复位 |
 | `tx-select-bdf.txt` | 内容为 `bb:dd.f` 或 `dddd:bb:dd.f`，仅处理匹配的卡；解析失败或目标缺失时不选其他卡 |
 | `chain-target.txt` | 第一个非空、非 `#` 行指定优先 EFI 路径，逐卷查找；找不到时记录日志并回退默认顺序 |
+| `tx-no-preload.txt` | 禁用预驱动预载链回（P2-7）：不提前 LoadImage OS loader，回到事务后逐卷扫描的旧路径 |
 | `no-reconnect.txt` | 跳过目标 GPU 的 GOP 重连，适用于事务后重连卡死或复位 |
 | `i_know_what_i_am_doing.txt` | 5 秒倒计时后自动运行，任意键中止；文件存在即启用，内容忽略 |
 
