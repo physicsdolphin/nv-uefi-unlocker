@@ -8,7 +8,7 @@ use log::info;
 use uefi::boot;
 
 use crate::pci::PciIo;
-use crate::tx::{hs_prevalidate, inaccessible, TxError, TxGpu};
+use crate::tx::{inaccessible, TxError, TxGpu};
 
 /// Extracted FWSEC from the card's own PROM (V3 descriptor semantics).
 pub struct FwsecInfo {
@@ -680,7 +680,6 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
 
 /// allow unused-import warnings for pre-wired items
 const _: () = {
-    let _ = hs_prevalidate as fn(u64, u32, u32, u32, u32, u32, u32, u32) -> Result<u64, TxError>;
     let _: Option<&PciIo> = None;
 };
 
