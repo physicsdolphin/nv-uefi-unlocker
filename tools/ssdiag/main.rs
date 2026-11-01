@@ -1,4 +1,7 @@
-//! ssdiag v0.5.0 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.1 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.1 replaces the powershell.exe GPU discovery (~5 s paid every run)
+//! with a native CfgMgr32 walk - same OS sources, no spawned process, works
+//! unelevated.
 //! v0.5.0 adds a read-only config-space ReBAR probe (ECAM via MCFG; the
 //! BAR1-resize answer board A4G/ReBAR settings can and cannot provide).
 //!
@@ -142,6 +145,58 @@ mod reg {
             data: *mut core::ffi::c_void,
             cbdata: *mut u32,
         ) -> i32;
+    }
+}
+
+// ---------------------------------------------------------------- cfgmgr32 (GPU discovery)
+
+/// CfgMgr32 - the layer Win32_PnPAllocatedResource / Get-PnpDevice wrap.
+/// Used directly for GPU discovery so the run does not pay for a powershell.exe
+/// spawn (~5 s measured) on every startup. Read-only, works unelevated.
+#[allow(non_snake_case)]
+mod cm {
+    use std::ffi::c_void;
+    pub type ConfigRet = u32; // CONFIGRET = RETURN_TYPE
+    pub type DevInst = u32; // DEVINST = DWORD
+    // DWORD_PTR: on x64 these handles are pointer-sized - declaring them u32
+    // truncates the handle and CM_Get_Next_Res_Des fails CR_INVALID_RES_DES
+    pub type LogConf = usize; // LOG_CONF = DWORD_PTR
+    pub type ResDes = usize; // RES_DES = DWORD_PTR
+
+    pub const CR_SUCCESS: u32 = 0x0000_0000;
+    pub const CM_GETIDLIST_FILTER_CLASS: u32 = 0x0000_0200;
+    pub const ALLOC_LOG_CONF: u32 = 0x0000_0002; // the allocated (boot-assigned) config
+    pub const RES_TYPE_MEM: u32 = 0x0000_0001;
+    pub const RES_TYPE_MEM_LARGE: u32 = 0x0000_0007; // >= 4 GiB descriptors
+    pub const CM_DRP_LOCATION_INFORMATION: u32 = 0x0000_000E;
+    pub const CM_DRP_BUSNUMBER: u32 = 0x0000_0016;
+    pub const CM_DRP_ADDRESS: u32 = 0x0000_001D;
+
+    #[link(name = "cfgmgr32")]
+    extern "system" {
+        pub fn CM_Get_Device_ID_List_SizeW(len: *mut u32, filter: *const u16, flags: u32) -> ConfigRet;
+        pub fn CM_Get_Device_ID_ListW(filter: *const u16, buf: *mut u16, buflen: u32, flags: u32) -> ConfigRet;
+        pub fn CM_Locate_DevNodeW(devinst: *mut DevInst, id: *mut u16, flags: u32) -> ConfigRet;
+        // the log-conf family has no W export: the plain name IS the wide entry
+        pub fn CM_Get_First_Log_Conf(logconf: *mut LogConf, devinst: DevInst, priority: u32) -> ConfigRet;
+        pub fn CM_Get_Next_Res_Des(
+            rd: *mut ResDes,
+            cur: ResDes,
+            restype: u32,
+            out_type: *mut u32,
+            flags: u32,
+        ) -> ConfigRet;
+        pub fn CM_Get_Res_Des_Data(rd: ResDes, buf: *mut c_void, buflen: u32, flags: u32) -> ConfigRet;
+        pub fn CM_Free_Res_Des_Handle(rd: ResDes) -> ConfigRet;
+        pub fn CM_Free_Log_Conf_Handle(lc: LogConf) -> ConfigRet;
+        pub fn CM_Get_DevNode_Registry_PropertyW(
+            devinst: DevInst,
+            prop: u32,
+            regtype: *mut u32,
+            buf: *mut c_void,
+            len: *mut u32,
+            flags: u32,
+        ) -> ConfigRet;
     }
 }
 
@@ -674,12 +729,14 @@ fn ensure_driver() -> Result<PmxDrv, String> {
     }
     deploy_driver()?;
     DRIVER_TOUCHED.store(true, std::sync::atomic::Ordering::Relaxed);
-    // the kernel can take a beat between StartService and the device symlink
-    for _ in 0..10 {
+    // the kernel can take a beat between StartService and the device symlink;
+    // 50 ms grain keeps the same 2 s worst-case budget but stops paying
+    // multiples of 200 ms for a symlink that shows up in tens of ms
+    for _ in 0..40 {
         if let Some(d) = PmxDrv::try_open() {
             return Ok(d);
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
     PmxDrv::try_open().ok_or_else(|| "service started but \\\\.\\PMXDRV never appeared".into())
 }
@@ -721,47 +778,121 @@ impl Gpu {
 /// hazard, not a shortcut (2026-10-28: a stale UEFI-era address mapped a
 /// foreign MMIO window and the first read hard-hung the machine).
 fn discover_gpus() -> Result<Vec<Gpu>, String> {
-    // Dependent/Antecedent are embedded CimInstance objects - property access,
-    // not string regex (the Dependent.ToString path does not round-trip).
-    // Display-class filter keeps companion functions (audio/USB-C) out.
-    // The trailing BDF lines carry the PnP bus/address properties (the PCI
-    // Address packs (device << 16) | function) plus the raw LocationInfo
-    // string as fallback - LocationInformation in the registry is NOT
-    // guaranteed to exist (field-verified absent on a TU106 machine).
-    let ps = "$disp = Get-PnpDevice -Class Display | Where-Object InstanceId -match 'VEN_10DE' | Select-Object -ExpandProperty InstanceId
-              $r = Get-CimInstance Win32_PnPAllocatedResource | Where-Object { $_.Dependent -match 'VEN_10DE' -and $_.Antecedent -match 'Memory' }
-              $r | ForEach-Object { $id = $_.Dependent.DeviceID; if ($disp -ccontains $id) { $m = Get-CimInstance $_.Antecedent; \"{0}|{1}|{2}\" -f $id, $m.StartingAddress, $m.EndingAddress } }
-              foreach ($id in $disp) {
-                $b = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_BusNumber' -ErrorAction SilentlyContinue
-                $a = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_Address' -ErrorAction SilentlyContinue
-                $l = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_LocationInfo' -ErrorAction SilentlyContinue
-                \"{0}|BDF|{1}|{2}|{3}\" -f $id, $b.Data, $a.Data, $l.Data
-              }";
-    let out = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", ps])
-        .output()
-        .map_err(|e| format!("powershell spawn failed: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "powershell query failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    let mut gpus: Vec<Gpu> = Vec::new();
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        // field-collect first: BDF lines are "id|BDF|bus|addr|location",
-        // range lines are "id|start|end" - indexing beats a streaming
-        // iterator here (the first fix consumed field 1 in the BDF check
-        // and silently dropped every range line)
-        let f: Vec<&str> = line.trim().split('|').collect();
-        let Some(id) = f.first().copied() else { continue };
-        if id.is_empty() {
-            continue;
+    // Native CfgMgr32 walk (v0.6.1; was a powershell.exe spawn costing ~5 s
+    // per run). Display-class filter keeps companion functions (audio/USB-C)
+    // out; phantom (not-present) IDs fail CM_Locate_DevNodeW and drop out,
+    // which is the same net filter the old "allocated resources" join had.
+    // BusNumber/Address come from the devnode registry properties (the PCI
+    // Address packs (device << 16) | function) with the LocationInformation
+    // string as fallback - LocationInformation is NOT guaranteed to exist
+    // (field-verified absent on one TU106 machine, where BusNumber was also
+    // empty and the LocationInfo string saved the BDF), so every layer being
+    // missing just means bdf stays None.
+    const DISPLAY_CLASS: &str = "{4d36e968-e325-11ce-bfc1-08002be10318}";
+    const VENDOR: &str = "VEN_10DE";
+    unsafe {
+        let filter = wide(DISPLAY_CLASS);
+        let mut len = 0u32;
+        let cr = cm::CM_Get_Device_ID_List_SizeW(
+            &mut len,
+            filter.as_ptr(),
+            cm::CM_GETIDLIST_FILTER_CLASS,
+        );
+        if cr != cm::CR_SUCCESS {
+            return Err(format!("device ID list size failed: CR_{cr:04x}"));
         }
-        if f.get(1) == Some(&"BDF") {
-            let bus = f.get(2).and_then(|v| v.trim().parse::<u32>().ok());
-            let addr = f.get(3).and_then(|v| v.trim().parse::<u32>().ok());
-            let loc = f.get(4).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let mut buf = vec![0u16; len as usize];
+        let cr = cm::CM_Get_Device_ID_ListW(
+            filter.as_ptr(),
+            buf.as_mut_ptr(),
+            len,
+            cm::CM_GETIDLIST_FILTER_CLASS,
+        );
+        if cr != cm::CR_SUCCESS {
+            return Err(format!("device ID list failed: CR_{cr:04x}"));
+        }
+
+        let mut gpus: Vec<Gpu> = Vec::new();
+        // one NUL-terminated ID per entry, double NUL ends the list
+        let mut rest: &[u16] = &buf;
+        while let Some(nul) = rest.iter().position(|&c| c == 0) {
+            let id_w = &rest[..nul];
+            rest = &rest[nul + 1..];
+            if id_w.is_empty() {
+                break;
+            }
+            let id = String::from_utf16_lossy(id_w);
+            if !id.to_uppercase().contains(VENDOR) {
+                continue;
+            }
+            let mut id_mut = id_w.to_vec();
+            id_mut.push(0);
+            let mut devinst = 0u32;
+            if cm::CM_Locate_DevNodeW(&mut devinst, id_mut.as_mut_ptr(), 0) != cm::CR_SUCCESS {
+                continue;
+            }
+
+            // allocated (boot-assigned) hardware resources: walk every
+            // descriptor, keep the memory ones. MEM_DES and MEM_LARGE_DES
+            // share one layout {count u32, type u32, base u64, end u64, ...},
+            // so a single parse covers 32-bit and >= 4 GiB descriptors alike.
+            let mut logconf = 0usize;
+            let cr = cm::CM_Get_First_Log_Conf(&mut logconf, devinst, cm::ALLOC_LOG_CONF);
+            if cr != cm::CR_SUCCESS {
+                continue; // no allocated config -> no ranges -> not a probe target
+            }
+            let mut ranges: Vec<(u64, u64)> = Vec::new();
+            // one walk per memory descriptor type - CM_Get_Next_Res_Des takes
+            // a concrete type on the first call (ResType_All is not accepted
+            // there: CR_INVALID_RES_DES, field-verified) and the same type on
+            // continuation; cur is only borrowed, never the logconf handle
+            for want in [cm::RES_TYPE_MEM, cm::RES_TYPE_MEM_LARGE] {
+                let mut cur = logconf;
+                loop {
+                    let mut rd = 0usize;
+                    // the pResourceID out-param comes back 0 regardless of the
+                    // requested type - and is unneeded: the walk is type-scoped
+                    // by construction (first call + continuation both pass
+                    // `want`)
+                    let cr = cm::CM_Get_Next_Res_Des(
+                        &mut rd,
+                        cur,
+                        want,
+                        core::ptr::null_mut(),
+                        0,
+                    );
+                    if cur != logconf {
+                        cm::CM_Free_Res_Des_Handle(cur);
+                    }
+                    if cr != cm::CR_SUCCESS {
+                        break; // NO_MORE_RES_DES ends the walk; anything else ends it too
+                    }
+                    cur = rd;
+                    // one MEM_LARGE descriptor is 32 bytes; 256 is generous (the
+                    // buffer is zero-filled, and a successful Mem descriptor read
+                    // is >= 32 bytes by struct definition)
+                    let mut data = [0u8; 256];
+                    if cm::CM_Get_Res_Des_Data(rd, data.as_mut_ptr().cast(), 256, 0)
+                        != cm::CR_SUCCESS
+                    {
+                        continue;
+                    }
+                    let base = u64::from_le_bytes(data[8..16].try_into().unwrap());
+                    let end = u64::from_le_bytes(data[16..24].try_into().unwrap());
+                    if base != 0 && end >= base {
+                        ranges.push((base, end));
+                    }
+                }
+            }
+            cm::CM_Free_Log_Conf_Handle(logconf);
+            if ranges.is_empty() {
+                continue;
+            }
+            ranges.sort();
+
+            let bus = cm_dword(devinst, cm::CM_DRP_BUSNUMBER);
+            let addr = cm_dword(devinst, cm::CM_DRP_ADDRESS);
+            let loc = cm_string(devinst, cm::CM_DRP_LOCATION_INFORMATION);
             let bdf = match (bus, addr) {
                 (Some(b), Some(a)) if b <= 0xFF => {
                     let d = (a >> 16) & 0x1F;
@@ -771,31 +902,60 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
                 _ => None,
             };
             let bdf = bdf.or_else(|| loc.as_deref().and_then(bdf_from_location));
-            match gpus.iter_mut().find(|g| g.id == id) {
-                Some(g) => g.bdf = bdf.or(g.bdf.take()),
-                None => gpus.push(Gpu { id: id.to_string(), ranges: vec![], bdf }),
-            }
-            continue;
+            gpus.push(Gpu { id, ranges, bdf });
         }
-        let (Some(a), Some(b)) = (f.get(1), f.get(2)) else {
-            continue;
-        };
-        let (Ok(a), Ok(b)) = (a.trim().parse::<u64>(), b.trim().parse::<u64>()) else {
-            continue;
-        };
-        if a == 0 || b < a {
-            continue;
-        }
-        match gpus.iter_mut().find(|g| g.id == id) {
-            Some(g) => g.ranges.push((a, b)),
-            None => gpus.push(Gpu { id: id.to_string(), ranges: vec![(a, b)], bdf: None }),
-        }
+        // deterministic order (the old CIM join had no ordering guarantee)
+        gpus.sort_by(|x, y| x.id.cmp(&y.id));
+        Ok(gpus)
     }
-    for g in &mut gpus {
-        g.ranges.sort();
+}
+
+/// One DWORD devnode registry property; None when absent or another type.
+fn cm_dword(devinst: u32, prop: u32) -> Option<u32> {
+    let mut v = 0u32;
+    let mut len = 4u32;
+    let cr = unsafe {
+        cm::CM_Get_DevNode_Registry_PropertyW(
+            devinst,
+            prop,
+            core::ptr::null_mut(),
+            (&mut v as *mut u32).cast(),
+            &mut len,
+            0,
+        )
+    };
+    if cr == cm::CR_SUCCESS && len == 4 {
+        Some(v)
+    } else {
+        None
     }
-    gpus.retain(|g| !g.ranges.is_empty());
-    Ok(gpus)
+}
+
+/// One string devnode registry property; None when absent or empty.
+fn cm_string(devinst: u32, prop: u32) -> Option<String> {
+    let mut buf = [0u16; 512];
+    let mut len = (buf.len() * 2) as u32;
+    let cr = unsafe {
+        cm::CM_Get_DevNode_Registry_PropertyW(
+            devinst,
+            prop,
+            core::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            0,
+        )
+    };
+    if cr != cm::CR_SUCCESS || len < 2 {
+        return None;
+    }
+    let chars = (len as usize / 2).min(buf.len());
+    let s = String::from_utf16_lossy(&buf[..chars]);
+    let s = s.trim_end_matches('\0').trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 // ---------------------------------------------------------------- config-space ReBAR (ECAM)
