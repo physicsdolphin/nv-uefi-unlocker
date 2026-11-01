@@ -14,6 +14,7 @@ version = "2.1.9"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+ "romcore",
  "sha2",
  "tar",
  "xz2",
@@ -171,6 +172,7 @@ name = "loader"
 version = "2.1.9"
 dependencies = [
  "log",
+ "romcore",
  "uefi",
 ]
 
@@ -249,6 +251,10 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "romcore"
+version = "2.1.9"
 
 [[package]]
 name = "rustix"

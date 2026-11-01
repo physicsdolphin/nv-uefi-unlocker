@@ -1,0 +1,8 @@
+[package]
+name = "romcore"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PCI expansion-ROM / EFI image / UEFI-decompress parsing shared by loader, assets and sim (no_std + alloc)"
+
+[dependencies]

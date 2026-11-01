@@ -612,6 +612,9 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
     true
 }
 
+
+// probe_file/read_boot_file for Driver#### registration) ----
+
 /// Does this path exist as a readable regular file? No size gate and no content:
 /// the UI switches are zero-byte marker files by design (`\tx-require-d0.txt`
 /// is documented as "drop an empty file"), so anything that treats "size 0" as
@@ -632,13 +635,12 @@ pub fn probe_file(path: &str) -> bool {
         .is_ok()
 }
 
-
 /// Read one ASSET (never a marker) with the three states kept apart:
 /// `Ok(None)` = not on the stick (the caller may legitimately run without it),
 /// `Err(())` = present but unusable (empty, over the cap, short read, media
 /// pulled). Collapsing that second state into `None` is how a damaged `v67-*.bin`
 /// silently downgrades an unlock run to chain-replay instead of refusing.
-pub fn read_asset(path: &str) -> Result<Option<alloc::vec::Vec<u8>>, ()> {
+pub fn read_asset(path: &str) -> core::result::Result<Option<alloc::vec::Vec<u8>>, ()> {
     match read_boot_file_inner(path) {
         Inner::Absent => Ok(None),
         Inner::Failed => Err(()),
@@ -647,7 +649,7 @@ pub fn read_asset(path: &str) -> Result<Option<alloc::vec::Vec<u8>>, ()> {
 }
 
 /// Formatted variant of [`read_asset`].
-pub fn read_asset_fmt(pattern: &str, family: &str) -> Result<Option<alloc::vec::Vec<u8>>, ()> {
+pub fn read_asset_fmt(pattern: &str, family: &str) -> core::result::Result<Option<alloc::vec::Vec<u8>>, ()> {
     let path = alloc::format!("{}", pattern.replacen("{}", family, 1));
     read_asset(&path)
 }
@@ -729,7 +731,6 @@ fn read_boot_file_inner(path: &str) -> Inner {
     info!("TX-ASSET-DIAG: {path} loaded {}/{} bytes", out.len(), size);
     Inner::Content(out)
 }
-
 /// Assets for the transaction, loaded from the boot volume (tx builds
 /// carry their bundles next to the app; assets pipeline produces them).
 pub struct TxAssets {
@@ -825,10 +826,13 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // TOTORONG craft: all console + vendor drivers off the device, PciIo
     // exclusively claimed, IO|MEM|BME enabled, config baseline captured.
     // (Black screen starts here by design; the log file keeps recording.)
-    if let Err(e) = crate::tx_detach::detach_and_claim(pci_handle) {
-        info!("TX: detach+claim FAILED: {e}");
-        return Err(TxError::ENodev);
-    }
+    let claim = match crate::tx_detach::detach_and_claim(pci_handle) {
+        Ok(c) => c,
+        Err(e) => {
+            info!("TX: detach+claim FAILED: {e}");
+            return Err(TxError::ENodev);
+        }
+    };
     info!("TX: detach+claim ok");
 
     // PRE-FLR (reference never does this, but it also never runs in a
@@ -1281,6 +1285,14 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // A \tu10x-no-reconnect.txt marker skips it again for experiments.
     if assets.family == "tu10x" && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
         info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
+    } else if crate::tx::probe_file("\\tx-native-gop.txt") {
+        // Issue #107 CSM class: the generic recursive reconnect hangs
+        // re-binding BiosVideo. Start the native GOP explicitly instead;
+        // on any failure the console is left to bootmgfw (never falls
+        // back to the hanging ConnectController).
+        if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
+            info!("TX: native-GOP recovery failed: {e} - console left to bootmgfw");
+        }
     } else {
         crate::tx_detach::reconnect_all(pci_handle);
     }

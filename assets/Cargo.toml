@@ -13,6 +13,7 @@ path = "src/main.rs"
 path = "src/lib.rs"
 
 [dependencies]
+romcore = { path = "../romcore" }
 sha2 = "0.10"
 crc32fast = "1"
 miniz_oxide = "0.9.1"

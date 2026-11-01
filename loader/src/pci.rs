@@ -248,11 +248,17 @@ impl PciIo {
     }
 
     /// PCI attributes enable (tx builds: TOTORONG ClaimRestore step).
+    ///
+    /// NOTE: op 1 is EfiPciIoAttributeOperation**Set** in the EDK2 enum
+    /// (Get=0, Set=1, Enable=2) - this call SETS the whole attribute word
+    /// to `mask`, which is why the historical call sites pass exactly
+    /// 0x0007. Kept as-is (behavior verified on hardware across the whole
+    /// transaction history); new code uses [`Self::attributes_enable_op`].
     #[cfg(feature = "tx")]
 
     #[cfg(feature = "tx")]
     pub fn attributes_enable(&self, mask: u64) {
-        // op 1 = EfiPciIoAttributeOperationEnable; Arg1 = mask
+        // op 1 = EfiPciIoAttributeOperationSet; Arg1 = mask
         let mut st = Status::SUCCESS;
         unsafe {
             let _called = (self.0.attributes)(&self.0 as *const _ as *mut _, 1, mask, 0, &mut st);
@@ -260,6 +266,61 @@ impl PciIo {
         if st != Status::SUCCESS {
             log::error!("attributes_enable({mask:#x}) status {st:?}");
         }
+    }
+
+    /// Proper EfiPciIoAttributeOperationEnable (op 2): OR the given bits
+    /// into the device's attribute set without touching the rest.
+    #[cfg(feature = "tx")]
+    pub fn attributes_enable_op(&self, mask: u64) -> Status {
+        let mut st = Status::SUCCESS;
+        unsafe {
+            let _ = (self.0.attributes)(&self.0 as *const _ as *mut _, 2, mask, 0, &mut st);
+        }
+        st
+    }
+
+    /// EfiPciIoAttributeOperationGet (op 0): the firmware-tracked attribute
+    /// set (EDK2 keeps it in the PciIo device struct, not in config space).
+    /// Captured before the claim so the native-GOP handoff can restore the
+    /// VGA forwarding subset it cleared.
+    #[cfg(feature = "tx")]
+    pub fn attributes_get(&self) -> Option<u64> {
+        let mut attrs = 0u64;
+        let mut st = Status::SUCCESS;
+        // Safety: exclusive-borrowed protocol; Result is an out-param
+        // pointer passed in Arg2 per EDK2 PciIoAttributes.
+        unsafe {
+            let _ = (self.0.attributes)(
+                &self.0 as *const _ as *mut _,
+                0,
+                0,
+                &mut attrs as *mut u64 as u64,
+                &mut st,
+            );
+        }
+        if st != Status::SUCCESS {
+            log::error!("attributes_get status {st:?}");
+            return None;
+        }
+        Some(attrs)
+    }
+
+    /// The PciBus-shadowed option ROM (EFI_PCI_IO_PROTOCOL RomImage/
+    /// RomSize fields, pinned at slots 19/18 of PciIoRaw). This is the
+    /// copy the firmware fetched at enumeration - the native-GOP path
+    /// extracts the card's own GOP driver from it. BAR0+0x300000 reads
+    /// the live PROM; the shadow is preferred because it is exactly the
+    /// bytes PciBus would have dispatched.
+    #[cfg(feature = "tx")]
+    pub fn rom_image(&self) -> Option<&[u8]> {
+        if self.0.rom_image.is_null() || self.0.rom_size == 0 {
+            return None;
+        }
+        // Safety: RomImage points into a firmware-allocated buffer of
+        // RomSize bytes, valid for the boot services lifetime.
+        Some(unsafe {
+            core::slice::from_raw_parts(self.0.rom_image as *const u8, self.0.rom_size as usize)
+        })
     }
 
     /// THE BAR write primitive — consumed only by `tx` builds. M0/M1
