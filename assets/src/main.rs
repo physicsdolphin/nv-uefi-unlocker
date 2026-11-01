@@ -245,6 +245,80 @@ fn extract_scrub(source: &Path, outdir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Extract the GOP EFI expansion-ROM image (issue #107 native-GOP path).
+///
+/// Output = the complete code-type-0x03 image, compressed payload intact -
+/// exactly the bytes the loader's gop_native path feeds through the
+/// firmware's EFI_DECOMPRESS_PROTOCOL. NVIDIA firmware: the module stays
+/// local (never committed, never distributed); the printed SHA-256 is the
+/// pin the make-usbroot manifest records.
+fn extract_gop(rom: &Path, outdir: Option<&Path>) -> Result<(), String> {
+    let raw = std::fs::read(rom).map_err(|e| format!("read: {e}"))?;
+    let start = locate_rom_start(&raw);
+    let img = &raw[start..];
+
+    let images = romcore::walk::efi_images(img).map_err(|e| format!("rom walk: {e}"))?;
+    if images.is_empty() {
+        return Err("no EFI (code-type-0x03) image on the PCIR chain".into());
+    }
+    if images.len() > 1 {
+        println!("note: {} EFI images on the chain, using the first", images.len());
+    }
+    let efi = &images[0];
+    let image = &img[efi.start..efi.start + efi.len];
+    let header = romcore::efirom::EfiRomHeader::parse(image).map_err(|e| format!("efi header: {e}"))?;
+    let payload = romcore::efirom::payload(image, &header).map_err(|e| format!("payload: {e}"))?;
+    let digest = assets::manifest::sha256_hex(image);
+
+    println!("EFI image: offset={:#x} len={:#x} (size512={})", efi.start, efi.len, header.size512);
+    println!(
+        "header: EfiSubsystem={} machine={:#06x} compression={} payload@{:#x}",
+        header.efi_subsystem, header.efi_machine_type, header.compression_type, header.image_header_offset
+    );
+    println!(
+        "payload: {} -> {} bytes",
+        payload.compressed_size, payload.uncompressed_size
+    );
+    let pe_ok: String = if header.compression_type == romcore::efirom::COMPRESSION_EFI_STANDARD {
+        "decompress at runtime via EFI_DECOMPRESS_PROTOCOL (loader)".to_string()
+    } else if header.compression_type == 0 {
+        match romcore::pe::parse(&image[payload.stream_offset..]) {
+            Ok(p) => format!("PE ok: machine={:#06x} subsystem={} SizeOfImage={:#x}", p.machine, p.subsystem, p.size_of_image),
+            Err(e) => format!("PE check failed: {e}"),
+        }
+    } else {
+        "unknown compression type - loader will refuse".to_string()
+    };
+    println!("PE: {pe_ok}");
+    println!("module SHA-256: {digest}");
+
+    let outdir = outdir.unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(outdir).map_err(|e| format!("outdir: {e}"))?;
+    let out = outdir.join("gop.efirom");
+    std::fs::write(&out, image).map_err(|e| format!("write: {e}"))?;
+    println!("wrote {} ({} bytes)", out.display(), image.len());
+    Ok(())
+}
+
+/// Locate the real option-ROM start inside a dump (some tools wrap the
+/// image, e.g. NVGI): first 0xAA55 with a plausible PCIR pointer, else
+/// the first 0xAA55. Shared with the vbios info command.
+fn locate_rom_start(raw: &[u8]) -> usize {
+    if raw.len() > 2 && raw[0..2] == [0x55, 0xaa] {
+        return 0;
+    }
+    (0..raw.len().saturating_sub(0x1000).min(0x1_0000))
+        .step_by(0x200)
+        .chain([0usize])
+        .find(|&off| {
+            raw.get(off..off + 2) == Some(&[0x55, 0xaa][..])
+                && off + 0x20 <= raw.len()
+                && raw[off + 0x18] % 4 == 0
+        })
+        .or_else(|| raw.windows(2).position(|w| w == [0x55, 0xaa]))
+        .unwrap_or(0)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> [all | family...] | vbios <rom>>";
@@ -331,6 +405,10 @@ fn main() {
         },
         Some("vbios") => match args.get(2) {
             Some(s) => vbios(Path::new(s)),
+            _ => Err(usage.to_string()),
+        },
+        Some("extract-gop") => match args.get(2) {
+            Some(s) => extract_gop(Path::new(s), args.get(3).map(PathBuf::from).as_deref()),
             _ => Err(usage.to_string()),
         },
         _ => Err(usage.to_string()),

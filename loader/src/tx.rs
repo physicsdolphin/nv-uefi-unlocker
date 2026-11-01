@@ -613,25 +613,6 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
     true
 }
 
-/// Does this path exist as a readable regular file? No size gate and no content:
-/// the UI switches are zero-byte marker files by design (`\tx-require-d0.txt`
-/// is documented as "drop an empty file"), so anything that treats "size 0" as
-/// "absent" silently disables them. Kept separate from the asset reader, whose
-/// size rules are about DMA windows, not about intent.
-pub fn probe_file(path: &str) -> bool {
-    let Ok(path_c) = uefi::CString16::try_from(path) else {
-        return false;
-    };
-    use uefi::proto::media::file::{File, FileMode};
-    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
-        return false;
-    };
-    let Ok(mut dir) = fs.open_volume() else {
-        return false;
-    };
-    dir.open(&path_c, FileMode::Read, uefi::proto::media::file::FileAttribute::empty())
-        .is_ok()
-}
 
 
 /// Read one ASSET (never a marker) with the three states kept apart:
