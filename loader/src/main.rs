@@ -18,6 +18,7 @@ mod keywait;
 mod logging;
 mod pci;
 mod sample;
+mod timing;
 #[cfg(feature = "tx")]
 mod tx;
 #[cfg(feature = "tx")]
@@ -30,19 +31,44 @@ mod tx_booter;
 mod tx_detach;
 #[cfg(feature = "tx")]
 mod tx_portal;
+#[cfg(feature = "tx")]
+mod tx_prep;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// CONFIRM semantics switch (armed mode): when this file exists on the
 /// stick root, the operator has declared intent ON THE STICK ITSELF - the
-/// wait becomes a short countdown that auto-proceeds, any key aborts.
+/// wait becomes a short countdown that auto-proceeds, any key aborts. The
+/// first marker line may set the countdown seconds (1..=30, default 5).
 const ARMED_MARKER: &CStr16 = cstr16!(r"\i_know_what_i_am_doing.txt");
+/// Issue #38: verdict-lines-only console output. Some iGPU GOPs render
+/// ~1 line/s, so the full console mirror cost minutes per run; the log
+/// file always records everything either way.
+const QUIET_MARKER: &CStr16 = cstr16!(r"\tx-quiet.txt");
+/// Issue #38 follow-up: count-based log-flush cadence knob (0..=4096
+/// lines, 0 = stage-marker lines only; default 16). Marker-line flushes
+/// are unaffected - they are the crash-forensics anchors.
+const FLUSH_LINES_MARKER: &CStr16 = cstr16!(r"\tx-flush-lines.txt");
 const CONFIRM_WAIT: u64 = 30;
-const ARMED_WAIT: u64 = 5;
 
 #[entry]
 fn main() -> Status {
+    timing::init();
     logging::init(VERSION);
+    // Phase: QUIET gate (issue #38). The stick opts in via the marker;
+    // refused when the log file could not be opened (console = only
+    // record, it must stay complete).
+    if chainload::boot_volume_has(QUIET_MARKER) {
+        if logging::set_quiet(true) {
+            info!(
+                "QUIET: \\tx-quiet.txt present - console shows verdict lines only; every line still lands in \\loader.log"
+            );
+        } else {
+            info!(
+                "QUIET: \\tx-quiet.txt present but the log file is unavailable - console stays complete (it is the only record)"
+            );
+        }
+    }
     // The boot manager arms a 5-minute watchdog before StartImage; a slow
     // or stalled transaction must not be cut short by a firmware reset.
     match uefi::boot::set_watchdog_timer(0, 0x10000, None) {
@@ -51,36 +77,77 @@ fn main() -> Status {
     }
     banner::print(VERSION);
 
+    // Phase: FLUSH knob (issue #38 follow-up). Optional per-stick cadence
+    // for the count-based log flushes; stage-marker flushes are unaffected.
+    if let Some(content) = chainload::boot_volume_read(FLUSH_LINES_MARKER) {
+        let n = chainload::parse_flush_lines(&content);
+        logging::set_flush_every_lines(n as usize);
+        if n == 0 {
+            info!("FLUSH: \\tx-flush-lines.txt - count-based flush off (stage-marker lines only)");
+        } else {
+            info!("FLUSH: \\tx-flush-lines.txt - every {n} lines");
+        }
+    }
+
     // Phase: CONFIRM. TX builds: ONLY Space or Enter proceeds - timeout or
     // any other key aborts into chain-load with zero GPU writes (issue #4.1:
     // the old code proceeded on any key AND on timeout, so a stick left in a
     // machine could run the transaction unattended). Read-only builds keep
     // the M0 semantics. Armed mode (marker file on the stick root) inverts
-    // this: a 5s countdown auto-proceeds, any key aborts - the file is the
-    // operator's explicit declaration of intent, so unattended runs are
-    // opt-in per stick, never a default.
-    let confirmed = if chainload::boot_volume_has(ARMED_MARKER) {
+    // this: an N-second countdown auto-proceeds (first marker line sets N,
+    // 1..=30, default 5), any key aborts - the file is the operator's
+    // explicit declaration of intent, so unattended runs are opt-in per
+    // stick, never a default. TX builds run the countdown WITH the read-only
+    // prep interleaved (enumerate / GOP probe / sample / select / asset
+    // reads into the tx.rs read-through cache): the first GPU touch still
+    // happens only after PROCEED, and aborting mid-prep writes nothing.
+    let confirmed = if let Some(content) = chainload::boot_volume_read(ARMED_MARKER) {
+        let secs = chainload::parse_armed_seconds(&content);
         info!(
-            "CONFIRM: \\i_know_what_i_am_doing.txt present - ARMED: {ARMED_WAIT}s countdown auto-runs, ANY key aborts"
+            "CONFIRM: \\i_know_what_i_am_doing.txt present - ARMED: {secs}s countdown auto-runs, ANY key aborts"
         );
-        keywait::wait_confirm_armed(ARMED_WAIT)
+        #[cfg(feature = "tx")]
+        {
+            tx_prep::armed_confirm_with_prep(secs)
+        }
+        #[cfg(not(feature = "tx"))]
+        {
+            keywait::wait_confirm_armed(secs)
+        }
     } else {
         info!("CONFIRM: no armed marker - Space/Enter/{CONFIRM_WAIT}s confirm semantics");
         keywait::wait_confirm(CONFIRM_WAIT)
     };
 
     // Phase: ENUMERATE (read-only). ALL NVIDIA display adapters, in
-    // firmware enumeration order.
+    // firmware enumeration order. The armed prep (TX builds) already ran
+    // this, the GOP probe and the sample inside the countdown window.
+    #[cfg(feature = "tx")]
+    let (gpus, prep_ran) = if let keywait::Confirm::Proceed = confirmed {
+        match tx_prep::take_gpus() {
+            Some(g) => (g, true),
+            None => (pci::enumerate(), false),
+        }
+    } else {
+        (pci::enumerate(), false)
+    };
+    #[cfg(not(feature = "tx"))]
     let gpus = pci::enumerate();
+    #[cfg(not(feature = "tx"))]
+    let prep_ran = false;
 
     // Phase: GOP-PROBE (read-only; which console driver owns which GPU).
-    gop::enumerate_gop();
+    if !prep_ran {
+        gop::enumerate_gop();
+    }
 
     // Phase: SAMPLE (M1: read-only cold-state register sweep, first card).
-    if let Some(gpu) = gpus.first() {
-        sample::run(gpu);
-    } else {
-        info!("SAMPLE: no NVIDIA GPU present, skipped (negative control path)");
+    if !prep_ran {
+        if let Some(gpu) = gpus.first() {
+            sample::run(gpu);
+        } else {
+            info!("SAMPLE: no NVIDIA GPU present, skipped (negative control path)");
+        }
     }
 
     // Phase: TX (feature-gated transaction; only in explicit tx builds).
@@ -119,6 +186,50 @@ fn main() -> Status {
     Status::SUCCESS
 }
 
+
+/// Die-family-pure asset mapping by PCI device ID (constitution 5: no
+/// cross-family payloads — a GA102 payload on AD102 HALTs and opens
+/// nothing). Names on the boot volume: <asset>_<family>.bin.
+///
+/// 2026-10-28: the whitelist is OPEN for the full NVIDIA driver list
+/// of the three transaction families (pinned open-gpu-kernel-modules
+/// README "Compatible GPUs" table, 217 IDs, cross-checked against
+/// upstream's supported_ids[]). The blocks are die-family-pure:
+///   0x1e02..0x1fff, 0x2182..0x21d1 = Turing
+///     TU102/104/106/116/117 (20/16-series, TITAN/Quadro RTX,
+///     CMP 30/40/50HX; the 21xx span covers every TU116 SKU incl.
+///     1650 SUPER 2187 and the odd 21c2 variant);
+///   0x2200..=0x223f, 0x2400..=0x25ff = Ampere GA10x (GA102 3090/3080/
+///     CMP 90HX/A6000-class, GA103 2414, GA104 3070s/3070Ti/CMP 70HX/A4500,
+///     GA106/107 3060/3050 lines + mobile; 0x23xx = Hopper, absent
+///     on purpose). The 0x2240..=0x22ff tail was carved out (2026-11-02,
+///     pci.ids-verified): it holds no GA102 cores - only GA104/GA106/GA107
+///     HD-audio functions (228b/228e/2291), Ada/Blackwell audio functions
+///     (22ba..=be/22e8..=ec), Tegra/Orin/THOR/GB10 ARM blocks
+///     (2296..=9e/22ce..=d1/22d8/22e6) and GH100 H100 NVSwitch (22a3 -
+///     Hopper, the same cross-family class as the removed 20c2/20f1).
+///     The class-03/function-0 enumeration filter already skips every
+///     one of these; the cap is defense-in-depth;
+///   0x2600..0x28ff = Ada AD10x (GeForce 40-series desktop+mobile,
+///     RTX-workstation/L-class, the AD106M "RTX 3050 A", and
+///     upstream-unlisted IDs such as the 4070M modded-card 2820).
+///   0x2bxx+ = Blackwell, out of scope. GA100 (0x20b0 A100, 0x20c2,
+///     0x20f1 A30 per cmp170hx p2p inventory) is NOT GA10x and stays
+///     outside the Ampere ranges - the 20c2/20f1 arms that previously
+///     routed to ga102 were a cross-family hazard and are removed.
+/// Unverified IDs now run instead of being refused: per-ID evidence
+/// tiers live in the README matrix, and a first-silicon report
+/// upgrades the row (issue #8 process). Shared by tx_one_card and the
+/// armed-prep asset step.
+#[cfg(feature = "tx")]
+fn asset_family(dev: u16) -> Option<&'static str> {
+    match dev {
+        0x2600..=0x28ff => Some("ad102"),
+        0x2200..=0x223f | 0x2400..=0x25ff => Some("ga102"),
+        0x1e02..=0x1fff | 0x2182..=0x21d1 => Some("tu10x"),
+        _ => None,
+    }
+}
 
 #[cfg(feature = "tx")]
 fn tx_phase(gpus: &[pci::FoundGpu]) {
@@ -162,48 +273,11 @@ fn tx_one_card(g: &pci::FoundGpu) {
     };
     let gpu = tx::TxGpu { pci: &pci, bar: 0 };
 
-    // Per-family asset selection by PCI device ID (constitution 5: no
-    // cross-family payloads — a GA102 payload on AD102 HALTs and opens
-    // nothing). Names on the boot volume: <asset>_<family>.bin.
-    //
-    // 2026-10-28: the whitelist is OPEN for the full NVIDIA driver list
-    // of the three transaction families (pinned open-gpu-kernel-modules
-    // README "Compatible GPUs" table, 217 IDs, cross-checked against
-    // upstream's supported_ids[]). The blocks are die-family-pure:
-    //   0x1e02..0x1fff, 0x2182..0x21d1 = Turing
-    //     TU102/104/106/116/117 (20/16-series, TITAN/Quadro RTX,
-    //     CMP 30/40/50HX; the 21xx span covers every TU116 SKU incl.
-    //     1650 SUPER 2187 and the odd 21c2 variant);
-    //   0x2200..=0x223f, 0x2400..=0x25ff = Ampere GA10x (GA102 3090/3080/
-    //     CMP 90HX/A6000-class, GA103 2414, GA104 3070s/3070Ti/CMP 70HX/A4500,
-    //     GA106/107 3060/3050 lines + mobile; 0x23xx = Hopper, absent
-    //     on purpose). The 0x2240..=0x22ff tail was carved out (2026-11-02,
-    //     pci.ids-verified): it holds no GA102 cores - only GA104/GA106/GA107
-    //     HD-audio functions (228b/228e/2291), Ada/Blackwell audio functions
-    //     (22ba..=be/22e8..=ec), Tegra/Orin/THOR/GB10 ARM blocks
-    //     (2296..=9e/22ce..=d1/22d8/22e6) and GH100 H100 NVSwitch (22a3 -
-    //     Hopper, the same cross-family class as the removed 20c2/20f1).
-    //     The class-03/function-0 enumeration filter already skips every
-    //     one of these; the cap is defense-in-depth;
-    //   0x2600..0x28ff = Ada AD10x (GeForce 40-series desktop+mobile,
-    //     RTX-workstation/L-class, the AD106M "RTX 3050 A", and
-    //     upstream-unlisted IDs such as the 4070M modded-card 2820).
-    //   0x2bxx+ = Blackwell, out of scope. GA100 (0x20b0 A100, 0x20c2,
-    //     0x20f1 A30 per cmp170hx p2p inventory) is NOT GA10x and stays
-    //     outside the Ampere ranges - the 20c2/20f1 arms that previously
-    //     routed to ga102 were a cross-family hazard and are removed.
-    // Unverified IDs now run instead of being refused: per-ID evidence
-    // tiers live in the README matrix, and a first-silicon report
-    // upgrades the row (issue #8 process).
+    // Per-family asset selection by PCI device ID - see asset_family.
     let dev = g.device_id;
-    let family: &str = match dev {
-        0x2600..=0x28ff => "ad102",
-        0x2200..=0x223f | 0x2400..=0x25ff => "ga102",
-        0x1e02..=0x1fff | 0x2182..=0x21d1 => "tu10x",
-        other => {
-            info!("TX: device 10de:{other:04x} has no asset family mapping - skipping");
-            return;
-        }
+    let Some(family) = asset_family(dev) else {
+        info!("TX: device 10de:{dev:04x} has no asset family mapping - skipping");
+        return;
     };
     info!("TX: device 10de:{dev:04x} -> asset family '{family}'");
 

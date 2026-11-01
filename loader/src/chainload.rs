@@ -227,7 +227,7 @@ const MARKER_READ_CAP: usize = 4096;
 /// upgraded by a probe failure. Absent-file is the normal case and stays
 /// silent; volume-level failures are logged (they explain a marker that
 /// "should have" engaged but did not).
-fn boot_volume_read(path: &CStr16) -> Option<alloc::vec::Vec<u8>> {
+pub fn boot_volume_read(path: &CStr16) -> Option<alloc::vec::Vec<u8>> {
     let mut fs = match boot::get_image_file_system(boot::image_handle()) {
         Ok(fs) => fs,
         Err(e) => {
@@ -276,6 +276,48 @@ fn boot_volume_read(path: &CStr16) -> Option<alloc::vec::Vec<u8>> {
 /// the signal, content is ignored.
 pub fn boot_volume_has(path: &CStr16) -> bool {
     boot_volume_read(path).is_some()
+}
+
+/// First numeric token in a marker's content, clamped to `[min, max]`;
+/// empty content or an unparsable first line yields `default`. Parsing
+/// takes the leading ASCII digits of the first non-empty line ("2\r\n",
+/// " 2s", "02" all read as 2); saturation above u64 then clamps to `max`.
+/// Textually mirrored in sim/src/gate_parse.rs for shape tests.
+fn parse_marker_number(content: &[u8], default: u64, min: u64, max: u64) -> u64 {
+    let line = content
+        .split(|&b| b == b'\r' || b == b'\n')
+        .find(|l| !l.is_empty());
+    let Some(line) = line else { return default };
+    let digits: &[u8] = {
+        let trimmed: &[u8] = {
+            let start = line.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(line.len());
+            let end = line.iter().rposition(|b| !b.is_ascii_whitespace()).map_or(0, |i| i + 1);
+            &line[start..end.max(start)]
+        };
+        let stop = trimmed.iter().position(|b| !b.is_ascii_digit()).unwrap_or(trimmed.len());
+        &trimmed[..stop]
+    };
+    if digits.is_empty() {
+        return default;
+    }
+    let value = digits
+        .iter()
+        .fold(0u64, |acc, b| acc.saturating_mul(10).saturating_add((b - b'0') as u64));
+    value.clamp(min, max)
+}
+
+/// `\i_know_what_i_am_doing.txt` countdown seconds: first line 1..=30,
+/// default 5 (the historical constant) when the content carries no usable
+/// number. The marker file is the operator's declaration of intent; the
+/// number only shortens the abort window they still own.
+pub fn parse_armed_seconds(content: &[u8]) -> u64 {
+    parse_marker_number(content, 5, 1, 30)
+}
+
+/// `\tx-flush-lines.txt` flush cadence: 0..=4096 count-based flushes per
+/// lines, 0 = stage-marker lines only. Default 16 (the historical constant).
+pub fn parse_flush_lines(content: &[u8]) -> u64 {
+    parse_marker_number(content, 16, 0, 4096)
 }
 
 /// Open the volume with one retry (freshly reconnected volumes may need a
