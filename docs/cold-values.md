@@ -128,3 +128,11 @@ dGPU 冷、无 GOP、BAR0 全 0xffffffff（claim 前采样即此现象，claim �
 | FEAT_READOUT_1 0x823818 | 0x016db6ed（170HX 锁定） | cmp170hx |
 | WPR2 lo/hi | 0/0（FWSEC-FRTS 前恒 0） | 任务书 §3.2 |
 | FUSE_OPT_FEAT_OVR_DIS 0x8203f0 | 0x0=总开关未烧（存在前提） | cmp170hx |
+
+### Turing FEAT 回锁值对照（2026-11-02 补录，来源 travis-mcdevitt fork `2654419`）
+
+| 值 | 语义 | 证据 |
+|---|---|---|
+| **0xffffffef** | TU102（MSI 2080 Ti 22G，子系统 1462:371d）在驱动接管后的 **PLM 重锁写回值 = bits5/6 置位**，≠ 冷态默认 0xffffff8f——回锁值存在板/驱动版本方差，采样轮不应假设固定回锁模式 | guarded-auto build 004 三试（driver 610.88 / GSP 610.57.01）：001/002 停在 fork 本地守卫误判（预期 0xffffff8f 而板回锁 0xffffffef），003 按 0xffffffef 判定全绿；归因与过程见 fork 提交 `2654419`（docs/evidence/msi-tu102-guarded/） |
+
+采样影响：PLM 翻转验证与"重锁读回"对照点应把 0xffffffef 列为 TU102 合法回锁态；GA102/Ada 侧是否同样板卡相关待采（开放问题 #12）。

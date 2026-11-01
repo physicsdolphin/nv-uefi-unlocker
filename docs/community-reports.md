@@ -57,6 +57,10 @@
 
 来源：[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)，报告者 @vadash，实测版本 v0.2.0。AMD AM4/Promontory 平台、8 GB SKU；FWSEC、WPR2、BOOT_DIRECT booter 与 PLM 开启通过，SS0/SS1=`0x88888888`/`0x8`，签名恢复、PLM 重锁后值保留，解锁路径跳过 FLR，Windows 交棒正常。
 
+### 独立旁证：X99 + CSM-on → Code 12（上游社区复现 #88/#61 判定）
+
+来源：[Zagitta/gpu-unlock issue #28 评论区](https://github.com/Zagitta/gpu-unlock/issues/28)（用户 3615074213，2026-10-31）。Jingsha X99-8D3（AMI 5.11）+ Windows 11：**CSM on 时解锁事务全绿但 Windows 落 Code 12 / 0xC0000018；CSM off 后驱动正常加载**——与本仓库 [#88](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/88)（A4G/ReBAR 非硬前提、CSM off=显示链推荐）与 [#61](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/61)（Code 12 定律：交棒 console 归属链双败→Code 12，与解锁/族/拓扑无关）独立吻合。同评论另给出板级天花板旁证：解锁后 0x151E 板 ~1024 vs 0x300 板 ~846 FLOP/SM/clk，与逐板供电/BIOS 差异方向一致。
+
 ### 上游互连条件观察
 
 [cmp170hx](https://github.com/Consensus-Protocol/cmp170hx) 的 Thunderbolt 3 eGPU 记录为 `Booter Load 0x15`，Oculink 路径可用。这是上游工具的互连观察，不等同于本 EFI 工具在所有 Oculink 平台上的验证。
