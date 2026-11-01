@@ -30,6 +30,7 @@ use alloc::vec::Vec;
 use log::info;
 use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams};
 use uefi::data_types::CStr16;
+use uefi::proto::device_path::DevicePath;
 use uefi::proto::loaded_image::LoadedImage;
 use uefi::runtime::{self, VariableAttributes, VariableVendor};
 use uefi::{guid, Handle};
@@ -213,42 +214,39 @@ fn unregister_ours() {
     }
 }
 
-/// Device-path prefix of the volume the loader booted from: the loaded
-/// image's FilePath with its final FilePath node (the BOOTX64.EFI name)
-/// cut off. The loader only ever registers files on its own volume, so
-/// this prefix identifies "our" entries for the unregister pass.
+/// Device-path prefix of the volume the loader booted from: the boot
+/// volume HANDLE's own device path (loaded image DeviceHandle), END node
+/// stripped. This is the shape Driver#### entries need - OVMF-style
+/// removable boots carry only a FilePath fragment in the loaded image
+/// path, no hardware prefix, so the loaded-image path alone cannot build
+/// a stable load option.
 fn boot_volume_prefix() -> Option<Vec<u8>> {
-    // Safety: GetProtocol open on our own image handle, read-only use.
-    let li = unsafe {
-        boot::open_protocol::<LoadedImage>(
-            OpenProtocolParams { handle: boot::image_handle(), agent: boot::image_handle(), controller: None },
+    let handle = crate::chainload::own_device_handle()?;
+    // Safety: GetProtocol read on the volume handle, boot services live.
+    let dp = unsafe {
+        boot::open_protocol::<DevicePath>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
             OpenProtocolAttributes::GetProtocol,
         )
     }
+    .map_err(|e| info!("NVRAM-DRIVER: volume DevicePath open failed {:?}", e.status()))
     .ok()?;
-    let dp = li.file_path()?;
     let bytes = dp.as_bytes();
-    // Find the LAST FilePath node (type 0x04, subtype 0x04) before END.
-    let mut last_file_node: Option<(usize, usize)> = None;
-    let mut i = 0usize;
-    while i + 4 <= bytes.len() {
-        let len = u16::from_le_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
-        if len < 4 || i + len > bytes.len() {
+    info!("NVRAM-DRIVER: volume device path {} bytes (hardware prefix + END)", bytes.len());
+    // Strip the trailing END node (chainload dp_before_end semantics).
+    let mut off = 0usize;
+    while off + 4 <= bytes.len() {
+        let len = u16::from_le_bytes([bytes[off + 2], bytes[off + 3]]) as usize;
+        if len < 4 || off + len > bytes.len() || bytes[off] == 0x7f {
             break;
         }
-        if bytes[i] == 0x04 && bytes[i + 1] == 0x04 {
-            last_file_node = Some((i, len));
-        }
-        if bytes[i] == 0x7f {
-            break;
-        }
-        i += len;
+        off += len;
     }
-    let (start, _) = last_file_node?;
-    if start == 0 {
+    if off == 0 {
+        info!("NVRAM-DRIVER: volume device path is empty");
         return None;
     }
-    Some(bytes[..start].to_vec())
+    Some(bytes[..off].to_vec())
 }
 
 /// Volume prefix + FilePath node for `file` + END.
