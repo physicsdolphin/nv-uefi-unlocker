@@ -108,10 +108,13 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
 
 - **[8bit2qubit](https://github.com/8bit2qubit)**（PR #5）：booter 0x89
   真根因（上游桥 Bus Master 未使能）+ 第四验证卡（AD106 `2803` 桌面），
-  台式机全倒之谜的闭环。
+  台式机全倒之谜的闭环；issue #98 的记录勘误——核对全部 release tag 源码
+  形态并在 PR #5 机上双构建重跑，钉死守卫作用域缺陷引入于 `4b7e955`
+  （非初版实现），PR #5/#33 机分类亦据此更正。
 - **[fujiaghost789-glitch](https://github.com/fujiaghost789-glitch)**
-  （PR #87）：`BridgeMaster` guard 生命周期缺陷的诊断与实机前后对照
-  （B760/VT-d-off 路径），首个 8 GB `2803` 数据点。
+  （PR #87）：`BridgeMaster` guard 生命周期缺陷（`4b7e955` 引入、
+  `ae7b128` 修复）的诊断与实机前后对照（B760/VT-d-off 路径），首个
+  8 GB `2803` 数据点。
 - **[Catnip202X](https://github.com/Catnip202X)**：ROM 解析器越界修复
   （PR #44）、工具间寄存器表漂移（issue #42）、免 U 盘分区提案与裁决
   记录（issue #73）。
