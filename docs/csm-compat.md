@@ -47,7 +47,13 @@ PR #100 讨论定调的"bcfg driver load 模式"：非 FV 侵入的常驻形态�
 | 4 | CSM on + `\tx-native-gop.txt` | **本计划主体**：显式原厂 GOP 恢复（#107 报告者已在自有实现上验证该思路可行） |
 | 5 | 任意 + `\tx-register-driver.txt` | Driver#### 交付形态（QEMU 已过，见证据索引） |
 
-## 5. 开放项
+## 5. GOP 模块的来源（无下载依赖，按宪法 §1.6）
+
+1. **本卡影子 ROM（默认，零下载）**：固件枚举时已把整块 Option ROM 影子拷进 UEFI RAM（`PciIo RomImage`），loader 直接解析——与卡绝对匹配，无分发问题。
+2. **用户自己的 VBIOS dump**：GPU-Z 等工具 dump 本卡 ROM → `assets extract-gop <dump> <outdir>` 本地提取 `.efirom` 模块（SHA-256 打印钉死）。
+3. **兼容包（make-usbroot 接线，规划中）**：GOP 驱动只存在于 VBIOS ROM（NVIDIA 驱动包不含），钉住的对象是按族的官方原版 VBIOS dump（TechPowerUp VBIOS 数据库等存档，SHA-256 进 manifest），脚本下载后**本地**提取——与 gsp.bin/booter 的发放模式同构，项目永不自托管 NVIDIA 固件。
+
+## 6. 开放项
 
 1. **QEMU：BDS 未在第二班 StartImage 预注册驱动**——注册的变量结构已验证规范（见证据索引），嫌疑 = Driver#### 处理时序的存储栈连接（Boot0001 走 IDE 兼容路径、注册路径走 AHCI 栈）。需 DEBUG OVMF 或真机复验；社区 bcfg 注入 RAID/NVMe 驱动是该机制的成熟先例。
 2. **assets 解压 PE 产出**：GOP 兼容包若要支撑 Driver#### 预注册，需要解压后的 PE（运行时解压用固件协议没有问题，但落盘文件必须是 PE）。Tiano 解码的 Rust 移植在 host 侧已有一个"除一处 rare construct 外"对拍通过的版本，repro 保留（对比 EDK2 BaseUefiDecompressLib 语义逐行可查）。
