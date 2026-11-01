@@ -170,6 +170,8 @@
 
 同族资产可用，有社区同链硅验证，但本工具尚无完整 EFI 至 Windows 成功交棒证据。已知问题：2080 Ti `1e07`、2080 `1e87` 返回 booter `0x91`；2080 Super `1e81` 在 EFI 解锁后 GSP 交棒蓝屏。来源：[#17](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/17)、[#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)。GTX 16 系仍待本工具实机验证。
 
+无零售名的裸 die / 内部板（pci.ids 在档、段内可跑，层级 🟢，首报升级）：TU102GL `1e3c`/`1e3d`/`1e3e`；TU104M `1eab`、TU104GL `1eb9`/`1eba`（PG189 SKU600）/`1ebe`；TU106 `1f04`、TU106M `1f2e`；TU117 `1f81`、TU117M `1fa1`、TU117GL `1fae`/`1fbf`；TU116GL `21ae`/`21bf`、裸 TU116 `21c2`/`21c3`。Turing 段无 GA102 式 "Engineering Sample" 实名条目（pci.ids 2026-11-02 全段扫描）。
+
 <a id="device-17"></a>
 
 ### Turing 之前（Pascal…） · —

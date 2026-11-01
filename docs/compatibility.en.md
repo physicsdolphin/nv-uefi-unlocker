@@ -170,6 +170,8 @@ Family routing is available; complete hardware success evidence is pending. Sour
 
 Same-family assets and community silicon evidence are available, but this tool has no complete successful EFI-to-Windows handoff evidence for these models. Known issues: 2080 Ti `1e07` and 2080 `1e87` return booter `0x91`; 2080 Super `1e81` unlocks in EFI but bug-checks during GSP handoff. Sources: [#17](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/17), [#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62), [#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55). GTX 16 hardware verification with this tool remains pending.
 
+No-marketing-name bare-die / internal boards (pci.ids-listed, inside the runtime span, tier 🟢 until a first report): TU102GL `1e3c`/`1e3d`/`1e3e`; TU104M `1eab`, TU104GL `1eb9`/`1eba` (PG189 SKU600)/`1ebe`; TU106 `1f04`, TU106M `1f2e`; TU117 `1f81`, TU117M `1fa1`, TU117GL `1fae`/`1fbf`; TU116GL `21ae`/`21bf`, bare TU116 `21c2`/`21c3`. The Turing range has no GA102-style "Engineering Sample" named entries (pci.ids full-span scan, 2026-11-02).
+
 <a id="device-17"></a>
 
 ### Older than Turing (Pascal…) · —
