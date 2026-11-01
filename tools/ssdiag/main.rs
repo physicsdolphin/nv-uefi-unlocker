@@ -1,4 +1,7 @@
-//! ssdiag v0.6.1 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.2 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.2 adds cumulative per-stage [+ms] timing lines (the loader's issue#38
+//! convention) so a slow run shows where its time went, and tightens the
+//! exit-side temp-file retry grain.
 //! v0.6.1 replaces the powershell.exe GPU discovery (~5 s paid every run)
 //! with a native CfgMgr32 walk - same OS sources, no spawned process, works
 //! unelevated.
@@ -713,11 +716,14 @@ fn cleanup_driver() {
         win::CloseServiceHandle(mgr);
     }
     let sys_path = std::env::temp_dir().join(TEMP_SYS);
-    for _ in 0..10 {
+    // 50 ms grain over the same 2 s worst-case budget - the kernel releases
+    // the image mapping with a small delay after the stop, and the coarse
+    // 200 ms steps used to pay that delay in multiples
+    for _ in 0..40 {
         if std::fs::remove_file(&sys_path).is_ok() {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }
 
@@ -1584,19 +1590,38 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
     }
 }
 
+// ---------------------------------------------------------------- stage timing
+
+// Cumulative stage timing, the loader's issue#38 `[+ms]` convention: each
+// stage prints one cumulative-elapsed line, so a slow run shows exactly
+// where its time went without a second instrumented build.
+static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+fn t0_set() {
+    let _ = T0.set(std::time::Instant::now());
+}
+
+fn stage(label: &str) {
+    let ms = T0.get().map(|t| t.elapsed().as_millis()).unwrap_or(0);
+    println!("[+{ms}ms] {label}");
+}
+
 fn main() {
+    t0_set();
     color_init();
     install_crash_cleanup();
     let code = run();
     // strict remove-when-done: our own service and temp file never outlive
     // this process - cleanup runs on every path that got past arg parsing.
     // Gated on DRIVER_TOUCHED: a --dry-run (or any exit before deploy) has
-    // nothing to remove and must not burn the 10 x 200 ms retry loop on a
-    // temp .sys that never existed.
+    // nothing to remove and must not burn the retry loop on a temp .sys
+    // that never existed.
     if DRIVER_TOUCHED.load(std::sync::atomic::Ordering::Relaxed) {
         cleanup_driver();
         println!("driver service removed (remove-when-done)");
+        stage("driver removed");
     }
+    stage("total");
     std::process::exit(code);
 }
 
@@ -1724,6 +1749,7 @@ SSDIAG_COLOR=force pins on.",
         eprintln!("no NVIDIA function with a BAR0-class (>=16 MiB) window found");
         return 2;
     }
+    stage(&format!("discovery: {} card(s)", gpus.len()));
 
     if dry {
         preflight();
@@ -1732,6 +1758,7 @@ SSDIAG_COLOR=force pins on.",
     }
 
     preflight();
+    stage("platform gates");
     let drv = match ensure_driver() {
         Ok(d) => d,
         Err(e) => {
@@ -1739,6 +1766,7 @@ SSDIAG_COLOR=force pins on.",
             return 2;
         }
     };
+    stage("driver ready");
 
     println!("{ } NVIDIA GPU function(s) discovered", gpus.len());
     let mut rc = 0;
@@ -1837,6 +1865,7 @@ SSDIAG_COLOR=force pins on.",
         }
         drv.unmap_physical(va);
     }
+    stage("probe complete");
     rc
 }
 
