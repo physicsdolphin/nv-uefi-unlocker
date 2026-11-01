@@ -74,7 +74,7 @@ body:
     id: evidence
     attributes:
       label: 原始证据 / Raw evidence
-      description: 附完整 loader.log 和已有系统侧输出；长日志用附件或折叠。没有原始证据请说明原因，分享前可脱敏。 / Include the full loader.log and available OS output; attach or collapse long logs. Explain missing evidence and redact private details as needed.
+      description: 附完整 loader.log 和已有系统侧输出；长日志用附件或折叠。没有原始证据请说明原因，分享前可脱敏。可选加速分诊：`python tools/collect_compat.py --log loader.log --log ssdiag.txt --out compat-profile.json`，把生成的 compat-profile.json 与原始日志一起附上——脚本只读解析文本，不触碰硬件。 / Include the full loader.log and available OS output; attach or collapse long logs. Explain missing evidence and redact private details as needed. Optional triage accelerator: run `python tools/collect_compat.py --log loader.log --log ssdiag.txt --out compat-profile.json` and attach the generated compat-profile.json together with the raw logs — the script only parses text, it never touches hardware.
     validations:
       required: true
   - type: textarea
