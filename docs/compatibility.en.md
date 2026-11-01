@@ -53,14 +53,14 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788** (AD104 refresh) / 4080 Laptop **27a0 / 27e0** | ✅ 2783; others retain upstream tier · [Details](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2704/2705/2709/2757; 🟢 2702/2717 · [Details](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689** | ✅ 2684/2689; 🟢 2685 · [Details](#device-8) |
-| GA102 | 3090 2204 / **3080 2206** / **3080 LHR 2216** / 3080 Ti 2208 / 3070 Ti 2205 etc. (whole 0x22xx range routed) | ✅ 2206/2216; others fully routed · [Details](#device-9) |
+| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d** etc. (0x2200..=0x223f routed) | ✅ 2206/2216; others fully routed · [Details](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [Details](#device-10) |
-| GA104 | 3070 2484–248c / 3060 Ti **2489** etc. (whole 0x24xx range routed) | ✅ 2489; 2484 EFI-only, lost in Windows · [Details](#device-11) |
+| GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** etc. (whole 0x24xx range routed) | ✅ 2489; 2484 EFI-only, lost in Windows · [Details](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d; hybrid exceptions · [Details](#device-12) |
-| GA106 (incl. M) | 3060 2501–2508 / 3060 Laptop 2560 etc. (whole 0x25xx range routed) | ✅ 2504/2520; 🟢 others; 2560 retest pending · [Details](#device-13) |
-| GA107 | 3050 2507 / 3050 Laptop 25a2 etc. | 🟡 Unverified · [Details](#device-14) |
-| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06** | ✅ 1f07/1f06 · [Details](#device-15) |
-| TU102/TU104/TU116 (rest of the 20/16 series) | 1e02–1fff, 2182–21d1 etc. | 🟢 Community chain; EFI handoff issues remain · [Details](#device-16) |
+| GA106 (incl. M) | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 etc. (whole 0x25xx range routed) | ✅ 2504/2520; 🟢 others; 2560 retest pending · [Details](#device-13) |
+| GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9** / MX570 25a6 / 3050 Laptop **25a2** etc. | 🟡 Unverified · [Details](#device-14) |
+| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03** | ✅ 1f07/1f06; 🟢 1f03 · [Details](#device-15) |
+| TU102/TU104/TU116 (rest of the 20/16 series, incl. TITAN RTX 1e02) | 1e02–1fff, 2182–21d1 etc. | 🟢 Community chain; EFI handoff issues remain · [Details](#device-16) |
 | Older than Turing (Pascal…) | — | ❌ No transaction track · [Details](#device-17) |
 | Blackwell (50 series) / GA100 | — | ❌ Different chain · [Details](#device-18) |
 
@@ -120,9 +120,11 @@ Full chain, selector read-backs, post-FLR survival and computation integrity che
 
 <a id="device-9"></a>
 
-### GA102 · 3090 2204 / 3080 2206 / 3080 LHR 2216 / 3080 Ti 2208 / 3070 Ti 2205 etc. (whole 0x22xx range routed)
+### GA102 · 3090 Ti 2203 / 3090 2204 / 3080 2206 / 3080 12GB 220a / 3080 LHR 2216 / 3080 Ti 2208 / CMP 90HX 220d etc. (0x2200..=0x223f routed)
 
-`2206` / `2216` pass firmware read-backs and Windows performance verification; other same-family devices are fully routed. Gains depend on power and workload. Sources: [#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29), [#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15).
+`2206` / `2216` pass firmware read-backs and Windows performance verification; other same-family devices are fully routed. Gains depend on power and workload.
+
+2026-11-02 pci.ids correction: the old "3070 Ti 2205" entry was wrong - `2205` / `2207` are cancelled GA102 ES SKUs (RTX 3080 Ti 20GB / a GA102 3070 Ti); the shipping 3070 Ti is GA104 `2482`. The runtime span is narrowed to `0x2200..=0x223f` accordingly (the old 0x22..ff tail holds no GA102 cores - only HD-audio functions, Tegra/THOR/GB10 ARM blocks and H100 NVSwitch). Sources: [#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29), [#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15).
 
 <a id="device-10"></a>
 
@@ -144,19 +146,21 @@ dGPU-direct mode passes full-chain and Windows performance verification. MUX-les
 
 <a id="device-13"></a>
 
-### GA106 (incl. M) · 3060 2501–2508 / 3060 Laptop 2560 etc. (whole 0x25xx range routed)
+### GA106 (incl. M) · 3060 2501–2509 / 3050 8GB 2507 / 3060 Laptop 2560 etc. (whole 0x25xx range routed)
 
 `2504` / `2520` pass unlock and in-OS performance verification. The AMI X470 `2504` platform needs `no-reconnect.txt`. Other same-family devices retain upstream evidence; an in-OS success result for `2560` awaits retesting. Sources: [#70](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70), [#71](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/71), [#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6).
 
 <a id="device-14"></a>
 
-### GA107 · 3050 2507 / 3050 Laptop 25a2 etc.
+### GA107 · 3050 2582 / 2583 / 2584 / RTX 2050 25a9 / MX570 25a6 / 3050 Laptop 25a2 etc.
+
+The old "3050 2507" entry belonged to the wrong die: `2507` is the GA106-150-die 3050 8GB (moved to the GA106 row); the GA107-die desktop 3050s are `2582` / `2583` / `2584`, and RTX 2050 is `25a9` (also 25ad/25ed) - pci.ids + DeviceHunt verified (2026-11-02).
 
 Family routing is available; complete hardware success evidence is pending. Source: [#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37).
 
 <a id="device-15"></a>
 
-### TU106 · RTX 2070 1f07 / 2060 Super 1f06
+### TU106 · RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03
 
 `1f07` / `1f06` pass full-chain and Windows verification. Windows requires GSP-RM and a restart. Handoff relocks FEAT PLM while preserving the override values; the unlock path skips FLR. For nonstandard VRAM capacities, check the usable-memory decode in the log. Sources: [TU106 report](evidence/m3-tu106/host-and-final-result.md), [#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12), [GSP prerequisite](faq.en.md#turing).
 

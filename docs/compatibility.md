@@ -53,14 +53,14 @@
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788**（AD104 刷新版）/ 4080 Laptop **27a0 / 27e0** | ✅ 2783；其余保留上游层级 · [详情](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2704/2705/2709/2757；🟢 2702/2717 · [详情](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689** | ✅ 2684/2689；🟢 2685 · [详情](#device-8) |
-| GA102 | 3090 2204 / **3080 2206** / **3080 LHR 2216** / 3080 Ti 2208 / 3070 Ti 2205 等（0x22xx 全段放行） | ✅ 2206/2216；其余全段放行 · [详情](#device-9) |
+| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d** 等（0x2200..=0x223f 全段放行） | ✅ 2206/2216；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
-| GA104 | 3070 2484–248c / 3060 Ti **2489** 等（0x24xx 全段放行） | ✅ 2489；2484 仅 EFI、Windows 不保留 · [详情](#device-11) |
+| GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；2484 仅 EFI、Windows 不保留 · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
-| GA106（含 M） | 3060 2501–2508 / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520；🟢 其余；2560 待复测 · [详情](#device-13) |
-| GA107 | 3050 2507 / 3050 Laptop 25a2 等 | 🟡 待验证 · [详情](#device-14) |
-| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06** | ✅ 1f07/1f06 · [详情](#device-15) |
-| TU102/TU104/TU116（20 系其余/16 系） | 1e02–1fff、2182–21d1 等 | 🟢 社区同链；EFI 交棒仍有问题 · [详情](#device-16) |
+| GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520；🟢 其余；2560 待复测 · [详情](#device-13) |
+| GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9** / MX570 25a6 / 3050 Laptop **25a2** 等 | 🟡 待验证 · [详情](#device-14) |
+| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03** | ✅ 1f07/1f06；🟢 1f03 · [详情](#device-15) |
+| TU102/TU104/TU116（20 系其余/16 系，含 TITAN RTX 1e02） | 1e02–1fff、2182–21d1 等 | 🟢 社区同链；EFI 交棒仍有问题 · [详情](#device-16) |
 | Turing 之前（Pascal…） | — | ❌ 无事务轨 · [详情](#device-17) |
 | Blackwell (50 系) / GA100 | — | ❌ 链路不同 · [详情](#device-18) |
 
@@ -120,9 +120,11 @@
 
 <a id="device-9"></a>
 
-### GA102 · 3090 2204 / 3080 2206 / 3080 LHR 2216 / 3080 Ti 2208 / 3070 Ti 2205 等（0x22xx 全段放行）
+### GA102 · 3090 Ti 2203 / 3090 2204 / 3080 2206 / 3080 12GB 220a / 3080 LHR 2216 / 3080 Ti 2208 / CMP 90HX 220d 等（0x2200..=0x223f 全段放行）
 
-`2206` / `2216` 通过固件读回与 Windows 性能验证；其余同族设备全段放行。实际收益受功耗和工作负载影响。来源：[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)、[#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15)。
+`2206` / `2216` 通过固件读回与 Windows 性能验证；其余同族设备全段放行。实际收益受功耗和工作负载影响。
+
+2026-11-02 pci.ids 复核纠错：旧表"3070 Ti 2205"有误——`2205` / `2207` 是取消的 GA102 ES（3080 Ti 20GB / GA102 版 3070 Ti），零售 3070 Ti 为 GA104 `2482`；运行时段同步收口为 `0x2200..=0x223f`（旧 `0x22..ff` 尾段经查无 GA102 核心，只有音频功能、Tegra/THOR/GB10 ARM 块与 H100 NVSwitch）。来源：[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)、[#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15)。
 
 <a id="device-10"></a>
 
@@ -144,21 +146,23 @@
 
 <a id="device-13"></a>
 
-### GA106（含 M） · 3060 2501–2508 / 3060 Laptop 2560 等（0x25xx 全段放行）
+### GA106（含 M） · 3060 2501–2509 / 3050 8GB 2507 / 3060 Laptop 2560 等（0x25xx 全段放行）
 
 `2504` / `2520` 通过解锁和系统侧性能验证；`2504` 的 AMI X470 平台需用 `no-reconnect.txt` 跳过重连。其他同族设备保留上游证据层级；`2560` 的系统侧成功结果待复测。来源：[#70](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70)、[#71](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/71)、[#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6)。
 
 <a id="device-14"></a>
 
-### GA107 · 3050 2507 / 3050 Laptop 25a2 等
+### GA107 · 3050 2582 / 2583 / 2584 / RTX 2050 25a9 / MX570 25a6 / 3050 Laptop 25a2 等
+
+旧表"3050 2507"归族有误：`2507` 是 GA106-150 die 的 3050 8GB（已移至 GA106 行）；GA107 die 的桌面 3050 为 `2582` / `2583` / `2584`，RTX 2050 为 `25a9`（另有 25ad/25ed），均 pci.ids + DeviceHunt 复核（2026-11-02）。
 
 家族路由存在，完整实机成功证据待补充。来源：[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)。
 
 <a id="device-15"></a>
 
-### TU106 · RTX 2070 1f07 / 2060 Super 1f06
+### TU106 · RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03
 
-`1f07` / `1f06` 通过全链与 Windows 验证。Windows 必须启用 GSP-RM 并重启；交棒时 FEAT PLM 重锁、解锁值保留，解锁路径跳过 FLR。非标准显存容量应核对日志中的可用显存解码结果。来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[GSP 前置](faq.md#turing)。
+`1f03` 为 2060 12GB 刷新（pci.ids + DeviceHunt 复核，2026-11-02）。`1f07` / `1f06` 通过全链与 Windows 验证。Windows 必须启用 GSP-RM 并重启；交棒时 FEAT PLM 重锁、解锁值保留，解锁路径跳过 FLR。非标准显存容量应核对日志中的可用显存解码结果。来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[GSP 前置](faq.md#turing)。
 
 <a id="device-16"></a>
 

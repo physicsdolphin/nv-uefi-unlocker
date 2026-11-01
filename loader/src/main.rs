@@ -163,10 +163,17 @@ fn tx_one_card(g: &pci::FoundGpu) {
     //     TU102/104/106/116/117 (20/16-series, TITAN/Quadro RTX,
     //     CMP 30/40/50HX; the 21xx span covers every TU116 SKU incl.
     //     1650 SUPER 2187 and the odd 21c2 variant);
-    //   0x2200..0x22ff, 0x2400..0x25ff = Ampere GA10x (GA102 3090/3080/
-    //     CMP 90HX/A6000-class, GA103 2414, GA104 3070s/CMP 70HX/A4500,
+    //   0x2200..=0x223f, 0x2400..=0x25ff = Ampere GA10x (GA102 3090/3080/
+    //     CMP 90HX/A6000-class, GA103 2414, GA104 3070s/3070Ti/CMP 70HX/A4500,
     //     GA106/107 3060/3050 lines + mobile; 0x23xx = Hopper, absent
-    //     on purpose);
+    //     on purpose). The 0x2240..=0x22ff tail was carved out (2026-11-02,
+    //     pci.ids-verified): it holds no GA102 cores - only GA104/GA106/GA107
+    //     HD-audio functions (228b/228e/2291), Ada/Blackwell audio functions
+    //     (22ba..=be/22e8..=ec), Tegra/Orin/THOR/GB10 ARM blocks
+    //     (2296..=9e/22ce..=d1/22d8/22e6) and GH100 H100 NVSwitch (22a3 -
+    //     Hopper, the same cross-family class as the removed 20c2/20f1).
+    //     The class-03/function-0 enumeration filter already skips every
+    //     one of these; the cap is defense-in-depth;
     //   0x2600..0x28ff = Ada AD10x (GeForce 40-series desktop+mobile,
     //     RTX-workstation/L-class, the AD106M "RTX 3050 A", and
     //     upstream-unlisted IDs such as the 4070M modded-card 2820).
@@ -180,7 +187,7 @@ fn tx_one_card(g: &pci::FoundGpu) {
     let dev = g.device_id;
     let family: &str = match dev {
         0x2600..=0x28ff => "ad102",
-        0x2200..=0x22ff | 0x2400..=0x25ff => "ga102",
+        0x2200..=0x223f | 0x2400..=0x25ff => "ga102",
         0x1e02..=0x1fff | 0x2182..=0x21d1 => "tu10x",
         other => {
             info!("TX: device 10de:{other:04x} has no asset family mapping - skipping");
