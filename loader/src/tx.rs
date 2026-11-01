@@ -974,7 +974,12 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // (SIG_PROD, 16B AES at patch_loc), so the per-fuse slot
             // selection is moot; index 0 is the only choice (the community
             // path patches the literal SIG_PROD bytes likewise). Fourth
-            // TU106 fire failed exactly on this read (2026-10-27).
+            // TU106 fire failed exactly on this read (2026-10-27). Kernel
+            // cross-check (2026-11-01): Turing's dev_fuse.h carries NO
+            // FPF_SEC2/FPF_GSP ucode-version registers at all and
+            // kernel_sec2_tu102.c has no ksec2ReadUcodeFuseVersion - the
+            // kernel never walks a fuse table for the Turing BOOT_DIRECT
+            // booter, which is what those badf5040 reads were telling us.
             let fuse_ver = if hdr.num_sigs == 1 {
                 0
             } else {

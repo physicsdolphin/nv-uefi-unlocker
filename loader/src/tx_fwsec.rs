@@ -175,6 +175,17 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
                 // IMEMLoadSize - the old parse read the same field twice),
                 // and the signature area starts AFTER the 60-byte descriptor
                 // (the old +44 was the V3 value, pointing inside it).
+                // Cross-checked field-by-field against nvoc's authoritative
+                // V2 decode (core/src/vbios/legacy.rs V2 tuple, TU106
+                // 1.rom-measured): interface+16/phys+20/load+24/virt+28/
+                // secbase+32/secsize+36 all match exactly. The +52 read
+                // (DMEM image offset) has no nvoc counterpart - nvoc derives
+                // the DMEM window geometrically (desc_end + imem_load_size,
+                // "IMEM followed by DMEM") instead of reading a field; both
+                // agree on the real TU106 (field value 0x410 == geometric
+                // position), so the cmp50hx explicit-field reading stays,
+                // noted here as a two-source ambiguity never adjudicated by
+                // a first-hand decode.
                 if size < 60 || desc_off + 60 > rom.len() {
                     return None;
                 }
