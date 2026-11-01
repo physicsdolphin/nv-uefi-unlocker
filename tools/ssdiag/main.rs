@@ -1280,6 +1280,27 @@ const AD1X_ROWS: [(&str, u32); 4] = [
     ("AD1X_XVE_PLM", 0x0008_8FF4),
     ("AD1X_BAR1_CAP_MIRROR", 0x0008_8BBC),
 ];
+/// Ada fuse-controller / TPC-disable block (KohakUnlock issue #16 map, 2026-11-02:
+/// 12 fuse PLMs live at 0x8200d0..fc on AD10x — unlike GA100's 0x820050/54;
+/// DEBUGCTRL bit1 switches FUSECTRL to the RIR macro per ga100_rir.c). Read-only
+/// probe for the soft-disable question: cut-down TPCs with DEFECT=0 are
+/// candidates for the _CP shadow path (GA100 precedent) — see
+/// docs/open-questions.md. badf on non-Ada dies is expected and is data.
+const ADA_FUSE_ROWS: [(&str, u32); 13] = [
+    ("FUSE_CTRL", 0x0082_0000),
+    ("FUSE_ADDR", 0x0082_0004),
+    ("FUSE_REG_50", 0x0082_0050),
+    ("FUSE_REG_54", 0x0082_0054),
+    ("FUSE_DEBUGCTRL", 0x0082_0060),
+    ("DISABLE_FUSE_PROG", 0x0082_007C),
+    ("TPC_DEFECT_G0T0A", 0x0082_03A4),
+    ("TPC_DEFECT_G0T0B", 0x0082_03AC),
+    ("TPC_DEFECT_G0T0C", 0x0082_05C4),
+    ("TPC_DEFECT_G0T0D", 0x0082_05C8),
+    ("TPC_OPT_G0T0", 0x0082_0C38),
+    ("TPC_OPT_G1T0", 0x0082_0C3C),
+    ("CTRL_OPT_9C8", 0x0082_09C8),
+];
 /// cmp170hx 26-register PLM survey (union across references; GA100-era
 /// addresses - on other dies expect badf or benign values, that IS data).
 const PLM_SURVEY: [u32; 26] = [
@@ -1509,6 +1530,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
     for (label, regs) in [
         ("ada 4-write", &ADA_ROWS[..]),
         ("ad1x 64g-bar1", &AD1X_ROWS[..]),
+        ("ada fuse/tpc", &ADA_FUSE_ROWS[..]),
     ] {
         for (name, off) in regs {
             let v = rd(*off);
