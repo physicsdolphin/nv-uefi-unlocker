@@ -53,7 +53,7 @@
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788**（AD104 刷新版）/ 4080 Laptop **27a0 / 27e0**；ES：AC AD104 20GB **2785** | ✅ 2783；其余保留上游层级 · [详情](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2702/2704/2705/2709/2757；🟢 2717 · [详情](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**；ES：TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689；🟢 2685/2681/26af · [详情](#device-8) |
-| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216；其余全段放行 · [详情](#device-9) |
+| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216/2204（2204 仅系统侧，D#96）；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；2484 仅 EFI、Windows 不保留 · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
@@ -72,7 +72,7 @@
 
 ### AD107 · 4060 Laptop 28e0
 
-本工具全链解锁与 Windows 验证通过。独立平台复现同样确认系统侧状态和 Tensor 性能提升。来源：[实测报告](ada28e0-uefi-report.md)、[#63](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/63)。
+本工具全链解锁与 Windows 验证通过。独立平台复现同样确认系统侧状态和 Tensor 性能提升。[#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119) 为第三个独立数据点（同机系 PHN16-71 但 **BIOS V1.20**，驱动 617.42）：三段消融确认**混合模式入口 BAR0/MMIO 全 `0xffffffff` 不可读、NVIDIA GPU Only 直连 13/13 sweep 可读**（显示模式矩阵 Insyde V1.20 样本），TX 全绿、FP16 +49.4% / BF16 +56.9%（组间离散提示热限，散热待查）；SB/BitLocker 先关后复并验证。来源：[实测报告](ada28e0-uefi-report.md)、[#63](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/63)、[#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119)。
 
 <a id="device-2"></a>
 
@@ -110,7 +110,7 @@
 
 ### AD103 · 4080S 2702 / 4080 2704 / 4070TiS 2705 / 4070 2709 / 4090M 2757 / 2717
 
-`2702` / `2704` / `2705` / `2709` / `2757` 通过全链及系统侧性能验证；`2717` 为上游硅验证。`2702`（4080 SUPER）由 [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107) 实测：官方 v2.1.8，CSM off 下 GOP 恢复、系统侧验证与张量吞吐全部通过（报告者另贡献了 CSM-on 下从本卡 Option ROM 易失注入原厂 GOP 的恢复方法，已列入 [issue #107 轨道](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)）。`2717` 为 4090 Laptop 的另一 ID（同 `2757` 卡型，三源复核，2026-11-02）。`2757` 的 Alienware m18 R1 实测（Windows 11；FP16/BF16/FP8 约 2 倍，控制组持平）见 [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md)。来源：[#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53)、[#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36)、[Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72)、[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110)、[gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132)。
+`2702` / `2704` / `2705` / `2709` / `2757` 通过全链及系统侧性能验证；`2717` 为上游硅验证。`2702`（4080 SUPER）双独立点：[#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)（单卡 ZOTAC，CSM off 全过，另贡献 CSM-on Option-ROM 原厂 GOP 恢复法）与 [Discussion #104](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/104)（**双卡 TRX40 单次引导全过**——首例双 AD103 多卡实证；cuBLAS 1.75×/1.78×/1.66× 且 FP16acc 对照组持平；**首个真实 LLM 前后对照**：prefill +16~19%（132K 两组区间零重叠）、decode +5.5%）。`2717` 为 4090 Laptop 的另一 ID（同 `2757` 卡型，三源复核，2026-11-02）。`2757` 的 Alienware m18 R1 实测（Windows 11；FP16/BF16/FP8 约 2 倍，控制组持平）见 [evidence/uefi-2757-m18r1/report.md](evidence/uefi-2757-m18r1/report.md)。来源：[#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53)、[#36](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/36)、[Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72)、[#8](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/8)、[#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110)、[gpu-unlock-ada #132](https://github.com/JustAResearcher/gpu-unlock-ada/issues/132)。
 
 <a id="device-8"></a>
 
@@ -122,7 +122,7 @@
 
 ### GA102 · 3090 Ti 2203 / 3090 2204 / 3080 2206 / 3080 12GB 220a / 3080 LHR 2216 / 3080 Ti 2208 / CMP 90HX 220d 等（0x2200..=0x223f 全段放行）
 
-`2206` / `2216` 通过固件读回与 Windows 性能验证；其余同族设备全段放行。实际收益受功耗和工作负载影响。
+`2206` / `2216` 通过固件读回与 Windows 性能验证；`2204`（3090）在 [Discussion #96](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/96) 有**双卡（X99-T8）系统侧成功**：ComfyUI bf16 工作流 +30~40%（口头数字、日志未附，按仅系统侧收录）；其余同族设备全段放行。实际收益受功耗和工作负载影响。
 
 平台注记（2026-11-03 补）：`2204`（3090）在 ASUS X570 出现事务成功后 ConnectController 卡死（[#106](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/106)，`tx-reconnect-nonrecursive.txt` 不解，`no-reconnect.txt` 路径待回传——与 #52/#35/#61 重连卡死族同形，CSM 兼容方案见 #107 轨道）；3080 20GB 魔改卡在 Z390P 出现 GSP devinit 把 SS0/SS1 打回厂值（[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109)，30 系**不应**开 Turing 的 GSP 注册表开关，关闭后待复测；同报告另证实 Z390P/AMI 平台在列）。
 

@@ -56,6 +56,14 @@ Without the auto-run marker, only Space or Enter confirms; another key or a 30-s
 
 Multi-GPU default: process all supported cards in firmware order; skip unsupported/already-unlocked cards, handle a card's failure without retrying it. Pin the BDF when only one card is intended.
 
+### Can it be installed to an internal partition for automatic boot?
+
+Yes, but as an **expert, at-your-own-risk operation**: the shipped workflow stays USB / one-time boot menu, and the project neither provides nor recommends internal-partition boot changes for general users. Facts and boundary:
+
+- `bcdedit /create /application osloader` produces a Windows Boot Loader entry whose `device` sits on a drive letter that dies on reboot - firmware never enumerates it; the `bootsector` flavor silently leaves `device` unset. **Neither reaches `{fwbootmgr}`** - don't spend hours there (field-tested in [Discussion #104](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/104), dual 4080 SUPER).
+- The working shape (#104): shrink a data volume by ~2 GB, lay out a FAT32 partition exactly like the USB stick, then pick it from the BIOS boot menu (shows as `UEFI OS`) - manual reorder or one-time F12. Reversible from the BIOS menu back to Windows Boot Manager, nothing flashed.
+- Why no automation script: for most users "my boot partition broke" is the tool's fault, and resize scenarios vary wildly (dual-boot, cross-disk entries, btrfs/zfs with no online shrink). **Policy: the recipe above is documented, automation is not provided, downstream forks may ship scripts and cross-link.**
+
 For preparation on a different host, use `-SkipGspCheck` / `--skip-gsp-check`; target GSP prerequisites still apply. Offline Turing archive `gsp_rm_boot_dbg.bin` selection uses `-ProvenBlob` / `--proven-blob`; length/hash validation remains mandatory. Do not substitute versions or bypass failed checks. For Windows PowerShell TLS download failures, the bash maker can run under WSL / Git Bash.
 
 <a id="turing"></a>
