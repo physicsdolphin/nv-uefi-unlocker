@@ -267,7 +267,12 @@ repository.
   [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html) (ZH) ·
   [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (ZH) ·
   [PCGH Extreme forum](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/) (DE) ·
-  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (ZH-HK)
+  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (ZH-HK) ·
+  [Tom's Hardware](https://www.tomshardware.com/pc-components/gpus/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows-lifts-gpus-fp16-math-performance-up-to-65-percent-uefi-unlocker-covers-rtx-20-30-and-40-series-desktops-and-laptops) (EN) ·
+  [PixLib](https://pixlib.ru/article/nv-uefi-unlocker-kak-uskorit-tenzornye-yadra-rtx-do-75-v-zadachakh-ii) (RU) ·
+  [ShiftDelete forum](https://shiftdelete.net/forum/konular/eski-rtx-kartlara-yapay-zeka-takviyesi-nv-uefi-unlocker.5000006) (TR) ·
+  [NetEase](https://www.163.com/dy/article/LALVCN6L0556OH4N.html) (ZH) ·
+  [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257) (ZH)
 
 ## Star History
 
