@@ -204,13 +204,14 @@ pub fn chain_load_bootmgfw() -> Result<()> {
 /// path parses.
 const MARKER_READ_CAP: usize = 4096;
 
-/// Read a small marker/config file from our own boot volume. Any
+/// Read a small marker/config file from the marker volume (the app's own
+/// boot volume, or the volume the DXE driver armed - see `volumes`). Any
 /// filesystem error counts as absent: the default semantics must never be
 /// upgraded by a probe failure. Absent-file is the normal case and stays
 /// silent; volume-level failures are logged (they explain a marker that
 /// "should have" engaged but did not).
 pub fn boot_volume_read(path: &CStr16) -> Option<alloc::vec::Vec<u8>> {
-    let mut fs = match boot::get_image_file_system(boot::image_handle()) {
+    let mut fs = match crate::volumes::marker_fs() {
         Ok(fs) => fs,
         Err(e) => {
             info!("MARKER: image fs open failed: {:?}", e.status());
@@ -294,6 +295,19 @@ fn parse_marker_number(content: &[u8], default: u64, min: u64, max: u64) -> u64 
 /// number only shortens the abort window they still own.
 pub fn parse_armed_seconds(content: &[u8]) -> u64 {
     parse_marker_number(content, 5, 1, 30)
+}
+
+/// `\tx-dxe-arm.txt` countdown seconds for the DXE driver form: first line
+/// 0..=30, default 5. 0 is allowed here (and only here): the firmware-resident
+/// driver runs unattended at every armed boot, so the abort window is opt-out.
+pub fn parse_dxe_arm_seconds(content: &[u8]) -> u64 {
+    parse_marker_number(content, 5, 0, 30)
+}
+
+/// `\nvunlock-dxe-fail.txt` consecutive-failure counter: plain decimal in
+/// the first line, missing file = 0.
+pub fn parse_fail_count(content: &[u8]) -> u64 {
+    parse_marker_number(content, 0, 0, u64::MAX)
 }
 
 /// `\tx-flush-lines.txt` flush cadence: 0..=4096 count-based flushes per

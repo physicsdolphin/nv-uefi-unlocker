@@ -10,7 +10,6 @@
 use alloc::format;
 use core::cell::UnsafeCell;
 use log::{Level, Log};
-use uefi::boot;
 use uefi::proto::media::file::{File, FileAttribute, FileHandle, FileMode, RegularFile};
 use uefi::{cstr16, system, CStr16, CString16};
 
@@ -206,7 +205,7 @@ fn file_open() -> bool {
 }
 
 fn open_fresh_log() -> Option<RegularFile> {
-    let mut fs = boot::get_image_file_system(boot::image_handle()).ok()?;
+    let mut fs = crate::volumes::marker_fs().ok()?;
     let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
 
     // Remove a stale log from a previous boot so each run starts clean.

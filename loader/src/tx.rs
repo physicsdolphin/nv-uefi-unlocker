@@ -792,7 +792,7 @@ pub fn list_root_entries() {
     // (3x u64 = 24), 3x Time (16B each = 48), attribute u64 = 72, name
     // UCS-2 from offset 80. This bypasses uefi's entry API, whose error
     // path instantiates CStr16 helpers that reference wcslen under LTO.
-    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
+    let Ok(mut fs) = crate::volumes::marker_fs() else {
         info!("TX-ASSET-DIAG: get_image_file_system FAILED");
         return;
     };
@@ -907,7 +907,7 @@ pub fn probe_file(path: &str) -> bool {
         return false;
     };
     use uefi::proto::media::file::{File, FileMode};
-    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
+    let Ok(mut fs) = crate::volumes::marker_fs() else {
         return false;
     };
     let Ok(mut dir) = fs.open_volume() else {
@@ -1013,7 +1013,7 @@ fn read_boot_file_uncached(path: &str) -> Inner {
     use alloc::vec::Vec;
     use uefi::proto::media::file::{File, FileInfo, FileMode, FileAttribute};
 
-    let mut fs = match boot::get_image_file_system(boot::image_handle()) {
+    let mut fs = match crate::volumes::marker_fs() {
         Ok(fs) => fs,
         Err(e) => { info!("TX-ASSET-DIAG: {path} fs open failed {:?}", e.status()); return Inner::Failed; }
     };

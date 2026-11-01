@@ -108,6 +108,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffspack"
+version = "2.1.9"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"

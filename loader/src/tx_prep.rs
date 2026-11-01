@@ -61,7 +61,7 @@ impl PrepState {
             3 => {
                 if let Some(gpus) = &self.gpus {
                     for t in pci::select_tx_targets(gpus) {
-                        if let Some(family) = crate::asset_family(t.device_id) {
+                        if let Some(family) = crate::runner::asset_family(t.device_id) {
                             if !self.families.contains(&family) {
                                 self.families.push(family);
                             }

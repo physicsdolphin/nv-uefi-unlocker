@@ -16,5 +16,23 @@ default = []
 # the explicit user go).
 tx = []
 
+# Shared code for both delivery forms; main.rs (USB app) and dxe_main.rs
+# (firmware-resident DXE driver) are thin entries over this lib.
+[lib]
+name = "loader"
+path = "src/lib.rs"
+
+[[bin]]
+name = "loader"
+path = "src/main.rs"
+
+# Firmware-resident DXE driver form (docs/dxe-driver-ffs-feasibility.md).
+# ffspack patches the PE subsystem to EFI_BOOT_SERVICE_DRIVER and wraps the
+# image as an FFS file for manual firmware insertion; the unpatched .EFI
+# also loads via the UEFI shell `load` command (zero-flash smoke path).
+[[bin]]
+name = "nvunlock-dxe"
+path = "src/dxe_main.rs"
+
 [build-dependencies]
 # none: build.rs uses std only
