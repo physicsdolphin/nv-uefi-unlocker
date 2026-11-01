@@ -138,6 +138,70 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 | 21 | X-WIDE 载具前提 | testsigning+关 SB+预构建 sys 分发（pmxdrv/#40 定谳同构） | 宪法 §9 冲突 | 明确不采纳 | 零 | **P5** |
 | 22 | TOTORONG/craftingmod 分发形态 | 直接分发 EFI/payload 二进制 | 宪法 §1.6 资产纪律 | 明确不采纳 | 零 | **P5** |
 
+### 4.1 P1 明细（立项登记）
+
+**P1-1 发布工艺增补（源：impacifist）**——补齐"逐字节可重建"证据链。
+- 落点：`release/make-usbroot.ps1`（产物清单现成 SHA256SUMS 之上升级）+ 新增 provenance 生成步骤；`tools/check_efi.py`（banner 校验已有，[[github-publish-prep]]）接入 provenance 比对。
+- 形态：①SOURCE-MANIFEST：usbroot 全文件 SHA-256 + 生成命令 + 钉版输入清单（maker 管线钉 hash 已有，补记录格式）；②provenance：成功实机 EFI 的 SHA-256 + 换机重建 byte-identical 声明 + 输入版本矩阵。
+- 验收：另一台机器跑 make-usbroot → SHA256SUMS 与 provenance 逐条一致；check_efi 通过。
+- 成本：脚本级 1 天；依赖无。
+
+**P1-2 上游 #28 旁证归档（源：Zagitta issue #28，3615074213）**——Code 12 定律的独立复现。
+- 落点：`docs/community-reports.md`「补充实测数据」节新增一行：X99 Jingsha AMI 5.11 CSM-on→事务全绿但 Windows Code 12/0xC0000018，CSM-off→正常；板级天花板 0x151E 板 ~1024 vs 0x300 板 ~846 FLOP/SM/clk。
+- 证据：`https://api.github.com/repos/Zagitta/gpu-unlock/issues/28/comments`（2026-10-31）。
+- 验收：表行 + 链接在位；与 #61 定律行互链。成本：半小时。
+
+**P1-3 FEAT 回锁值方差补录（源：travis fork 2654419）**
+- 落点：`docs/cold-values.md` 新行（TU102 1e07/子系统 1462:371d，MSI；回锁值 **0xffffffef**，观察条件=guarded-auto build 004、driver 610.88/GSP 610.57.01；对照我方默认假设 0xffffff8f）；`docs/open-questions.md` 增条目：PLM 回锁值随板/驱动版本的 bits5/6 语义。
+- 纪律：归因附 hash（2654419）；002/003 两次 STOP 归因为 fork 本地守卫 bug（其报告已自证）。
+- 成本：文档半小时；依赖无。
+
+**P1-4 XP3G 域 M1 扩采样（源：cmp90hx-unlock 76940ae）**——零写，纯读回，M1 级不触门控。
+- 落点：`loader/src/sample.rs` 寄存器并集追加：PLM 0x8E1B0、合成写口观察位 0x8E110/8E11C/8E12C、XVE 镜像 LnkCap 0x88084/LnkCtl 0x88088/LnkCap2 0x880a4/LnkCtl2 0x880a8、link-policy 组 0x8841C/0x88610/0x8C040/0x8C1C0/0x8C2C0/0x8872C；`tools/ssdiag/main.rs`（v0.6.x 字段轮惯例，AD10x 64G-BAR1 行同位）同步加字段。
+- 判读设计：TU106 XP3G_PLM0 已知 OPEN（cmp-features 轮实测）——若 OPEN 且 link-policy 值非全 badf5040=链路策略域可及（Gen2 前门候选）；若 OPEN 但寄存器全死=只读残余（GA102 形态，PLM 打开≠域内可写）。
+- 验收：TU106 一轮采样落盘 `docs/evidence/tu106-1f07/`；badf 三桶分类沿用；与 TU102/GA102 文献值并排归档。
+- 成本：半天+一轮真机；依赖无。
+
+**P1-5 媒体条目**——已落地（含 864b887 去重收尾），无余项。
+
+**P1-6 事务边界强制 flush（源：nv_unlock_win 0.2.14）**
+- 落点：`loader/src/logging.rs`（flush 频率 71-74 行）+ `loader/src/tx.rs` 边界点。
+- 形态：边界点常量化（建议 ≤6：claim 完成 / FWSEC 点火返回 / booter START 前 / selectors 写后 / FLR 前 / StartImage 前），边界处无条件 flush + 既有时间戳。
+- **风险（必须消融）**：#38 轮已证逐行 flush=变慢主因、13 次停顿全锁 1.23-1.27s=USB BOT 固定超时——边界 flush 点若落在 BOT 敏感窗会复现停顿。设计约束：边界数少、消融轮对比总耗时与停顿计数，超 1 次新增停顿即回退。
+- 验收：QEMU 负控（FLR 后模拟掉电，日志最后条=FLR 前边界）；真机回归 22.1s 基线不劣化 >0.5s。
+- 成本：中（实现半天+消融一轮）。
+
+### 4.2 P2 明细（立项登记）
+
+**P2-7 预载 bootmgfw 链回（源：TOTORONG 工艺 + nv_unlock_win 0.2.12 实证）**
+- 落点：`loader/src/chainload.rs`（自卷设备路径前缀指纹已在位，[[chainload-self-volume-fingerprint]]）。
+- 形态：入口即 LoadImage(bootmgfw) → 事务 → GOP 重连 → StartImage(预载映像)；预载失败回退现有后载路径（保持双路径）。
+- **风险**：预载映像页在事务/FLR 期间处于 GPU DMA 可达窗——需验证页完整性（StartImage 前读回校验或 AllocateReservedPages 隔离），否则引入新的交棒崩溃面。
+- 验收：QEMU 全链绿；真机一轮以 Code 12 定律三态判据（reconnect 成功/bootmgfw 重建成功/双败）回归；预载页校验通过。
+- 成本：中；依赖无（可与 P1-6 同轮实机）。
+
+**P2-8 无头/单显路径（源：impacifist F8 headless + Kohak PR#7 + Siselea 单显补丁）**
+- 落点：`loader/src/gop.rs`——**先修 gop_belongs_to_target END 节点比对 bug**（[[pr13-gop-reconnect-review]]：父 28B vs 子 36B AcpiAdr，多卡对称误判=0x91 风险），再谈无头形态。
+- 形态：①无 GOP 机器：现成 `\tx-gop-disconnect.txt` 开关路径产品化（跳过断连+日志注记）；②单显示器免假负载：读 Siselea patches 具体做法后再定（其 v20 quiet-profile 单显补丁思路）；③兼容上报流水线（impacifist 式：issue 模板→离线收集→逐机 profile）——**新增登记 P2-23**，落点 `tools/`（Python 侧，复用 ssdiag 采集）。
+- 验收：QEMU 无 GOP 负控（OVMF 去 VGA 配置）；真机一台无头机器全链；END 节点修复后多卡对称场景不复判错。
+- 成本：中高（bug 修复先行）；依赖 P1 采样轮无耦合。
+
+**P2-9 GSP-RM IDA 基座引入（源：cmp50hx-unlock df2fe11）**
+- 落点：RE 工作目录（`D:\git-repo\nv-uefi-re\`，[[fuc-disasm-toolchain]]）git-lfs 拉取 `decompil/gsp_tu10x_610.43.03.elf.i64`（334MB，**不入库**）；分级法（"I—IDA"=开源二进制内核对过函数/指令/xref）写进 RE 文档惯例（reading-notes 或新 docs/re-discipline.md）。
+- 价值：RM 策略接线已定位（pcie_apply_link_speed_policy @TU102 0x4CB25B8）——TU106 RM 行为问题（GSP 模式交棒、RTD3、Code 12 交棒归属链）有了可核对的静态基座。
+- 验收：库可开；一条已知结论（如 scrub 等待语义）在库里复核通过。
+- 成本：低（下载+文档半天）。
+
+**P2-10 resume/休眠语义文档化（源：上游 kmod）**——已落（§7.3 收录一句话），余项：`docs/warm-resume-entry.md` 与 faq RTD3 节互链上游 `gpu_unlock.resume` 默认开/休眠不覆盖/NVreg_DynamicPowerManagement=0x00 对照表。成本：零。
+
+**P2-11 基准纪律对照（源：KohakUnlock 抓出上游 mmapeak 零输入坍缩）**——已落（§7.3 规律 1），余项：README 吞吐口径节加一行"基准工具须验证输入非零/非编译期折叠"注记。成本：零。
+
+**P2-23 兼容性收集流水线（源：impacifist issue→离线收集→逐机 profile）**——新增登记。
+- 落点：`tools/` 新增收集脚本（Python，复用 ssdiag 0.6.x 采集输出为规范 profile），GitHub issue 模板配套。
+- 边界：只收**报告格式**，不改交付物形态（#73 裁决 §1.4 对项目交付物绝对——不是 installer，是证据收集）。
+- 验收：一条真实 issue 走通模板→脚本→profile 全流程。
+- 成本：中；依赖无。
+
 ## §5 覆盖矩阵裁决：「是否已是全网最大的覆盖矩阵兼容生态」
 
 **口径 A——单项目实机验证 device ID 数（带可归档证据）**：我方 **22 个 ✅**（Ada 12：2684/2689/2704/2705/2709/2757/2783/2803/2805/28a0/28a1/28e0；GA10x 8：2206/2216/2420/2489/249d/2504/2520/2484-仅EFI；Turing 2：1f07/1f06），外加我方血统 fork 的 MSI TU102 1e07 guarded 实机（2654419）。同行单仓最高为 **impacifist ≈9 个**（GA102×4/GA104×4/GA106×1，维护者+贡献者分级证据）、KohakUnlock 4 个（含双卡）、nv_unlock_win 3 个（含负结果）、TOTORONG 1 个。→ **该口径下我方居首，且是唯一三族（Turing/Ampere/Ada）单工具全覆盖并各自有实机锚点的项目**。
