@@ -15,6 +15,12 @@ extern crate alloc;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Build-identity tag of the DXE driver form (audit F4): referenced by the
+/// driver's own log output, so it survives LTO into .rdata, and REQUIRED by
+/// ffspack before it retypes any image - the USB application never contains
+/// this string, so an application image cannot be packed as a driver.
+pub const DXE_BUILD_ID: &str = "nv-uefi-unlocker DXE driver form 1";
+
 pub mod banner;
 // btl1_signature.rs is included via #[path] by tx_booter (and sim tests);
 // a lib-level module would be a dead third copy.

@@ -1,54 +1,80 @@
-# DXE driver form — QEMU/OVMF shell-load smoke (V0/V1-lite)
+# DXE driver form — QEMU/OVMF shell-load smoke, v2 (post-audit)
 
-> 2026-11-01, branch dxe-driver-ffs. Zero-flash validation of the
-> firmware-resident DXE driver form (docs/dxe-driver-ffs-feasibility.md §8
-> V0/V1). Firmware: QEMU 11.1 bundled `edk2-x86_64-code.fd` (contains the
-> EFI Internal Shell, Boot0002). Driver: `nvunlock-dxe` bin (tx OFF),
-> subsystem patched 0x0A→0x0B by ffspack, FFS SHA256
-> a7c176dd…8c6bda (tx build, packaged for header verification only).
-> Repro: `mkimages.sh` (WSL mtools FAT images) + the three qemu command
-> lines below; fresh `edk2-i386-vars.fd` copy per run.
+> 2026-11-01, branch dxe-driver-ffs. Supersedes the pre-audit three-run set
+> (its `ffspack-tx-build.log` recorded a FAILED packaging invocation - audit
+> F5e; those runs validated the pre-audit arm model and are replaced by the
+> four-run protocol below, which exercises the NVRAM-arm authority).
+>
+> Firmware: QEMU 11.1 bundled `edk2-x86_64-code.fd` (EFI Internal Shell,
+> Boot0002). Images: PARTITIONED disks (one FAT32 LBA-2048 partition) so the
+> volumes carry a partition identity (audit F1 volume binding). Driver:
+> `nvunlock-dxe` tx-OFF, subsystem 0x0A→0x0B by ffspack.
+> Repro: `mkimages3.sh` (WSL mtools, MTOOLSRC partition=1) + the four qemu
+> command lines; fresh `edk2-i386-vars.fd` copy per run except run B.
 
-## Run 1 — armed driver (run-armed.log, loader-armed.log)
+## Run A — installer app writes the NVRAM arm variable (run-install.log)
 
-`startup.nsh`: `load fs0:\NvUnlockDxe-readonly.efi`; arm marker
-`\tx-dxe-arm.txt` = `0` (0s countdown).
+`\EFI\BOOT\BOOTX64.EFI` = app, `\tx-dxe-arm-install.txt` = `1`.
 
-- Shell `load` → BDS-up path → immediate run (BDS arch protocol present).
-- `volumes` override verified: log file `\loader.log` opened on the ARMED
-  volume (the driver has no SFS self-volume; without the override every
-  marker/asset would read absent).
-- CONFIRM armed 0s → PROCEED → ENUMERATE 6 PciIo handles → GOP-PROBE
-  (OVMF VGA) → SAMPLE: no NVIDIA GPU (negative control) → FINAL:
-  "driver flow complete; BDS continues to the boot option".
-- Control returns to the `Shell>` prompt (clean return = BDS continues).
-- `\loader.log` extracted from the FAT image afterwards: identical content.
+```
+DXE-ARM: NVRAM variable set -> volume partition GUID 00000000000800000000000000000000
+         - firmware-resident driver ARMED for this volume only
+```
 
-## Run 2 — negative control, unarmed (run-noarm.log)
+The identity is the MBR hard-drive node: 4-byte disk signature ++ start LBA
+(0x800 = 2048). App continues its normal read-only flow (30 s confirm →
+FINAL). The variable lands in `vars-a.fd` (pflash write-back).
 
-Same image minus `\tx-dxe-arm.txt`.
+## Run B — armed driver, same vars (run-armed2.log, loader-armed2.log)
 
-- 0 driver log lines on console, no `\loader.log` in the image: the
-  unarmed driver is a total no-op (volume scan only, reads only).
+`\startup.nsh`: `load fs0:\NvUnlockDxe-readonly.efi`; `\tx-dxe-arm.txt` = `7`.
 
-## Run 3 — app regression after the lib split (run-app.log)
+- `FORM:` line names the build identity and `tx=false` (audit M2).
+- `ARM:` line ties the run to the NVRAM variable and the matching volume
+  identity (audit F1: authority = variable, not a filename).
+- 7 s armed countdown (marker content, floor 1..=30 - audit N1) → PROCEED.
+- NO `WATCHDOG:` line - the driver never touches the platform watchdog
+  (audit M3); the BDS 5-minute timer stays armed.
+- ENUMERATE 6 PciIo handles → GOP-PROBE → SAMPLE no-NVIDIA negative control
+  → `FINAL: driver flow complete; BDS continues to the boot option`; the
+  shell prompt returns (clean hand-back).
+- `\loader.log` persisted on the armed volume (extracted below); it opens
+  with the corrected build-class line `nv-uefi-unlocker v2.1.9 (read-only
+  build; no GPU writes by design)` (audit M2).
 
-`loader.efi` as `\EFI\BOOT\BOOTX64.EFI` (tx OFF).
+## Run C — marker present, NO NVRAM authority (run-noarm2.log)
 
-- Boot0001 → banner → `CONFIRM: no armed marker - Space/Enter/30s` →
-  30s timeout → ENUMERATE → SAMPLE negative control → `CHAIN: failed:
-  NOT_FOUND` (expected: no bootmgfw in QEMU) → FINAL. The M0 semantics
-  are unchanged by the lib split (`main.rs` is a thin entry now).
+Same image, fresh vars (variable absent). **0 driver log lines**, no
+`\loader.log` written: the filename alone no longer arms anything - the
+core F1 fix, exercised end to end.
+
+## Run D — app regression after the remediation (run-appreg.log)
+
+`loader.efi` as `\EFI\BOOT\BOOTX64.EFI`, no install marker: 30 s confirm →
+enumerate → no-NVIDIA → `CHAIN: failed: NOT_FOUND` (expected in QEMU) →
+FINAL. Application semantics unchanged.
+
+## Packaging transcripts (audit F5e / N8-6)
+
+- `ffspack-build-ro.log` / `ffspack-build-tx.log`: successful `ffspack
+  build` for the read-only AND the tx driver build (a tx-build FFS now
+  exists in-tree), both pass the strict self-verification.
+- `ffspack-verify-tx.log`: independent `verify` - `type=0x07 state=0xf8
+  data_checksum_ok=true`, depex + identity tag + subsystem 0x0B checked.
+  FFS data checksum (FFS_ATTRIB_CHECKSUM) is enabled, so payload corruption
+  is detectable (audit F5); build refuses inputs without the DXE identity
+  tag (F4); outputs refuse overwrite without --force (M5).
 
 ## Coverage and what this does NOT cover
 
-Covered: driver entry, BDS-up immediate path, volume selection + reader
-override, arm/quiet/flush marker semantics, countdown knob (0), failsafe
-counter code paths compile (not exercised here), app parity after the
-lib split, ffspack PE patch + FFS structure (self-verify + this smoke).
+Covered: NVRAM-arm authority end to end (install → match → run / refuse),
+regular-file marker predicate, countdown floor semantics, provenance +
+FORM/ARM evidence lines, log persistence on the armed volume, no-watchdog
+behavior, boot-quiet unarmed path, ffspack identity/anti-corruption gates,
+app parity.
 
-Not covered here (feasibility doc §8): FV dispatch of the FFS file with a
-TRUE depex (needs firmware-image insertion — OVMF FVMAIN_COMPACT has no
-room; first validated on a real board at V3), the ReadyToBoot event path
-(entry registers and returns; the shell-load path bypasses it because
-BDS is already up), and any tx build on real hardware (V2, gated).
+Not covered here: FV dispatch of the FFS with a TRUE depex and the
+ReadyToBoot event path (needs firmware-image insertion; OVMF FVMAIN_COMPACT
+has no room - first validated on a real board at V3); tx builds on real
+hardware (V2, gated); multi-boot-option ReadyToBoot re-entry; the NVRAM
+fail-counter skip path after two failures (needs two injected failures).

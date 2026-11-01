@@ -140,6 +140,9 @@ pub fn armed_confirm_with_prep(seconds: u64) -> Confirm {
             info!(
                 "CONFIRM: key {key:?} during the {seconds}s armed countdown - ABORT (no GPU writes this boot)"
             );
+            // The prep's whole justification is that it is discardable
+            // (audit M4): an aborted run frees its prefetch immediately.
+            crate::tx::asset_cache_clear();
             return Confirm::Abort;
         }
         uefi::boot::stall(Duration::from_millis(50));

@@ -1,0 +1,3 @@
+FFS OK: type=0x07 state=0xf8 data_checksum_ok=true sections=[(16, 336384), (11, 2), (21, 24)]
+wrapped PE subsystem = Some("0x000b")
+SHA256 release/dxe-smoke/NvUnlockDxe-tx.ffs = 798b760b183863b35b78603e46fcb74e175d2736d1519b0d2d3abeb0cbba3bb7

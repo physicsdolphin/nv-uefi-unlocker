@@ -298,16 +298,11 @@ pub fn parse_armed_seconds(content: &[u8]) -> u64 {
 }
 
 /// `\tx-dxe-arm.txt` countdown seconds for the DXE driver form: first line
-/// 0..=30, default 5. 0 is allowed here (and only here): the firmware-resident
-/// driver runs unattended at every armed boot, so the abort window is opt-out.
+/// 1..=30, default 5 - the same floor as the application form (audit N1:
+/// the abort window must not be removable by marker content; headless
+/// operation opts out via the separate `\tx-dxe-noconfirm.txt` marker).
 pub fn parse_dxe_arm_seconds(content: &[u8]) -> u64 {
-    parse_marker_number(content, 5, 0, 30)
-}
-
-/// `\nvunlock-dxe-fail.txt` consecutive-failure counter: plain decimal in
-/// the first line, missing file = 0.
-pub fn parse_fail_count(content: &[u8]) -> u64 {
-    parse_marker_number(content, 0, 0, u64::MAX)
+    parse_marker_number(content, 5, 1, 30)
 }
 
 /// `\tx-flush-lines.txt` flush cadence: 0..=4096 count-based flushes per

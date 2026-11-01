@@ -1,4 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s
-     Running `D:\git-repo\nvuu-dxe-ffs\target\debug\ffspack.exe build ../target/x86_64-unknown-uefi/release/nvunlock-dxe.efi NvUnlockDxe`
-ffspack: read ../target/x86_64-unknown-uefi/release/nvunlock-dxe.efi: 系统找不到指定的路径。 (os error 3)
-error: process didn't exit successfully: `D:\git-repo\nvuu-dxe-ffs\target\debug\ffspack.exe build ../target/x86_64-unknown-uefi/release/nvunlock-dxe.efi NvUnlockDxe` (exit code: 1)

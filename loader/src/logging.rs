@@ -1,11 +1,17 @@
-//! Dual logger: console + `\loader.log` on the boot volume (USB).
+//! Dual logger: console + `\loader.log` on the marker volume (USB stick for
+//! the application form; the NVRAM-armed volume for the DXE driver form -
+//! see `volumes` and the PR #100 audit).
 //!
 //! The UEFI Shell's `> file` redirection proved unreliable on the target
 //! firmware (empty capture), so we own the file ourselves. This also
 //! pre-implements M1's "write samples to USB FAT" requirement.
 //!
-//! Constitution note: the log file lives on OUR boot volume and is the only
-//! thing this app ever writes; the ESP stays untouched.
+//! Constitution note: the log file lives on the operator-designated volume
+//! and is the only thing the application form ever writes. The DXE driver
+//! form additionally writes its failsafe state to NVRAM variables (not
+//! files) and rotates the previous log to `\loader-prev.log` instead of
+//! destroying it (audit F3); markers, assets and logs on an ESP are placed
+//! there BY the operator, never by an installer of ours.
 
 use alloc::format;
 use core::cell::UnsafeCell;
@@ -38,6 +44,9 @@ pub fn set_flush_every_lines(n: usize) {
 const FLUSH_MARKERS: &[&str] = &[
     "PHASE", "RESULT", "POST-", "FINAL", "RECONNECT", "DETACH", "CHAIN",
     "SELECTOR", "HANDOFF", "WATCHDOG", "AUTH-SCAN end",
+    // DXE-form evidence anchors (PR #100 audit F3/N4): provenance, arming
+    // and guard-override visibility survive a hang with the run.
+    "FORM", "ARM:", "FAILSAFE", "OVERRIDES",
 ];
 
 /// Console whitelist for quiet mode (issue #38): with `\tx-quiet.txt` on
@@ -53,6 +62,7 @@ const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "PROMPT", "CONFIRM", // interaction
     "PHASE", "SELECTOR", "HANDOFF", // stage boundaries
     "RESULT", "FINAL", "TX:", "CHAIN", "QUIET", // verdicts
+    "FORM", "ARM:", "FAILSAFE", "OVERRIDES", // DXE-form provenance (audit F3/N4)
 ];
 
 /// Pure matcher for [`CONSOLE_QUIET_MARKERS`]; the sim mirror
@@ -163,11 +173,19 @@ pub fn init(version: &str) {
     log::set_max_level(log::LevelFilter::Info);
 
     if file_open() {
-        log::info!("log file {} opened on boot volume", LOG_PATH);
+        log::info!("log file {} opened on marker volume", LOG_PATH);
     } else {
         log::info!("log file unavailable (console-only); open failed");
     }
-    log::info!("nv-uefi-unloader v{version} (M0 skeleton: read-only)");
+    // Build class in the log line itself (audit M2): LTO can drop the
+    // banner's strings from a binary whose banner is never called, so the
+    // log - not the banner - is the authoritative build-class record. The
+    // typo "unloader" the audit flagged is fixed; the quiet whitelist
+    // matches "nv-uefi-unlocker" and keeps this line visible.
+    #[cfg(feature = "tx")]
+    log::info!("nv-uefi-unlocker v{version} (TX BUILD: CONTAINS GPU-WRITE PATHS)");
+    #[cfg(not(feature = "tx"))]
+    log::info!("nv-uefi-unlocker v{version} (read-only build; no GPU writes by design)");
 }
 
 /// Close the log file (flush) before chain-loading. Idempotent.
@@ -204,20 +222,69 @@ fn file_open() -> bool {
     unsafe { (*LOGGER.file.get()).is_some() }
 }
 
+/// Previous log archive (audit F3): each armed DXE boot used to destroy the
+/// only record of the previous run; now the old log is copied here (capped)
+/// before a fresh one is created. EFI has no rename, so this is a bounded
+/// copy: 1 MiB is far above any sane run and bounds the boot-time cost.
+const PREV_LOG_PATH: &CStr16 = cstr16!(r"\loader-prev.log");
+const PREV_LOG_CAP: usize = 1024 * 1024;
+
 fn open_fresh_log() -> Option<RegularFile> {
     let mut fs = crate::volumes::marker_fs().ok()?;
     let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
 
-    // Remove a stale log from a previous boot so each run starts clean.
-    if let Ok(handle) = root.open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
-        // A regular file handle only; directories cannot be deleted blindly.
-        if let Some(reg) = handle.into_regular_file() {
-            let _ = reg.delete();
-        }
-    }
+    // Rotate (audit F3): archive the previous log instead of destroying it.
+    // Best-effort - a failed rotation must not stop the new run.
+    rotate_previous_log(&mut root);
 
     let handle: FileHandle = root
         .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
         .ok()?;
     handle.into_regular_file()
+}
+
+/// Copy `\loader.log` to `\loader-prev.log` (capped), then delete the
+/// original so the new run starts clean.
+fn rotate_previous_log(root: &mut uefi::proto::media::file::Directory) {
+    let Ok(handle) = root.open(LOG_PATH, FileMode::Read, FileAttribute::empty()) else {
+        return; // no previous log - normal case
+    };
+    let Some(mut old) = handle.into_regular_file() else { return };
+
+    // Remove a stale archive first (EFI open never truncates).
+    if let Ok(h) = root.open(PREV_LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
+        if let Some(reg) = h.into_regular_file() {
+            let _ = reg.delete();
+        }
+    }
+    let Ok(new_handle) = root.open(PREV_LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
+    else {
+        return;
+    };
+    let Some(mut new) = new_handle.into_regular_file() else { return };
+
+    let mut chunk = [0u8; 4096];
+    let mut copied = 0usize;
+    while copied < PREV_LOG_CAP {
+        let want = chunk.len().min(PREV_LOG_CAP - copied);
+        match old.read(&mut chunk[..want]) {
+            Ok(0) => break,
+            Ok(n) => {
+                if new.write(&chunk[..n]).is_err() {
+                    break;
+                }
+                copied += n;
+            }
+            Err(_) => break,
+        }
+    }
+    // Drops close (and flush) both files; then the original goes away so
+    // the fresh log starts empty.
+    drop(new);
+    drop(old);
+    if let Ok(h) = root.open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
+        if let Some(reg) = h.into_regular_file() {
+            let _ = reg.delete();
+        }
+    }
 }

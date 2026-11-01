@@ -617,6 +617,19 @@ for f in "${expected[@]}"; do
     printf '  %-28s %10s bytes\n' "$f" "$(size_of "$OUT/$f")"
 done
 
+# \dxe-manifest.txt (PR #100 audit M1): sha256sum-style digests of the
+# asset set. The firmware-resident DXE driver form refuses a transaction
+# whose assets do not match this manifest (fail-closed); the application
+# form ignores the file. Backslash paths match the loader's probes.
+: > "$OUT/dxe-manifest.txt"
+for f in "${expected[@]}"; do
+    case "$f" in
+        BOOTX64.EFI|gsp-gate.txt) continue ;;
+    esac
+    printf '%s  \%s\n' "$(sha256_of "$OUT/$f")" "$f" >> "$OUT/dxe-manifest.txt"
+done
+expected+=("dxe-manifest.txt")
+
 log ""
 log "DONE (${FAMILIES[*]}). Copy the CONTENTS of $OUT to a FAT32 USB stick root."
 log "Format hint (Linux): sudo mkfs.fat -F 32 /dev/sdXN   # wipes the stick!"

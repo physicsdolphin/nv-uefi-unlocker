@@ -923,6 +923,111 @@ pub fn read_boot_file_fmt(pattern: &str, family: &str) -> Option<alloc::vec::Vec
     read_boot_file(&path)
 }
 
+/// Asset paths that MUST exist for one family's transaction (the optional
+/// `\v67-direct-ss.bin` override is deliberately not probed: its absence is
+/// a legitimate chain-replay configuration).
+fn family_asset_paths(family: &str) -> alloc::vec::Vec<alloc::string::String> {
+    let mut v = alloc::vec::Vec::new();
+    for p in [
+        "\\booter_load_{}.bin",
+        "\\gsp_boot_desc_{}.bin",
+        "\\gsp_boot_{}.bin",
+        "\\fwimage_{}.bin",
+        "\\fwsignature_{}.bin",
+        "\\v67-{}-four-plm.bin",
+    ] {
+        v.push(alloc::format!("{}", p.replacen("{}", family, 1)));
+    }
+    if family == "tu10x" {
+        v.push("\\sec2_bl_tu10x.bin".into());
+    }
+    v
+}
+
+/// Live media re-probe (audit N7): the read-through cache makes the
+/// transaction immune to media removal AFTER the prefetch - by design
+/// (issue #38) - so the documented "pulled media aborts before GPU
+/// interaction" property is restored by re-opening each required asset
+/// file right before the transaction. Failure here aborts the card before
+/// any GPU interaction instead of proceeding on stale bytes.
+pub fn live_asset_presence(family: &str) -> bool {
+    family_asset_paths(family).iter().all(|path| {
+        let ok = probe_file(path);
+        if !ok {
+            info!("TX-ASSET-DIAG: {path} vanished between prep and run (media pulled?)");
+        }
+        ok
+    })
+}
+
+/// Startup line enumerating which guard-override markers were active on the
+/// armed volume for this run (audit N4: overrides are authority, not bytes;
+/// after the F1 fix they can only come from the operator-authorized volume,
+/// and they must be visible in the flushed evidence either way).
+pub fn log_overrides() {
+    const OVERRIDES: &[&str] = &[
+        "\\tx-accept-warm-wpr2.txt",
+        "\\tx-force-continue.txt",
+        "\\tx-low-staging.txt",
+        "\\tx-no-pm-preflight.txt",
+        "\\pre-flr-on.txt",
+        "\\tx-require-d0.txt",
+        "\\tx-gop-disconnect.txt",
+        "\\no-reconnect.txt",
+        "\\tu10x-no-reconnect.txt",
+        "\\tu10x-no-ss.txt",
+        "\\tx-fwsec-high-staging.txt",
+        "\\tx-fwsec-vram-staging.txt",
+        "\\tx-no-gsp-halt-gate.txt",
+    ];
+    let active: alloc::vec::Vec<&str> =
+        OVERRIDES.iter().copied().filter(|p| probe_file(p)).collect();
+    if active.is_empty() {
+        info!("OVERRIDES: none");
+    } else {
+        info!("OVERRIDES: {}", active.join(" "));
+    }
+}
+
+/// Asset integrity for the driver form (audit M1): the maker writes
+/// `\dxe-manifest.txt` (sha256sum-style `<hex>  <path>` lines); the driver
+/// form refuses to touch the GPU unless every asset it is about to use
+/// matches the manifest. The application form keeps its stick-trust
+/// semantics (the operator holds the stick they prepared; the maker
+/// verified at build time).
+pub fn verify_asset_digests<'a>(
+    entries: impl Iterator<Item = (&'a str, &'a [u8])>,
+) -> Result<(), &'static str> {
+    use sha2::{Digest, Sha256};
+
+    const MANIFEST_PATH: &str = "\\dxe-manifest.txt";
+    let manifest = read_boot_file(MANIFEST_PATH).ok_or(
+        "no \\dxe-manifest.txt on the armed volume (maker output) - the driver form refuses an unverified transaction (fail-closed)",
+    )?;
+    let text = core::str::from_utf8(&manifest).map_err(|_| "manifest is not UTF-8")?;
+
+    for (path, bytes) in entries {
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let digest = hasher.finalize();
+        let mut hex = alloc::string::String::with_capacity(64);
+        for b in digest {
+            hex.push_str(&alloc::format!("{b:02x}"));
+        }
+        let found = text.lines().any(|line| {
+            line.len() >= 65
+                && line.as_bytes()[..64].iter().all(|b| b.is_ascii_hexdigit())
+                && line[64..].trim_start() == path
+                && &line[..64] == hex.as_str()
+        });
+        if !found {
+            info!("TX-ASSET-DIAG: {path} missing from \\dxe-manifest.txt or digest mismatch");
+            return Err("asset digest verification failed - refusing the transaction (fail-closed)");
+        }
+    }
+    Ok(())
+}
+
 /// Read one ASSET (never a marker) with the three states kept apart:
 /// `Ok(None)` = not on the stick (the caller may legitimately run without it),
 /// `Err(())` = present but unusable (empty, over the cap, short read, media
@@ -953,17 +1058,41 @@ enum Inner {
 /// follow-up): the armed-countdown prep warms the family's files into RAM
 /// while the wait window still has time to give, so the post-countdown
 /// transaction pays memory speed instead of USB. Keyed by path, written
-/// once per path, hits return a clone (a 29 MB fwimage memcpy is single
-/// digit milliseconds). Deliberately NOT covering `probe_file` - UI
-/// switches are zero-byte markers whose presence checks keep their own
-/// live-open semantics.
-struct AssetCacheCell(UnsafeCell<alloc::vec::Vec<(alloc::string::String, Inner)>>);
+/// once per path, hits hand out a reference-counted clone of the retained
+/// copy (a 29 MB fwimage memcpy is single digit milliseconds; the Arc keeps
+/// the RETAINED side single so residency is bytes-once - audit M4).
+/// Deliberately NOT covering `probe_file` - UI switches are zero-byte
+/// markers whose presence checks keep their own live-open semantics.
+/// Aggregate retention is capped (audit M4: the cache lives in a resident
+/// component; multi-family prefetch must not accumulate unbounded) and the
+/// whole cache is dropped once the phases end (`asset_cache_clear`).
+struct AssetCacheCell(UnsafeCell<AssetCache>);
+
+struct AssetCache {
+    entries: alloc::vec::Vec<(alloc::string::String, alloc::sync::Arc<Inner>)>,
+    bytes: usize,
+}
 
 // Safety: UEFI applications are single-threaded during boot services.
 unsafe impl Sync for AssetCacheCell {}
 unsafe impl Send for AssetCacheCell {}
 
-static ASSET_CACHE: AssetCacheCell = AssetCacheCell(UnsafeCell::new(alloc::vec::Vec::new()));
+/// Retention budget for the read-through cache (audit M4).
+const ASSET_CACHE_CAP_BYTES: usize = 256 << 20;
+
+static ASSET_CACHE: AssetCacheCell =
+    AssetCacheCell(UnsafeCell::new(AssetCache { entries: alloc::vec::Vec::new(), bytes: 0 }));
+
+/// Drop the whole read-through cache (audit M4: the DXE driver stays
+/// resident for the rest of the boot; the prep's justification is that it
+/// is discardable, so its memory is).
+pub fn asset_cache_clear() {
+    // Safety: single-threaded boot services; pointer use confined here.
+    let cache = unsafe { &mut *ASSET_CACHE.0.get() };
+    cache.entries.clear();
+    cache.entries.shrink_to_fit();
+    cache.bytes = 0;
+}
 
 /// Warm the read-through cache with one family's whole asset set, exactly
 /// the files tx_one_card will ask for next (each surfaces its own
@@ -995,11 +1124,21 @@ fn read_boot_file_inner(path: &str) -> Inner {
     // Read-through cache first (armed prep warms it; see AssetCacheCell).
     // Safety: single-threaded boot services; pointer use confined here.
     let cache = unsafe { &mut *ASSET_CACHE.0.get() };
-    if let Some((_, hit)) = cache.iter().find(|(p, _)| p == path) {
-        return hit.clone();
+    if let Some((_, hit)) = cache.entries.iter().find(|(p, _)| p == path) {
+        return hit.as_ref().clone();
     }
     let fresh = read_boot_file_uncached(path);
-    cache.push((alloc::string::String::from(path), fresh.clone()));
+    // Retention cap (audit M4): keep the aggregate bounded. Content-size
+    // assets only; failure states are tiny and always cached (their abort
+    // semantics must survive a later cap).
+    let retain_bytes = match &fresh {
+        Inner::Content(v) => v.len(),
+        Inner::Absent | Inner::Failed => 0,
+    };
+    if cache.bytes + retain_bytes <= ASSET_CACHE_CAP_BYTES {
+        cache.bytes += retain_bytes;
+        cache.entries.push((alloc::string::String::from(path), alloc::sync::Arc::new(fresh.clone())));
+    }
     fresh
 }
 

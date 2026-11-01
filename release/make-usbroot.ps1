@@ -487,6 +487,19 @@ foreach ($f in $expected) {
     Write-Host ("  {0,-28} {1,10} bytes" -f $f, (Get-Item (Join-Path $Out $f)).Length)
 }
 
+# \dxe-manifest.txt (PR #100 audit M1): sha256sum-style digests of the
+# asset set. The firmware-resident DXE driver form refuses a transaction
+# whose assets do not match this manifest (fail-closed); the application
+# form ignores the file. Backslash paths match the loader's probes.
+$manifest = Join-Path $Out "dxe-manifest.txt"
+New-Item $manifest -ItemType File -Force | Out-Null
+foreach ($f in $expected) {
+    if ($f -eq "BOOTX64.EFI" -or $f -eq "gsp-gate.txt") { continue }
+    $hash = (Get-FileHash (Join-Path $Out $f) -Algorithm SHA256).Hash.ToLowerInvariant()
+    Add-Content -Path $manifest -Value ("{0}  \{1}" -f $hash, $f) -Encoding Ascii
+}
+$expected += "dxe-manifest.txt"
+
 Write-Host "`nDONE ($($Families -join ', ')). Copy the CONTENTS of $Out to a FAT32 USB stick root."
 Write-Host "Unlock mode requires the v67-*.bin payload for the target card's family"
 Write-Host "($($unlockFiles -join ', ')); removing it switches the EFI into"

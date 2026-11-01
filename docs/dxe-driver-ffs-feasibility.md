@@ -246,3 +246,80 @@ FFS file (24B header)
 4. UEFITool NE 对 OVMF FVMAIN_COMPACT 重压缩的兼容性（V0 用）。
 5. 驱动形态的 arm marker 终名与 `\i_know_what_i_am_doing.txt` 的关系（独立 vs 桥接）。
 6. 多次 boot option 重试时 ReadyToBoot 的确切重入次数（V0 日志可答）。
+
+---
+
+## 11. 审计修订（2026-11-01，PR #100 三轮对抗审计后）
+
+合作者 Catnip202X 以零上下文对抗审计 AI 对本 PR 跑了三轮（21 项：F1-F5 / N1-N10 / M1-M6），
+逐条对码确证后修复。设计相对本文前几节的**变更**以此节为准：
+
+### 11.1 权威重设计（F1/M1，blocker）
+
+"卷上文件名=授权"被推翻。现在的授权链：
+
+1. 操作者**主动**引导装有 `\tx-dxe-arm-install.txt` 的 U 盘（app 形态的既有确认模型）；
+2. app 计算本卷 **GPT 分区 GUID**（固件自身设备路径），写入 NVRAM 变量
+   `NvUnlockDxeArm`（项目 GUID 2E7F7609-…，payload=`NVUX1`+GUID，NV|BS|RT）；
+3. driver 每次引导读该变量 → 只接受 GUID 匹配的那个卷，且其上必须存在**普通文件**
+   `\tx-dxe-arm.txt`（N5：目录不算）；`\tx-dxe-arm-remove.txt` 卸装。
+
+文件投放无法伪造 NVRAM；卷身份=分区 GUID（整盘 FAT/CD 无 GUID，不可武装）；
+卸装=删变量（shell `dmpstore -g 2E7F7609-…` / remove 标记）。倒计时地板回到 **1..=30**
+（N1：中止窗不可被内容删除）；无头模式走独立标记 `\tx-dxe-noconfirm.txt`；ConIn 缺席且无
+该标记 → fail-closed 中止。
+
+### 11.2 失败安全（F2/N3/M3）
+
+- 失败计数迁入 NVRAM 变量 `NvUnlockDxeFail`：读失败=跳过本引导；写失败=跳过本引导
+  （双 fail-closed）；跨卷漂移/拔盘不再可绕过。
+- 计数自增发生在一切可能 panic 的工作之前（N3 的窗口收敛）。panic 本身不"干净返回"：
+  uefi 0.41 的 panic handler 走 `ResetSystem(SHUTDOWN)`——按 reset 后计数推进，
+  两次后跳过。**按 bin 自定义 panic handler（COLD reset）需要 crate 拆分，列为后续项**。
+- driver 不再碰平台 watchdog（M3）：BDS 的 5 分钟计时保持 armed，挂死自恢复。
+
+### 11.3 卷解析与完整性（N2/N4/N7/M4/M1c）
+
+- `volumes.rs` 不再持有裸 handle：钉住**分区 GUID**，每次 `marker_fs()` 调用对活动句柄
+  数据库重解析——拔盘/句柄池复用一律 `NOT_FOUND`（fail-closed）。
+- 事务前 live 重探资产文件在位（N7：缓存使拔盘失效的旧保证被恢复）；缓存改 Arc 单副本
+  + 256 MiB 总量帽 + 事务后/中止即清（M4）。
+- **驱动形态资产完整性**（M1c）：maker 产出 `\dxe-manifest.txt`（sha256sum 格式），
+  驱动形态事务前逐文件 SHA-256 校验，不符/缺失=拒绝（fail-closed）。app 形态维持
+  stick-trust 语义不变。
+- `OVERRIDES:` 启动行枚举本次生效的全部 guard 覆盖标记（N4），进 FLUSH/quiet 白名单。
+
+### 11.4 封装器（F4/F5/N9/N10/M5）与自证（M2）
+
+- ffspack 拒绝无 `DXE_BUILD_ID` 标记的输入（app 镜像无法再被打包为驱动）；FFS 启用
+  `FFS_ATTRIB_CHECKSUM` 数据校验和；严格校验=类型/极性/depex 字节/单 PE32/子系统/身份标记；
+  30 字节文件不再 panic；`--state` 显式极性；输出临时文件+改名、拒绝覆盖（--force）、
+  双产物哈希、`--expect-sha256`。
+- driver 运行时打印 `banner` + `FORM:`（构建身份/tx 类）+ `ARM:`（变量→卷 GUID）行；
+  上一轮日志轮换为 `\loader-prev.log`（F3）；`check_efi.py` 按 PE 子系统 0x0A/0x0B 分支
+  判类（M2）。
+
+### 11.5 政策声明（M1/M6，明确写入而非默许）
+
+- **§1.3（ESP 不写）**：本形态要求的 marker/资产/日志放在操作者**自选卷**（U 盘或 ESP），
+  由操作者亲手放置；本项目仍不提供任何写 ESP/固件的安装器。驱动对 armed 卷的
+  日志/轮换写入是该卷被武装的自然后果，已在文档与日志行中明示。
+- **§1.4（无常驻引导项）**：FFS 形态是操作者亲手刷入固件的常驻代码，§1.4 的字面条款
+  （不动 NVRAM BootOrder）仍然满足，但其"无常驻存在"的意图被本形态**有意放弃**——
+  这是该形态存在的目的（每次引导重放），非副作用。用户在 PR 评论中提出的
+  **BCFG driver-load 备选**（Driver#### 指向可移动介质上的 FFS，拔盘即失效、零固件
+  侵入）是降低 §1.4 张力的另一形态，待维护者裁决是否并行提供。
+- **§1.9（Secure Boot）**：驱动形态不经过 SB 验签链、其事务在 TPM SRTM 测量之外
+  （ReadyToBoot 前于 ExitBootServices）。SB-ON 机器"理论可用"的旧说法废止：
+  不是"兼容 SB"，而是"SB 对此形态不可见"——风险自负边界写在 README 前提处。
+- **资产完整性**：app 形态维持 stick-trust；驱动形态强制 manifest（11.3）。二者口径
+  不同是**有意的**：无人在场的形态不允许信任一个可被任何进程投放文件的卷。
+
+### 11.6 未被本轮修复的审计项（诚实清单）
+
+- N1-4"早于 deadline proceed"：对码证伪（`armed_confirm_with_prep` 要求
+  `now>=deadline && prep.done()`，取二者较大）——维持 #97 真机已测语义，未改。
+- 逐 bin panic handler（COLD）：需 crate 拆分，后续项。
+- N4 的深度方案（override 标记要求回显 BDF）与轮换深度（多代日志）：留待实机反馈。
+- FV dispatch + ReadyToBoot 路径仍未执行（V3 首块真机）；模拟器标记数组漂移的
+  CI 强制（N8 后半）为后续项，本轮已把 dxe 解析纳入 sim 镜像与测试。

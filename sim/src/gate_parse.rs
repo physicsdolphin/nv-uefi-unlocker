@@ -1,13 +1,14 @@
 //! Marker-content number parsing (issue #38 follow-up): reference
 //! implementation + shape tests.
 //!
-//! `loader/src/chainload.rs`'s `parse_marker_number`, `parse_armed_seconds`
-//! and `parse_flush_lines` must stay textually identical to the copies
-//! here (loader is UEFI-target-only and cannot run host tests; sim is the
-//! test bench). These parse the two stick-root knobs: the armed countdown
-//! seconds (`\i_know_what_i_am_doing.txt`, 1..=30, default 5) and the log
-//! flush cadence (`\tx-flush-lines.txt`, 0..=4096, default 16, 0 =
-//! marker-lines only).
+//! `loader/src/chainload.rs`'s `parse_marker_number`, `parse_armed_seconds`,
+//! `parse_dxe_arm_seconds` and `parse_flush_lines` must stay textually
+//! identical to the copies here (loader is UEFI-target-only and cannot run
+//! host tests; sim is the test bench). These parse the stick-root knobs:
+//! the armed countdown seconds (`\i_know_what_i_am_doing.txt`, 1..=30,
+//! default 5), the DXE driver's arm countdown (`\tx-dxe-arm.txt`, same
+//! floor - audit N1) and the log flush cadence (`\tx-flush-lines.txt`,
+//! 0..=4096, default 16, 0 = marker-lines only).
 
 fn parse_marker_number(content: &[u8], default: u64, min: u64, max: u64) -> u64 {
     let line = content
@@ -33,6 +34,14 @@ fn parse_marker_number(content: &[u8], default: u64, min: u64, max: u64) -> u64 
 }
 
 pub fn parse_armed_seconds(content: &[u8]) -> u64 {
+    parse_marker_number(content, 5, 1, 30)
+}
+
+/// DXE-driver arm countdown (`\tx-dxe-arm.txt`): same floor as the
+/// application form (audit N1/M1 - 0 is unreachable by marker content;
+/// headless operation opts out via the separate `\tx-dxe-noconfirm.txt`
+/// marker, which has no number to parse).
+pub fn parse_dxe_arm_seconds(content: &[u8]) -> u64 {
     parse_marker_number(content, 5, 1, 30)
 }
 
@@ -79,5 +88,15 @@ mod tests {
         assert_eq!(parse_flush_lines(b"\n\n32\n16\n"), 32);
         // A leading non-digit line does not scan forward - defaults apply.
         assert_eq!(parse_armed_seconds(b"# notes\n3\n"), 5);
+    }
+
+    #[test]
+    fn dxe_arm_seconds_share_the_app_floor() {
+        // Audit N1: the DXE form's abort window must remain, exactly like
+        // the application's - "0" in the marker cannot remove it.
+        assert_eq!(parse_dxe_arm_seconds(b"0"), 1);
+        assert_eq!(parse_dxe_arm_seconds(b"7"), 7);
+        assert_eq!(parse_dxe_arm_seconds(b""), 5);
+        assert_eq!(parse_dxe_arm_seconds(b"999"), 30);
     }
 }
