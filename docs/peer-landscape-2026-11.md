@@ -96,6 +96,17 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 - **B 站生态信任事件**：上传者苦楝籽连发两条撤 retract（BV15Vx36WEDW 10-26、BV1JQsX61EY7 10-28，"内容有误/乌龙抱歉"）；AI小蔡狗 40 系解锁视频 BV1iHxM6nEjE 达 83,926 播放——中文生态热度与信息质量同步上涨。
 - **impacifist/windows-GPU-UNLOCK 不署名上游**：README/provenance 全文 grep 仅致谢 Zagitta 与 rough2515-hub，未见 chenxluo/TOTORONG/我方（README.md:260 + release/provenance.json）。
 
+### 2.6 第二轮发现（2026-11-03 补扫，11-01~11-03 窗口）
+
+第一轮漏网 1 + 新现 3：
+
+1. **Cyridd/cmpunlocker**（b7eb5ed，77★，created 08-21——第一轮重大漏网）：CMP 40HX（**TU106 硅**，10de:1f0b）双 OS 解锁。Linux=开源内核补丁 + **自研 CPU-RM 预驱动内核模块**（专有驱动绑定前跑签好 610.43.03 Booter+selector，GSP OFF + **1 MiB 临时 WPR 堆**、WPR 起址移 0x1fe000000——资源极简变体）；Windows=UEFI app + Go 安装器。声称：clpeak WMMA FP16 1.04→66.16 TFLOPS/INT8 2.07→131 TOPS（163,840 输出零错）、**PCIe Gen1→Gen2 x16 重训练在 TU106 上成立**、8 GiB ReBAR 经 TU106 XVE 门+ACPI 桥窗解析、Vulkan MME 节流经 libnvidia-glcore 补丁绕过、GRID 19.6 兼容报告。证据质量高（前后 clpeak 截图 + **主动勘误过一次错误 FP32 声明**）。自带钉版资产管线。
+2. **seti9585/RTX4080SUPER-Tensor-Core-Unlocker**（d6bc544，0★，10-31）：4080S AD103 2702 单机 UEFI；独特点=**FLR 后从本卡 Option ROM 自恢复 GOP**（单卡无 iGPU 无需第二卡）；FP16 91.45→167.19 / **FP8 179.85→360.22（翻倍）**；兼容性声明异常克制但零社区验证。
+3. **Anrk11/Windows-EFI-gpu_unlock**（1★）：GA106 2503 单机重打包，血统自白 UPSTREAM.json（钉 impacifist @1f8776e + ada @4e7fefc）——第三方 provenance 指针样本。
+4. **BrightRaider/ada-4090-universal-unlock** 转向**二进制分发**（v1.2 加 GA102、v1.3 称 Authenticode 签名过 Secure Boot+8 输出拓扑）——若签名 SB 声明为真将是生态首例，但闭源 zip+营销腔，LOW-MEDIUM，观察。
+
+渠道空结果（明确记录）：GitHub created:2026-11-02 索引当日不可查（校准：created:2026-11-01+nvda=82 仓）；B 站 API 反爬；Gitee 无镜像；知乎/Chiphell/巴哈仅讨论已知项目；11-02~03 无新媒体报道（仍是 10 月底波及我方的长尾）；TOTORONG 无新载荷。
+
 ### 2.5 我方媒体波收录状态（本轮普查核实）
 
 已收录（普查前）：TechPowerUp 354316（EN）、wccftech（EN）、r/overclocking 1xj5jp3（EN）、搜狐（ZH）。
@@ -133,6 +144,8 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 | 16 | X-WIDE 载具 | 三计划任务+脏关机守卫"屏幕一定回来"的恢复措辞；rescue 分层 | — | 记录措辞与任务编队形态 | 零 | **P4→P5（11-02 复核降级）**：rescue 分层=载具固有（我方失败态=安全冷态+链回继续，无此需求）；恢复措辞 README 三场景手册已覆盖；形态与宪法冲突维持不采纳（并入 #21） |
 | 17 | chenxluo | 内置 ESP **BootNext 一次性**安装（无常驻项）；三处链回 bug 修复记录 | 交付物=USB（#73 裁决不动） | 仅记录生态形态；链回 bug 教训归档 | 零 | **P4→关闭（11-02 复核）**：三 bug 逐条对照已吸收——RAM 载入→我方本就 DevicePath 文件载入；GPT 缺 HD 节点→我方 splice 拒绝非预期布局+双信号指纹；BAR0 双基→n/a。BootNext 形态已存档 §2.1 |
 | 18 | 170hx-rir-tool/ga100-fuse-re | **不可逆 OTP 烧写已在生态内实证**；FF 池/RIR 布局破解；RIR 烧写清单勘误 | 宪法 §1.6 永不烧写 | 宪法引文补一句生态现实（本轮） | 零 | **P4** |
+| 24 | Cyridd/cmpunlocker（11-03 补扫） | 40HX=TU106 硅上的 FEAT/selector/Gen2 重训练/8G ReBAR 全套实测；CPU-RM 预驱动模块的 **1 MiB 临时 WPR** 资源极简变体；主动勘误文化 | 我方 TU106 #10（consumer 钳制态）、#11（BAR1）、P1-4（XP3G/Gen2 前门）各缺同 die 对照数据 | M1 采样后与其 40HX 公开值做同 die 交叉对照；1 MiB temp-WPR 记入 staging 设计备选 | 零（对照）/低（备选） | **P3** |
+| 25 | seti9585（11-03 补扫） | **FLR 后从本卡 Option ROM 自恢复 GOP**——单卡无 iGPU 机的显示恢复路径；FP8 翻倍数据点 | P2-8 无头/单显线目前只覆盖"跳过断连"与固件重绑两条路 | P2-8 立项时评估"自 ROM 恢复 GOP"为第三条路（单卡机 reconnect 失败的兜底） | 低（评估） | **P3** |
 | 19 | X-WIDE "GA104/106/107 做不了" | 被上游+impacifist+nv_unlock_win 多方证伪（§2.4） | — | 反例存档，答复社区引用时注明 | 零 | **P5** |
 | 20 | X-WIDE A6000 行 | 专业卡无钳制（上游原话 "runs at full rate"），预期增益≈0，无 A6000 实测证据 | 我方矩阵只收有解锁收益的卡 | 反例存档 | 零 | **P5** |
 | 21 | X-WIDE 载具前提 | testsigning+关 SB+预构建 sys 分发（pmxdrv/#40 定谳同构） | 宪法 §9 冲突 | 明确不采纳 | 零 | **P5** |
