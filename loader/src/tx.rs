@@ -613,10 +613,124 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
 }
 
 
-// Volume-file access lives in chainload.rs (ungated: nvram.rs needs it for
-// Driver#### registration). Re-exports keep every existing call site.
-pub use crate::chainload::{probe_file, read_asset, read_asset_fmt, read_boot_file, read_boot_file_fmt};
+// probe_file/read_boot_file for Driver#### registration) ----
 
+/// Does this path exist as a readable regular file? No size gate and no content:
+/// the UI switches are zero-byte marker files by design (`\tx-require-d0.txt`
+/// is documented as "drop an empty file"), so anything that treats "size 0" as
+/// "absent" silently disables them. Kept separate from the asset reader, whose
+/// size rules are about DMA windows, not about intent.
+pub fn probe_file(path: &str) -> bool {
+    let Ok(path_c) = uefi::CString16::try_from(path) else {
+        return false;
+    };
+    use uefi::proto::media::file::{File, FileMode};
+    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
+        return false;
+    };
+    let Ok(mut dir) = fs.open_volume() else {
+        return false;
+    };
+    dir.open(&path_c, FileMode::Read, uefi::proto::media::file::FileAttribute::empty())
+        .is_ok()
+}
+
+/// Read one ASSET (never a marker) with the three states kept apart:
+/// `Ok(None)` = not on the stick (the caller may legitimately run without it),
+/// `Err(())` = present but unusable (empty, over the cap, short read, media
+/// pulled). Collapsing that second state into `None` is how a damaged `v67-*.bin`
+/// silently downgrades an unlock run to chain-replay instead of refusing.
+pub fn read_asset(path: &str) -> core::result::Result<Option<alloc::vec::Vec<u8>>, ()> {
+    match read_boot_file_inner(path) {
+        Inner::Absent => Ok(None),
+        Inner::Failed => Err(()),
+        Inner::Content(v) => Ok(Some(v)),
+    }
+}
+
+/// Formatted variant of [`read_asset`].
+pub fn read_asset_fmt(pattern: &str, family: &str) -> core::result::Result<Option<alloc::vec::Vec<u8>>, ()> {
+    let path = alloc::format!("{}", pattern.replacen("{}", family, 1));
+    read_asset(&path)
+}
+
+enum Inner {
+    Absent,
+    Failed,
+    Content(alloc::vec::Vec<u8>),
+}
+
+/// Read one file from the boot volume with per-step diagnostics.
+pub fn read_boot_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
+    match read_boot_file_inner(path) {
+        Inner::Content(v) => Some(v),
+        _ => None,
+    }
+}
+
+fn read_boot_file_inner(path: &str) -> Inner {
+    // Runtime path: CString16::try_from (cstr16! only takes literals).
+    let path_c = match uefi::CString16::try_from(path) {
+        Ok(p) => p,
+        Err(_) => { info!("TX-ASSET-DIAG: {path} not UCS-2 convertible"); return Inner::Failed; }
+    };
+    let path: &uefi::CStr16 = &path_c;
+    use alloc::vec::Vec;
+    use uefi::proto::media::file::{File, FileInfo, FileMode, FileAttribute};
+
+    let mut fs = match boot::get_image_file_system(boot::image_handle()) {
+        Ok(fs) => fs,
+        Err(e) => { info!("TX-ASSET-DIAG: {path} fs open failed {:?}", e.status()); return Inner::Failed; }
+    };
+    let mut dir = match fs.open_volume() {
+        Ok(d) => d,
+        Err(e) => { info!("TX-ASSET-DIAG: {path} open_volume failed {:?}", e.status()); return Inner::Failed; }
+    };
+    let file = match dir.open(path, FileMode::Read, FileAttribute::empty()) {
+        Ok(f) => f,
+        Err(e) => {
+            // NOT_FOUND is the one error that means "the stick does not carry it".
+            if e.status() == uefi::Status::NOT_FOUND {
+                info!("TX-ASSET-DIAG: {path} absent");
+                return Inner::Absent;
+            }
+            info!("TX-ASSET-DIAG: {path} OPEN failed {:?}", e.status());
+            return Inner::Failed;
+        }
+    };
+    let mut file = match file.into_regular_file() {
+        Some(f) => f,
+        None => { info!("TX-ASSET-DIAG: {path} not a regular file"); return Inner::Failed; }
+    };
+    let size = match file.get_boxed_info::<FileInfo>() {
+        Ok(info) => info.file_size() as usize,
+        Err(e) => { info!("TX-ASSET-DIAG: {path} get_info failed {:?}", e.status()); return Inner::Failed; }
+    };
+    // An asset is never empty: the DMA copies use fixed windows, and a FAT entry
+    // that reports 0 or an absurd size is a damaged stick, not a flag file.
+    const MAX_ASSET_BYTES: usize = 192 << 20;
+    if size == 0 || size > MAX_ASSET_BYTES {
+        info!("TX-ASSET-DIAG: {path} size {size} outside 1..={MAX_ASSET_BYTES} - refusing");
+        return Inner::Failed;
+    }
+    let mut out = Vec::with_capacity(size);
+    let mut chunk = [0u8; 65536];
+    let mut got = 0usize;
+    while got < size {
+        let want = (size - got).min(chunk.len());
+        match file.read(&mut chunk[..want]) {
+            Ok(0) => { info!("TX-ASSET-DIAG: {path} EOF at {got}/{size}"); break; }
+            Ok(n) => { out.extend_from_slice(&chunk[..n]); got += n; }
+            Err(e) => { info!("TX-ASSET-DIAG: {path} read err at {got}/{size}: {:?}", e.status()); return Inner::Failed; }
+        }
+    }
+    if got != size {
+        info!("TX-ASSET-DIAG: {path} short read {got}/{size} - refusing (damaged stick or pulled media)");
+        return Inner::Failed;
+    }
+    info!("TX-ASSET-DIAG: {path} loaded {}/{} bytes", out.len(), size);
+    Inner::Content(out)
+}
 /// Assets for the transaction, loaded from the boot volume (tx builds
 /// carry their bundles next to the app; assets pipeline produces them).
 pub struct TxAssets {
@@ -712,10 +826,13 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // TOTORONG craft: all console + vendor drivers off the device, PciIo
     // exclusively claimed, IO|MEM|BME enabled, config baseline captured.
     // (Black screen starts here by design; the log file keeps recording.)
-    if let Err(e) = crate::tx_detach::detach_and_claim(pci_handle) {
-        info!("TX: detach+claim FAILED: {e}");
-        return Err(TxError::ENodev);
-    }
+    let claim = match crate::tx_detach::detach_and_claim(pci_handle) {
+        Ok(c) => c,
+        Err(e) => {
+            info!("TX: detach+claim FAILED: {e}");
+            return Err(TxError::ENodev);
+        }
+    };
     info!("TX: detach+claim ok");
 
     // PRE-FLR (reference never does this, but it also never runs in a
@@ -1168,6 +1285,14 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // A \tu10x-no-reconnect.txt marker skips it again for experiments.
     if assets.family == "tu10x" && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
         info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
+    } else if crate::tx::probe_file("\\tx-native-gop.txt") {
+        // Issue #107 CSM class: the generic recursive reconnect hangs
+        // re-binding BiosVideo. Start the native GOP explicitly instead;
+        // on any failure the console is left to bootmgfw (never falls
+        // back to the hanging ConnectController).
+        if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
+            info!("TX: native-GOP recovery failed: {e} - console left to bootmgfw");
+        }
     } else {
         crate::tx_detach::reconnect_all(pci_handle);
     }

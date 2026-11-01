@@ -98,19 +98,6 @@ pub fn payload(image: &[u8], header: &EfiRomHeader) -> Result<EfiPayload, EfiRom
     })
 }
 
-/// Slice of the compressed stream, bounds-checked against both the
-/// declared compressed size and the containing image.
-pub fn stream<'a>(image: &'a [u8], pl: &EfiPayload) -> Result<&'a [u8], EfiRomError> {
-    let end = pl
-        .stream_offset
-        .checked_add(pl.compressed_size as usize)
-        .ok_or(EfiRomError::BadPayloadHeader)?;
-    if end > image.len() {
-        return Err(EfiRomError::Truncated);
-    }
-    Ok(&image[pl.stream_offset..end])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,7 +119,6 @@ mod tests {
         let pl = payload(image, &h).expect("payload");
         assert_eq!(pl.compressed_size, 0x11447);
         assert_eq!(pl.uncompressed_size, 0x21290);
-        assert!(stream(image, &pl).is_ok());
     }
 
     #[test]

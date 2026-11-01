@@ -1,0 +1,42 @@
+CORPUS 1070_GP104_860426007A_170W_10DE_1B81_1028_119D.rom: OK efi#0@0xf000 69632B sub=11 mach=0x8664 comp=1 payload 69091->133728 bounds=true
+CORPUS 1080Ti_GP102_860239009D_375W_10DE_1B06_1458_3752.rom: OK efi#0@0xf200 67584B sub=11 mach=0x8664 comp=1 payload 67292->129408 bounds=true
+CORPUS 1080ti_GP102_86.02.39.00.01_300W_10DE_1B06_10DE_120F.rom: OK efi#0@0xf200 67584B sub=11 mach=0x8664 comp=1 payload 67292->129408 bounds=true
+CORPUS 2070_TU106_90061800EE_219W_10DE_1F07_1043_8671.rom: OK efi#0@0xea00 71168B sub=11 mach=0x8664 comp=1 payload 70727->135824 bounds=true
+CORPUS 3090_GA102_940226C035_371W_10DE_2204_1B4C_1454.rom: OK efi#0@0xfe00 91648B sub=11 mach=0x8664 comp=1 payload 91392->180016 bounds=true
+CORPUS 4090D_48G_AD102_MAX_425W_9502740003.rom: OK efi#0@0xfc00 86016B sub=11 mach=0x8664 comp=1 payload 85827->164800 bounds=true
+CORPUS 4090_48G_AD102_MAX_450W_1075mV_95023C0002.rom: OK efi#0@0xfc00 85504B sub=11 mach=0x8664 comp=1 payload 85393->164144 bounds=true
+CORPUS 4090_48G_AD102_MAX_450W_1075mV_95023CC07B.rom: OK efi#0@0xfc00 85504B sub=11 mach=0x8664 comp=1 payload 85393->164144 bounds=true
+CORPUS 4090_AD102_9502188083_1000W_10DE_2684_1043_889C.rom: OK efi#0@0xfc00 85504B sub=11 mach=0x8664 comp=1 payload 85236->163792 bounds=true
+CORPUS 5060Ti_98061F00C3.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS 5080_es_98.03.2e.00.59.rom: OK efi#0@0x10c00 98816B sub=11 mach=0x8664 comp=1 payload 97290->187536 bounds=true
+CORPUS 5080_es_98.03.34.00.16.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96623->186568 bounds=true
+CORPUS 5080_es_98.03.52.00.04.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS 5090_es_98.03.3C.00.07.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96623->186568 bounds=true
+CORPUS 95.02.59.00.09RTX 6000 ada 48 GB.rom: OK efi#0@0xfc00 90624B sub=11 mach=0x8664 comp=1 payload 90453->171656 bounds=true
+CORPUS AD104_4070S_10DE_2783_1458_4138_320W.rom: OK efi#0@0xfc00 86016B sub=11 mach=0x8664 comp=1 payload 85599->164608 bounds=true
+CORPUS ASUS_4060_laptop_OC_95071640F7.rom: OK efi#0@0xfc00 85504B sub=11 mach=0x8664 comp=1 payload 85246->163824 bounds=true
+CORPUS Acer_5080_Max_120W_9803520067.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS Acer_5080_Max_175W_980352005C.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS Acer_5080_Rated_100W_Max_140W_9803520067.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS Aistone_GN22-X11_5090_Rated_95W_Max_175W_non-DDS_98033C0007_PD.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96623->186568 bounds=true
+CORPUS Aistone_GN22-X11_Rated_95W_Max_175W_non-DDS_9803520006_PD.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS Aistone_GN22-X11_Rated_95W_Max_175W_non-DDS_980356000B_PD.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS Aistone_GN22-X9_5080_Rated_80W_Max_175W_non_DDS_98032E0059_PD.rom: OK efi#0@0x10c00 98816B sub=11 mach=0x8664 comp=1 payload 97290->187536 bounds=true
+CORPUS Aistone_GN22-X9_5080_Rated_80W_Max_175W_non_DDS_9803340016_PD.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96623->186568 bounds=true
+CORPUS Aistone_GN22-X9_5080_Rated_80W_Max_175W_non_DDS_98033C0005_PD.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96623->186568 bounds=true
+CORPUS Aistone_GN22-X9_Rated_80W_Max_175W_non_DDS_9803520004_PD.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS Asus_3090_AD102_9402380026_1000W_noTemplimit_10DE_2204_1043_87AF.rom: OK efi#0@0xfe00 91648B sub=11 mach=0x8664 comp=1 payload 91409->180048 bounds=true
+CORPUS Asus_5060_Rated_90W_MAX_115W_98062A800C.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS CAH3090刷这个278690.rom: OK efi#0@0xfe00 91648B sub=11 mach=0x8664 comp=1 payload 91409->180048 bounds=true
+CORPUS EVGA P104-100 8 GB BIOS.rom: OK efi#0@0xf200 67584B sub=11 mach=0x8664 comp=1 payload 67476->129856 bounds=true
+CORPUS GTX_TITANX_8400450003_GM200_275W_10DE_17C2_10DE_1132.rom: OK efi#0@0xf000 72192B sub=11 mach=0x8664 comp=1 payload 71829->138720 bounds=true
+CORPUS GTX_TITANX_8400450003_GM200_750W_10DE_17C2_10DE_1132_MODDED_EXTREME_1.28V_60degrees.rom: OK efi#0@0xf000 72192B sub=11 mach=0x8664 comp=1 payload 71829->138720 bounds=true
+CORPUS GTX_TITANX_8400450003_GM200_750W_10DE_17C2_10DE_1132_MODDED_EXTREME_1.28V_91degrees.rom: OK efi#0@0xf000 72192B sub=11 mach=0x8664 comp=1 payload 71829->138720 bounds=true
+CORPUS Honor_4060_9507440002.rom: OK efi#0@0xfc00 86016B sub=11 mach=0x8664 comp=1 payload 85599->164608 bounds=true
+CORPUS P104_86047A0019_217W_10DE_1B87_10DE_1237.rom: OK efi#0@0xf200 67584B sub=11 mach=0x8664 comp=1 payload 67476->129856 bounds=true
+CORPUS P104_DonZ_86047A0047_217W_10DE_1B87_0000_0000.rom: OK efi#0@0xf200 67584B sub=11 mach=0x8664 comp=1 payload 67476->129856 bounds=true
+CORPUS TU102_T10-16G-9002410001-150W-1E37 1370.rom: OK efi#0@0xe800 69632B sub=11 mach=0x8664 comp=1 payload 69255->132752 bounds=true
+CORPUS ldx_GB206_9806214098_150W_4400RPM.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS 严重性能缺陷！Aistone_GN22-X9_Rated_80W_Max_175W_non_DDS_98035E001D_PP.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS 功能正常Aistone_GN22-X9_Rated_80W_Max_175W_non_DDS_9803560009_PD.rom: OK efi#0@0x10c00 98304B sub=11 mach=0x8664 comp=1 payload 96571->186536 bounds=true
+CORPUS TOTAL: 41 roms = 41 parsed + 0 no-efi + 0 failures

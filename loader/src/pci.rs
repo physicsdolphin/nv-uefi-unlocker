@@ -311,6 +311,7 @@ impl PciIo {
     /// extracts the card's own GOP driver from it. BAR0+0x300000 reads
     /// the live PROM; the shadow is preferred because it is exactly the
     /// bytes PciBus would have dispatched.
+    #[cfg(feature = "tx")]
     pub fn rom_image(&self) -> Option<&[u8]> {
         if self.0.rom_image.is_null() || self.0.rom_size == 0 {
             return None;

@@ -301,22 +301,12 @@ fn extract_gop(rom: &Path, outdir: Option<&Path>) -> Result<(), String> {
 }
 
 /// Locate the real option-ROM start inside a dump (some tools wrap the
-/// image, e.g. NVGI): first 0xAA55 with a plausible PCIR pointer, else
-/// the first 0xAA55. Shared with the vbios info command.
+/// image, e.g. NVGI/euda). Single source: romcore::walk::locate_start
+/// validates that the 0xAA55's PCIR pointer resolves to a real PCI data
+/// structure (the %4 heuristic this used to have was fooled by Blackwell
+/// euda wrappers). Shared with the vbios info command.
 fn locate_rom_start(raw: &[u8]) -> usize {
-    if raw.len() > 2 && raw[0..2] == [0x55, 0xaa] {
-        return 0;
-    }
-    (0..raw.len().saturating_sub(0x1000).min(0x1_0000))
-        .step_by(0x200)
-        .chain([0usize])
-        .find(|&off| {
-            raw.get(off..off + 2) == Some(&[0x55, 0xaa][..])
-                && off + 0x20 <= raw.len()
-                && raw[off + 0x18] % 4 == 0
-        })
-        .or_else(|| raw.windows(2).position(|w| w == [0x55, 0xaa]))
-        .unwrap_or(0)
+    romcore::walk::locate_start(raw)
 }
 
 fn main() {

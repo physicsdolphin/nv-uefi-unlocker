@@ -86,16 +86,6 @@ struct DriverBindingProto {
     driver_binding_handle: Handle,
 }
 
-/// The ROM source the GOP driver comes from.
-enum GopSource {
-    /// `\tx-native-gop.txt` names a file on the boot volume (a full EFI
-    /// expansion-ROM image, e.g. a locally regenerated compatibility
-    /// module in the nv_gop_TU1xx.efirom shape).
-    VolumeFile(Vec<u8>, String),
-    /// The PciBus-shadowed option ROM of the target GPU itself.
-    OwnRom,
-}
-
 /// Entry point. `initial_attrs` = the PciIo attributes captured BEFORE the
 /// transaction's claim cleared them (see detach_and_claim).
 pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> Result<(), &'static str> {
