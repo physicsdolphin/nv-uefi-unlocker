@@ -306,9 +306,11 @@ FFS file (24B header)
   日志/轮换写入是该卷被武装的自然后果，已在文档与日志行中明示。
 - **§1.4（无常驻引导项）**：FFS 形态是操作者亲手刷入固件的常驻代码，§1.4 的字面条款
   （不动 NVRAM BootOrder）仍然满足，但其"无常驻存在"的意图被本形态**有意放弃**——
-  这是该形态存在的目的（每次引导重放），非副作用。用户在 PR 评论中提出的
-  **BCFG driver-load 备选**（Driver#### 指向可移动介质上的 FFS，拔盘即失效、零固件
-  侵入）是降低 §1.4 张力的另一形态，待维护者裁决是否并行提供。
+  这是该形态存在的目的（每次引导重放），非副作用。**BCFG driver-load 形态已作为
+  并行交付落地**（docs/bcfg-driver-load.md + docs/evidence/dxe-bcfg-load/，QEMU
+  四轮验证）：零固件侵入、拔盘/删文件即失效、无变砖类别；代价=SB-ON 需 db 自签
+  （外部镜像走 LoadImage 验签）、DriverOrder 进 PCR1（BitLocker suspend）、
+  SB-OFF 时驱动文件本身是可替换面（其 §7 安全准则强制三选一）。
 - **§1.9（Secure Boot）**：固件内置驱动与从文件加载的驱动经过的验证路径不同，取决于
   平台的固件验证、Secure Boot 和 TPM 测量策略。ReadyToBoot 早于 ExitBootServices
   不能证明它处于 SRTM 测量之外，也不能据此宣称对 Secure Boot 不可见或兼容。

@@ -1,11 +1,19 @@
 //! Firmware-resident entry and fail-closed authorization.
 //!
-//! FV images only register ReadyToBoot; BDS_ARCH presence is not a phase
-//! indicator. File-loaded images execute at entry (TPL_APPLICATION).
-//! ReadyToBoot runs at TPL_CALLBACK, so it permits ONLY explicitly pinned
-//! unattended policy: it never polls ReadKeyStroke or lowers the TPL.
-//! Attempts persist until an operator explicitly reauthorizes from the app;
-//! returning from firmware is not proof that the OS booted successfully.
+//! Dispatch by provenance AND by a live environment: the ReadyToBoot event
+//! is registered for EVERY provenance, because a filesystem image can be
+//! loaded through BDS Driver#### options BEFORE the platform connects
+//! controllers - running there would find no PciIo handles and burn an
+//! attempt for nothing (docs/bcfg-driver-load.md). The immediate path
+//! (TPL_APPLICATION, interactive abort window possible) is taken only for
+//! file-loaded images that observe an enumerated PCI bus (UEFI shell `load`,
+//! or a platform that connects controllers before its driver options).
+//! ENTERED and the NVRAM latch keep the immediate and notified passes
+//! mutually exclusive per image and per boot. ReadyToBoot runs at
+//! TPL_CALLBACK, so it permits ONLY explicitly pinned unattended policy: it
+//! never polls ReadKeyStroke or lowers the TPL. Attempts persist until an
+//! operator explicitly reauthorizes from the app; returning from firmware
+//! is not proof that the OS booted successfully.
 use crate::{
     chainload, dxe_policy as policy, keywait, logging, runner, timing, volumes, DXE_BUILD_ID,
     VERSION,
@@ -18,7 +26,7 @@ use uefi::prelude::*;
 use uefi::proto::device_path::media::FilePath;
 use uefi::proto::loaded_image::LoadedImage;
 use uefi::runtime::{self, VariableAttributes, VariableVendor};
-use uefi::{guid, CStr16, Event, Guid};
+use uefi::{guid, CStr16, Event, Guid, Identify};
 
 const READY_TO_BOOT: Guid = guid!("7ce88fb3-4bd7-4679-87a8-a8d8dee50d2b");
 pub const ARM_VENDOR: Guid = guid!("2e7f7609-a04c-4593-b88a-651a03812f2a");
@@ -36,25 +44,38 @@ const FLUSH_LINES_MARKER: &CStr16 = cstr16!(r"\tx-flush-lines.txt");
 static ENTERED: AtomicBool = AtomicBool::new(false);
 
 pub fn driver_entry() -> Status {
-    // A filesystem image has a MEDIA_FILEPATH node. FV/unknown provenance
-    // always defers; protocol presence says nothing about DXE completion.
-    if file_loaded() {
+    // Register ReadyToBoot for every provenance (see module docs): stock
+    // EDK2 processes Driver#### options before connecting controllers, so a
+    // BCFG-loaded image must defer to the event instead of running at load
+    // time. ENTERED + the NVRAM latch keep the two passes exclusive.
+    let event = unsafe {
+        boot::create_event_ex(
+            EventType::NOTIFY_SIGNAL,
+            Tpl::CALLBACK,
+            Some(ready_to_boot),
+            None,
+            Some(&READY_TO_BOOT),
+        )
+    };
+    // A filesystem image AND an enumerated PCI bus (shell `load`, or a
+    // platform that connects controllers before its driver options): the
+    // transaction's own world is up, run now with the interactive window.
+    if file_loaded() && pci_live() {
         run_flow(false);
-        Status::SUCCESS
-    } else {
-        match unsafe {
-            boot::create_event_ex(
-                EventType::NOTIFY_SIGNAL,
-                Tpl::CALLBACK,
-                Some(ready_to_boot),
-                None,
-                Some(&READY_TO_BOOT),
-            )
-        } {
-            Ok(_) => Status::SUCCESS,
-            Err(e) => e.status(),
-        }
     }
+    match event {
+        Ok(_) => Status::SUCCESS,
+        Err(e) => e.status(),
+    }
+}
+
+/// Has the platform enumerated PCI controllers? Driver#### options are
+/// processed before BDS connects them; running there would find no PciIo
+/// handles and burn an attempt for nothing (docs/bcfg-driver-load.md).
+fn pci_live() -> bool {
+    boot::locate_handle_buffer(uefi::boot::SearchType::ByProtocol(&<crate::pci::PciIo as Identify>::GUID))
+        .map(|b| !b.is_empty())
+        .unwrap_or(false)
 }
 
 fn file_loaded() -> bool {
