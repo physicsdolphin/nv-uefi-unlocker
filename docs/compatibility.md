@@ -46,7 +46,7 @@
 | 家族 | 型号 / device ID | 证据与例外 |
 | --- | --- | --- |
 | AD107 | 4060 Laptop **28e0** | ✅ 28e0 · [详情](#device-1) |
-| AD107 | 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1 | ✅ 28a0；🟢 2882/28e1 · [详情](#device-2) |
+| AD107 | 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1 | ✅ 28a0/2882；🟢 28e1 · [详情](#device-2) |
 | AD107 | 4050 Laptop **28a1** | ✅ 28a1 · [详情](#device-3) |
 | AD106 | 4060Ti 2803 / 4060Ti 16G 2805 / 4060 **2808** | ✅ 2803/2805；🟢 2808 · [详情](#device-4) |
 | AD106 | 4070 Laptop **2820**（魔改卡同 ID）/ **2860** | 🟡 2820；🟢 2860 · [详情](#device-5) |
@@ -57,7 +57,7 @@
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；2484 仅 EFI、Windows 不保留 · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
-| GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520；🟢 其余；2560 待复测 · [详情](#device-13) |
+| GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限）；🟢 其余；2560 待复测 · [详情](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9** / MX570 25a6 / 3050 Laptop **25a2** 等 | 🟡 待验证 · [详情](#device-14) |
 | **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14** | ✅ 1f07/1f06/1f03/1f14 · [详情](#device-15) |
 | TU102/TU104/TU116（20 系其余/16 系，含 TITAN RTX 1e02） | 2080 Ti 1e07 / 2080 Super 1e81 / 2080 1e87 等 | ✅ 1e07（原厂 11GB）/1e81/1e87；TU116/GTX 16 仍 🟢 · [详情](#device-16) |
@@ -78,7 +78,7 @@
 
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1
 
-`28a0` 全链与 Windows 性能验证通过，满载收益受 TGP 限制；`2882` / `28e1` 保留上游硅验证层级。来源：[#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50)。
+`28a0` 全链与 Windows 性能验证通过，满载收益受 TGP 限制；`2882` 一手 Windows 实测通过（Win10 22H2 + B760M AMI，首次冷启动即成功，matched A/B：FP16 +57% / BF16 +63% / FP8 +47%，FP16-acc/FP32/INT8 三对照平坦，数值与 ada2882 canary 逐位对齐；解锁后时钟反降 2250MHz 仍 +1.5×——power-wall 限与 4090 侧信道一致）；`28e1` 保留上游硅验证层级。来源：[#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50)、[#124](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/124)。
 
 <a id="device-3"></a>
 
@@ -152,7 +152,7 @@
 
 ### GA106（含 M） · 3060 2501–2509 / 3050 8GB 2507 / 3060 Laptop 2560 等（0x25xx 全段放行）
 
-`2504` / `2520` 通过解锁和系统侧性能验证；`2504` 的 AMI X470 平台需用 `no-reconnect.txt` 跳过重连。其他同族设备保留上游证据层级；`2560` 的系统侧成功结果待复测。来源：[#70](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70)、[#71](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/71)、[#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6)。
+`2504` / `2520` 通过解锁和系统侧性能验证；`2504` 的 AMI X470 平台需用 `no-reconnect.txt` 跳过重连。`2504` 另有当前**最老成功平台**数据点：Intel H61 + i7-3770（Ivy Bridge，2012 世代 UEFI 3.0 早期实现）+ Win10 LTSC，BF16 +80%，三种视频输出模式（dGPU 双屏 / iGPU 屏 RTX headless）均正常，S1 睡眠不清解锁；该老固件 `cfg_read32(0x0100)` UNSUPPORTED（PciBus 仅实现 256B legacy config space，ext-cap 诊断整体降级跳过）与轮询超时均被容忍，读回判据全部通过。其他同族设备保留上游证据层级；`2560` 的系统侧成功结果待复测。来源：[#70](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70)、[#71](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/71)、[#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6)、[discussion #121](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/121)。
 
 <a id="device-14"></a>
 
