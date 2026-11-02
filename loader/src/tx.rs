@@ -1468,8 +1468,14 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
         }
         None => (0u16, 0xffu16),
     };
+    // Family-tagged booleans (Catnip's #120 audit): tu10x_unlock reads the
+    // Turing cluster, the other three read the GA10x/Ada block - on a
+    // Turing card the 0x823xxx reads are structurally badf5040, so the
+    // untagged booleans read as a verdict they cannot express (issue #102
+    // chased a nonexistent EFI-side failure on exactly this shape).
+    let (ga_prefix, tu_prefix) = ("ga/ada:", "tu10x:");
     info!(
-        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_hi={wpr_hi:#x} pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | tu10x_unlock={} ss0_unlock={} ss1_unlock={} plm_open={}",
+        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_hi={wpr_hi:#x} pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | {tu_prefix}unlock={} {ga_prefix}ss0_unlock={} ss1_unlock={} plm_open={}",
         // Relock-aware (issues #12/#14): the shipped tu10x chain closes the
         // PLM gate after the SS writes (open -> write -> close), so the
         // success shape is the SS override persisted behind a closed gate -
