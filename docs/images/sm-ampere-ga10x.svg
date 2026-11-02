@@ -11,7 +11,7 @@
     <rect x="38" y="106" width="184" height="28" fill="#dbe8f8" stroke="#4a76b8" rx="4"/>
     <text x="46" y="125" font-size="12" fill="#111">FP32 核 ×32（128 FMA/clk）</text>
     <rect x="38" y="140" width="184" height="28" fill="#fbeee0" stroke="#c8823c" rx="4"/>
-    <text x="46" y="159" font-size="12" fill="#111">张量核 gen3 ×1（HMMA/IMMA）</text>
+    <text x="46" y="159" font-size="12" fill="#111">张量核 gen3 ×1</text>
     <rect x="38" y="174" width="184" height="28" fill="#e8e4f5" stroke="#7a5fb8" rx="4"/>
     <text x="46" y="193" font-size="13" fill="#111">SFU ×4 ｜ LD/ST ×8</text>
   </g>
