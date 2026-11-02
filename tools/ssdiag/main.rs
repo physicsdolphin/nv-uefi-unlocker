@@ -1,4 +1,6 @@
-//! ssdiag v0.6.2 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.3 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.3 adds the HVCI runtime probe (SystemCodeIntegrityInformation) to the
+//! platform gates and a denied-map precondition breakdown (issue #118).
 //! v0.6.2 adds cumulative per-stage [+ms] timing lines (the loader's issue#38
 //! convention) so a slow run shows where its time went, and tightens the
 //! exit-side temp-file retry grain.
@@ -151,6 +153,83 @@ mod reg {
     }
 }
 
+// ---------------------------------------------------------------- code integrity (HVCI runtime state)
+
+// HVCI runtime probe: NtQuerySystemInformation(SystemCodeIntegrityInformation = 103) -
+// the authoritative *runtime* HVCI state. The registry value under
+// HVCI\Scenario reads back as the CONFIGURED policy (often absent on
+// machines where Windows 11 enabled memory integrity by default, which
+// `gate_word` prints as "unknown"); the CodeIntegrity options are what
+// the kernel actually enforces for MmMapIoSpace on caller-chosen
+// physical ranges. HVCI running = bit 0x10 (KMCI strict mode); bit 0x2
+// = test signing. Issue #118: this is the gate whose presence explains
+// a MAP_PHYS `win32 error 5` on an otherwise healthy, elevated run.
+#[link(name = "ntdll")]
+extern "system" {
+    fn NtQuerySystemInformation(
+        class: u32, // SYSTEM_INFORMATION_CLASS
+        buffer: *mut core::ffi::c_void,
+        length: u32,
+        returned: *mut u32,
+    ) -> i32;
+}
+
+const SYSTEM_CODEINTEGRITY_INFORMATION: u32 = 103;
+const CI_OPTION_HVCI_KMCI_ENABLED: u32 = 0x10;
+
+// Some(true) = HVCI running; Some(false) = clear; None = query refused
+// (treat as unknown, never as a verdict).
+fn hvci_runtime() -> Option<bool> {
+    #[repr(C)]
+    struct CiInfo {
+        options: u32,
+    }
+    let mut info = CiInfo { options: 0 };
+    let mut returned: u32 = 0;
+    // Safety: buffer/length describe the struct; class and sizes are the
+    // documented pair for SystemCodeIntegrityInformation.
+    let rc = unsafe {
+        NtQuerySystemInformation(
+            SYSTEM_CODEINTEGRITY_INFORMATION,
+            (&mut info as *mut CiInfo).cast(),
+            core::mem::size_of::<CiInfo>() as u32,
+            &mut returned,
+        )
+    };
+    if rc != 0 || (returned as usize) < core::mem::size_of::<CiInfo>() {
+        return None;
+    }
+    Some(info.options & CI_OPTION_HVCI_KMCI_ENABLED != 0)
+}
+
+static MAP_DENIED_SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Issue #118 (Catnip's point, adopted): a raw `win32 error 5` plus
+/// "card skipped" reads like a verdict on the card, while the identical
+/// output is produced by at least four preconditions. Printed once, on
+/// the first denied map, so the user knows which gate to suspect.
+fn map_denied_guidance() {
+    if MAP_DENIED_SHOWN.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    println!("{}", yellow("MAP denied (win32 error 5) - candidate preconditions, most likely first:"));
+    let hvci = hvci_runtime();
+    match hvci {
+        Some(true) => println!(
+            "  1. HVCI (memory integrity) is RUNNING on this kernel - MmMapIoSpace on
+     caller-chosen physical ranges is refused by design. Disable Core
+     isolation (Windows Security > Device security) to use ssdiag here."
+        ),
+        Some(false) => println!("  1. HVCI is not running - mapping itself is not policy-blocked;"),
+        None => println!("  1. HVCI runtime state could not be queried (treat as unknown);"),
+    }
+    println!("  2. a kernel-mode AV/EDR filter driver vetoing the map (user-mode AV processes");
+    println!("     being closed does NOT unload it - temporarily remove the AV kernel");
+    println!("     component instead of pausing protection);");
+    println!("  3. the driver never actually loaded (SCM event 7045 says installed, but");
+    println!("     CodeIntegrity events 3077/3089 say refused - check the System log).");
+}
+
 // ---------------------------------------------------------------- cfgmgr32 (GPU discovery)
 
 /// CfgMgr32 - the layer Win32_PnPAllocatedResource / Get-PnpDevice wrap.
@@ -267,6 +346,14 @@ fn preflight() {
     let secure_boot = hklm_dword(SECUREBOOT_STATE, "UEFISecureBootEnabled");
     println!("PLATFORM: vulnerable-driver blocklist = {}", gate_word(blocklist));
     println!("PLATFORM: core isolation (HVCI)       = {}", gate_word(hvci));
+    match hvci_runtime() {
+        Some(true) => println!(
+            "PLATFORM: HVCI runtime (CodeIntegrity) = RUNNING - MmMapIoSpace on arbitrary{} physical ranges is refused by the kernel",
+            ""
+        ),
+        Some(false) => println!("PLATFORM: HVCI runtime (CodeIntegrity) = clear"),
+        None => println!("PLATFORM: HVCI runtime (CodeIntegrity) = unknown (query refused)"),
+    }
     println!("PLATFORM: Secure Boot                 = {}", gate_word(secure_boot));
     if secure_boot == Some(1) {
         println!(
@@ -543,7 +630,12 @@ impl PmxDrv {
         request[4..12].copy_from_slice(&pa.to_le_bytes());
         request[12..16].copy_from_slice(&pages.to_le_bytes());
         self.forward(IOCTL_MAP_PHYS, &mut request)
-            .map_err(|e| format!("MAP_PHYS ioctl failed (win32 error {e})"))?;
+            .map_err(|e| {
+                if e == 5 {
+                    map_denied_guidance();
+                }
+                format!("MAP_PHYS ioctl failed (win32 error {e})")
+            })?;
         let va = u64::from_le_bytes(request[16..24].try_into().unwrap());
         if va == 0 || va == MAP_FAIL_MARK {
             return Err("map rejected by driver".into());
