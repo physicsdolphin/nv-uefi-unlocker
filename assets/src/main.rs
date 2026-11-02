@@ -273,6 +273,18 @@ fn main() {
                 Ok(())
             })
         }
+        Some("generate-ad102-bar1-64g") => {
+            let out: PathBuf = args
+                .get(2)
+                .cloned()
+                .unwrap_or_else(|| "v67-ad102-bar1-64g.bin".into())
+                .into();
+            assets::payload::build_pinned_ad102_bar1_64g().and_then(|payload| {
+                std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
+                println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                Ok(())
+            })
+        }
         Some("generate-tu10x") => {
             let out: PathBuf = args
                 .get(2)

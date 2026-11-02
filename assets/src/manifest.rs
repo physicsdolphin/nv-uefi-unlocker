@@ -86,6 +86,14 @@ pub mod ad102_610 {
     pub const V67_AD102_PAYLOAD_SHA256: &str =
         "44c36b2d6b3424e53e18f3e55db85c833655de071ce66ce42749588a4a7dc8cb";
 
+    /// bar1-64g payload variant: same four-write chain, operands CYA 0x30 /
+    /// CFG 0x8000000a / XVE PLM / FEAT PLM, marker 0x67b00004. SHA equals the
+    /// gpu-unlock-bar1 bar1-64g-report.md published digest of the payload
+    /// field-proven on eight 10de:2684 cards (2026-10-24) — byte-identical
+    /// reproduction, hard-fail on drift.
+    pub const V67_AD102_BAR1_64G_PAYLOAD_SHA256: &str =
+        "cf3566d0887d3d31e8cb3611bf0a1b3fafcd9584ea7a73306f75f8d0eafb1284";
+
     /// Kernel-exact SEC2 scrubber (kgspAllocateScrubberUcodeImage ←
     /// ksec2GetBinArchiveSecurescrubUcode): image 7424B, ucode 0xd,
     /// 2×RSA-384. THIS is what advances the BSI scrubber handoff — not the
