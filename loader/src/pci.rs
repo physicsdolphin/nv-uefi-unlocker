@@ -305,6 +305,21 @@ impl PciIo {
         Some(attrs)
     }
 
+    /// The PciBus-shadowed option ROM (EFI_PCI_IO_PROTOCOL RomImage/
+    /// RomSize fields, pinned at slots 19/18 of PciIoRaw). This is the
+    /// copy the firmware fetched at enumeration - the native-GOP path
+    /// extracts the card's own GOP driver from it.
+    pub fn rom_image(&self) -> Option<&[u8]> {
+        if self.0.rom_image.is_null() || self.0.rom_size == 0 {
+            return None;
+        }
+        // Safety: RomImage points into a firmware-allocated buffer of
+        // RomSize bytes, valid for the boot services lifetime.
+        Some(unsafe {
+            core::slice::from_raw_parts(self.0.rom_image as *const u8, self.0.rom_size as usize)
+        })
+    }
+
 
 
     /// THE BAR write primitive — consumed only by `tx` builds. M0/M1

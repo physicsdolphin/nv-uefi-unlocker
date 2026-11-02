@@ -222,26 +222,18 @@ pub fn pm_preflight(pci: &PciIo) -> Result<PmEntry, &'static str> {
 
 /// What `detach_and_claim` hands to the transaction: the config-space
 /// baseline (drift reference for the post-transaction check) and the
-/// firmware-tracked PciIo attributes captured BEFORE the claim rewrites
-/// them - the native-GOP handoff restores the VGA forwarding subset from
-/// here (issue #107).
+/// firmware-tracked PciIo attributes captured BEFORE the claim's
+/// Set(0x0007) rewrote them - the handoff restores the VGA forwarding
+/// subset from here (issue #109 chain-2 code-12 class: the boot-VGA
+/// owner must hold legacy VGA at handoff).
 pub struct Claim {
     pub baseline: alloc::vec::Vec<u32>,
     pub initial_attrs: Option<u64>,
 }
 
-/// Staged detach + exclusive claim. Returns the config-space baseline taken
-/// while exclusively owned (drift reference for the post-transaction check).
-/// What `detach_and_claim` hands to the transaction: the config-space
-/// baseline (drift reference) and the firmware-tracked PciIo attributes
-/// captured BEFORE the claim's Set(0x0007) rewrote them - the handoff
-/// restores the VGA forwarding subset from here (issue #109 chain-2
-/// code-12 class: the boot-VGA owner must hold legacy VGA at handoff).
-pub struct Claim {
-    pub baseline: alloc::vec::Vec<u32>,
-    pub initial_attrs: Option<u64>,
-}
-
+/// Staged detach + exclusive claim. Returns the config-space baseline
+/// taken while exclusively owned (drift reference for the
+/// post-transaction check).
 pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     info!("DETACH: staged console/driver detach begin (TOTORONG craft)");
     log_display_topology(pci_handle);
