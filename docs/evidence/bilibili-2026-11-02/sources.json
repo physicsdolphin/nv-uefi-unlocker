@@ -1,0 +1,694 @@
+{
+  "source_video": "https://www.bilibili.com/video/BV1d6xN66ECM/",
+  "export_started_at_beijing": "2026-11-02 18:51:09",
+  "export_completed_at_beijing": "2026-11-02 19:07:33",
+  "hardware_groups": 26,
+  "included_reporters": 37,
+  "screenshots": 23,
+  "note": "Selected public community reports, not independent hardware verification. Image bytes are unchanged from the supplied export. Report IDs refer to this export only.",
+  "reports": [
+    {
+      "id": "S01",
+      "reported_hardware": "RTX 4060 Laptop",
+      "reporter": "TualatinPentium",
+      "reported_at_beijing": "2026-10-27 23:37:10",
+      "comment_id": "318379087793",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318379087793&comment_secondary_id=318379087793",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "318379087793-1.png",
+          "caption": "仅解锁后测试；没有解锁前对照",
+          "image_comment_id": "318379087793",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/05bc00da1c33e312790c25f761c2c55d481086477.png",
+          "bytes": 219740,
+          "sha256": "bc6404d2be69fb3d5b0ba45f7f4aa25301461fd05f2f99f408fbce5d4c9f68db"
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "reported_hardware": "RTX 4070M 魔改卡",
+      "reporter": "KomeijiSatori__",
+      "reported_at_beijing": "2026-10-28 10:50:42",
+      "comment_id": "322120397328",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322092618224&comment_secondary_id=322120397328",
+      "context": [
+        {
+          "comment_id": "322092618224",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322092618224&comment_secondary_id=322092618224"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S04",
+      "reported_hardware": "RTX 3080 Ti Laptop",
+      "reporter": "令和年代的福爾摩斯",
+      "reported_at_beijing": "2026-10-28 14:14:21",
+      "comment_id": "322138152256",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322101380288&comment_secondary_id=322138152256",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S05",
+      "reported_hardware": "RTX 4060 Ti",
+      "reporter": "Keonume",
+      "reported_at_beijing": "2026-10-28 14:16:14",
+      "comment_id": "318425336033",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318384860033&comment_secondary_id=318425336033",
+      "context": [
+        {
+          "comment_id": "318384860033",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318384860033&comment_secondary_id=318384860033"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S07",
+      "reported_hardware": "RTX 4070 Ti SUPER",
+      "reporter": "未然极光",
+      "reported_at_beijing": "2026-10-28 16:17:55",
+      "comment_id": "318434036593",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318434036593&comment_secondary_id=318434036593",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "318434036593-1.png",
+          "caption": "仅解锁后测试；没有解锁前对照",
+          "image_comment_id": "318434036593",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/d46fdea662dbf1b23b7bfef38b11e840216963966.png",
+          "bytes": 28890,
+          "sha256": "4f8d98843fd082a188d9bd11790700505cc1e81a10509d6d154d5668b05d5900"
+        }
+      ]
+    },
+    {
+      "id": "S08",
+      "reported_hardware": "RTX 4080 Laptop",
+      "reporter": "Beadmoce",
+      "reported_at_beijing": "2026-10-28 22:05:08",
+      "comment_id": "318467714081",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318467714081&comment_secondary_id=318467714081",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S09",
+      "reported_hardware": "RTX 3080 Ti Laptop",
+      "reporter": "一个神人的id",
+      "reported_at_beijing": "2026-10-28 23:12:53",
+      "comment_id": "322187811968",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322187811968&comment_secondary_id=322187811968",
+      "context": [
+        {
+          "comment_id": "322194266832",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322187811968&comment_secondary_id=322194266832"
+        },
+        {
+          "comment_id": "322194282720",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322187811968&comment_secondary_id=322194282720"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S10",
+      "reported_hardware": "RTX 4070 Ti SUPER",
+      "reporter": "早璃璃",
+      "reported_at_beijing": "2026-10-29 00:02:36",
+      "comment_id": "322192703296",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322192703296&comment_secondary_id=322192703296",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S11",
+      "reported_hardware": "RTX 4080 SUPER 32GB 改卡",
+      "reporter": "bili_40179083200",
+      "reported_at_beijing": "2026-10-29 00:49:49",
+      "comment_id": "318482856705",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705",
+      "context": [
+        {
+          "comment_id": "318435184369",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318435184369"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S12",
+      "reported_hardware": "RTX 3070 Laptop",
+      "reporter": "Ndxopcgvx",
+      "reported_at_beijing": "2026-10-29 02:36:41",
+      "comment_id": "318487921761",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "318487921761-1.png",
+          "caption": "解锁前测试",
+          "image_comment_id": "318487921761",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/9cb9e7d16c254ba50f0ceda5a71defcd352059262.png",
+          "bytes": 56058,
+          "sha256": "1f64a8f474bba324d394add20447cae6f3e86eb306def74dcf1b3e0fc36308d5"
+        },
+        {
+          "file": "318487921761-2.png",
+          "caption": "解锁后测试",
+          "image_comment_id": "318487921761",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/235b4e32699b20ff10b5e0b4df561ce9352059262.png",
+          "bytes": 137215,
+          "sha256": "cb0811b52597b1edc524e2bd47e6fbeb6f74f0ba18d8d8ac839408d3aa5d18b7"
+        }
+      ]
+    },
+    {
+      "id": "S13",
+      "reported_hardware": "RTX 4070 台式机",
+      "reporter": "重生之我是虾头",
+      "reported_at_beijing": "2026-10-29 02:50:49",
+      "comment_id": "322202417520",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322202417520&comment_secondary_id=322202417520",
+      "context": [
+        {
+          "comment_id": "322202428288",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322202326304&comment_secondary_id=322202428288"
+        }
+      ],
+      "screenshots": [
+        {
+          "file": "322202417520-1.jpg",
+          "caption": "测试汇总照片；底部视频耗时为推算，不作实测引用",
+          "image_comment_id": "322202417520",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/8083040d148114726690cbc8249d12de636075104.jpg",
+          "bytes": 6080560,
+          "sha256": "50dd4e1a2d7839f9d29395cbcd26df303cc1d63e4c38017a4a644d7d60e2af14"
+        }
+      ]
+    },
+    {
+      "id": "S16",
+      "reported_hardware": "RTX 4060 Laptop",
+      "reporter": "我想变成light",
+      "reported_at_beijing": "2026-10-29 12:12:55",
+      "comment_id": "318513166865",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318513166865&comment_secondary_id=318513166865",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "318513166865-1.png",
+          "caption": "不同精度的前后对比（观众汇总）",
+          "image_comment_id": "318513166865",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/26b7b00a4b14debdbd087154f334ca7b66820689.png",
+          "bytes": 15369,
+          "sha256": "9cb5acb2bfe0f156053b74baee95c7a685c1d5900333a613b10835c53fca91bd"
+        }
+      ]
+    },
+    {
+      "id": "S18",
+      "reported_hardware": "RTX 3080 Laptop",
+      "reporter": "js520430",
+      "reported_at_beijing": "2026-10-29 14:09:40",
+      "comment_id": "318523189905",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318503929089&comment_secondary_id=318523189905",
+      "context": [
+        {
+          "comment_id": "318503929089",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318503929089&comment_secondary_id=318503929089"
+        },
+        {
+          "comment_id": "318506795585",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318503929089&comment_secondary_id=318506795585"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S21",
+      "reported_hardware": "RTX 4070 Laptop",
+      "reporter": "天蓝色的烟雨",
+      "reported_at_beijing": "2026-10-29 20:34:15",
+      "comment_id": "322273213728",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322273213728&comment_secondary_id=322273213728",
+      "context": [
+        {
+          "comment_id": "322211869408",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322211869408&comment_secondary_id=322211869408"
+        },
+        {
+          "comment_id": "322270354624",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322211869408&comment_secondary_id=322270354624"
+        }
+      ],
+      "screenshots": [
+        {
+          "file": "322273213728-1.png",
+          "caption": "FP16 GEMM 前后对比（观众汇总）",
+          "image_comment_id": "322273213728",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/bac394d7bcbf0837a688cdbd6814acda73701409.png",
+          "bytes": 130060,
+          "sha256": "291d75c1285d6aaa72440a0f8256658aaf7a3e2ac5ef2bf99eb027655be32422"
+        }
+      ]
+    },
+    {
+      "id": "S23",
+      "reported_hardware": "RTX 4070 Ti SUPER",
+      "reporter": "这一管叫做深情",
+      "reported_at_beijing": "2026-10-30 02:38:01",
+      "comment_id": "318588984337",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318588984337&comment_secondary_id=318588984337",
+      "context": [
+        {
+          "comment_id": "318606154961",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318588984337&comment_secondary_id=318606154961"
+        },
+        {
+          "comment_id": "318606748657",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318588984337&comment_secondary_id=318606748657"
+        }
+      ],
+      "screenshots": [
+        {
+          "file": "318588984337-1.png",
+          "caption": "系统侧状态与基准汇总；同时进行了超频",
+          "image_comment_id": "318588984337",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/17a4d625a968d83de126f8f610d0f88287903194.png",
+          "bytes": 48829,
+          "sha256": "34f44dbe12e3f3a7ff8eabd6544e2af0009ab3f642b3ee4f1094ff63e259b564"
+        }
+      ]
+    },
+    {
+      "id": "S24",
+      "reported_hardware": "RTX 4080 SUPER",
+      "reporter": "利幽尽脱苦",
+      "reported_at_beijing": "2026-10-30 06:53:08",
+      "comment_id": "318597571313",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318597571313&comment_secondary_id=318597571313",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S25",
+      "reported_hardware": "RTX 3090 Ti",
+      "reporter": "吼吼吼lo",
+      "reported_at_beijing": "2026-10-30 06:59:09",
+      "comment_id": "322309028240",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322309028240&comment_secondary_id=322309028240",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "322309028240-1.jpg",
+          "caption": "H3 工作流分阶段及单条总耗时对比",
+          "image_comment_id": "322309028240",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/bd2588d7f6276996ed5f29628acc7e40540051932.jpg",
+          "bytes": 495024,
+          "sha256": "26daf36a8fe203f5eadf880e01503f2bfea6999bf99bd8a1a7d6f6fdf860f62b"
+        }
+      ]
+    },
+    {
+      "id": "S28",
+      "reported_hardware": "RTX 3080",
+      "reporter": "laxy2333",
+      "reported_at_beijing": "2026-10-30 22:29:21",
+      "comment_id": "322392362704",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704",
+      "context": [
+        {
+          "comment_id": "322352868720",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322352868720&comment_secondary_id=322352868720"
+        }
+      ],
+      "screenshots": [
+        {
+          "file": "322392362704-1.png",
+          "caption": "解锁前混合负载测试",
+          "image_comment_id": "322392362704",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/b839cdf0263aa0f4ba4a8f5a27fe0f55219938505.png",
+          "bytes": 226372,
+          "sha256": "a15aa0f059420018f17ff0c120cde668c0a5cf023de183e99dd3be899a04ff86"
+        },
+        {
+          "file": "322392362704-2.png",
+          "caption": "系统侧寄存器与 UNLOCKED 状态",
+          "image_comment_id": "322392362704",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/e0c3437116e95c583ce7a710b6f8f133219938505.png",
+          "bytes": 133908,
+          "sha256": "fe54b376b29611d9cc5fbc7f6b66547cabf469c06b2f4dccf7a8d773386c33fa"
+        },
+        {
+          "file": "322392362704-3.png",
+          "caption": "解锁后混合负载测试",
+          "image_comment_id": "322392362704",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/b662ff17923e795151329772fb5fd428219938505.png",
+          "bytes": 202932,
+          "sha256": "5d4ad6928bbe9f0258bcd381f0ba2abb8872b650789a0999c060efa83e9fba16"
+        }
+      ]
+    },
+    {
+      "id": "S30",
+      "reported_hardware": "RTX 3060",
+      "reporter": "哲学香蕉菌",
+      "reported_at_beijing": "2026-10-30 19:42:17",
+      "comment_id": "318661261937",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937",
+      "context": [
+        {
+          "comment_id": "318652838881",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318652838881&comment_secondary_id=318652838881"
+        }
+      ],
+      "screenshots": [
+        {
+          "file": "318661261937-1.png",
+          "caption": "基准与 Anima 生图对比（观众汇总）",
+          "image_comment_id": "318661261937",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/ed342d333f7b788e39ce73a86b5e2357571852961.png",
+          "bytes": 53450,
+          "sha256": "503af828a242a8d0f1dcf8816e701c3a76b78265f618cd4930340b0b3a8102e6"
+        }
+      ]
+    },
+    {
+      "id": "S31",
+      "reported_hardware": "RTX 4060（形态未说明）",
+      "reporter": "11643608",
+      "reported_at_beijing": "2026-10-30 22:19:15",
+      "comment_id": "318678373665",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318678373665&comment_secondary_id=318678373665",
+      "context": [
+        {
+          "comment_id": "318557239073",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318557239073&comment_secondary_id=318557239073"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S32",
+      "reported_hardware": "RTX 4080 SUPER 32GB 改卡",
+      "reporter": "Wulai0-0",
+      "reported_at_beijing": "2026-10-30 23:09:04",
+      "comment_id": "318683830785",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785",
+      "context": [
+        {
+          "comment_id": "318436712481",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318436712481&comment_secondary_id=318436712481"
+        },
+        {
+          "comment_id": "318772456913",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318772456913"
+        }
+      ],
+      "screenshots": [
+        {
+          "file": "318683830785-1.png",
+          "caption": "解锁前基准终端输出",
+          "image_comment_id": "318683830785",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/e4e272ebe04bb6b331c0f376ccf0b254285348395.png",
+          "bytes": 88808,
+          "sha256": "1235f7b82c77e4d48034c8c0ad9a332d2eda8741c1a79866ff2f62fb52e5dc66"
+        },
+        {
+          "file": "318683830785-2.png",
+          "caption": "解锁后基准终端输出",
+          "image_comment_id": "318683830785",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/351d3f4af50686669e8026a4563eb17a285348395.png",
+          "bytes": 116926,
+          "sha256": "83871d1f63c8ed5b84251549589469e33a1bd1e1f05fa4078bd41c01411b949b"
+        },
+        {
+          "file": "318683830785-3.png",
+          "caption": "32GB 配置与运行监控",
+          "image_comment_id": "318683830785",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/dcdc97c73aabd2e16b45555230c54c66285348395.png",
+          "bytes": 723317,
+          "sha256": "ab8c6fcc9d31e669cea38cbdf2ede9b186c61ec221d3051f71453e0be4eebaf2"
+        },
+        {
+          "file": "318683830785-4.png",
+          "caption": "H3 工作流与运行记录",
+          "image_comment_id": "318683830785",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/943d1edf3f7fa2d9ed5d46d431d60033285348395.png",
+          "bytes": 369890,
+          "sha256": "7e096dd58ef78e0455c4895f8a2cd3d459135334f955dddb85661ef7e64bae02"
+        }
+      ]
+    },
+    {
+      "id": "S33",
+      "reported_hardware": "RTX 2080 Ti 22GB 改卡",
+      "reporter": "我就不行这个昵称还存在",
+      "reported_at_beijing": "2026-10-31 04:31:15",
+      "comment_id": "322417003552",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552",
+      "context": [
+        {
+          "comment_id": "322063070336",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322063070336"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S34",
+      "reported_hardware": "RTX 4050 Laptop",
+      "reporter": "snpdz",
+      "reported_at_beijing": "2026-10-31 10:32:42",
+      "comment_id": "322434523792",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322434523792&comment_secondary_id=322434523792",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "322434523792-1.jpg",
+          "caption": "仅解锁后 FP16 测试",
+          "image_comment_id": "322434523792",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/8a0fb9ed2844a41bab800d5b7b531cc8306417542.jpg",
+          "bytes": 2194719,
+          "sha256": "861c8e7f70c5cf63ec6d0a71c4b1671d783f90922b74bd508901cbf75e21cde3"
+        },
+        {
+          "file": "322434523792-2.jpg",
+          "caption": "6GB 配置及超频、功耗设置",
+          "image_comment_id": "322434523792",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/6c6e4b6723d055d7eeef6cc840022f08306417542.jpg",
+          "bytes": 2418531,
+          "sha256": "4ab90c17b3e412bd607e36242dfe625fbd532fcfdf93d6920998f4dfbc8a1891"
+        }
+      ]
+    },
+    {
+      "id": "S36",
+      "reported_hardware": "RTX 3070 Ti Laptop",
+      "reporter": "win10用户",
+      "reported_at_beijing": "2026-10-31 18:34:53",
+      "comment_id": "322484248128",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S38",
+      "reported_hardware": "RTX 4090 Laptop",
+      "reporter": "_----Ciallo----",
+      "reported_at_beijing": "2026-11-01 03:51:37",
+      "comment_id": "318815524849",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318796399937&comment_secondary_id=318815524849",
+      "context": [
+        {
+          "comment_id": "318796399937",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318796399937&comment_secondary_id=318796399937"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S39",
+      "reported_hardware": "RTX 4070 Laptop",
+      "reporter": "艾伦有了",
+      "reported_at_beijing": "2026-11-01 00:45:29",
+      "comment_id": "322525434896",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322525434896&comment_secondary_id=322525434896",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S40",
+      "reported_hardware": "RTX 4090",
+      "reporter": "猫命也是命",
+      "reported_at_beijing": "2026-11-01 03:56:00",
+      "comment_id": "322535665616",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322535665616&comment_secondary_id=322535665616",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S41",
+      "reported_hardware": "RTX 2080 Ti",
+      "reporter": "喜欢泡面配榨菜",
+      "reported_at_beijing": "2026-11-01 11:14:42",
+      "comment_id": "318838634673",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S42",
+      "reported_hardware": "RTX 4060 Laptop",
+      "reporter": "网友陈胤平",
+      "reported_at_beijing": "2026-11-01 14:00:06",
+      "comment_id": "322579294896",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "322579294896-1.png",
+          "caption": "解锁后两个工作流的耗时；解锁前约数见评论",
+          "image_comment_id": "322579294896",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/96a6875d161c430117a6e2c8bb99e00640862625.png",
+          "bytes": 22101,
+          "sha256": "eaae13bf542384ca322f3e6df5791e3ebacbcfba0bc768a963d30bd8010ba440"
+        }
+      ]
+    },
+    {
+      "id": "S43",
+      "reported_hardware": "RTX 4080 SUPER 32GB 改卡",
+      "reporter": "Scorpio-117",
+      "reported_at_beijing": "2026-11-01 14:57:11",
+      "comment_id": "322585313104",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S44",
+      "reported_hardware": "RTX 4070（形态未说明）",
+      "reporter": "KOS-MOS-MKII",
+      "reported_at_beijing": "2026-11-01 15:18:19",
+      "comment_id": "318864603793",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318864603793&comment_secondary_id=318864603793",
+      "context": [
+        {
+          "comment_id": "318918256417",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318857507185&comment_secondary_id=318918256417"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S45",
+      "reported_hardware": "RTX 4090",
+      "reporter": "ふわとろ",
+      "reported_at_beijing": "2026-11-01 22:46:11",
+      "comment_id": "322634742704",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322634742704&comment_secondary_id=322634742704",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "322634742704-1.png",
+          "caption": "基准对比（AI 汇总；显卡品牌与文字反馈不一致）",
+          "image_comment_id": "322634742704",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/8467017d9214a1c3af3722078446eee71525736.png",
+          "bytes": 137187,
+          "sha256": "74773b004b13862e22cae309e0f183e2e3a830284d567a9aa2cc6b8fbb5e3a71"
+        }
+      ]
+    },
+    {
+      "id": "S46",
+      "reported_hardware": "RTX 3090 20GB OEM（本人标注）",
+      "reporter": "FIcCAT",
+      "reported_at_beijing": "2026-11-02 03:50:18",
+      "comment_id": "322654906480",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322654906480&comment_secondary_id=322654906480",
+      "context": [
+        {
+          "comment_id": "322657710656",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322654906480&comment_secondary_id=322657710656"
+        },
+        {
+          "comment_id": "322668036848",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322654906480&comment_secondary_id=322668036848"
+        }
+      ],
+      "screenshots": [
+        {
+          "file": "322654906480-1.png",
+          "caption": "前后基准对比（观众汇总）",
+          "image_comment_id": "322654906480",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/9219fa7fbfb0db7b4210a334bf622ec02833817.png",
+          "bytes": 67060,
+          "sha256": "43a7363a7b486c424d0047c05151f5176d2a3ac46c5e96f1d755cbace30f1308"
+        }
+      ]
+    },
+    {
+      "id": "S48",
+      "reported_hardware": "RTX 3080 Ti（形态未说明）",
+      "reporter": "十二悠",
+      "reported_at_beijing": "2026-11-02 13:58:05",
+      "comment_id": "318960839137",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318960839137&comment_secondary_id=318960839137",
+      "context": [],
+      "screenshots": [
+        {
+          "file": "318960839137-1.jpg",
+          "caption": "基准对比照片（AI 汇总；保留原图方向）",
+          "image_comment_id": "318960839137",
+          "source_url": "http://i0.hdslb.com/bfs/new_dyn/0dbb11a6ec1a9389f103941290aadd1949804397.jpg",
+          "bytes": 2238093,
+          "sha256": "1bb340607bc3cc138d3b6ca18c6a29bcc7692c58cdecb21d73b077c4dcbd5c35"
+        }
+      ]
+    },
+    {
+      "id": "S49",
+      "reported_hardware": "RTX 3090",
+      "reporter": "ekin1106",
+      "reported_at_beijing": "2026-10-31 16:59:42",
+      "comment_id": "322473751376",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322473751376&comment_secondary_id=322473751376",
+      "context": [],
+      "screenshots": []
+    },
+    {
+      "id": "S50",
+      "reported_hardware": "RTX 4060 Ti",
+      "reporter": "圣羽绫雪",
+      "reported_at_beijing": "2026-10-31 20:37:43",
+      "comment_id": "318780355665",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318780355665&comment_secondary_id=318780355665",
+      "context": [
+        {
+          "comment_id": "318802247361",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318780355665&comment_secondary_id=318802247361"
+        },
+        {
+          "comment_id": "318860474193",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318780355665&comment_secondary_id=318860474193"
+        }
+      ],
+      "screenshots": []
+    },
+    {
+      "id": "S51",
+      "reported_hardware": "RTX 4070 Ti SUPER",
+      "reporter": "kmoljklj",
+      "reported_at_beijing": "2026-10-31 23:39:39",
+      "comment_id": "318800216993",
+      "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318800216993&comment_secondary_id=318800216993",
+      "context": [],
+      "screenshots": []
+    }
+  ]
+}
