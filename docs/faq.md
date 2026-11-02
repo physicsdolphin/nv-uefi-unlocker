@@ -222,6 +222,10 @@ SVM、VT-x 和 VT-d 在已验证平台上不需要关闭。任务管理器的“
 
 Turing 若返回 `0x91`，或 EFI 成功但 GSP 交棒蓝屏，查 [兼容性矩阵](compatibility.md#device-16)，不要把所有黑屏都归为 GOP。平台证据见 [AMI 报告](ad106-asus-z790-windows-unlock.md)和 [X470 记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70)。
 
+### 计算负载被钉在 P8 低频？先查魔改 VBIOS
+
+**实锤先例**（[#90](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/90)，2080 Ti）：EFI 事务源码级确认成功（booter 退出码 0x0 + PLM 开 + selector 读回），但 Windows 里**图形负载正常 P0、一建 CUDA 上下文立刻钉死 P8 645 MHz**——利用率 70–100% 功耗反而从 71 W 跌到 44 W。根因：该卡曾刷过流出的 **kingpin 类极限测试 VBIOS**（EVGA 3090/4090 1000W、XOC 890W 一族——NV 发给 OEM 超频工作室做极限冷却跑分用的特殊 BIOS，带计算类负载的独立 P-state 策略；识别线索：`nvidia-smi` 功耗读数远超零售设计，如 565 W vs 零售 300 W 墙）。**换正常零售 VBIOS 后立即恢复**。机理分析列为[开放问题 #14](open-questions.md)；改卡/超频用户建议先跑 `nvoc-cli get-vbios --verbose` 解析当前 VBIOS 的功耗表再解锁。
+
 <a id="recovery"></a>
 
 ## 黑屏、STOP 或驱动异常后怎样恢复？
