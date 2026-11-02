@@ -182,9 +182,17 @@ const CI_OPTION_HVCI_KMCI_ENABLED: u32 = 0x10;
 fn hvci_runtime() -> Option<bool> {
     #[repr(C)]
     struct CiInfo {
+        // SYSTEM_CODEINTEGRITY_INFORMATION opens with the struct Length -
+        // the kernel validates it and returns STATUS_INVALID_PARAMETER
+        // otherwise (the original probe left it out and read as "refused"
+        // even elevated).
+        length: u32,
         options: u32,
     }
-    let mut info = CiInfo { options: 0 };
+    let mut info = CiInfo {
+        length: core::mem::size_of::<CiInfo>() as u32,
+        options: 0,
+    };
     let mut returned: u32 = 0;
     // Safety: buffer/length describe the struct; class and sizes are the
     // documented pair for SystemCodeIntegrityInformation.
