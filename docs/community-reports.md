@@ -10,7 +10,6 @@
 
 | 来源 | GPU / 版本 | 平台与进入方式 | 固件与系统侧证据 | 补充记录 |
 | --- | --- | --- | --- | --- |
-| 来源 | GPU / 版本 | 平台与进入方式 | 固件与系统侧证据 | 补充记录 |
 | --- | --- | --- | --- | --- |
 | [#3](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/3#issuecomment-6434240012) | RTX 4070 SUPER，AD104 `2783`；v0.1.4 | Palit，MSI B760 TOMAHAWK WIFI，i5-13400F，Windows 11，驱动 621.01，220 W；每次冷启 | 桥 BME 修复后 replay/unlock 通过；marker、SS0/SS1、FLR 后出口读回正确。PyTorch/cuBLAS，7 次取中位数，8192：FP16→FP32 累加 70.5→100.1、BF16 71.0→107.0、TF32 35.5→48.4；FP16 累加与 FP32 SIMT 对照基本不变 | 报告中附关键日志，完整日志可由报告者提供；1024³ 对 FP64 参考的检查前后逐位一致，其他工作负载待测 |
 | [#27](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/27) | RTX 3080 Ti Laptop 16GB，GA103M `2420`；v2.1.0 | MSI Vector GP76 12UHSO，独显直连，175 W，AC；Windows 11，驱动 621.01，VBIOS `94.03.19.00.90`；独立 FAT32 分区经 EFI Shell 进入，未写系统 ESP | replay 通过，PLM 翻转、选择器读回及 FLR 存活；8192 GEMM 各 3 轮中位数：FP16 49.23→77.80/80.35，BF16 50.35→77.64/80.84；FP32 12.80→12.64/12.68，数值检查通过。[日志与方法](https://gist.github.com/INsincere123/f0778d5378fdb5bb64da1aaabdefa341) | 未做 Windows 内 FEAT 读回或长期稳定性验证。报告者曾同会话再次执行后出现 BIOS 显示异常、NVMe 不可见，EC 重置恢复；首次日志被覆盖，原因不明。后续单次 replay 与两次解锁正常 |
