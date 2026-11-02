@@ -276,86 +276,87 @@ repository.
 
 - How it works (Simplified Chinese): [power-user edition](https://www.bilibili.com/opus/1264436370549506065) · [beginner edition](https://www.bilibili.com/opus/1264493051219279872)
 - Community discussions and coverage (language tagged per item):
-  [Reddit](https://www.reddit.com/r/overclocking/comments/1xj5jp3/new_uefi_gpu_unlocking_tool_revealed_for_windows/) (EN) ·
-  [X/RoundtableSpace](https://x.com/RoundtableSpace/status/2115749232980140458) (EN) ·
-  [X/Pirat_Nation](https://x.com/Pirat_Nation/status/2116303886604739008) (EN) ·
   [TechPowerUp](https://www.techpowerup.com/354316/new-uefi-tool-lifts-nvidias-tensor-cap-on-rtx-20-to-40-series-cards-in-windows?type=Tools) (EN) ·
   [Wccftech](https://wccftech.com/new-nvidia-uefi-gpu-unlocker-brings-up-to-75-higher-ai-compute-performance-to-rtx-20-30-40-series-gpus-on-windows/) (EN) ·
   [NotebookCheck](https://www.notebookcheck.net/UEFI-level-pre-driver-Nvidia-GPU-unlocker-now-available-for-RTX-2xxx-3xxx-and-4xxx-GPUs-on-Windows-and-Linux.1438153.0.html) (EN) ·
+  [HKEPC](https://www.hkepc.com/27140/) (ZH-HK) ·
+  [ProfesionalReview](https://www.profesionalreview.com/2026/11/01/nv-uefi-unlocker-75-mas-rendimiento-ia-rtx-20-30-40/) (ES) ·
+  [Tom's Hardware](https://www.tomshardware.com/pc-components/gpus/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows-lifts-gpus-fp16-math-performance-up-to-65-percent-uefi-unlocker-covers-rtx-20-30-and-40-series-desktops-and-laptops) (EN) ·
+  [VideoCardz](https://videocardz.com/newz/modders-create-automated-tool-to-unlock-ai-performance-on-nvidia-geforce-rtx-20-30-and-40-series-gpus) (EN) ·
+  [TechNews](https://technews.tw/2026/11/02/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows/) (ZH-HK) ·
+  [KOCPC](https://www.kocpc.com.tw/archives/701745) (ZH-HK) ·
+  [Guru3D](https://www.guru3d.com/story/modders-report-up-to-higher-ai-compute-on-geforce-rtx-20-30-and-40-cards/)（EN） ·
+  [Frandroid](https://www.frandroid.com/marques/3306125_ce-logiciel-debride-les-nvidia-geforce-rtx-20-30-et-40)(FR) ·
   [Mezha Media](https://mezha.net/eng/news/mezha-2ffa1478104cdc175bc0e096_uefi_pre-driver_nvidia/) (EN; [Chinese](https://mezha.net/ch/news/mezha-2ffa1478104cdc175bc0e096_uefi-pre-driver-nvidia-gpu-unlocker/)) ·
   [Digg](https://digg.com/tech/vfyuouiy) (EN) ·
   [XenoSpectrum](https://xenospectrum.com/en/nvidia-uefi-windows-tensor-unlock/) (EN) ·
   [HotRepo](https://hotrepo.ai/physicsdolphin/nv-uefi-unlocker) (EN) ·
   [HardwareCooking](https://www.hardwarecooking.fr/nv-uefi-unlocker-tensor-cores-rtx-20-30-40-windows/) (FR) ·
-  [DNS Club](https://club.dns-shop.ru/amp/digest/187732-instrument-nv-uefi-unlocker-povyishaet-ii-proizvoditelnost-kart/) (RU) ·
   [Playground.ru](https://www.playground.ru/misc/news/novaya_utilita_pozvolyaet_uvelichit_proizvoditelnost_videokart_nvidia_rtx_do_75_v_zadachah_ii-1886614) (RU) ·
   [FanaticosDelHardware](https://fanaticosdelhardware.com/nv-uefi-unlocker-multiplica-hasta-265-veces-el-rendimiento-tensor-de-las-geforce-rtx-en-windows/) (ES) ·
   [OMGPU](https://www.omgpu.com/nvidia-luefi-gpu-unlocker-dope-de-75-lia-des-rtx-20-a-40-sur-windows/) (FR) ·
   [PauseHardware](https://pausehardware.com/nvidia-tensor-rtx-debridees-sous-windows/) (FR) ·
   [HardwarePremium](https://www.hardwarepremium.com/noticias/78275/uefi-nvidia-desbloqueador-rtx-2000-3000-4000/) (ES) ·
   [Gaming-ST](https://gaming-st.com/gpu/nv-uefi-unlocker-windows-rtx20-30-40-tensor-unlock/) (JA) ·
-  [Shahrsakhtafzar](https://www.shahrsakhtafzar.com/fa/news/graphic-card/62809-nvidia-geforce-rtx-tensor-unlock-windows-tool) (FA) ·
-  [Quasar Zone](https://quasarzone.com/bbs/qn_hardware/views/2085634) (KO) ·
-  [GiggleHD](https://gigglehd.com/gg/hard/19358883) (KO) ·
   [GECID](https://ua.gecid.com/news/novij_nstrument_podvoyu_produktivn_st_tenzornih_yader_dlya_v_deokart_rtx_20_40_u_windows/) (UK) ·
   [DicasPC](https://dicaspc.com.br/noticias/nv-uefi-unlocker-libere-ate-75-mais-ia-na-sua-rtx/) (PT-BR) ·
   [Diario da Midia](https://diariodamidia.com.br/autor/thiago-nogueira) (PT-BR) ·
   [GPU-Unlock.net](https://gpu-unlock.net/windows) (EN) ·
   [IT-SVR](https://it-svr.com/svrforum-news-3234984/) (KO) ·
-  [HKEPC](https://www.hkepc.com/27140/) (ZH-HK) ·
-  [Facebook/PCMR HUB](https://www.facebook.com/PCMRHUB/posts/nv-uefi-unlocker-is-an-open-source-uefi-level-pre-driver-tool-that-removes-nvidi/1546978424130406/) (EN) ·
   [ShiftDelete](https://shiftdelete.net/en/nv-uefi-unlocker) (EN) ·
-  [YouTube/Max Herrera](https://www.youtube.com/shorts/AMhmWjjpgFk) (EN) ·
   [GizNewsDaily](https://giznewsdaily.com/nvidia-gpu-unlocker-at-uefi-pre-driver-level-released-for-rtx-2xxx-4xxx/) (EN) ·
-  [ProfesionalReview](https://www.profesionalreview.com/2026/11/01/nv-uefi-unlocker-75-mas-rendimiento-ia-rtx-20-30-40/) (ES) ·
-  [Facebook/ComfyUI community](https://www.facebook.com/groups/comfyui/posts/1122947967144569/) (EN) ·
-  [Sohu](https://m.sohu.com/a/1095783758_163726) (ZH) ·
-  [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html) (ZH) ·
-  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (ZH) ·
-  [PCGH Extreme forum](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/) (DE) ·
-  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (ZH-HK) ·
-  [Tom's Hardware](https://www.tomshardware.com/pc-components/gpus/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows-lifts-gpus-fp16-math-performance-up-to-65-percent-uefi-unlocker-covers-rtx-20-30-and-40-series-desktops-and-laptops) (EN) ·
   [PixLib](https://pixlib.ru/article/nv-uefi-unlocker-kak-uskorit-tenzornye-yadra-rtx-do-75-v-zadachakh-ii) (RU) ·
   [ShiftDelete forum](https://shiftdelete.net/forum/konular/eski-rtx-kartlara-yapay-zeka-takviyesi-nv-uefi-unlocker.5000006) (TR) ·
-  [NetEase](https://www.163.com/dy/article/LALVCN6L0556OH4N.html) (ZH) ·
-  [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257) (ZH) ·
-  [VideoCardz](https://videocardz.com/newz/modders-create-automated-tool-to-unlock-ai-performance-on-nvidia-geforce-rtx-20-30-and-40-series-gpus) (EN) ·
   [WindowsForum](https://windowsforum.com/news/nv-uefi-unlocker-lifts-rtx-20-30-and-40-tensor-core-limits-ai-gains-and-secure-boot-risks.450453/) (EN) ·
-  [Hacker News](https://news.ycombinator.com/item?id=50272846) (EN) ·
   [eTeknix](https://www.eteknix.com/nv-uefi-unlocker-boosts-ai-performance-by-up-to-75-on-rtx-20-30-and-40-gpus/) (EN) ·
-  [YouTube/究極完全体ガジェモン](https://www.youtube.com/watch?v=Lc9cadT9Qk0) (JA) ·
-  [Facebook/老N顯示卡](https://www.facebook.com/61579313407097/posts/122190692660977113/) (ZH-HK) ·
   [Coolaler](https://www.coolaler.com/nv-uefi-unlocker-%E8%AE%93-rtx-20-30-40-%E9%A1%AF%E5%8D%A1-ai-%E6%95%88%E8%83%BD75%EF%BC%8C%E5%85%8D%E5%88%B7-vbios/) (ZH-HK) ·
-  [GamerSky](https://www.gamersky.com/news/202611/2238729.shtml) (ZH) ·
-  [TechNews](https://technews.tw/2026/11/02/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows/) (ZH-HK) ·
-  [XFastest](https://news.xfastest.com/169478/nvidia-rtx-20%ef%bc%8f30%ef%bc%8f40-%e9%a1%af%e5%8d%a1%e9%96%8b%e6%ba%90-uefi-%e5%b7%a5%e5%85%b7%e8%a7%a3%e9%8e%96-ai-%e7%ae%97%e5%8a%9b%ef%bc%9artx-4060-%e7%ad%86%e9%9b%bb-fp16-%e6%b8%ac%e8%a9%a6/) (ZH-HK) ·
-  [KOCPC](https://www.kocpc.com.tw/archives/701745) (ZH-HK) ·
   [GameApps.hk](https://www.gameapps.hk/news/71358/nvidia-rtx-gpu-uefi-unlocker-ai-performance-boost/) (ZH-HK) ·
   [HyperAI](https://hyper.ai/cn/stories/e969128a0f35dc33e44aeee493d8a16a) (ZH) ·
-  [Tencent News](https://view.inews.qq.com/a/20261101A0AMKJ00) (ZH) ·
   [VGover](https://www.vgover.com/news/243692) (ZH) ·
   [DreamDigi](https://dreamdigi.tw/35957-2/) (ZH-HK) ·
   [AHAN](https://news.ahan.net/article/55430) (ZH) ·
   [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh) (ZH) ·
   [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/) (ID) ·
-  [Facebook/Coolaler fans](https://www.facebook.com/coolalerfans/posts/1706720778130729/) (ZH-HK) ·
   [Silicon Report](https://www.siliconreport.com/open-source-uefi-tool-unlocks-nvidia-gpu-tensor-performance)(EN) ·
   [Kantan.News](https://kantan.news/news/new-uefi-tool-removes-ai-speed-limitation-on-nvidia-graphics-cards)(EN) ·
   [digitalcitizen.life](https://www.digitalcitizen.life/new-nvidia-gpu-unlocker-boosts-rtx-20-30-and-40-series-ai-performance-by-up-to-75-on-windows/)(EN) ·
   [PC Test Bench](https://www.pctestbench.com/nv-uefi-unlocker-rtx-tensor-windows/)(EN) ·
-  [Global Computer Community](https://globalcomputercommunity.com/index.php?/forums/topic/75-nv-uefi-unlocker-tensor-caps-lifted-in-windows-but-watch-the-board-power/)(EN) ·
   [FreeLLM](https://freellm.vip/sites/nv-uefi-unlocker)(EN) ·
   [Hooshware](https://hooshware.net/news/7b49fb54-b7ab-4779-b799-01958b7601c9)(EN) ·
-  [zod.kr](https://zod.kr/news/8983775)(KO) ·
-  [Inven](https://www.inven.co.kr/board/party/6292/2046)(KO) ·
+  [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/) (EN) ·
+  [X/RoundtableSpace](https://x.com/RoundtableSpace/status/2115749232980140458) (EN) ·
+  [X/Pirat_Nation](https://x.com/Pirat_Nation/status/2116303886604739008) (EN) ·
+  [DNS Club](https://club.dns-shop.ru/amp/digest/187732-instrument-nv-uefi-unlocker-povyishaet-ii-proizvoditelnost-kart/) (RU) ·
+  [Shahrsakhtafzar](https://www.shahrsakhtafzar.com/fa/news/graphic-card/62809-nvidia-geforce-rtx-tensor-unlock-windows-tool) (FA) ·
+  [Quasar Zone](https://quasarzone.com/bbs/qn_hardware/views/2085634) (KO) ·
+  [GiggleHD](https://gigglehd.com/gg/hard/19358883) (KO) ·
+  [Facebook/PCMR HUB](https://www.facebook.com/PCMRHUB/posts/nv-uefi-unlocker-is-an-open-source-uefi-level-pre-driver-tool-that-removes-nvidi/1546978424130406/) (EN) ·
+  [YouTube/Max Herrera](https://www.youtube.com/shorts/AMhmWjjpgFk) (EN) ·
+  [Facebook/ComfyUI community](https://www.facebook.com/groups/comfyui/posts/1122947967144569/) (EN) ·
+  [Sohu](https://m.sohu.com/a/1095783758_163726) (ZH) ·
+  [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html) (ZH) ·
+  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (ZH) ·
+  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (ZH-HK) ·
+  [NetEase](https://www.163.com/dy/article/LALVCN6L0556OH4N.html) (ZH) ·
+  [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257) (ZH) ·
+  [YouTube/究極完全体ガジェモン](https://www.youtube.com/watch?v=Lc9cadT9Qk0) (JA) ·
+  [Facebook/老N顯示卡](https://www.facebook.com/61579313407097/posts/122190692660977113/) (ZH-HK) ·
+  [GamerSky](https://www.gamersky.com/news/202611/2238729.shtml) (ZH) ·
+  [XFastest](https://news.xfastest.com/169478/nvidia-rtx-20%ef%bc%8f30%ef%bc%8f40-%e9%a1%af%e5%8d%a1%e9%96%8b%e6%ba%90-uefi-%e5%b7%a5%e5%85%b7%e8%a7%a3%e9%8e%96-ai-%e7%ae%97%e5%8a%9b%ef%bc%9artx-4060-%e7%ad%86%e9%9b%bb-fp16-%e6%b8%ac%e8%a9%a6/) (ZH-HK) ·
+  [Tencent News](https://view.inews.qq.com/a/20261101A0AMKJ00) (ZH) ·
+  [Facebook/Coolaler fans](https://www.facebook.com/coolalerfans/posts/1706720778130729/) (ZH-HK) ·
   [the9.pro](https://news.the9.pro/pt/models/nv-uefi-unlocker/)(PT-BR) ·
   [TrashExpert](https://trashexpert.ru/news/hardware-news/rtx-uefi-usb-tensor-unlocker-windows)(RU) ·
-  [Facebook/Fier De Mon PC](https://www.facebook.com/FierDeMonPC/posts/1457447876541008/)(FR)
+  [Facebook/Fier De Mon PC](https://www.facebook.com/FierDeMonPC/posts/1457447876541008/)(FR) ·
   [PBX Science](https://pbxscience.com/open-source-nv-uefi-unlocker-lifts-tensor-core-limits-on-rtx-20-30-and-40-gpus-with-gains-of-up-to-75-in-tests/)（EN） ·
   [Fosswire](https://fosswire.org/news/open-source-nv-uefi-unlocker-tool-removes-nvidia-tensor-limi)（EN） ·
-  [Guru3D](https://www.guru3d.com/story/modders-report-up-to-higher-ai-compute-on-geforce-rtx-20-30-and-40-cards/)（EN） ·
-  [YouTube/Kempinator Gaming](https://www.youtube.com/watch?v=TulzjBvbdjo)（EN）
-  [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/) (EN)
+  [YouTube/Kempinator Gaming](https://www.youtube.com/watch?v=TulzjBvbdjo)（EN） ·
+  [Reddit](https://www.reddit.com/r/overclocking/comments/1xj5jp3/new_uefi_gpu_unlocking_tool_revealed_for_windows/) (EN) ·
+  [PCGH Extreme forum](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/) (DE) ·
+  [Hacker News](https://news.ycombinator.com/item?id=50272846) (EN) ·
+  [Global Computer Community](https://globalcomputercommunity.com/index.php?/forums/topic/75-nv-uefi-unlocker-tensor-caps-lifted-in-windows-but-watch-the-board-power/)(EN) ·
+  [zod.kr](https://zod.kr/news/8983775)(KO) ·
+  [Inven](https://www.inven.co.kr/board/party/6292/2046)(KO)
 
 ## Star History
 
