@@ -205,9 +205,40 @@ pub fn pm_preflight(pci: &PciIo) -> Result<PmEntry, &'static str> {
 
 /// Staged detach + exclusive claim. Returns the config-space baseline taken
 /// while exclusively owned (drift reference for the post-transaction check).
-pub fn detach_and_claim(pci_handle: Handle) -> Result<alloc::vec::Vec<u32>, &'static str> {
+/// What `detach_and_claim` hands to the transaction: the config-space
+/// baseline (drift reference) and the firmware-tracked PciIo attributes
+/// captured BEFORE the claim's Set(0x0007) rewrote them - the handoff
+/// restores the VGA forwarding subset from here (issue #109 chain-2
+/// code-12 class: the boot-VGA owner must hold legacy VGA at handoff).
+pub struct Claim {
+    pub baseline: alloc::vec::Vec<u32>,
+    pub initial_attrs: Option<u64>,
+}
+
+pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     info!("DETACH: staged console/driver detach begin (TOTORONG craft)");
     log_display_topology(pci_handle);
+    // Attributes BEFORE the claim rewrites them - read on the still-bound
+    // device through a non-exclusive GetProtocol open.
+    let initial_attrs = {
+        // Safety: GetProtocol open, read-only call into the protocol.
+        match unsafe {
+            boot::open_protocol::<PciIo>(
+                OpenProtocolParams { handle: pci_handle, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        } {
+            Ok(pci) => {
+                let attrs = pci.attributes_get();
+                info!("DETACH: pre-claim attributes {attrs:?} (VGA subset {:#x})", attrs.unwrap_or(0) & 0x001C);
+                attrs
+            }
+            Err(e) => {
+                info!("DETACH: pre-claim attribute capture failed {:?}", e.status());
+                None
+            }
+        }
+    };
 
     // Stage 1+2: disconnect every driver bound to the TARGET GPU's GOP
     // handle (ConSplitter TextOut agent + GraphicsConsole; the UEFI
@@ -315,7 +346,7 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<alloc::vec::Vec<u32>, &'st
     if baseline[1] & 0x2 == 0 {
         return Err("PCI command MEMORY bit did not stick after both enable paths");
     }
-    Ok(baseline)
+    Ok(Claim { baseline, initial_attrs })
 }
 
 /// Post-transaction GOP/console reconnect (TOTORONG craft): after the FLR
@@ -374,4 +405,34 @@ pub fn stale_pathless_gop() -> bool {
         info!("RECONNECT: pathless GOP survived the detach - vendor GOP only (non-recursive)");
     }
     stale
+}
+
+/// VGA forwarding bits (EDK2 PciIo.h): VGA_PALETTE_IO | VGA_MEMORY |
+/// VGA_IO. The 16-bit-decode variants are excluded - no board in the
+/// compatibility matrix reports them on the GPU function.
+pub const VGA_ATTR_MASK: u64 = 0x001C;
+
+/// Chain-2 code-12 fix (issue #109, the #35 refined law): at handoff the
+/// boot-VGA owner must hold the legacy VGA resources. POST decides that
+/// owner (the board with the monitor), but the detach/console-stop/FLR
+/// sequence can drop our own VGA attributes on the floor - Windows
+/// arbitration then finds no anchored owner and refuses the legacy ranges
+/// (pnputil signature: 3B0-3DF / A0000-BFFFF missing). Unconditional,
+/// idempotent, read back: re-Enable the pre-claim VGA subset captured at
+/// [`detach_and_claim`]. BME is deliberately untouched - each handoff
+/// path owns its own bus-master semantics.
+pub fn restore_vga(gpu: &PciIo, initial_attrs: Option<u64>) {
+    let vga = initial_attrs.unwrap_or(0) & VGA_ATTR_MASK;
+    if vga == 0 {
+        info!("VGA-RESTORE: no VGA attributes captured pre-claim - nothing to restore");
+        return;
+    }
+    let st = gpu.attributes_enable_op(vga);
+    info!("VGA-RESTORE: VGA attributes {vga:#x} Enable={st:?}");
+    let cmd = gpu.config_read_u16(0x04);
+    if cmd & 0x2 == 0 {
+        // MEM decode is required for the vendor GOP to work at all; the
+        // reconnect paths leave it on, but refuse to hand over without it.
+        info!("VGA-RESTORE: WARNING command={cmd:#06x} - MEMORY decode off");
+    }
 }

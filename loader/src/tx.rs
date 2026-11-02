@@ -873,10 +873,13 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // TOTORONG craft: all console + vendor drivers off the device, PciIo
     // exclusively claimed, IO|MEM|BME enabled, config baseline captured.
     // (Black screen starts here by design; the log file keeps recording.)
-    if let Err(e) = crate::tx_detach::detach_and_claim(pci_handle) {
-        info!("TX: detach+claim FAILED: {e}");
-        return Err(TxError::ENodev);
-    }
+    let claim = match crate::tx_detach::detach_and_claim(pci_handle) {
+        Ok(c) => c,
+        Err(e) => {
+            info!("TX: detach+claim FAILED: {e}");
+            return Err(TxError::ENodev);
+        }
+    };
     info!("TX: detach+claim ok");
 
     // PRE-FLR (reference never does this, but it also never runs in a
@@ -1337,6 +1340,10 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     } else {
         crate::tx_detach::reconnect_all(pci_handle);
     }
+    // Chain-2 code-12 fix (issue #109, unconditional): whatever the
+    // reconnect decision was, the boot-VGA owner must hold legacy VGA at
+    // handoff. Idempotent, read back, BME untouched.
+    crate::tx_detach::restore_vga(gpu.pci, claim.initial_attrs);
 
     // Unwind: release every DMA buffer.
     let _ = booter_dma.release(gpu.pci);
