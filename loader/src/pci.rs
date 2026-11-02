@@ -694,8 +694,26 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
 /// other one may run.
 #[cfg(feature = "tx")]
 pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
-    match crate::tx::read_boot_file("\\tx-select-bdf.txt") {
-        Some(raw) => match parse_bdf(&raw) {
+    // read_asset, NOT read_boot_file: the three states matter (issue #106
+    // zero-byte lesson). Absent = no pin, default order. Ok(Some) = parse.
+    // Err (zero-byte/corrupt/short read) must NOT fall through to the
+    // default - a broken pin silently unlocking every card is the worst
+    // outcome for a pin switch, so refuse alongside the unparsable case.
+    match crate::tx::read_asset("\\tx-select-bdf.txt") {
+        Err(_) => {
+            info!("ENUMERATE: tx-select-bdf.txt present but unreadable (zero-byte/corrupt) - refusing to guess, TX skipped");
+            alloc::vec::Vec::new()
+        }
+        Ok(None) => {
+            if all.len() > 1 {
+                info!(
+                    "ENUMERATE: no tx-select-bdf marker - every supported card runs, in enumeration order ({} found)",
+                    all.len()
+                );
+            }
+            all.to_vec()
+        }
+        Ok(Some(raw)) => match parse_bdf(&raw) {
             Some(bdf) => {
                 for c in all.iter() {
                     if (c.seg, c.bus, c.dev, c.fun) == bdf {
@@ -717,15 +735,6 @@ pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
                 alloc::vec::Vec::new()
             }
         },
-        None => {
-            if all.len() > 1 {
-                info!(
-                    "ENUMERATE: no tx-select-bdf marker - every supported card runs, in enumeration order ({} found)",
-                    all.len()
-                );
-            }
-            all.to_vec()
-        }
     }
 }
 

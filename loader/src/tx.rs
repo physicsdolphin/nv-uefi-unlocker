@@ -907,10 +907,13 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // anti-replay validation needs sane GPU time; the reference omits the
     // day-of-month field - preserved verbatim, not a precise wall clock).
     if assets.family == "tu10x" {
-        if read_boot_file("\\tx-host-probe.txt").is_some() {
+        // probe_file, not read_boot_file: these are UI switches (zero-byte
+        // files by design); read_boot_file refuses size==0, so a dropped
+        // EMPTY marker was silently ignored (issue #106).
+        if probe_file("\\tx-host-probe.txt") {
             host_probe_reference(gpu);
         }
-        if read_boot_file("\\tx-ptimer-seed.txt").is_some() {
+        if probe_file("\\tx-ptimer-seed.txt") {
             ptimer_seed_reference(gpu);
         }
     }
@@ -1149,7 +1152,9 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // whole image is port-loaded NS+SEC+DMEM with BOOTVEC=0; the GA10x/Ada
     // BootFromHs path loads only the secure segment through BROM params.
     if assets.family == "tu10x" {
-        if read_boot_file("\\tx-sec2-c-load.txt").is_some() {
+        // probe_file, not read_boot_file: zero-byte UI switch (issue #106 -
+        // read_boot_file refuses size==0 and the empty marker never fired).
+        if probe_file("\\tx-sec2-c-load.txt") {
             // Issue #17/#62 matrix: full C-reference fire (no reset, FBIF
             // CTL bit7 without TRANSCFG rewrite, 3s quiet window). Default
             // OFF - the field-proven shape above stays the default.

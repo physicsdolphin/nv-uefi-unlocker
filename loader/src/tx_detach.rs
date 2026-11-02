@@ -342,7 +342,11 @@ pub fn reconnect_all(pci_handle: uefi::Handle) {
     // validated on the pathless-survivor shape and leaves the console
     // stack to bootmgfw - the Z170-A control proved bootmgfw's own
     // re-establishment suffices whenever it can bind at all.
-    let force_nonrec = crate::tx::read_boot_file("\\tx-reconnect-nonrecursive.txt").is_some();
+    // probe_file, NOT read_boot_file: the UI switches are zero-byte files
+    // by design, and read_boot_file refuses size==0 (issue #106 - a
+    // dropped EMPTY marker was silently ignored and the recursive hang
+    // came back).
+    let force_nonrec = crate::tx::probe_file("\\tx-reconnect-nonrecursive.txt");
     let recursive = if force_nonrec {
         info!("RECONNECT: \\tx-reconnect-nonrecursive.txt present - forcing NON-recursive (vendor GOP bind only; console stack left to bootmgfw)");
         false
