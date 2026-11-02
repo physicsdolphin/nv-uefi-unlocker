@@ -122,6 +122,11 @@ this machine. Use an explicit -Family (ad102 | ga102 | tu10x) or -Family all."
     # Canonical build order regardless of enumeration order.
     $Families = @("tu10x", "ga102", "ad102") | Where-Object { $detected -contains $_ }
     Write-Host ("[localhost] building for: {0}" -f ($Families -join ", "))
+    if ($Families.Count -lt 3) {
+        Write-Host ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($Families -join "/") +
+                    " generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot." +
+                    " For a multi-generation machine use: .\make-usbroot.ps1 -Family all")
+    }
 } else {
     $Families = @($normalized)
 }

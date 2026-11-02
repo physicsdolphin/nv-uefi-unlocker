@@ -281,6 +281,20 @@ fn tx_one_card(g: &pci::FoundGpu) {
     };
     info!("TX: device 10de:{dev:04x} -> asset family '{family}'");
 
+    // Stick-completeness precheck (field case: a localhost-built stick made
+    // on a 40-series-only machine carries no ga10x assets, so a 30-series
+    // card in a multi-GPU target machine is silently skipped with no
+    // diagnosis). Name the missing family and the fix before the per-asset
+    // loop turns Ok(None) into an unexplained skip.
+    let booter_probe = tx::read_asset_fmt("\\booter_load_{}.bin", family);
+    if matches!(booter_probe, Ok(None)) {
+        info!(
+            "TX: family '{family}' assets are NOT on this stick - this card would be skipped. \
+Rebuild with: .\\make-usbroot.ps1 -Family all"
+        );
+        return;
+    }
+
     // Assets: `Ok(None)` = the stick does not carry it (skip this card);
     // `Err` = present but unusable (empty / over the size cap / short read /
     // media pulled) - that must abort BEFORE anything is detached, never
