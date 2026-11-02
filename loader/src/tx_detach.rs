@@ -361,7 +361,7 @@ pub fn reconnect_all(pci_handle: uefi::Handle) {
     log_display_topology(pci_handle);
 }
 
-/// `	x-orphan-console-teardown.txt` (issue #120): after the detach, a
+/// `\\tx-orphan-console-teardown.txt` (issue #120): after the detach, a
 /// pathless GOP that survived is an ORPHANED console child - the log's
 /// opener rows show it was created BY_CHILD by the target's own GOP
 /// driver stack, and a ConSplitter console still drives it BY_DRIVER.
@@ -374,10 +374,10 @@ pub fn reconnect_all(pci_handle: uefi::Handle) {
 /// disconnect touches the live console tree and is unproven on this
 /// board family - diagnostic build only.
 pub fn orphan_console_teardown(pci_handle: uefi::Handle) {
-    if !crate::tx::probe_file("\tx-orphan-console-teardown.txt") {
+    if !crate::tx::probe_file("\\tx-orphan-console-teardown.txt") {
         return;
     }
-    info!("ORPHAN: \tx-orphan-console-teardown.txt present - disconnecting console drivers from pathless GOPs");
+    info!("ORPHAN: \\tx-orphan-console-teardown.txt present - disconnecting console drivers from pathless GOPs");
     let Ok(h) = boot::locate_handle_buffer(boot::SearchType::ByProtocol(&GraphicsOutput::GUID)) else {
         info!("ORPHAN: no GOP handles");
         return;
