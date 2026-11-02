@@ -59,8 +59,11 @@
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
 | GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限）；🟢 其余；2560 待复测 · [详情](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9** / MX570 25a6 / 3050 Laptop **25a2** 等 | 🟡 待验证 · [详情](#device-14) |
-| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14** | ✅ 1f07/1f06/1f03/1f14 · [详情](#device-15) |
-| TU102/TU104/TU116（20 系其余/16 系，含 TITAN RTX 1e02） | 2080 Ti 1e07 / 2080 Super 1e81 / 2080 1e87 等 | ✅ 1e07（原厂 11GB）/1e81/1e87；TU116/GTX 16 仍 🟢 · [详情](#device-16) |
+| **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14**；其余：2070 Rev.A1 早期 1f02 / 2060 1f08 / 2060 12GB QS 1f42、1f47 / 2070M 1f10、1f50 / 2060M 1f11、1f12、1f15、1f51、1f55 / 2070M MQ-Refresh 1f14、1f54 / Quadro RTX 3000M 1f36、1f76 / CMP 40HX **1f0b** / GTX 1660S（TU106 版）1f09 / GTX 1650（TU106 版）1f0a / 裸 TU106 1f04、TU106M 1f2e | ✅ 1f07/1f06/1f03/1f14；🟢 其余 · [详情](#device-15) |
+| TU102 | **RTX 2080 Ti 1e07（Rev. A）/ 1e04 / 1e06、2080 Ti 12GB 1e03** / TITAN RTX **1e02** / ES 1e2d、1e2e / CMP 50HX **1e09** / Quadro RTX 6000/8000 1e30、1e78 / Tesla T10 1e35、1e37、T40 1e38 / 裸 TU102GL 1e3c–1e3e | ✅ 1e07（原厂 11GB 与 22G 改装两形态，subsystem 1043/107D/19DA 等）；1e02 强注入无增益（出厂满速）；🟢 其余 · [详情](#device-16) |
+| TU104 | **RTX 2080 Super 1e81 / 2080 1e82（Rev. A 1e87）/ 2070 Super 1e84、1ec2、1ec7 / 2060（TU104 版）1e89** / 2080M 1e90、1ed0 / 2070SM-M 1e91、1ed1、1ed3 / 2070S-M MQ 1e93 / ES 1eae / Quadro RTX 4000/5000 1eb0、1eb1、1eb5、1eb6 / Tesla T4 1eb8、T4G 1eb4 / 裸 TU104GL 1eb9、1eba（PG189 SKU600）、1ebe、1ef5 / 裸 TU104M 1eab | ✅ 1e81/1e87；🟢 其余 · [详情](#device-16) |
+| TU116（GTX 16 系） | **GTX 1660 Ti 2182 / 1660 2184 / 1660 Super 21c4 / 1650 Super 2187 / 1650 2188** / PG160 2186 / 裸 2183、21c2、21c3 / CMP 30HX 2189 / 1660 Ti M 2191 / 1650 Ti M 2192 / 1660 Ti M (BM) 21d1 / TU116GL 21ae、21bf | 🟢 待实机（16 系无张量核，解锁收益=游戏向不适用，仅录事务通性） · [详情](#device-16) |
+| TU117（GTX 16 低阶 / MX） | **GTX 1650 (TU117) 1f82 / 1630 1f83 / 1650M 1f91、1f92、1f94、1f96、1f99、1f9d、1fd9、1fdd / 1650 Ti M 1f95** / MX450 1f97、1f98、1f9c / MX550 1f9f、1fa0 / 裸 TU117 1f81、TU117M 1fa1、TU117GL 1fae、1fbf / Quadro T1000 1fb9、1ff9、1ff0 / T600 1fb1、1fba / T500 1fbb / T400 1ff2 / T1200 1fbc / T550 1fb7 / T1000M 1fb0、T400M 1fb2、T2000M 1fb8、T600L 1fb6 | 🟢 待实机（同 TU116 口径） · [详情](#device-16) |
 | Turing 之前（Pascal…） | — | ❌ 无事务轨 · [详情](#device-17) |
 | Blackwell (50 系) / GA100 | — | ❌ 链路不同 · [详情](#device-18) |
 
@@ -164,9 +167,9 @@
 
 <a id="device-15"></a>
 
-### TU106 · RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14
+### TU106 · RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14（其余 TU106 族见设备表）
 
-`1f07` / `1f06` / `1f03` / `1f14` 通过全链与系统侧验证。`1f03`（2060 12GB）在 v2.1.6 上 FWSEC 阶段 EXCI 失败，经 [issue #89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) 六轮受控实验定位为 4 GiB 边界 staging DMA 不可达（与 #74 同形），**FWSEC VRAM staging + BridgeMaster guard 修复后跑通**（2026-11-01）。`1f14`（2070 Laptop，炫龙 CNH5L 独显直连）为 0x91 家族修复验证（v2.1.3+，[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)）。Windows 必须启用 GSP-RM 并重启；交棒时 FEAT PLM 重锁、解锁值保留，解锁路径跳过 FLR。非标准显存容量应核对日志中的可用显存解码结果。**进行中**：驱动 621.01（GSP 620.67.01）与 630.20（GSP 630.03）下 Windows 侧出现 `nvlddmkm` PF FLR 复位冲回厂值（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)，1f06 与 1f07 双数据点，调查中）。来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89)、[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)、[GSP 前置](faq.md#turing)。
+`1f07` / `1f06` / `1f03` / `1f14` 通过全链与系统侧验证。`1f03`（2060 12GB）在 v2.1.6 上 FWSEC 阶段 EXCI 失败，经 [issue #89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) 六轮受控实验定位为 4 GiB 边界 staging DMA 不可达（与 #74 同形），**FWSEC VRAM staging + BridgeMaster guard 修复后跑通**（2026-11-01）。`1f14`（2070 Laptop，炫龙 CNH5L 独显直连）为 0x91 家族修复验证（v2.1.3+，[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)）。**同 die 矿卡注记**：CMP 40HX = TU106 硅（`1f0b`，Pry 论文与 PZH1gdmu/CMP40HX-Unlock 的实机载体——TU106 事务族的谱系源头），段内可跑。Windows 必须启用 GSP-RM 并重启；交棒时 FEAT PLM 重锁、解锁值保留，解锁路径跳过 FLR。非标准显存容量应核对日志中的可用显存解码结果。**进行中**：驱动 621.01（GSP 620.67.01）与 630.20（GSP 630.03）下 Windows 侧出现 `nvlddmkm` PF FLR 复位冲回厂值（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)，1f06 与 1f07 双数据点，调查中）。来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89)、[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)、[GSP 前置](faq.md#turing)。
 
 <a id="device-16"></a>
 
