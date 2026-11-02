@@ -6,6 +6,7 @@
 - [Why does Turing need GSP firmware mode?](#turing)
 - [Which display and boot-entry modes work?](#display)
 - [Why is there no gain on Linux despite a green log?](#linux)
+- [Does the unlock survive Windows sleep? (S3 / Modern Standby)](#sleep)
 - [Does the unlock survive a Thunderbolt handoff?](#thunderbolt)
 - [How do I check or repair the unlock in the OS?](#ssdiag)
 - [What does booter status 0x89 mean?](#bridge-bme)
@@ -125,6 +126,28 @@ Restart and check effective values rather than the saved file alone:
 | Unlock state | `sudo python3 tools/diag-unlock.py` (checkout) | Effective SS overrides |
 
 An unlock cleared by power loss needs USB replay; changing configuration alone does not restore it. Source: [RTD3 platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/9).
+
+<a id="sleep"></a>
+
+## Does the unlock survive Windows sleep? (S3 / Modern Standby)
+
+Usually not - "sleep" is an umbrella over several power paths, and most of them let the GPU re-run its power-on initialization (devinit) on wake, clearing the volatile unlock. First identify which one your machine uses:
+
+| State | Typical on | GPU power during sleep | After wake | Remedy |
+| --- | --- | --- | --- | --- |
+| S0 working (display off / locked) | All machines | Retained | Unlock unaffected | Nothing to do |
+| S0ix / Modern Standby | Recent laptops | Driver runtime PM may park the dGPU in D3cold (rails off) | Usually lost; selectors back to factory | Read-only check first; often repairable with `--reapply` |
+| S3 traditional sleep | Most desktop BIOS "Sleep" | Whole platform off except RAM | Always lost | Same, depending on the check |
+| S4 hibernate / fast-startup "shutdown" | Laptop hibernate, Win10/11 fast startup default | Full power off | Always lost; equivalent to a cold start | Same, depending on the check |
+
+Check which states your machine supports: `powercfg /a` in an admin prompt - "Standby (S0 Low Power Idle)" is S0ix, "Standby (S3)" is traditional sleep; machines listing both decide at runtime via firmware/driver.
+
+Mechanism notes:
+
+- **The discriminator is whether the rails dropped, not whether you "slept"**. S0ix nominally stays in S0, but the dGPU can be powered down independently when idle (same mechanism as Linux RTD3, [previous section](#linux)); S3 cuts the whole platform. Either way the wake-up result can look identical: selectors re-derived to factory by devinit.
+- **FLR survives, power loss does not**: the unlock lives on the AON (always-on) island - selector survival across the in-transaction FLR is a design check - but AON does not survive losing power. "Lost after reboot" and "lost after sleep-wake" can be the same event.
+- **Judge the gate and the selectors separately**: the common post-wake shape on Ampere/Ada is the FEAT gate still open with SS values back at factory - run the [in-OS check](#ssdiag), then `ssdiag --reapply` writes the selectors back; no USB replay needed. If the gate is locked or the device unreadable, the rails truly dropped and the USB transaction must be re-run. Turing ssdiag stays read-only (its SS overrides persist across driver load; devinit re-derivation behaves differently).
+- **Keeping it**: on desktops, avoid idle power-down via BIOS/driver settings; on S0ix laptops, disable Modern Standby if the firmware offers it, or accept a reapply after each wake. The Linux-side knob is in the [RTD3 section](#linux).
 
 <a id="thunderbolt"></a>
 
