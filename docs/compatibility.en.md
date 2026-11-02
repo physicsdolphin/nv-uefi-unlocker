@@ -53,7 +53,7 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788** (AD104 refresh) / 4080 Laptop **27a0 / 27e0**; ES: AC AD104 20GB **2785** | ✅ 2783; others retain upstream tier · [Details](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2702/2704/2705/2709/2757; 🟢 2717 · [Details](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**; ES: TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689; 🟢 2685/2681/26af · [Details](#device-8) |
-| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti 2208 / CMP 90HX **220d**; ES: 3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207** (0x2200..=0x223f routed) | ✅ 2206/2216/2204 (2204 in-OS only, D#96); others fully routed · [Details](#device-9) |
+| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti **2208** / CMP 90HX **220d**; ES: 3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207** (0x2200..=0x223f routed) | ✅ 2206/2216/2204 (in-OS only, D#96)/2208 (bilibili opus); others fully routed · [Details](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [Details](#device-10) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** etc. (whole 0x24xx range routed) | ✅ 2489; 2484 EFI-only, lost in Windows · [Details](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d; hybrid exceptions · [Details](#device-12) |
@@ -125,7 +125,7 @@ Full chain, selector read-backs, post-FLR survival and computation integrity che
 
 ### GA102 · 3090 Ti 2203 / 3090 2204 / 3080 2206 / 3080 12GB 220a / 3080 LHR 2216 / 3080 Ti 2208 / CMP 90HX 220d etc. (0x2200..=0x223f routed)
 
-`2206` / `2216` pass firmware read-backs and Windows performance verification; other same-family devices are fully routed. Gains depend on power and workload.
+`2206` / `2216` pass firmware read-backs and Windows performance verification; `2208` (3080 Ti, EVGA FTW3) measured via a [bilibili opus](https://www.bilibili.com/opus/1266090375307591685): cold-boot-no-USB vs `--reapply` same-script A/B — TF32 +73%/FP16 +67%/BF16 +68%, FP32 control flat, official dense achievement 91–98%; other same-family devices are fully routed. Gains depend on power and workload.
 
 Platform notes (2026-11-03): `2204` (3090) on ASUS X570 hangs at ConnectController after a successful transaction ([#106](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/106); `tx-reconnect-nonrecursive.txt` does not help, the `no-reconnect.txt` path awaits a follow-up log — same shape as the #52/#35/#61 reconnect-hang family; the CSM-compat remedy is tracked in #107). A 3080 20GB modded card on Z390P shows GSP devinit resetting SS0/SS1 back to factory ([#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109); 30-series cards must **not** enable the Turing GSP registry switch — retest with it off; the report also adds Z390P/AMI to the platform list).
 
