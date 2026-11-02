@@ -270,7 +270,14 @@ bash release/make-usbroot.sh --family 40 \
   [YouTube/究極完全体ガジェモン](https://www.youtube.com/watch?v=Lc9cadT9Qk0)（JA） ·
   [Facebook/老N顯示卡](https://www.facebook.com/61579313407097/posts/122190692660977113/)（ZH-HK） ·
   [滄者極限 Coolaler](https://www.coolaler.com/nv-uefi-unlocker-%E8%AE%93-rtx-20-30-40-%E9%A1%AF%E5%8D%A1-ai-%E6%95%88%E8%83%BD75%EF%BC%8C%E5%85%8D%E5%88%B7-vbios/)（ZH-HK） ·
-  [游民星空 GamerSky](https://www.gamersky.com/news/202611/2238729.shtml)（ZH）
+  [游民星空 GamerSky](https://www.gamersky.com/news/202611/2238729.shtml)（ZH） ·
+  [TechNews 科技新報](https://technews.tw/2026/11/02/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows/)（ZH-HK） ·
+  [XFastest](https://news.xfastest.com/169478/nvidia-rtx-20%ef%bc%8f30%ef%bc%8f40-%e9%a1%af%e5%8d%a1%e9%96%8b%e6%ba%90-uefi-%e5%b7%a5%e5%85%b7%e8%a7%a3%e9%8e%96-ai-%e7%ae%97%e5%8a%9b%ef%bc%9artx-4060-%e7%ad%86%e9%9b%bb-fp16-%e6%b8%ac%e8%a9%a6/)（ZH-HK） ·
+  [電腦王阿達](https://www.kocpc.com.tw/archives/701745)（ZH-HK） ·
+  [GameApps.hk](https://www.gameapps.hk/news/71358/nvidia-rtx-gpu-uefi-unlocker-ai-performance-boost/)（ZH-HK） ·
+  [HyperAI 超神经](https://hyper.ai/cn/stories/e969128a0f35dc33e44aeee493d8a16a)（ZH） ·
+  [腾讯新闻](https://view.inews.qq.com/a/20261101A0AMKJ00)（ZH） ·
+  [电玩帮](https://www.vgover.com/news/243692)（ZH）
 
 ## Star History
 
