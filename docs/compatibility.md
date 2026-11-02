@@ -116,7 +116,7 @@
 
 ### AD102 · 4090 2684 / 4090D 2685 / 4070TiS 2689
 
-`2684` 全链、Windows 读回与性能验证通过；同频归一化结果支持发射率解锁，boost 频率收益受功耗墙限制，部分累加路径的差距仍待解释。`2689` 有系统侧读回及性能证据，EFI 日志未归档；`2685` 为上游硅验证。ES/原型：`2681`（RTX TITAN Ada）与 `26af`（PG137 板）为 pci.ids 在档的 AD102 硅，在运行时段内可跑，证据层级 🟢。来源：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69)、[社区记录](community-reports.md)。
+`2684` 全链、Windows 读回与性能验证通过；同频归一化结果支持发射率解锁，boost 频率收益受功耗墙限制；**TF32 per-clock 稳定翻倍（243→489 FLOP/clk/SM，出货 ×0.5 → 满速）**，FP16/BF16·FP32acc 的 cuBLAS 行受框架路由支配（≈FP8 行 ÷2，见 [theoretical-uplift](theoretical-uplift.md) §5/§7）。三份独立数据、双平台（X570/Z790）双驱动（616.92/617.70）。`2689` 有系统侧读回及性能证据，EFI 日志未归档；`2685` 为上游硅验证。ES/原型：`2681`（RTX TITAN Ada）与 `26af`（PG137 板）为 pci.ids 在档的 AD102 硅，在运行时段内可跑，证据层级 🟢。来源：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69)、[#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)、[社区记录](community-reports.md)。
 
 <a id="device-9"></a>
 

@@ -73,6 +73,8 @@ Turing (RTX 20) uses the same FEAT family at different addresses (`0x4096xx` rat
 
 This table anchors the whole document: **the clamp is precise to "tensor path × accumulator mode", and completely unrelated to CUDA-core and integer-tensor paths.**
 
+On the desktop side (2684 · three independent cuBLAS datasets: two reporters in [#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) plus [#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)), the per-path Ada desktop spectrum is now filled in: **TF32 per-clock 243–247 → 477–493 FLOP/clk/SM (= 93–96% of the 512 full rate, +96–100%, stable across three sizes)** — TF32·FP32acc ships clamped ×0.5 on standard 40-series desktop cards (30-series ships full-rate: a per-generation difference). This corrects the whitepaper semantics: the Ada whitepaper's TF32 82.6 is the **shipped clamped value**, not the architectural rate (CUDA guide CC 8.9 TF32 = 256 results/clk/SM = architectural); the famous GeForce "TF32 = FP32 rate" quirk is this lock made visible. The FP16/BF16·FP32acc cuBLAS rows are governed by framework routing (see §5 and §7); the raw pipe has not been directly measured on 2684.
+
 ### 3.4 Laptops share the desktop model
 
 2757 (4090 Laptop), 28e0 (4060 Laptop: FP16 +49.4% / BF16 +56.9%, thermal-limited, [#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119)), 28a1 (4050 Laptop: 22 → 38–42 TF), 2702 (4080 SUPER: cuBLAS 1.66–1.78× with the **FP16acc control flat**) — mobile and desktop share one clamp model; gain differences are explained by power and cooling.
@@ -86,9 +88,9 @@ Simple classification follows the community convention (TechPowerUp / whitepaper
 | **FP8** (E4M3/E5M2) | gen-4 TC FP8 MMA (FP32acc) | gen-4 Tensor Cores (SM89+ only) | **×0.5** | **2×** | 1.99× (2757); 1.9× (banner) |
 | **INT8** | IMMA.S8.S32 (tensor); DP4A.S8.S32 (CUDA core) | gen-2–4 Tensor Cores; INT path | none | 1× | 1.00× (s8/s32, dp4a controls flat) |
 | **FP16** | HMMA.16816.F32 (FP32acc — cuBLAS default hgemm); HMMA.16816.F16 (FP16acc); HFMA2 (CUDA core) | gen-2–4 Tensor Cores | **FP32acc ×0.5**; FP16acc none | 2× (FP32acc path only) | 1.47–2.0× (#14/#103/2504/2702/2757) |
-| **BF16** | HMMA BF16·FP32acc | gen-3/4 Tensor Cores (SM80+) | **×0.5** | 2× | 1.98× (2757); 1.57× (28e0, thermal) |
+| **BF16** | HMMA BF16·FP32acc | gen-3/4 Tensor Cores (SM80+) | **×0.5** (measured on mobile; desktop 2684 ships full-rate, #80 — see §8 open items) | 2× | 1.98× (2757); 1.57× (28e0, thermal); **1.00× (2684, identical in both states)** |
 | **INT16** | scalar INT MAD (no tensor path) | INT32 CUDA cores | none | 1× | — |
-| **TF32** | HMMA TF32 (19-bit, FP32acc) | gen-3/4 Tensor Cores (SM80+) | none on standard 30-series; present on some abnormal forms | 1–2× (per die) | +79.9% (3090 20GB abnormal form) |
+| **TF32** | HMMA TF32 (19-bit, FP32acc) | gen-3/4 Tensor Cores (SM80+) | none on 30-series; **×0.5 on standard 40-series (Nov 2026, #69/#80)**; present on some abnormal forms | 30-series 1×; 40-series 2× | +79.9% (3090 20GB abnormal form); **1.96× (2684 fixed-clock, #80) + per-clock doubling (#69)** |
 | **FP32** | FFMA / FMLA32 | FP32 CUDA cores | none (**only CMP mining cards carry ÷32**) | 1× (CMP: 32×) | — |
 | **INT32** | scalar INT32 MAD (TIPS) | INT32 CUDA cores | none | 1× | — |
 | **FP64** | DGEMM | dedicated FP64 units (2/SM) | none | 1× (throughput is architectural: FP32/32 on TU10x, FP32/64 on GA10x/AD10x) | — |
@@ -106,10 +108,11 @@ Simple classification follows the community convention (TechPowerUp / whitepaper
 | `INT8` | Gemm | `CUDA_R_8I × CUDA_R_8I → CUDA_R_32I`, `COMPUTE_32I` + `DEFAULT_TENSOR_OP` (dims rounded to ×16; auto-IMMA on SM75+) | INT8 tensor path | INT8 | IMMA·INT32acc | none (ships full-rate) |
 | `INT16` / `INT32` | **IntAlu only** (no cuBLAS path) | NVRTC kernel: ×32 int32 MAD chain + narrowing; `__dp4a` on SM61+ | INT32 CUDA cores | INT16/INT32 | INT MAD / DP4A | none |
 
-Two reconciliation traps:
+Three reconciliation traps:
 
 - **The stressor's `FP16` mode = FP16·FP32acc** (COMPUTE_32F accumulation) — precisely the locked path. The community's "FP16acc control group" is the other path (COMPUTE_32F_FAST_16F-style configs), which was never locked; the 2702 report's "cuBLAS 1.75× with FP16acc control flat" is exactly this fork.
 - **The stressor's `FP8E4M3FN` mode is not a tensor benchmark** (the GEMM path explicitly rejects FP8 and falls to the memory path); the banner's "FP8 ~1.9×" comes from mma_bench-class tensor measurements (1.9887× in the 2757 report). Do not mix the two.
+- **PyTorch/cuBLAS is a different class of instrument and may not measure the locked path at all**: the cuBLAS 13 (torch 2.10+/cu130) COMPUTE_32F FP16/BF16 GEMM rows on 2684 track ≈ **the FP8 row ÷ 2** across three independent datasets (two #69 reporters + #80), in both stock and unlocked states (#80: 94.5/118.6 vs 95.5/119; #69: 448–490/560 vs 481/586) — i.e. the row is routed onto FP8 throughput rather than the locked native HMMA·F32 path, so a framework-side FP16/BF16 before/after is not a clamp A/B. This routing is not documented in cuBLAS (the documented emulation schemes are BF16x9-FP32 on CC 10.x and FP64 fixed-point only); the mechanism needs a cuBLASLt log to confirm the dispatched kernel names. To measure the pipe directly, use an mma_bench-class raw-instruction benchmark.
 
 ## 6. Ceiling derivation and self-checks
 
@@ -121,21 +124,26 @@ Formula: `peak = SM count × FMAs/clk/SM × 2 (FLOP/FMA) × boost clock` (dense)
 | 3090 | FP16·FP32acc | same ÷2 (shipped half-rate) | ≈35.7 TF | whitepaper 35.3 ✓ |
 | 3090 | INT8 IMMA | 82×512 ops×2×1.71 | ≈287 TOPS | whitepaper 284 ✓ |
 | 4090 (AD102 · 128 SM · 2.52 GHz) | FP16acc tensor | 128×256×2×2.52 | ≈165 TF | whitepaper 165 ✓ |
+| 4090 | TF32·FP32acc | architectural 128×256×2×2.52; shipped ÷2 | 165 / 82.6 | whitepaper 82.6 = shipped clamped value, CUDA guide 256 results/clk/SM = architectural; #80 fixed-clock A/B 47.9→93.8 TF @1.5 GHz (97%→95%) ✓ |
 | 4090L 2757 (AD103M · 76 SM · 2.29 GHz) | FP16acc | 76×256×2×2.29 | ≈178 TF | post-unlock 177.4 measured ✓ (exact) |
 | 2080 Ti (TU102 · 68 SM) | FP16acc | whitepaper | 134.9 TF | stock 60.31 ≈ half-rate further cut by power; 89.57 unlocked (power-limited) ✓ model |
 
 **Ceiling per mode**: clamped paths (FP16/BF16/TF32·acc, FP8) = **2×** (half → full); unclamped paths (FP16acc, INT8, INT16/32, FP32, FP64, DP4A) = **1×**. CMP mining cards carry ÷32 on FFMA/FMLA16/FMLA32/IMLA0–4 across the board — a 32× ceiling (170HX measured FP32 0.395 → 12.7–12.9 TFLOPS).
 
-## 7. Why real-world gains are usually below 2×: three walls
+## 7. Why real-world gains are usually below 2×: four walls
 
 1. **Power limits**: removing the halving doubles the toggle rate; hitting the power wall pulls clocks back. Typical: 3090 20GB form FP16 +48.9% ([#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)), 4060L thermal-limited +49.4% (#119), 2080 Ti restored to 89.57 rather than 134.9 (#103). Clock-normalized gains approach 2× (2702: two independent points, 1.75×/1.78×/1.66×, with frequency analysis).
 2. **Memory-bandwidth binding**: LLM decode reads every weight per token, so doubled compute does not help — decode +5.5% vs prefill +16–19% (132K context, two runs with zero interval overlap; dual-GPU MoE measurement on 2702). Image/video +14–75% and DirectML +94% are mixed spectra (operator sets with different compute intensities) sitting between the walls.
 3. **Per-die binning**: SS0/SS1 factory values differ per die; some forms (shield-repaired cards, OEM variants) clamp deeper or clamp more paths (the 3090 20GB TF32 +79.9% is one such). Judge per card via `FEAT_READOUT_1` and measurement.
+4. **Framework/library routing and realization rate**: end-to-end frameworks may not measure the locked path itself — the cuBLAS 13 COMPUTE_32F FP16/BF16 rows track ≈ the FP8 row ÷ 2 (third bullet of §5), so the stock baseline is already in the full-rate class, and what PyTorch users perceive for FP16/BF16 is only 1.0–1.3× (2684: the whole table sits at 1.00–1.33× except TF32's 1.96×), while the raw-pipe convention gives 2.00× (2757 mma_bench). The banner's ~2×/FP8 ~1.9× figures use the mma_bench/stressor convention; framework users can see substantially less — the 2702 cuBLAS 1.66–1.78× vs 2684 1.1–1.45× spread belongs to this wall too (stack version vs die, to be determined). Also: post-unlock, the F32acc half-precision rows realize 60–76% and rise with N (not a hard cap: 115–134% of their own class ceiling, and TF32 — same accumulator mode — reaches its full rate as a counterexample); the cause of the 1.39× gap to fp16acc parity at fixed clock (#69) is one of three candidates (kernel realization rate / pipe property / routing), discrimination in §8.
 
 ## 8. Open items (recorded honestly)
 
 - The Turing FP16·FP16acc control experiment has not been run (the model predicts full-rate, no gain); Turing INT8 tensor controls are likewise untested.
-- The "TF32 ships full-rate on GA10x/Ada" judgment rests on the 3090 whitepaper plus one abnormal-form counterexample; a standard-card TF32 before/after is still missing.
+- ~~"TF32 ships full-rate on GA10x/Ada … a standard-card TF32 before/after is still missing"~~ → **answered (2026-11-02, #69/#80): GA10x keeps the full-rate judgment; standard 40-series desktop cards ship TF32 clamped ×0.5** (2684: 1.96× at fixed clock, per-clock 243→489 stable across three sizes); the per-generation difference is recorded in §4/§6.
+- **Desktop 2684 BF16·FP32acc ships full-rate and does not move under the unlock** (#80: 506–507 FLOP/clk/SM = 99% of the 512-class architectural value, identical in both states), conflicting with the 2757/28e0 clamps (1.98×/+56.9%) — per-die/SKU binning vs instrument; discriminate by running mma_bench on 2684.
+- **The cuBLAS COMPUTE_32F FP16/BF16 row routing onto FP8 is undocumented** (third bullet of §5) — discriminate with a cuBLASLt log of dispatched kernel names; if confirmed, README/FAQ need a "framework convention vs raw-pipe convention" note.
+- **Post-unlock, F32acc half-precision rows realize 60–76% without reaching fp16acc parity** (rises with N, no hard cap) — cause among kernel realization rate / pipe property / routing; discriminate with an mma_bench N-sweep on 2684 (the raw pipe already reached parity on 2757).
 - A Turing fuse census at cmp170hx granularity has not been done; Turing-side conclusions anchor on FEAT_READOUT and field measurements.
 
 ## 9. Sources
@@ -146,4 +154,5 @@ Formula: `peak = SM count × FMAs/clk/SM × 2 (FLOP/FMA) × boost clock` (dense)
 - Ada: [Ada whitepaper](https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf), [Ada Tuning Guide](https://docs.nvidia.com/cuda/ada-tuning-guide/index.html), CUDA C++ Programming Guide CC 8.9 throughput row ([FP8 1024 / FP16 256 / TF32 256 / FP32 128 / FP64 2](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html))
 - The decisive per-path control: this repo's [evidence/uefi-2757-m18r1](evidence/uefi-2757-m18r1/report.md) (mma_bench, gpu-unlock-ada/diagnostics)
 - Per-card measurements: [compatibility matrix](compatibility.en.md) (#14/#29/#70/#71/#103/#119, 2702/2757 reports)
+- 40-series desktop per-precision A/B and the cuBLAS routing discovery: [#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) (fixed-clock A/B + per-clock spectrum, two reporters), [#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80) (fixed-clock per-precision cuBLAS spectrum)
 - Stressor tool facts: nvoc `cli-stressor-cuda-rs` sources (`PrecisionKind`, `gemm.rs`, `int_alu.rs`, `mem_ops.rs`) and cudarc 0.19 `cublas::safe::gemm` (compute-type mapping)

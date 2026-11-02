@@ -73,6 +73,8 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 这张表是全文的锚：**钳制精确到「张量路径 × 累加模式」，CUDA 核与整数张量路径完全无关。**
 
+桌面侧（2684 · 三份独立 cuBLAS 数据：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) 两位报告者 + [#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)）补齐了 Ada 桌面的逐路径谱：**TF32 per-clock 243–247 → 477–493 FLOP/clk/SM（= 512 满速的 93–96%，+96~100%，三尺寸稳定）**——TF32·FP32acc 在 40 系标准桌面卡出厂即钳制 ×0.5（30 系是全速出货，逐代差异）。据此修正白皮书语义：Ada 白皮书 TF32 82.6 是**出货钳制值**而非架构速率（CUDA guide CC 8.9 TF32 = 256 results/clk/SM = 架构值），GeForce「TF32 = FP32 速率」的著名怪象即这把锁的可见形态。FP16/BF16·FP32acc 的 cuBLAS 行为受框架路由支配（见 §5、§7），裸管线在 2684 上尚未被直接测过。
+
 ### 3.4 同代笔记本与台式同构
 
 2757（4090 Laptop）、28e0（4060 Laptop：FP16 +49.4% / BF16 +56.9%，热限，[#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119)）、28a1（4050 Laptop：22 → 38–42 TF）、2702（4080 SUPER：cuBLAS 1.66–1.78× 且 **FP16acc 对照组持平**）——移动端与台式同一套钳制模型，增益差异由功耗墙与散热解释。
@@ -86,9 +88,9 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 | **FP8**（E4M3/E5M2） | gen4 TC FP8 MMA（HMMA/QGMM 类，FP32acc） | 四代张量核（仅 SM89+） | **×0.5** | **2×** | 1.99×（2757）；1.9×（banner 口径） |
 | **INT8** | IMMA.S8.S32（张量）；DP4A.S8.S32（CUDA 核） | 二至四代张量核；INT 路径 | 无 | 1× | 1.00×（s8/s32、dp4a 对照全平） |
 | **FP16** | HMMA.16816.F32（FP32acc，cuBLAS 默认 hgemm）；HMMA.16816.F16（FP16acc）；HFMA2（CUDA 核半字） | 二至四代张量核 | **FP32acc ×0.5**；FP16acc 无 | 2×（仅 FP32acc 路径） | 1.47–2.0×（#14/#103/2504/2702/2757） |
-| **BF16** | HMMA BF16·FP32acc | 三/四代张量核（SM80+） | **×0.5** | 2× | 1.98×（2757）；1.57×（28e0 热限） |
+| **BF16** | HMMA BF16·FP32acc | 三/四代张量核（SM80+） | **×0.5**（移动端实测；桌面 2684 出厂即满速，#80——见 §8 开放项） | 2× | 1.98×（2757）；1.57×（28e0 热限）；**1.00×（2684 双态一致）** |
 | **INT16** | 标量 INT MAD（无张量路径） | INT32 CUDA 核 | 无 | 1× | — |
-| **TF32** | HMMA TF32（19-bit，FP32acc） | 三/四代张量核（SM80+） | 标准 30 系无；异常形态有 | 1–2×（逐 die） | +79.9%（3090 20GB 异常形态） |
+| **TF32** | HMMA TF32（19-bit，FP32acc） | 三/四代张量核（SM80+） | 30 系无；**40 系标准卡 ×0.5（2026-11，#69/#80）**；异常形态有 | 30 系 1×；40 系 2× | +79.9%（3090 20GB 异常形态）；**1.96×（2684 定频，#80）+ per-clock 翻倍（#69）** |
 | **FP32** | FFMA / FMLA32 | FP32 CUDA 核 | 无（**CMP 矿卡 ÷32 才有**） | 1×（CMP 32×） | — |
 | **INT32** | 标量 INT32 MAD（TIPS 口径） | INT32 CUDA 核 | 无 | 1× | — |
 | **FP64** | DGEMM | FP64 专用核（2/SM） | 无 | 1×（吞吐架构性 = FP32 的 1/32（TU10x）或 1/64（GA10x/AD10x）） | — |
@@ -106,10 +108,11 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 | `INT8` | Gemm | `CUDA_R_8I × CUDA_R_8I → CUDA_R_32I`、`COMPUTE_32I` + `DEFAULT_TENSOR_OP`（尺寸对齐 16；SM75+ 自动 IMMA） | 张量核 INT8 | INT8 | IMMA·INT32acc | 无感（全速出货） |
 | `INT16` / `INT32` | **仅 IntAlu**（无 cuBLAS 路径） | NVRTC 内核：int32 MAD ×32 链 + narrowing；SM61+ 加 `__dp4a` | INT32 CUDA 核 | INT16/INT32 | INT MAD / DP4A | 无感 |
 
-两个容易踩的对账点：
+三个容易踩的对账点：
 
 - **stressor 的 `FP16` 档 = FP16·FP32acc**（COMPUTE_32F 累加），所以它测到的就是被锁的那条路；社区对照实验里的「FP16acc 组」是另一条路（COMPUTE_32F_FAST_16F 类配置），从未被锁——2702 报告的「cuBLAS 1.75× 且 FP16acc 对照持平」正是这两条路的分野。
 - **stressor 的 `FP8E4M3FN` 档不是张量基准**（GEMM 路径显式不支持 FP8，落内存路径）；banner 的「FP8 ~1.9×」来自 mma_bench 类张量测量（2757 报告 1.9887×），两者不可混用。
+- **PyTorch/cuBLAS 是另一类 instrument，测的可能不是被锁路径本身**：cuBLAS 13（torch 2.10+/cu130）的 COMPUTE_32F FP16/BF16 GEMM 行在 2684 上三份独立数据（#69 两位报告者 + #80）都 ≈ **FP8 行 ÷ 2**，stock 与 unlocked 双态成立（#80：94.5/118.6 vs 95.5/119；#69：448–490/560 vs 481/586）——即该行被路由到 FP8 吞吐结构而非被锁的 HMMA·F32 原生路径，框架侧 FP16/BF16 前后对照不是钳制对照。此路由未见于 cuBLAS 文档（文档化仿真仅 BF16x9-FP32 限 CC 10.x、FP64 固定点仿真另测），机制待 cuBLASLt log 取 dispatch kernel 名确认；直测管线用 mma_bench 类裸指令基准。
 
 ## 6. 理论上限推导与自验算
 
@@ -121,21 +124,26 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 | 3090 | FP16·FP32acc | 同式 ÷2（出厂半速） | ≈35.7 TF | 白皮书 35.3 ✓ |
 | 3090 | INT8 IMMA | 82×512 ops×2×1.71 | ≈287 TOPS | 白皮书 284 ✓ |
 | 4090（AD102 · 128 SM · 2.52 GHz） | FP16acc 张量 | 128×256×2×2.52 | ≈165 TF | 白皮书 165 ✓ |
+| 4090 | TF32·FP32acc | 架构 128×256×2×2.52；出货 ÷2 | 165 / 82.6 | 白皮书 82.6 = 出货钳制值，CUDA guide 256 results/clk/SM = 架构值；#80 定频 A/B 47.9→93.8 TF @1.5 GHz（97%→95%）✓ |
 | 4090L 2757（AD103M · 76 SM · 2.29 GHz） | FP16acc | 76×256×2×2.29 | ≈178 TF | 解锁后实测 177.4 ✓（逐位） |
 | 2080 Ti（TU102 · 68 SM） | FP16acc | 白皮书 | 134.9 TF | 出厂实测 60.31 ≈ 半速再打功耗折；解锁后 89.57（功耗墙内）✓ 模型 |
 
 **每档理论上限**：被钳制路径（FP16/BF16/TF32·acc、FP8）= **2×**（半速→全速）；未钳制路径（FP16acc、INT8、INT16/32、FP32、FP64、DP4A）= **1×**。CMP 矿卡的 FFMA/FMLA16/FMLA32/IMLA0–4 全路 ÷32，理论上限 32×（170HX 实测 FP32 0.395 → 12.7–12.9 TFLOPS）。
 
-## 7. 为什么实际增益经常小于 2×：三堵墙
+## 7. 为什么实际增益经常小于 2×：四堵墙
 
 1. **功耗墙**：半速钳制解除后 SM 翻倍翻转，撞功耗墙时频率回落。典型：3090 20GB 形态 FP16 +48.9%（[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)）、4060L 热限 +49.4%（#119）、2080 Ti 恢复到 89.57 而非 134.9（#103）。同频归一化后增益普遍贴近 2×（2702 双独立点 1.75×/1.78×/1.66× + 频率分析）。
 2. **显存带宽绑定**：LLM decode 每 token 读全量权重，算力翻倍换不来带宽 → decode +5.5% vs prefill +16~19%（132K 上下文两组区间零重叠，2702 双卡 MoE 实测）。图像/视频生成 +14–75%、DirectML +94% 属于混合谱（算力档占比不同的算子集合），处于两堵墙之间。
 3. **逐 die 分箱**：SS0/SS1 出厂覆盖值逐 die 不同，个别形态（屏蔽修复卡、OEM 改动形态）钳制更深或路径更多（3090 20GB 的 TF32 +79.9% 即此类），逐卡以 `FEAT_READOUT_1` 与实测为准。
+4. **栈/库路由与实现率**：框架端到端测的可能不是被锁路径本身——cuBLAS 13 的 COMPUTE_32F FP16/BF16 行 ≈ FP8 行 ÷2（§5 第三条），stock 基线已在全速类，PyTorch 用户感知的 FP16/BF16 增益仅 1.0–1.3×（2684：除 TF32 1.96× 外全表 1.00–1.33×），而裸管线口径是 2.00×（2757 mma_bench）。banner 的 ~2×/FP8 ~1.9× 是 mma_bench/stressor 口径，框架用户感知可以显著更低——2702 的 cuBLAS 1.66–1.78× 与 2684 的 1.1–1.45× 离散亦属此墙（栈版本/die 待判）。另：解锁后 F32acc 半精度行 realized 60–76% 且随 N 爬升（非硬 cap：破自身类天花板 115–134%、同累加模式的 TF32 到满反例），未达 fp16acc parity（#69 定频缺口 1.39×）的成因三选一（kernel 实现率 / 管线属性 / 路由），判别见 §8。
 
 ## 8. 开放项（如实记录）
 
 - Turing 的 FP16·FP16acc 对照组实验尚未做（模型预测：全速、无感）；Turing INT8 张量对照同样未测。
-- Ada/GA10x 的 TF32 全速出货判断基于 3090 白皮书口径 + 一个异常形态反例；标准卡 TF32 前后对照仍缺。
+- ~~Ada/GA10x 的 TF32 全速出货判断……标准卡 TF32 前后对照仍缺~~ → **已回答（2026-11-02，#69/#80）：GA10x 维持全速出货判断；40 系标准桌面卡 TF32 出厂钳制 ×0.5**（2684 定频 1.96×、per-clock 243→489 三尺寸稳定）；逐代差异已记入 §4/§6。
+- **2684 桌面 BF16·FP32acc 出厂即满速且解锁无感**（#80：506–507 FLOP/clk/SM = 512 类架构值 99%，双态一致）与 2757/28e0 的钳制（1.98×/+56.9%）冲突——逐 die/SKU 分箱 vs instrument，判别 = 2684 跑 mma_bench。
+- **cuBLAS COMPUTE_32F FP16/BF16 行的 FP8 路由机制未文档化**（§5 第三条）——判别 = cuBLASLt log 看 dispatch kernel 名；若证实，README/FAQ 需加「框架口径 vs 裸管线口径」注。
+- **解锁后 F32acc 半精度行 realized 60–76% 未达 fp16acc parity**（N 正相关、无硬 cap）的成因（kernel 实现率/管线属性/路由）——判别 = 2684 mma_bench N-sweep（2757 裸管线已证 parity）。
 - Turing 熔丝级普查（cmp170hx 同等粒度）未做，Turing 侧结论以 FEAT_READOUT 与实测为锚。
 
 ## 9. 来源
@@ -146,4 +154,5 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 - Ada：[Ada 白皮书](https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf)、[Ada Tuning Guide](https://docs.nvidia.com/cuda/ada-tuning-guide/index.html)、CUDA C++ Programming Guide CC 8.9 吞吐行（[FP8 1024/FP16 256/TF32 256/FP32 128/FP64 2](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html)）
 - 逐路径钳制的决定性对照：本仓 [evidence/uefi-2757-m18r1](evidence/uefi-2757-m18r1/report.md)（mma_bench，gpu-unlock-ada/diagnostics）
 - 逐卡实测：[兼容性矩阵](compatibility.md)（#14/#29/#70/#71/#103/#119、2702/2757 报告）
+- 40 系桌面逐精度 A/B 与 cuBLAS 路由发现：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69)（钉频 A/B + per-clock 谱，两位报告者）、[#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)（定频逐精度 cuBLAS 谱）
 - stressor 工具事实：nvoc `cli-stressor-cuda-rs` 源码（`PrecisionKind`、`gemm.rs`、`int_alu.rs`、`mem_ops.rs`）与 cudarc 0.19 `cublas::safe::gemm`（compute type 映射）
