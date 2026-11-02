@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="420" viewBox="0 0 1240 420" font-family="system-ui, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="444" viewBox="0 0 1240 444" font-family="system-ui, sans-serif">
   <!-- Turing SM block diagram (TU102/TU104/TU106, CC 7.5). Structure per NVIDIA Turing whitepaper; per-clock rates per CUDA CC-7.5 references; ship-state clamp marks from this repo's field evidence. -->
-  <rect x="1" y="1" width="958" height="418" fill="#fdfdfb" stroke="#999"/>
+  <rect x="1" y="1" width="1238" height="442" fill="#fdfdfb" stroke="#999"/>
   <text x="24" y="34" font-size="20" font-weight="bold" fill="#111">Turing SM（TU10x · CC 7.5）· 每时钟每 SM 吞吐</text>
   <text x="24" y="56" font-size="13" fill="#555">4 处理块 × {16 FP32 + 16 INT32 + 2× 二代张量核} ｜ 4 warp 调度器 ｜ 寄存器 64K</text>
 
@@ -18,28 +18,28 @@
   <text x="232" y="146" font-size="14" fill="#333">×4（整个 SM）</text>
 
   <!-- FP16 path annotation -->
-  <rect x="330" y="76" width="290" height="60" fill="#f2f7f2" stroke="#5a9a5a" rx="6"/>
-  <text x="342" y="98" font-size="13" fill="#111">CUDA 核 FP16 路径（HFMA2）: 128/clk</text>
-  <text x="342" y="120" font-size="13" fill="#111">张量核 FP16（HMMA.16816）: 512 半字 FMA/clk</text>
+  <rect x="428" y="76" width="400" height="60" fill="#f2f7f2" stroke="#5a9a5a" rx="6"/>
+  <text x="440" y="98" font-size="13" fill="#111">CUDA 核 FP16 路径（HFMA2）: 128/clk</text>
+  <text x="440" y="120" font-size="13" fill="#111">张量核 FP16（HMMA.16816）: 512 半字 FMA/clk</text>
 
   <!-- INT8 -->
-  <rect x="330" y="146" width="290" height="40" fill="#f7f2f7" stroke="#9a5a9a" rx="6"/>
-  <text x="342" y="171" font-size="13" fill="#111">张量核 INT8（IMMA·INT32acc）: 全速出货</text>
+  <rect x="428" y="146" width="400" height="40" fill="#f7f2f7" stroke="#9a5a9a" rx="6"/>
+  <text x="440" y="171" font-size="13" fill="#111">张量核 INT8（IMMA·INT32acc）: 全速出货</text>
 
   <!-- clamp box -->
-  <rect x="640" y="76" width="296" height="110" fill="#fdecec" stroke="#c0392b" rx="6"/>
-  <text x="652" y="100" font-size="14" font-weight="bold" fill="#c0392b">🔒 出货钳制（消费卡，本仓实测）</text>
-  <text x="652" y="124" font-size="13" fill="#111">HMMA FP16·FP32 累加 = 架构速率 ×0.5</text>
-  <text x="652" y="146" font-size="13" fill="#111">FP16·FP16 累加路径全速（无钳制）</text>
-  <text x="652" y="168" font-size="13" fill="#111">FP64/FP32 CUDA 核/INT 全速（消费档）</text>
+  <rect x="852" y="76" width="364" height="110" fill="#fdecec" stroke="#c0392b" rx="6"/>
+  <text x="864" y="100" font-size="14" font-weight="bold" fill="#c0392b">🔒 出货钳制（消费卡，本仓实测）</text>
+  <text x="864" y="124" font-size="13" fill="#111">HMMA FP16·FP32 累加 = 架构速率 ×0.5</text>
+  <text x="864" y="146" font-size="13" fill="#111">FP16·FP16 累加路径全速（无钳制）</text>
+  <text x="864" y="168" font-size="13" fill="#111">FP64/FP32 CUDA 核/INT 全速（消费档）</text>
 
   <!-- SM-level units -->
-  <rect x="24" y="226" width="912" height="60" fill="#f4f4ee" stroke="#888" rx="6"/>
+  <rect x="24" y="226" width="1192" height="60" fill="#f4f4ee" stroke="#888" rx="6"/>
   <text x="36" y="250" font-size="13" fill="#111">FP64 ×2/SM（2 结果/clk ≈ FP32 的 1/32）｜ LD/ST ×32 ｜ SFU ×16 ｜ L1/共享 96 KB 统一缓存</text>
   <text x="36" y="272" font-size="13" fill="#555">白皮书峰值（2080 Ti · TU102）：FP16 张量 134.9 TFLOPS dense（FP16 累加）· INT8 张量 428.4 TOPS · INT32 13.4 TIPS</text>
 
   <!-- evidence strip -->
-  <rect x="24" y="304" width="912" height="52" fill="#eef6ee" stroke="#5a9a5a" rx="6"/>
+  <rect x="24" y="304" width="1192" height="52" fill="#eef6ee" stroke="#5a9a5a" rx="6"/>
   <text x="36" y="326" font-size="13" fill="#111">本仓实测（解锁前后）：2080 Ti 11GB 原厂 60.31 → 89.57 TFLOPS（#103，功耗墙内恢复）；2080 Super 46 → 68（#14）</text>
   <text x="36" y="348" font-size="13" fill="#555">恢复目标 = 白皮书速率；实测倍数 = 1.47× 起步，受功耗墙与散热制约</text>
 
