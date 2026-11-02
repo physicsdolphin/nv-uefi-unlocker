@@ -81,7 +81,7 @@
 
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1
 
-`28a0` 全链与 Windows 性能验证通过，满载收益受 TGP 限制；`2882` 一手 Windows 实测通过（Win10 22H2 + B760M AMI，首次冷启动即成功，matched A/B：FP16 +57% / BF16 +63% / FP8 +47%，FP16-acc/FP32/INT8 三对照平坦，数值与 ada2882 canary 逐位对齐；解锁后时钟反降 2250MHz 仍 +1.5×——power-wall 限与 4090 侧信道一致）；`28e1` 保留上游硅验证层级。来源：[#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50)、[#124](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/124)。
+`28a0` 全链与 Windows 性能验证通过（两份独立报告：[#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50) 极光15 与 [#136](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/136) 耀世15Pro——后者为 **v2.1.9 首份同脚本匹配 A/B 全精度谱**：FP16 +81%/BF16 +80%/TF32 +79%/FP8 +85%，FP32/显存/时钟三对照持平，第二套基准交叉差 2%；140 W 薄轻机身下绝对值低 13–15% 属散热包络，每 MHz 效率与 #119 对齐）；`2882` 一手 Windows 实测通过（Win10 22H2 + B760M AMI，首次冷启动即成功，matched A/B：FP16 +57% / BF16 +63% / FP8 +47%，FP16-acc/FP32/INT8 三对照平坦，数值与 ada2882 canary 逐位对齐；解锁后时钟反降 2250MHz 仍 +1.5×——power-wall 限与 4090 侧信道一致）；`28e1` 保留上游硅验证层级。来源：[#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50)、[#124](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/124)、[#136](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/136)。
 
 <a id="device-3"></a>
 

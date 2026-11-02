@@ -81,7 +81,7 @@ Full-chain unlock and Windows verification pass, including an independent platfo
 
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1
 
-`28a0` passes full-chain and Windows performance verification; sustained gains are TGP-limited. `2882` is first-hand Windows verified (Win10 22H2 + B760M AMI, success on the first cold boot, matched A/B: FP16 +57% / BF16 +63% / FP8 +47%, with flat FP16-acc/FP32/INT8 controls and error digits matching the `ada2882` canary; the unlocked card runs at a *lower* clock yet ~1.5× throughput - power-wall limited, consistent with the 4090 side-channel finding). `28e1` retains upstream silicon evidence. Sources: [#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50), [#124](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/124).
+`28a0` passes full-chain and Windows performance verification; sustained gains are TGP-limited. `2882` is first-hand Windows verified (Win10 22H2 + B760M AMI, success on the first cold boot, matched A/B: FP16 +57% / BF16 +63% / FP8 +47%, with flat FP16-acc/FP32/INT8 controls and error digits matching the `ada2882` canary; the unlocked card runs at a *lower* clock yet ~1.5× throughput - power-wall limited, consistent with the 4090 side-channel finding). `28e1` retains upstream silicon evidence. Sources: [#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50), [#124](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/124), [#136](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/136).
 
 <a id="device-3"></a>
 
