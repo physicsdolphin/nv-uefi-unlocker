@@ -1332,6 +1332,11 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     } else {
         crate::tx_detach::reconnect_all(pci_handle);
     }
+    // Issue #120 diagnostic (marker-gated, default off): even with
+    // reconnect skipped, strip the console drivers off any orphaned
+    // pathless GOP so bootmgfw's own re-establishment cannot rebind over
+    // the orphan.
+    crate::tx_detach::orphan_console_teardown(pci_handle);
 
     // Unwind: release every DMA buffer.
     let _ = booter_dma.release(gpu.pci);
