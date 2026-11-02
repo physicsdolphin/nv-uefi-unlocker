@@ -46,7 +46,7 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 | Family | Cards / device IDs | Evidence and exceptions |
 | --- | --- | --- |
 | AD107 | 4060 Laptop **28e0** | ✅ 28e0 · [Details](#device-1) |
-| AD107 | 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1 | ✅ 28a0; 🟢 2882/28e1 · [Details](#device-2) |
+| AD107 | 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1 | ✅ 28a0/2882; 🟢 28e1 · [Details](#device-2) |
 | AD107 | 4050 Laptop **28a1** | ✅ 28a1 · [Details](#device-3) |
 | AD106 | 4060Ti 2803 / 4060Ti 16G 2805 / 4060 **2808** | ✅ 2803/2805; 🟢 2808 · [Details](#device-4) |
 | AD106 | 4070 Laptop **2820** (same ID on modded cards) / **2860** | 🟡 2820; 🟢 2860 · [Details](#device-5) |
@@ -57,7 +57,7 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [Details](#device-10) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** etc. (whole 0x24xx range routed) | ✅ 2489; 2484 EFI-only, lost in Windows · [Details](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d; hybrid exceptions · [Details](#device-12) |
-| GA106 (incl. M) | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 etc. (whole 0x25xx range routed) | ✅ 2504/2520; 🟢 others; 2560 retest pending · [Details](#device-13) |
+| GA106 (incl. M) | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 etc. (whole 0x25xx range routed) | ✅ 2504/2520 (2504 incl. H61/Ivy Bridge oldest-platform floor); 🟢 others; 2560 retest pending · [Details](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9** / MX570 25a6 / 3050 Laptop **25a2** etc. | 🟡 Unverified · [Details](#device-14) |
 | **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14** | ✅ 1f07/1f06/1f03/1f14 · [Details](#device-15) |
 | TU102/TU104/TU116 (rest of the 20/16 series, incl. TITAN RTX 1e02) | 2080 Ti 1e07 / 2080 Super 1e81 / 2080 1e87 etc. | ✅ 1e07 (factory 11GB)/1e81/1e87; TU116/GTX 16 still 🟢 · [Details](#device-16) |
@@ -78,7 +78,7 @@ Full-chain unlock and Windows verification pass, including an independent platfo
 
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1
 
-`28a0` passes full-chain and Windows performance verification; sustained gains are TGP-limited. `2882` / `28e1` retain upstream silicon evidence. Source: [#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50).
+`28a0` passes full-chain and Windows performance verification; sustained gains are TGP-limited. `2882` is first-hand Windows verified (Win10 22H2 + B760M AMI, success on the first cold boot, matched A/B: FP16 +57% / BF16 +63% / FP8 +47%, with flat FP16-acc/FP32/INT8 controls and error digits matching the `ada2882` canary; the unlocked card runs at a *lower* clock yet ~1.5× throughput - power-wall limited, consistent with the 4090 side-channel finding). `28e1` retains upstream silicon evidence. Sources: [#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50), [#124](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/124).
 
 <a id="device-3"></a>
 
@@ -150,7 +150,7 @@ dGPU-direct mode passes full-chain and Windows performance verification. MUX-les
 
 ### GA106 (incl. M) · 3060 2501–2509 / 3050 8GB 2507 / 3060 Laptop 2560 etc. (whole 0x25xx range routed)
 
-`2504` / `2520` pass unlock and in-OS performance verification. The AMI X470 `2504` platform needs `no-reconnect.txt`. Other same-family devices retain upstream evidence; an in-OS success result for `2560` awaits retesting. Sources: [#70](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70), [#71](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/71), [#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6).
+`2504` / `2520` pass unlock and in-OS performance verification. The AMI X470 `2504` platform needs `no-reconnect.txt`. `2504` also carries the **oldest verified platform** data point: Intel H61 + i7-3770 (Ivy Bridge, 2012-era UEFI 3.0) + Win10 LTSC, BF16 +80%, all three display/output modes healthy, S1 sleep keeps the unlock; that old firmware returns `cfg_read32(0x0100) UNSUPPORTED` (PciBus implements only the 256-byte legacy config space, so ext-cap diagnostics degrade-skip) and its poll timeouts were tolerated, with all read-back verdicts passing. Other same-family devices retain upstream evidence; an in-OS success result for `2560` awaits retesting. Sources: [#70](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70), [#71](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/71), [#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6), [discussion #121](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/121).
 
 <a id="device-14"></a>
 
