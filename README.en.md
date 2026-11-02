@@ -314,6 +314,18 @@ repository.
   [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh) (ZH) ·
   [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/) (ID) ·
   [Facebook/Coolaler fans](https://www.facebook.com/coolalerfans/posts/1706720778130729/) (ZH-HK) ·
+  [Silicon Report](https://www.siliconreport.com/open-source-uefi-tool-unlocks-nvidia-gpu-tensor-performance)(EN) ·
+  [Kantan.News](https://kantan.news/news/new-uefi-tool-removes-ai-speed-limitation-on-nvidia-graphics-cards)(EN) ·
+  [digitalcitizen.life](https://www.digitalcitizen.life/new-nvidia-gpu-unlocker-boosts-rtx-20-30-and-40-series-ai-performance-by-up-to-75-on-windows/)(EN) ·
+  [PC Test Bench](https://www.pctestbench.com/nv-uefi-unlocker-rtx-tensor-windows/)(EN) ·
+  [Global Computer Community](https://globalcomputercommunity.com/index.php?/forums/topic/75-nv-uefi-unlocker-tensor-caps-lifted-in-windows-but-watch-the-board-power/)(EN) ·
+  [FreeLLM](https://freellm.vip/sites/nv-uefi-unlocker)(EN) ·
+  [Hooshware](https://hooshware.net/news/7b49fb54-b7ab-4779-b799-01958b7601c9)(EN) ·
+  [zod.kr](https://zod.kr/news/8983775)(KO) ·
+  [Inven](https://www.inven.co.kr/board/party/6292/2046)(KO) ·
+  [the9.pro](https://news.the9.pro/pt/models/nv-uefi-unlocker/)(PT-BR) ·
+  [TrashExpert](https://trashexpert.ru/news/hardware-news/rtx-uefi-usb-tensor-unlocker-windows)(RU) ·
+  [Facebook/Fier De Mon PC](https://www.facebook.com/FierDeMonPC/posts/1457447876541008/)(FR)
   [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/) (EN)
 
 ## Star History
