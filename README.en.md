@@ -351,6 +351,10 @@ repository.
   [the9.pro](https://news.the9.pro/pt/models/nv-uefi-unlocker/)(PT-BR) ·
   [TrashExpert](https://trashexpert.ru/news/hardware-news/rtx-uefi-usb-tensor-unlocker-windows)(RU) ·
   [Facebook/Fier De Mon PC](https://www.facebook.com/FierDeMonPC/posts/1457447876541008/)(FR)
+  [PBX Science](https://pbxscience.com/open-source-nv-uefi-unlocker-lifts-tensor-core-limits-on-rtx-20-30-and-40-gpus-with-gains-of-up-to-75-in-tests/)（EN） ·
+  [Fosswire](https://fosswire.org/news/open-source-nv-uefi-unlocker-tool-removes-nvidia-tensor-limi)（EN） ·
+  [Guru3D](https://www.guru3d.com/story/modders-report-up-to-higher-ai-compute-on-geforce-rtx-20-30-and-40-cards/)（EN） ·
+  [YouTube/Kempinator Gaming](https://www.youtube.com/watch?v=TulzjBvbdjo)（EN）
   [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/) (EN)
 
 ## Star History
