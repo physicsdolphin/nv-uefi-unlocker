@@ -245,6 +245,7 @@ bash release/make-usbroot.sh --family 40 \
 
 - 原理科普：[专业用户版](https://www.bilibili.com/opus/1264436370549506065) · [入门用户版](https://www.bilibili.com/opus/1264493051219279872)
 - 社区讨论与报导（语言随条目标注）：
+  [Reddit](https://www.reddit.com/r/overclocking/comments/1xj5jp3/new_uefi_gpu_unlocking_tool_revealed_for_windows/)（EN） ·
   [TechPowerUp](https://www.techpowerup.com/354316/new-uefi-tool-lifts-nvidias-tensor-cap-on-rtx-20-to-40-series-cards-in-windows?type=Tools)（EN） ·
   [Wccftech](https://wccftech.com/new-nvidia-uefi-gpu-unlocker-brings-up-to-75-higher-ai-compute-performance-to-rtx-20-30-40-series-gpus-on-windows/)（EN） ·
   [NotebookCheck](https://www.notebookcheck.net/UEFI-level-pre-driver-Nvidia-GPU-unlocker-now-available-for-RTX-2xxx-3xxx-and-4xxx-GPUs-on-Windows-and-Linux.1438153.0.html)（EN） ·
@@ -320,7 +321,6 @@ bash release/make-usbroot.sh --family 40 \
   [Fosswire](https://fosswire.org/news/open-source-nv-uefi-unlocker-tool-removes-nvidia-tensor-limi)（EN） ·
   [YouTube/Kempinator Gaming](https://www.youtube.com/watch?v=TulzjBvbdjo)（EN） ·
   [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/)（EN） ·
-  [Reddit](https://www.reddit.com/r/overclocking/comments/1xj5jp3/new_uefi_gpu_unlocking_tool_revealed_for_windows/)（EN） ·
   [Quasar Zone](https://quasarzone.com/bbs/qn_hardware/views/2085634)（KO） ·
   [GiggleHD](https://gigglehd.com/gg/hard/19358883)（KO） ·
   [Global Computer Community](https://globalcomputercommunity.com/index.php?/forums/topic/75-nv-uefi-unlocker-tensor-caps-lifted-in-windows-but-watch-the-board-power/)（EN） ·
