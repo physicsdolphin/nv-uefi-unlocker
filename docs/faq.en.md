@@ -9,6 +9,7 @@
 - [Does the unlock survive Windows sleep? (S3 / Modern Standby)](#sleep)
 - [Does the unlock survive a Thunderbolt handoff?](#thunderbolt)
 - [How do I check or repair the unlock in the OS?](#ssdiag)
+- [The pmxdrv.sys security model and trade-off (required disclosure)](#pmxdrv)
 - [What does booter status 0x89 mean?](#bridge-bme)
 - [Why does the platform reset after a successful transaction?](#reconnect)
 - [How do I recover from a black screen, STOP or driver failure?](#recovery)
@@ -197,7 +198,24 @@ For no gain after handoff, use these read-back patterns to guide diagnosis. Conf
 | Rewritten selectors with Code 43 or driver resets | Failed driver initialization and recovery |
 | Effective selectors but low performance | Clocks, power wall and workload |
 
-ssdiag discovers BAR0 from the OS and accepts no manually supplied physical base; it wakes parked GPUs as needed. Its embedded, verified `pmxdrv.sys` uses a temporary `SSDIAG_PMXDRV` service with cleanup on exit, or borrows an existing device such as nvoc's. Driver deployment normally needs administrator privileges. See the [ssdiag reference](../tools/ssdiag/README.md) for the register surface and driver details.
+ssdiag discovers BAR0 from the OS and accepts no manually supplied physical base; it wakes parked GPUs as needed. Its embedded, verified `pmxdrv.sys` uses a temporary `SSDIAG_PMXDRV` service with cleanup on exit, or borrows an existing device such as nvoc's. Driver deployment normally needs administrator privileges. Its security model and trade-off have their own section: [The pmxdrv.sys security model and trade-off](#pmxdrv). See the [ssdiag reference](../tools/ssdiag/README.md) for the register surface and driver details.
+
+<a id="pmxdrv"></a>
+
+## The pmxdrv.sys security model and trade-off (required disclosure)
+
+`ssdiag` needs to read PCI BAR0 registers, and **Windows offers no sanctioned user-mode path** to do that — reading MMIO registers requires a ring-0 physical-memory transport. For contrast: on Linux, root is everything — one `mmap` of the device's sysfs resource puts the registers in front of you (`tools/diag-unlock.py` works exactly that way, with zero third-party kernel modules); Windows has no equivalent.
+
+**Why pmxdrv.sys**: the classic hobbyist transport, WinRing0, is on Microsoft's vulnerable-driver blocklist — HVCI seats refuse it before it loads. Among the transports that still load on the vast majority of real-world installs under current security models, the Intel-signed `pmxdrv.sys` (PCILeech lineage) is the one we could narrow: SHA-256 pinned inside the binary, extracted on demand to `%TEMP%`, run under our own `SSDIAG_PMXDRV` service name, stopped and deleted on exit, with a preflight notice (blocklist/HVCI/EDR state) since 0.4.9. Read-only by default; `--reapply` is the single explicit write path.
+
+**The defective state, stated plainly**: the lineage has known-vulnerable historical builds; Microsoft's blocklist has **no** pmxdrv entry — nothing external stops the load, the only gate is your own judgment; loading leaves a permanent SCM event-7045 audit record; EDR may alert. It is a capability, not a behavior: the design narrows it, the use decides it. The full triage lives in [#40](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/40).
+
+**You hold two rights of equal weight**:
+
+1. **The right to witness** — run `ssdiag` and read FEAT PLM/SS0/SS1/READOUT yourself, confirming the unlock state with your own eyes rather than anyone's word;
+2. **The right to refuse** — you may decline this kernel driver on any or all of your physical machines and still get verification: the loader's own EFI read-backs (pre-boot, driver-free), GEMM output hashes against a stock baseline, `nvidia-smi` telemetry; Linux users additionally have the driver-free `diag-unlock.py`. Reports that skip `ssdiag` (e.g. [#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135)) are recorded in the compatibility matrix as fully verified all the same.
+
+Not installing, not running, not understanding it does not affect the unlock itself — `pmxdrv.sys` exists only for in-OS confirmation.
 
 <a id="bridge-bme"></a>
 

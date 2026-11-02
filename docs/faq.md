@@ -9,6 +9,7 @@
 - [Windows 睡眠后解锁还在吗？（S3 / S0ix 现代待机）](#sleep)
 - [雷电 eGPU 能保留解锁吗？](#thunderbolt)
 - [怎样在系统内检查或修复解锁？](#ssdiag)
+- [pmxdrv.sys 的安全模型与权衡（必读披露）](#pmxdrv)
 - [booter status 0x89 是什么？](#bridge-bme)
 - [事务成功后为什么会复位或黑屏？](#reconnect)
 - [黑屏、STOP 或驱动异常后怎样恢复？](#recovery)
@@ -202,7 +203,24 @@ ssdiag --reapply
 | 选择器被重写，同时出现 Code 43 或驱动复位 | 驱动初始化失败及恢复路径 |
 | 选择器仍有效但性能低 | 频率、功耗墙与工作负载 |
 
-ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊卡。内嵌的 `pmxdrv.sys` 经校验，以自有 `SSDIAG_PMXDRV` 服务临时加载，退出时清理；若 nvoc 等已有可用设备则借用。部署驱动通常需要管理员。更多寄存器范围及驱动说明见 [ssdiag 文档](../tools/ssdiag/README.md)。
+ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊卡。内嵌的 `pmxdrv.sys` 经校验，以自有 `SSDIAG_PMXDRV` 服务临时加载，退出时清理；若 nvoc 等已有可用设备则借用。部署驱动通常需要管理员。其安全模型与权衡单独成节：[pmxdrv.sys 的安全模型与权衡](#pmxdrv)。更多寄存器范围及驱动说明见 [ssdiag 文档](../tools/ssdiag/README.md)。
+
+<a id="pmxdrv"></a>
+
+## pmxdrv.sys 的安全模型与权衡（必读披露）
+
+`ssdiag` 需要读 PCI BAR0 寄存器，而 **Windows 没有任何受认可的用户态通道**可以做到这一点——读 MMIO 寄存器必须有 ring-0 物理内存传输载具。对照：Linux 上 root 即一切，对 sysfs 资源做一个 `mmap` 寄存器就在眼前（`tools/diag-unlock.py` 正是这么工作的，零第三方内核模块）；Windows 没有等价路径。
+
+**为什么是 pmxdrv.sys**：经典载具 WinRing0 已被微软列入漏洞驱动封禁清单，HVCI 座位在加载前直接拒收；在现存安全模型下、绝大多数真实装机上仍可加载的，是 Intel 签名的 `pmxdrv.sys`（PCILeech 系谱）。我们对它做的收窄：SHA-256 内嵌钉死、按需解压到 `%TEMP%`、自有服务名 `SSDIAG_PMXDRV`、退出即停即删、0.4.9 起 preflight 前置告知（封禁清单/HVCI/EDR 状态）。默认只读，`--reapply` 是唯一显式写路径。
+
+**缺陷态如实陈述**：该系谱存在已知漏洞的历史构建；微软封禁清单**没有** pmxdrv 条目——外部没有任何东西替你拦截它，唯一的闸门是你自己的判断；加载会留下 SCM 事件 7045 永久审计记录；EDR 可能告警。这是一个能力，不是行为：设计收窄它，使用决定它。定谳过程见 [#40](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/40)。
+
+**你有两项权利，同等重要**：
+
+1. **亲眼见证权**——运行 `ssdiag` 直接读 FEAT PLM/SS0/SS1/READOUT，亲自确认解锁状态，不依赖任何人的转述；
+2. **拒绝权**——你有权在你的任何或全部物理机器上拒绝这个内核驱动，并且照样获得验证：loader 自身的 EFI 阶段读回（预引导、零驱动）、GEMM 输出哈希对照原厂基线、`nvidia-smi` 遥测；Linux 用户另有零驱动的 `diag-unlock.py`。不跑 `ssdiag` 的实测报告（如 [#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135)）在兼容矩阵中同样按完全验证收录。
+
+不装、不用、不理解都不影响解锁本体——`pmxdrv.sys` 只服务于"系统内确诊"这一件事。
 
 <a id="bridge-bme"></a>
 
