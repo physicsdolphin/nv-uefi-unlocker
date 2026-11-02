@@ -96,6 +96,15 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
 - **[p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock)**
   （skbskhud）：P104 PCIe Gen2 链路工具（PCI 配置空间操作参考，与算力
   解锁正交）。
+- **CMP 钳制机制史前史**（经 cmp170hx history/external-sources 转引）：
+  [FluidX3D issue #8](https://github.com/ProjectPhysX/FluidX3D/issues/8)
+  （ProjectPhysX / Moritz Lehmann，2023-10-27，`FP_CONTRACT OFF` 禁 FMA
+  收缩——170HX 内存受限负载 3.4×，按指令类型降发射率的最早公开行为学
+  证据）→ [dartraiden/NVIDIA-patcher issue #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)
+  （jetcat8848，2023-12-06，170HX FP32 0.395→6.285 TFLOPS 15.9× + efuse
+  1/2^n 分频假设——九路选择器模型雏形；cmp170hx 记为通向 2026 寄存器级
+  破解的源头线程）。引用落点：[theoretical-uplift](theoretical-uplift.md)
+  §2 史前史注脚。
 
 ## 5. 逆向工具链
 

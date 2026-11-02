@@ -30,6 +30,8 @@ NVIDIA 在 `OPT_SM_SPEED_SELECT` 熔丝块为**每类算术单元**各留一路�
 2. 锁的解锁面是 `FEAT_OVR_PLM (0x00823804)` 门 + `SS0/SS1 (0x0082381c/0x823820)` 覆盖寄存器：PLM 从 `0xffffff8f`（仅 L3 可写）开到 `0xffffffff` 后，宿主写 `SS0=0x88888888, SS1=0x8`（ nibble = [覆盖使能 | 3 位速率 0=全速]）即可把九路全部拉回全速。写入落在 always-on 岛，FLR 后存活、断电即失——这就是本工具的事务本体。
 3. **SS0/SS1 是逐 die 分箱值**，不同卡出厂覆盖值不同（cmp170hx 阵列里 13 张卡 13 个值），但**锁定状态的只读签名稳定**：RTX 30 系 `FEAT_READOUT_1 = 0x00400080`，解锁后归零。逐 die 差异意味着不同 SKU 的出厂钳制深度可以不同（见 §7 异常形态）。
 
+**史前史注脚（熔丝普查之前的公开记录链）**：「按指令类型降发射率」在 cmp170hx 熔丝普查（2026-05）之前两年半就有行为学证据——2023-10-27 [FluidX3D issue #8](https://github.com/ProjectPhysX/FluidX3D/issues/8) 发现 `FP_CONTRACT OFF`（禁 FMA 收缩）让 170HX 恢复 ~16× FP32（内存受限负载 2,276 → 7,681 MLUPs/s，3.4×）；2023-12-06 jetcat8848 把同一技术带到 [dartraiden/NVIDIA-patcher issue #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)（170HX FP32 **0.395 → 6.285 TFLOPS，15.9×**），并提出「efuse 标记 FMA 速率 1/2^n（n=1..5）、驱动知道如何执行」的假设——即今日九路速率选择器模型的雏形。15.9× ≈ FFMA 全速恢复值（32×）的 ½：FMA 被钳 ÷32，非 FMA 的 mul/add 全速发射但每 2 FLOP 需两条指令——**钳制按指令类型选发射率、而非损伤 ALU 本体**的最早公开证据（cmp170hx history 把 #73 记为「最终通向寄存器级破解」的源头线程；注意其考据对 #73 的定性是「记录可靠、分析不可靠」；该技术后被 [arXiv 2505.03782](https://arxiv.org/pdf/2505.03782) 学术引用）。
+
 Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见本仓 [cold-values](cold-values.md)），语义相同：本仓 TU102/TU104 实测证明 20 系同样存在 FP16·FP32acc 半速出货（§4）。
 
 ## 3. 三代 SM 架构与单元路由
@@ -149,6 +151,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 ## 9. 来源
 
 - 熔丝/单元映射与 0x1 档：[cmp170hx compute-throttle.md](https://github.com/Consensus-Protocol/cmp170hx/blob/main/docs/unlock/compute-throttle.md)（15 卡熔丝普查）
+- 熔丝普查前的行为学记录链：[FluidX3D issue #8](https://github.com/ProjectPhysX/FluidX3D/issues/8)（2023-10-27，FMA 禁用原始发现）、[dartraiden/NVIDIA-patcher issue #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)（2023-12-06，jetcat8848 的 15.9× 与 efuse 1/2^n 假设；cmp170hx 记为通向寄存器级破解的源头线程）、[arXiv 2505.03782](https://arxiv.org/pdf/2505.03782)（学术引用）
 - Turing：[Turing 白皮书](https://images.nvidia.com/aem-dam/en-zz/Solutions/design-visualization/technologies/turing-architecture/NVIDIA-Turing-Architecture-Whitepaper.pdf)、[Turing Tuning Guide](https://docs.nvidia.com/cuda/turing-tuning-guide/index.html)
 - GA10x：[GA102 白皮书 v2.1](https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.1.pdf)、[Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html)
 - Ada：[Ada 白皮书](https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf)、[Ada Tuning Guide](https://docs.nvidia.com/cuda/ada-tuning-guide/index.html)、CUDA C++ Programming Guide CC 8.9 吞吐行（[FP8 1024/FP16 256/TF32 256/FP32 128/FP64 2](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html)）
