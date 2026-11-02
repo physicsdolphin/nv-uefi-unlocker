@@ -53,7 +53,7 @@
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788**（AD104 刷新版）/ 4080 Laptop **27a0 / 27e0**；ES：AC AD104 20GB **2785** | ✅ 2783；其余保留上游层级 · [详情](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2702/2704/2705/2709/2757；🟢 2717 · [详情](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**；ES：TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689；🟢 2685/2681/26af · [详情](#device-8) |
-| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti **2208** / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216/2204（仅系统侧，D#96）/2208（B 站 opus）；其余全段放行 · [详情](#device-9) |
+| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti **2208** / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216（另含 VM/VFIO 环境，#135）/2204（仅系统侧，D#96）/2208（B 站 opus）；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；2484 仅 EFI、Windows 不保留 · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
@@ -128,6 +128,8 @@
 `2206` / `2216` 通过固件读回与 Windows 性能验证；`2208`（3080 Ti，EVGA FTW3）经 [B 站 opus](https://www.bilibili.com/opus/1266090375307591685) 实测：冷启动不跑 U 盘 vs `--reapply` 同脚本 A/B——TF32 +73%/FP16 +67%/BF16 +68%、FP32 对照持平、官方 dense 达成率 91–98%；`2204`（3090）在 [Discussion #96](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/96) 有**双卡（X99-T8）系统侧成功**：ComfyUI bf16 工作流 +30~40%（口头数字、日志未附，按仅系统侧收录）；其余同族设备全段放行。实际收益受功耗和工作负载影响。
 
 平台注记（2026-11-03 补）：`2204`（3090）在 ASUS X570 出现事务成功后 ConnectController 卡死（[#106](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/106)，`tx-reconnect-nonrecursive.txt` 不解，`no-reconnect.txt` 路径待回传——与 #52/#35/#61 重连卡死族同形，CSM 兼容方案见 #107 轨道）；3080 20GB 魔改卡在 Z390P 出现 GSP devinit 把 SS0/SS1 打回厂值（[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109)，30 系**不应**开 Turing 的 GSP 注册表开关，关闭后待复测；同报告另证实 Z390P/AMI 平台在列）。
+
+虚拟化环境首个数据点（2026-11-03）：`2216` 在 Proxmox VE 9 / QEMU q35 / OVMF + VFIO 直通的 Windows 11 客户机内全链解锁，v2.1.9 零改动（[#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135)；FP16 57.85→91.64 / BF16 58.72→96.98 TFLOPS，GEMM 输出哈希与原厂逐位一致、FP32 对照平坦）。解锁态经 guest 重启与 VM stop/start（宿主联合 `.0`+`.1` 热复位）均存活，loader 判 `EALREADY`——FLR/热复位≠断电，AON 域存活，仅宿主断电预期清除（该宿主禁 D3cold 保导轨）。入态事实：上一会话被 Windows 驱动完整初始化过的卡，热复位后入 loader 仍见 PLM 关闭（0xffffff8f）——主机侧代理动不了 FEAT_OVR_PLM 的模型再成立。VM 操作要点：直通卡通常无预 OS 键盘，armed marker（`\i_know_what_i_am_doing.txt`）是实际默认；`x-vga=1`+`vga: none` 单卡唯一控制台无需 `no-reconnect.txt`；宿主把 BAR1 经枚举期 CTRL 写定 256 MiB 而 PSTRAPS 仍解码 64 MiB（`override_en=0`）——再证 straps=上电默认、活窗=枚举期写；`FEAT_READOUT_1` 出厂值=PSTRAPS SET0（0x00400080）、解锁后归 0，readout 跟踪生效钳制。
 
 **3090 20GB 形态 ×2 成功（2026-11-02，"超龙" OEM 版 + B 站评论区）**：基准 FP16 +48.9% / TF32 +79.9%（撞功耗墙形态，同 #29）。**ID 待回传**——若报 `2204` 则为屏蔽修复卡（24GB 芯片修至 20GB）数据点；若报 `2205`/`222b` 等 ES 段则对应 ES 行直接升级实机（鉴别命令见社区报告行）。
 
