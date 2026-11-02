@@ -277,7 +277,12 @@ bash release/make-usbroot.sh --family 40 \
   [GameApps.hk](https://www.gameapps.hk/news/71358/nvidia-rtx-gpu-uefi-unlocker-ai-performance-boost/)（ZH-HK） ·
   [HyperAI 超神经](https://hyper.ai/cn/stories/e969128a0f35dc33e44aeee493d8a16a)（ZH） ·
   [腾讯新闻](https://view.inews.qq.com/a/20261101A0AMKJ00)（ZH） ·
-  [电玩帮](https://www.vgover.com/news/243692)（ZH）
+  [电玩帮](https://www.vgover.com/news/243692)（ZH） ·
+  [夢想數位工坊](https://dreamdigi.tw/35957-2/)（ZH-HK） ·
+  [AHAN 格點全球](https://news.ahan.net/article/55430)（ZH） ·
+  [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh)（ZH） ·
+  [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/)（ID） ·
+  [Facebook/Coolaler 粉絲團](https://www.facebook.com/coolalerfans/posts/1706720778130729/)（ZH-HK）
 
 ## Star History
 
