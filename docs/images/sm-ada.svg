@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" font-family="system-ui, sans-serif">
+  <!-- Ada AD10x SM block diagram (AD102/103/104/107, CC 8.9). Structure per Ada whitepaper; rates cross-verified against 4090 (330 TF) and 4090L m18 R1 (177.3 TF) measurements; ship-state clamp map from docs/evidence/uefi-2757-m18r1. -->
+  <rect x="1" y="1" width="958" height="428" fill="#fdfdfb" stroke="#999"/>
+  <text x="24" y="34" font-size="20" font-weight="bold" fill="#111">Ada AD10x SM（AD102/103/104/107 · CC 8.9）· 每时钟每 SM 吞吐</text>
+  <text x="24" y="56" font-size="13" fill="#555">4 分区 × {32 FP32 + 1× 四代张量核 + SFU + LD/ST} ｜ 寄存器 64K ｜ L1/共享 128 KB ｜ AD102 L2 96 MB</text>
+
+  <!-- processing block -->
+  <g>
+    <rect x="24" y="76" width="212" height="150" fill="#eef3fb" stroke="#4a76b8" rx="6"/>
+    <text x="34" y="96" font-size="13" font-weight="bold" fill="#244">处理分区 ×4</text>
+    <rect x="38" y="106" width="184" height="28" fill="#dbe8f8" stroke="#4a76b8" rx="4"/>
+    <text x="46" y="125" font-size="13" fill="#111">FP32 核 ×32　合计 128 FMA/clk</text>
+    <rect x="38" y="140" width="184" height="28" fill="#fbeee0" stroke="#c8823c" rx="4"/>
+    <text x="46" y="159" font-size="13" fill="#111">张量核 gen4 ×1（+FP8）</text>
+    <rect x="38" y="174" width="184" height="28" fill="#e8e4f5" stroke="#7a5fb8" rx="4"/>
+    <text x="46" y="193" font-size="13" fill="#111">SFU ×4 ｜ LD/ST ×8</text>
+  </g>
+  <text x="244" y="156" font-size="14" fill="#333">×4</text>
+
+  <!-- rates -->
+  <g font-size="13" fill="#111">
+    <rect x="300" y="76" width="320" height="170" fill="#f2f7f2" stroke="#5a9a5a" rx="6"/>
+    <text x="312" y="98" font-weight="bold" fill="#244">张量路径速率（半字 FMA/clk/SM）</text>
+    <text x="312" y="120">FP16·FP16acc：256（全速出货）</text>
+    <text x="312" y="142">FP16·FP32acc：256 → 🔒出货 128</text>
+    <text x="312" y="164">BF16·FP32acc：256 → 🔒出货 128</text>
+    <text x="312" y="186">FP8 E4M3/E5M2：512 → 🔒出货 256</text>
+    <text x="312" y="208">INT8·IMMA：512（全速出货）</text>
+    <text x="312" y="230">FP64：1 FMA（≈ FP32 的 1/64，架构性）</text>
+  </g>
+
+  <!-- definitive evidence -->
+  <rect x="640" y="76" width="296" height="170" fill="#fdecec" stroke="#c0392b" rx="6"/>
+  <text x="652" y="100" font-size="14" font-weight="bold" fill="#c0392b">🔒 钳制图（2757 · m18 R1 前后对照）</text>
+  <text x="652" y="124" font-size="13" fill="#111">f16/f32　88.8 → 177.4 TF/s（2.00×）</text>
+  <text x="652" y="146" font-size="13" fill="#111">bf16/f32　88.7 → 176.0（1.98×）</text>
+  <text x="652" y="168" font-size="13" fill="#111">fp8/e4m3　177.3 → 352.6（1.99×）</text>
+  <text x="652" y="190" font-size="13" fill="#111">对照组全平：f16/f16 1.00×、s8/s32、</text>
+  <text x="652" y="212" font-size="13" fill="#111">dp4a、ffma —— 只有 FP32acc 路径被锁</text>
+  <text x="652" y="234" font-size="13" fill="#111">（gpu-unlock-ada/diagnostics mma_bench）</text>
+
+  <!-- SM-level -->
+  <rect x="24" y="264" width="912" height="58" fill="#f4f4ee" stroke="#888" rx="6"/>
+  <text x="36" y="286" font-size="13" fill="#111">自验算（4090 · AD102 · 128 SM · 2.52 GHz）：128 × 256 FMA × 2 × 2.52 ≈ 165 TF（FP16acc dense ✓ 白皮书）｜ 4090L（76 SM · 2.29）：76 × 256 × 2 × 2.29 ≈ 178 TF ✓ 2757 实测 177.3</text>
+  <text x="36" y="308" font-size="13" fill="#555">Ada 白皮书把 FP32acc 全速率写成规格（4090: 330 sparse/165 dense），但出货固件按半速钳制——规格表=解锁后速率。</text>
+
+  <!-- evidence -->
+  <rect x="24" y="340" width="912" height="40" fill="#eef6ee" stroke="#5a9a5a" rx="6"/>
+  <text x="36" y="364" font-size="13" fill="#111">本仓实测：4090L 2757 约 2×（FP16/BF16/FP8）｜ 4080S 2702 cuBLAS 1.66–1.78× 且 FP16acc 对照持平 ｜ 4060L 28e0 FP16 +49.4% / BF16 +56.9%（热限）｜ 4050L 28a1 22→38–42 TF</text>
+
+  <text x="24" y="402" font-size="12" fill="#777">来源：Ada 白皮书 / Ada Tuning Guide（CC 8.9 FP32=2× CC 8.0、gen4 TC FP8 Transformer Engine）/ CUDA CC 8.9 行（FP8 1024 · FP16/BF16/TF32 256 · FP32 128 · FP64 2）。</text>
+  <text x="24" y="420" font-size="12" fill="#777">FP8 仅 SM89+ 存在（TU10x/GA10x 无此单元，代际不存在）。</text>
+</svg>

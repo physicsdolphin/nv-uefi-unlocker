@@ -28,6 +28,16 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | RTX 40 · Ada | Fully compatible on laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
 
+Per-precision theoretical uplift (simple classification; for the mechanism derivation, per-generation SM diagrams, and the stressor tool reconciliation see [theoretical uplift](docs/theoretical-uplift.en.md)):
+
+| Precision | Execution unit | Shipped clamp (RTX 20–40) | Ceiling |
+| --- | --- | --- | --- |
+| FP16 · BF16 · TF32 (FP32-accumulate tensor paths) | gen-2–4 Tensor Cores | shipped at half rate | **2×** |
+| FP8 (E4M3/E5M2) | gen-4 Tensor Cores (SM89+) | shipped at half rate | **2×** |
+| FP16 (FP16acc) / INT8 / INT16 / INT32 / FP32 / FP64 | Tensor Cores / CUDA cores / FP64 units | none (factory full-rate) | 1× |
+
+Real-world multiples are bounded by power limits, memory bandwidth, and per-die binning (typically 1.5–2×, approaching 2× when clock-normalized); CMP mining cards are the exception (÷32 clamps across all paths, 32× ceiling).
+
 [Full compatibility matrix and field results](docs/compatibility.en.md) (incl. 4090M 2757 / Alienware m18 R1 ~2x) · [FAQ](docs/faq.en.md)
 
 ## Get started
