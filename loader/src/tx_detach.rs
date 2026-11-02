@@ -361,6 +361,81 @@ pub fn reconnect_all(pci_handle: uefi::Handle) {
     log_display_topology(pci_handle);
 }
 
+/// `	x-orphan-console-teardown.txt` (issue #120): after the detach, a
+/// pathless GOP that survived is an ORPHANED console child - the log's
+/// opener rows show it was created BY_CHILD by the target's own GOP
+/// driver stack, and a ConSplitter console still drives it BY_DRIVER.
+/// bootmgfw's console re-establishment then rebinds over the orphan and
+/// this AMI firmware resets inside the call; PR #13's mitigation covers
+/// OUR connect calls, not bootmgfw's. With the marker, disconnect the
+/// console drivers from surviving pathless GOPs so bootmgfw faces the
+/// #35/#61 shape (zero console on the GPU) where its own
+/// re-establishment is proven (Z170-A control). Default off: the
+/// disconnect touches the live console tree and is unproven on this
+/// board family - diagnostic build only.
+pub fn orphan_console_teardown(pci_handle: uefi::Handle) {
+    if !crate::tx::probe_file("\tx-orphan-console-teardown.txt") {
+        return;
+    }
+    info!("ORPHAN: \tx-orphan-console-teardown.txt present - disconnecting console drivers from pathless GOPs");
+    let Ok(h) = boot::locate_handle_buffer(boot::SearchType::ByProtocol(&GraphicsOutput::GUID)) else {
+        info!("ORPHAN: no GOP handles");
+        return;
+    };
+    for i in 0..h.len() {
+        let gop = h[i];
+        if device_path_bytes(gop).is_some() {
+            continue;
+        }
+        info!("ORPHAN: pathless GOP {:?} openers before teardown:", gop);
+        log_openers("ORPHAN-PRE", gop, &GraphicsOutput::GUID);
+        // Collect BY_DRIVER agents first: disconnecting mutates the list
+        // we would be iterating.
+        let mut agents = alloc::vec::Vec::new();
+        if let Some(st) = uefi::table::system_table_raw() {
+            // Safety: boot services live; the buffer is freed below.
+            unsafe {
+                let bt = st.as_ref().boot_services;
+                if bt.is_null() {
+                    continue;
+                }
+                let mut buf: *mut OpenInfo = core::ptr::null_mut();
+                let mut n: usize = 0;
+                let s = ((*bt).open_protocol_information)(
+                    gop.as_ptr(),
+                    &GraphicsOutput::GUID,
+                    (&mut buf as *mut *mut OpenInfo).cast(),
+                    &mut n,
+                );
+                if s == uefi::Status::SUCCESS && !buf.is_null() {
+                    for k in 0..n {
+                        let e = &*buf.add(k);
+                        // 0x10 = BY_DRIVER: the console driver sitting on
+                        // the orphan. Skip GetProtocol (0x1) opens.
+                        if e.attributes & 0x10 != 0 {
+                            if let Some(agent) = Handle::from_ptr(e.agent.cast()) {
+                                agents.push(agent);
+                            }
+                        }
+                    }
+                    if let Some(p) = core::ptr::NonNull::new(buf.cast::<u8>()) {
+                        let _ = boot::free_pool(p);
+                    }
+                }
+            }
+        }
+        for agent in agents {
+            info!("ORPHAN: disconnecting agent {:?} from orphan GOP {:?}", agent, gop);
+            let st = boot::disconnect_controller(gop, Some(agent), None);
+            info!("ORPHAN: disconnect status {:?}", st.map(|_| ()));
+        }
+        info!("ORPHAN: openers after teardown:");
+        log_openers("ORPHAN-POST", gop, &GraphicsOutput::GUID);
+    }
+    info!("ORPHAN: final topology:");
+    log_display_topology(pci_handle);
+}
+
 /// True if any GOP handle without a device path is still installed. Called
 /// after the detach, when the target's vendor GOP is gone: a pathless GOP
 /// left over is a firmware splitter/console child (AMI) that a recursive
