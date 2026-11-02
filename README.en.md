@@ -28,6 +28,14 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | RTX 40 · Ada | Fully compatible on laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
 
+## Field cases
+
+Beyond the matrix, these closed cases show the engineering depth behind the tool — each with full logs and an evidence chain:
+
+- **Compute-class P8 lock from a modded VBIOS ([#90](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/90))**: a 2080 Ti's EFI transaction was proven **successful at source level** by disassembling the booter to plain text — the real culprit behind the Windows-side black screen and low clocks was a kingpin-class extreme-testing BIOS flashed onto the card (special BIOS NVIDIA ships to OEM OC labs, with a separate P-state policy for compute workloads). The fingerprint: a `nvidia-smi` power reading far above the retail wall. Four misleading layers (a false-negative verdict line, a WHEA hardware red herring, clean stress tests, a shunt-resistance suspicion) were peeled one by one; the final blow came from years of hands-on card-modding experience recognizing that one number. → [full five-layer chain](docs/community-reports.md) · [mechanism open question](docs/open-questions.md)
+- **The X99 + CSM handoff law ([#35](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/35)/[#61](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/61))**: "transaction green but Windows lands Code 12" survived four conclusion reversals before becoming the handoff console-ownership law — independent of the unlock, chip family and topology; CSM off fixes it. Later independently reproduced by an upstream (Zagitta) user on X99. → [the law](docs/faq.en.md#recovery)
+- **Thunderbolt unlocks = low staging ([#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74))**: pinned down the ≥4 GiB DMA unreachability three-death shape on TB platforms with single-variable proof on two machines and two implementations, which made sub-4 GB staging the v2.1.8 default (zero counterexamples since). → [forensics matrix](docs/tu10x-booter-0x91-matrix.md)
+
 Per-precision theoretical uplift (simple classification; for the mechanism derivation, per-generation SM diagrams, and the stressor tool reconciliation see [theoretical uplift](docs/theoretical-uplift.en.md)):
 
 | Precision | Execution unit | Shipped clamp (RTX 20–40) | Ceiling |

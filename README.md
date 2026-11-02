@@ -28,6 +28,14 @@ GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解�
 | RTX 40 · Ada | 全系兼容，支持笔记本与台式 |
 | Pascal 及更早 / GA100 / RTX 50 | 不支持 |
 
+## 实战案例
+
+兼容矩阵之外，这几个已闭环的案例展示了本工具背后的工程深度——每个都附完整日志与证据链：
+
+- **魔改 VBIOS 的计算负载 P8 锁（[#90](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/90)）**：2080 Ti 的 EFI 事务被 booter 明文反汇编证明**源码级成功**，Windows 里黑屏低频的真凶却是卡上刷过的 kingpin 类极限测试 BIOS（NV 发给 OEM 超频工作室的跑分特供，带 compute 负载独立 P-state 策略）。识别指纹：`nvidia-smi` 功耗读数远超零售墙。四层误导（判读假阴性/WHEA 硬件疑云/烤机正常/功率电路疑云）逐层剥开，最后一击来自多年改卡经验认出那个数字。→ [五层诊断链](docs/community-reports.md) · [机理开放问题](docs/open-questions.md)
+- **X99 + CSM 交棒定律（[#35](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/35)/[#61](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/61)）**："事务全绿但 Windows 落 Code 12"历经四轮结论反转，最终定为交棒 console 归属链定律——与解锁/芯片族/拓扑无关，CSM off 即愈；后被 Zagitta 上游用户在 X99 上独立复现引证。→ [定律全文](docs/faq.md#recovery)
+- **雷电解锁 = staging 低位化（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)）**：TB 平台 ≥4 GiB DMA 全链不可达的三死形定位 + 两机两实现单变量实锤，催生 v2.1.8 默认低位 staging（现零反例）。→ [取证矩阵](docs/tu10x-booter-0x91-matrix.md)
+
 逐精度理论提升（简单分类口径；机理推导、三代 SM 架构图与 stressor 工具对账见[理论提升依据](docs/theoretical-uplift.md)）：
 
 | 精度档 | 执行单元 | 出货钳制（RTX 20–40） | 理论上限 |
