@@ -1,4 +1,4 @@
-//! ssdiag v0.6.3 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.4 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
 //! v0.6.3 adds the HVCI runtime probe (SystemCodeIntegrityInformation) to the
 //! platform gates and a denied-map precondition breakdown (issue #118).
 //! v0.6.2 adds cumulative per-stage [+ms] timing lines (the loader's issue#38
@@ -502,11 +502,22 @@ mod nvapi_wake {
     /// mean nvapi.dll is unusable (driver not installed) - callers degrade
     /// gracefully.
     pub fn wake_all() -> Result<String, String> {
+        fn encode16(name: &str) -> Vec<u16> {
+            name.encode_utf16().chain([0]).collect()
+        }
         unsafe {
-            let name: Vec<u16> = "nvapi.dll".encode_utf16().chain([0]).collect();
-            let lib = win::LoadLibraryW(name.as_ptr());
+            // x64 NVIDIA installs ship the export library as
+            // System32\nvapi64.dll; there is no System32\nvapi.dll (that
+            // name only exists in SysWOW64 for 32-bit callers), so loading
+            // by the bare name failed on every x64 machine (both #118 and
+            // the second field report hit "nvapi.dll not loadable").
+            // nvapi64.dll first, bare name as a legacy fallback.
+            let mut lib = win::LoadLibraryW(encode16("nvapi64.dll").as_ptr());
             if lib.is_null() {
-                return Err("nvapi.dll not loadable - NVIDIA driver installed?".into());
+                lib = win::LoadLibraryW(encode16("nvapi.dll").as_ptr());
+            }
+            if lib.is_null() {
+                return Err("nvapi64.dll not loadable - NVIDIA driver installed?".into());
             }
             let qip = win::GetProcAddress(lib, b"nvapi_QueryInterface\0".as_ptr());
             if qip.is_null() {
