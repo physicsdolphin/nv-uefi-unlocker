@@ -189,7 +189,13 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
 }
 
 /// `\tx-native-gop.txt` first line names a volume file; empty/absent
-/// content selects the card's own shadowed ROM.
+/// content — or a named file that does not resolve on the boot volume —
+/// falls through to the card's own shadowed ROM (issue #128 run 10: a
+/// zero-byte marker was refused by the content reader and a mistyped name
+/// aborted the whole recovery; both now degrade to the ROM path, which is
+/// the default semantics the marker's documentation promises). A named
+/// file that EXISTS but fails parsing later is still a hard error — the
+/// operator asked for that specific image.
 fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'static str> {
     if let Some(content) = crate::tx::read_boot_file("\\tx-native-gop.txt") {
         let name = String::from_utf8_lossy(&content)
@@ -204,8 +210,9 @@ fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'stat
                 let n = bytes.len();
                 return Ok((bytes, alloc::format!("volume file {path} ({n} bytes)")));
             }
-            info!("NATIVE-GOP: \\tx-native-gop.txt names {path} but it is not on the boot volume");
-            return Err("gop module file missing");
+            info!(
+                "NATIVE-GOP: \\tx-native-gop.txt names {path} but it is not on the boot volume - falling back to the card's own shadowed ROM"
+            );
         }
     }
     let Some(rom) = gpu.rom_image() else {

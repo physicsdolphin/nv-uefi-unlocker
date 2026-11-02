@@ -249,7 +249,11 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
         } {
             Ok(pci) => {
                 let attrs = pci.attributes_get();
-                info!("DETACH: pre-claim attributes {attrs:?} (VGA subset {:#x})", attrs.unwrap_or(0) & 0x001C);
+                info!(
+                    "DETACH: pre-claim attributes raw={:#x} (VGA legacy subset {:#x} = 0x001C mask; 0x0300 alone means IO|MEM decode with no legacy VGA routing)",
+                    attrs.unwrap_or(0),
+                    attrs.unwrap_or(0) & 0x001C
+                );
                 attrs
             }
             Err(e) => {
