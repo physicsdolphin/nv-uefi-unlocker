@@ -282,7 +282,8 @@ bash release/make-usbroot.sh --family 40 \
   [AHAN 格點全球](https://news.ahan.net/article/55430)（ZH） ·
   [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh)（ZH） ·
   [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/)（ID） ·
-  [Facebook/Coolaler 粉絲團](https://www.facebook.com/coolalerfans/posts/1706720778130729/)（ZH-HK）
+  [Facebook/Coolaler 粉絲團](https://www.facebook.com/coolalerfans/posts/1706720778130729/)（ZH-HK） ·
+  [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/)（EN）
 
 ## Star History
 
