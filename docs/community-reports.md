@@ -1,5 +1,7 @@
 # 社区硬件与第三方方案记录
 
+[中文](community-reports.md) | [English](community-reports.en.md) · [兼容性矩阵](compatibility.md) · [FAQ](faq.md)
+
 本文保留独立社区实验的平台、版本、EFI 读回与性能数据。现行支持结论见[兼容性矩阵](compatibility.md)，操作与排障见 [FAQ](faq.md)。表中的版本和结果只描述对应实验。
 
 ## 硬件记录
