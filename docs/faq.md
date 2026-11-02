@@ -220,7 +220,7 @@ ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊�
 1. **亲眼见证权**——运行 `ssdiag` 直接读 FEAT PLM/SS0/SS1/READOUT，亲自确认解锁状态，不依赖任何人的转述；
 2. **拒绝权**——你有权在你的任何或全部物理机器上拒绝这个内核驱动，并且照样获得验证：loader 自身的 EFI 阶段读回（预引导、零驱动）、GEMM 输出哈希对照原厂基线、`nvidia-smi` 遥测；Linux 用户另有零驱动的 `diag-unlock.py`。不跑 `ssdiag` 的实测报告（如 [#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135)）在兼容矩阵中同样按完全验证收录。
 
-不装、不用、不理解都不影响解锁本体——`pmxdrv.sys` 只服务于"系统内确诊"这一件事。
+不装、不用、不理解都不影响解锁本体——`pmxdrv.sys` 只服务于"系统内零依赖零负载测试，一手证据确诊"这一件事。
 
 <a id="bridge-bme"></a>
 

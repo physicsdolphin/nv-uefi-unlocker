@@ -215,7 +215,7 @@ ssdiag discovers BAR0 from the OS and accepts no manually supplied physical base
 1. **The right to witness** — run `ssdiag` and read FEAT PLM/SS0/SS1/READOUT yourself, confirming the unlock state with your own eyes rather than anyone's word;
 2. **The right to refuse** — you may decline this kernel driver on any or all of your physical machines and still get verification: the loader's own EFI read-backs (pre-boot, driver-free), GEMM output hashes against a stock baseline, `nvidia-smi` telemetry; Linux users additionally have the driver-free `diag-unlock.py`. Reports that skip `ssdiag` (e.g. [#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135)) are recorded in the compatibility matrix as fully verified all the same.
 
-Not installing, not running, not understanding it does not affect the unlock itself — `pmxdrv.sys` exists only for in-OS confirmation.
+Not installing, not running, not understanding it does not affect the unlock itself — `pmxdrv.sys` exists only for zero-dependency, zero-residue in-OS testing and first-hand evidence.
 
 <a id="bridge-bme"></a>
 
