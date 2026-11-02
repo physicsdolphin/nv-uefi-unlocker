@@ -225,6 +225,13 @@ bash release/make-usbroot.sh --family 40 \
   熔丝/RIR 架构（熔丝语义参考线）
 - [p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock)——P104 PCIe
   Gen2 链路工具（PCI 配置空间操作参考，与算力解锁正交）
+- **CMP 钳制机制史前史**——[FluidX3D #8](https://github.com/ProjectPhysX/FluidX3D/issues/8)
+  （2023-10-27，`FP_CONTRACT OFF` 禁 FMA 收缩：按指令类型降发射率的最早
+  公开行为学证据）→ [NVIDIA-patcher #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)
+  （2023-12-06，jetcat8848：170HX FP32 0.395→6.285 TFLOPS 15.9× + efuse
+  1/2^n 分频假设——九路速率选择器模型雏形，通向 2026 寄存器级破解的源头
+  线程）；详见 [docs/credits.md](docs/credits.md) 与
+  [theoretical-uplift](docs/theoretical-uplift.md) §2 史前史注脚
 
 **逆向工具链**
 

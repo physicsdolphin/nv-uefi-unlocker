@@ -253,6 +253,13 @@ into a local, untracked `reference/` directory, grouped by role:
 - [p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock) —
   P104 PCIe Gen2 link tool (PCI config-space operation reference,
   orthogonal to the compute unlock)
+- **CMP clamp prehistory** — [FluidX3D #8](https://github.com/ProjectPhysX/FluidX3D/issues/8)
+  (2023-10-27, `FP_CONTRACT OFF`: the earliest public behavioral evidence
+  of per-instruction-type issue-rate throttling) → [NVIDIA-patcher #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)
+  (2023-12-06, jetcat8848: 170HX FP32 0.395→6.285 TFLOPS 15.9× + the efuse
+  1/2^n hypothesis — the embryo of the nine-selector model, and the thread
+  that led to the 2026 register-level crack); see [docs/credits.md](docs/credits.md)
+  and the prehistory footnote in [theoretical-uplift](docs/theoretical-uplift.en.md) §2
 
 **Reverse-engineering toolchain**
 
