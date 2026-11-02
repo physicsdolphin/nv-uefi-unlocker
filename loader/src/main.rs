@@ -313,12 +313,30 @@ fn tx_one_card(g: &pci::FoundGpu) {
     // 6514938280). This marker swaps ONLY the payload. Same strict
     // semantics as every other asset: present-but-unreadable aborts, it
     // never degrades to the family-pinned payload.
-    let v67 = match tx::read_asset("\\v67-direct-ss.bin") {
-        Ok(Some(v)) => Some(v),
-        Ok(None) => must_asset!("v67 payload", tx::read_asset_fmt("\\v67-{}-four-plm.bin", family)),
-        Err(()) => {
-            info!("TX: \\v67-direct-ss.bin is present but unreadable (damaged stick or pulled media) - aborting before any GPU interaction");
-            return;
+    let v67 = if family == "ad102" && dev == 0x2684 && tx::probe_file("\\ad102-bar1-64g.txt") {
+        // bar1-64g variant (gpu-unlock-bar1 report, eight 2684 cards):
+        // the marker asks for the 64 GiB BAR1 construct payload STRICTLY -
+        // a missing or unreadable file is a staging error, never a silent
+        // downgrade to the four-plm payload.
+        match tx::read_asset("\\v67-ad102-bar1-64g.bin") {
+            Ok(Some(v)) => Some(v),
+            Ok(None) => {
+                info!("TX: \\ad102-bar1-64g.txt present but \\v67-ad102-bar1-64g.bin missing - run `assets generate-ad102-bar1-64g` and restage the stick; skipping this card");
+                return;
+            }
+            Err(()) => {
+                info!("TX: \\v67-ad102-bar1-64g.bin is present but unreadable (damaged stick or pulled media) - aborting before any GPU interaction");
+                return;
+            }
+        }
+    } else {
+        match tx::read_asset("\\v67-direct-ss.bin") {
+            Ok(Some(v)) => Some(v),
+            Ok(None) => must_asset!("v67 payload", tx::read_asset_fmt("\\v67-{}-four-plm.bin", family)),
+            Err(()) => {
+                info!("TX: \\v67-direct-ss.bin is present but unreadable (damaged stick or pulled media) - aborting before any GPU interaction");
+                return;
+            }
         }
     };
     let bl = if family == "tu10x" {
@@ -345,7 +363,8 @@ fn tx_one_card(g: &pci::FoundGpu) {
     // falcon BL, BOOT_DIRECT booter fire, replay verdict mbox0==0 + WPR2.
     // First fire = chain-replay (no V67 at root) unless the payload file is
     // staged deliberately.
-    let assets = tx::TxAssets { family, booter, boot_desc, gsp_boot, gsp_image, stock_sig, v67, bl };
+    let bar1_64g = family == "ad102" && dev == 0x2684 && tx::probe_file("\\ad102-bar1-64g.txt");
+    let assets = tx::TxAssets { family, booter, boot_desc, gsp_boot, gsp_image, stock_sig, v67, bl, bar1_64g };
     // Size validation before ANY GPU interaction (issue #4.3): a damaged
     // stick must be refused here - the DMA copies use fixed windows.
     if let Err(e) = tx::validate_asset_sizes(&assets) {
