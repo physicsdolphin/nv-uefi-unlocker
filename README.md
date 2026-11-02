@@ -226,7 +226,7 @@ bash release/make-usbroot.sh --family 40 \
   [TechPowerUp](https://www.techpowerup.com/354316/new-uefi-tool-lifts-nvidias-tensor-cap-on-rtx-20-to-40-series-cards-in-windows?type=Tools)（EN） ·
   [Wccftech](https://wccftech.com/new-nvidia-uefi-gpu-unlocker-brings-up-to-75-higher-ai-compute-performance-to-rtx-20-30-40-series-gpus-on-windows/)（EN） ·
   [NotebookCheck](https://www.notebookcheck.net/UEFI-level-pre-driver-Nvidia-GPU-unlocker-now-available-for-RTX-2xxx-3xxx-and-4xxx-GPUs-on-Windows-and-Linux.1438153.0.html)（EN） ·
-  [Mezha Media](https://mezha.net/eng/news/mezha-2ffa1478104cdc175bc0e096_uefi_pre-driver_nvidia/)（EN） ·
+  [Mezha Media](https://mezha.net/eng/news/mezha-2ffa1478104cdc175bc0e096_uefi_pre-driver_nvidia/)（EN；[中文版](https://mezha.net/ch/news/mezha-2ffa1478104cdc175bc0e096_uefi-pre-driver-nvidia-gpu-unlocker/)） ·
   [Digg](https://digg.com/tech/vfyuouiy)（EN） ·
   [XenoSpectrum](https://xenospectrum.com/en/nvidia-uefi-windows-tensor-unlock/)（EN） ·
   [HotRepo](https://hotrepo.ai/physicsdolphin/nv-uefi-unlocker)（EN） ·
@@ -265,7 +265,12 @@ bash release/make-usbroot.sh --family 40 \
   [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257)（ZH） ·
   [VideoCardz](https://videocardz.com/newz/modders-create-automated-tool-to-unlock-ai-performance-on-nvidia-geforce-rtx-20-30-and-40-series-gpus)（EN） ·
   [WindowsForum](https://windowsforum.com/news/nv-uefi-unlocker-lifts-rtx-20-30-and-40-tensor-core-limits-ai-gains-and-secure-boot-risks.450453/)（EN） ·
-  [Hacker News](https://news.ycombinator.com/item?id=50272846)（EN）
+  [Hacker News](https://news.ycombinator.com/item?id=50272846)（EN） ·
+  [eTeknix](https://www.eteknix.com/nv-uefi-unlocker-boosts-ai-performance-by-up-to-75-on-rtx-20-30-and-40-gpus/)（EN） ·
+  [YouTube/究極完全体ガジェモン](https://www.youtube.com/watch?v=Lc9cadT9Qk0)（JA） ·
+  [Facebook/老N顯示卡](https://www.facebook.com/61579313407097/posts/122190692660977113/)（ZH-HK） ·
+  [滄者極限 Coolaler](https://www.coolaler.com/nv-uefi-unlocker-%E8%AE%93-rtx-20-30-40-%E9%A1%AF%E5%8D%A1-ai-%E6%95%88%E8%83%BD75%EF%BC%8C%E5%85%8D%E5%88%B7-vbios/)（ZH-HK） ·
+  [游民星空 GamerSky](https://www.gamersky.com/news/202611/2238729.shtml)（ZH）
 
 ## Star History
 
