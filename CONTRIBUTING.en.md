@@ -32,7 +32,7 @@ python check_efi.py <loader.efi>   # banner / build-class verification
 
 The aliases come from `.cargo/config.toml`. Repository layout: `loader/` (UEFI app), `assets/` (asset pipeline), `sim/` (behavioral simulator), `tools/` (host-side diagnostics).
 
-### Hard rules (PRs violating any of these will be declined)
+### Hard rules (violating any of these will block merging)
 
 1. **No NVIDIA firmware assets, keys, or decrypted artifacts.** `.gitignore` already covers the common forms (`*.rom` / `*.bin` / `payload_*` etc.); firmware is locally regenerated from official inputs with pinned SHA-256 hashes — a mismatch is a hard stop, never a fallback to another version.
 2. **The default build stays zero-write.** All GPU write paths live behind the `tx` feature gate (`--features tx` is built only for explicit transaction experiments); if your change introduces any PciIo write into the default build, explain why in the PR.

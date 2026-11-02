@@ -32,7 +32,7 @@ python check_efi.py <loader.efi>   # banner / 构建类别验证
 
 别名来自 `.cargo/config.toml`。仓库结构：`loader/`（UEFI 应用）、`assets/`（资产管线）、`sim/`（行为级模拟器）、`tools/`（宿主侧诊断）。
 
-### 硬性规则（违反任何一条的 PR 会被拒绝）
+### 硬性规则（违反任何一条将阻碍合并）
 
 1. **不引入 NVIDIA 固件资产、密钥或解密产物。** `.gitignore` 已覆盖常见形态（`*.rom` / `*.bin` / `payload_*` 等）；固件从钉 SHA-256 的官方输入本地再生，hash 不符即停止，不得换用其他版本。
 2. **默认构建保持零写路径。** 所有 GPU 写路径都在 `tx` feature 门后（`--features tx` 仅在明确的事务实验时构建）；如果你的改动让默认构建出现任何 PciIo 写调用，请在 PR 里说明理由。

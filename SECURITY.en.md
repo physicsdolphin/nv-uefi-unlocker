@@ -23,9 +23,14 @@ Please do **not** attach NVIDIA firmware files to the report (this project does 
 
 ### Response Expectations
 
-- Acknowledgement within 72 hours; an initial assessment (impact, severity, remediation plan) within about a week.
-- Disclosure is coordinated with the reporter before a fix ships; coordinated disclosure is the default.
+This project is maintained part-time, outside of full-time work; **there is no fixed response SLA**:
+
+- Reports are acknowledged as soon as practical, typically within one to two weeks together with an initial assessment (impact, severity, remediation plan);
+- Fix cadence depends on severity and real-life bandwidth; high-severity issues take priority;
+- Disclosure is coordinated with the reporter before a fix ships; coordinated disclosure is the default;
 - The reporter is credited after the fixed release ships (anonymously upon request).
+
+If you have not heard back within about two weeks, please follow up on the same private report thread — it usually just means a notification was missed.
 
 ## Scope
 
