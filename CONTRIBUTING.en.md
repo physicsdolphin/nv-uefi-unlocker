@@ -47,10 +47,18 @@ The aliases come from `.cargo/config.toml`. Repository layout: `loader/` (UEFI a
 - AI-assisted contributions are accepted, but the committer owns the content; disclosure follows the principle statement in the [README author section](README.en.md#about-the-author-and-team). Self-review especially for fabricated logs or verifications.
 - Preserve existing code style and module boundaries; code blocks in `sim/` that mirror `loader/` carry "must stay textually identical" comments — when changing either side, update both and verify with `cargo xt`.
 
-## What not to do
+## Hardware experiments are not required
 
-- **Do not run real-hardware ignition experiments "in order to complete the evidence".** Write milestones follow a gating process ([AGENTS.md](AGENTS.md)); hardware experiments are run by the maintainer with the hardware owner at their own pace. External contributions do not need hardware experiments — work at the code and simulation layer (`cargo xt` + QEMU negative control) is enough.
-- Do not submit cross-chip ports done by "changing ID constants" — per-chip geometry (booter size, gadget addresses, signature sections) differs every family; changing constants is not a verified port.
+Work at the code and simulation layer (a green `cargo xt` + QEMU negative control) is fully sufficient for a good contribution — you are very welcome even without hardware. Conversely, if you own hardware and want to test on it, that is welcome even more: it feeds the [compatibility matrix](docs/compatibility.en.md) directly, via the [hardware report template](.github/ISSUE_TEMPLATE/02-hardware-report.yml).
+
+Two reminders:
+
+- When testing, follow the [recovery manual](docs/faq.en.md) and the [safety notes](docs/faq.en.md): readback verification, no same-session retry after a fault, power-cycle recovery.
+- If your PR modifies the ignition transaction code itself, support it with simulation evidence (`cargo xt`) rather than fresh hardware results — write milestones follow a gating process ([AGENTS.md](AGENTS.md)), advanced by the maintainer and the hardware owner at their own pace.
+
+## Boundaries for porting contributions
+
+Please don't submit cross-chip ports done by "changing ID constants" — per-chip geometry (booter size, gadget addresses, signature sections) differs every family, and changing constants is not a verified port. A cross-family port means re-extraction plus re-audit; opening an issue to discuss first is very welcome.
 
 ## Code of Conduct
 
