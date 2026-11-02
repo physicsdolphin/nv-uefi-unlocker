@@ -39,6 +39,21 @@ VERDICT_RE = re.compile(
     r"(RESULT:|FINAL:|HANDOFF[- ].*:|claim: (EALREADY|EBUSY|.*accept)|"
     r"POST-FLR:|POST-BOOT:|booter returned|unlock landed|selected .* GPU)")
 DEVICE_RE = re.compile(r"10de:([0-9a-fA-F]{4})")
+# Loader enumeration lines carry the PCI class code:
+#   "PCI 0000:01:00.0 10de:1f07 class 000300"  (000300 = display controller)
+# NVIDIA GPUs are multifunction: fn0 = display (class 0300), fn1 = HDA audio
+# (class 0403), fn2/3 = USB-C/USB4 (class 0c03/0c80). The class code is the
+# authoritative display-function discriminator (function numbers are
+# convention, not spec). Lines without a class fall back to DEVICE_RE with
+# the non-display known-ID exclusion below.
+PCI_ENUM_RE = re.compile(
+    r"PCI\s+([0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7])"
+    r"\s+10de:([0-9a-fA-F]{4})\s+class\s+([0-9a-fA-F]{6})")
+DISPLAY_CLASSES = {"000300", "000301", "000302"}
+# NVIDIA non-display function IDs seen in the field (audio fn / USB-C fn):
+# they share the die with a real GPU and must not become GPU rows.
+NON_DISPLAY_IDS = {"10f9", "10fa", "1ada", "1adb", "22ba", "22bb", "22be", "22bf",
+                   "22e8", "22e9", "22ea", "22eb", "22ec", "22ed"}
 
 FAMILY_RANGES = [
     ((0x2600, 0x28FF), "ad102 (Ada)"),
@@ -67,8 +82,23 @@ def sha256_file(path: str) -> str:
 def collect(path: str, fields: dict, verdicts: list, devids: set) -> None:
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
+            em = PCI_ENUM_RE.search(line)
+            if em:
+                # authoritative: enumeration line with class code
+                if em.group(3) in DISPLAY_CLASSES:
+                    devids.add(int(em.group(2), 16))
+                continue  # non-display functions (audio/USB-C) never become GPUs
+            # fallback for logs without enum-class lines: only trust lines
+            # that explicitly reference a GPU (SAMPLE target / selection /
+            # per-card headers) - bare 10de: mentions (assets, URLs) never
+            # create GPU rows, and known non-display IDs are excluded.
+            if not re.search(r"GPU |selected |target |FOUND", line, re.I):
+                continue
             for m in DEVICE_RE.finditer(line):
-                devids.add(int(m.group(1), 16))
+                did = int(m.group(1), 16)
+                if f"{did:04x}" in NON_DISPLAY_IDS:
+                    continue  # known audio/USB-C function IDs
+                devids.add(did)
             sm = SAMPLE_RE.search(line)
             if sm:
                 name, val = sm.group(1).strip(), int(sm.group(2), 16)
