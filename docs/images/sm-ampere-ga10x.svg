@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="444" viewBox="0 0 1240 444" font-family="system-ui, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="448" viewBox="0 0 1240 448" font-family="system-ui, sans-serif">
   <!-- Ampere GA10x SM block diagram (GA102/104/106/107, CC 8.6). Structure per GA102 whitepaper; rates cross-verified against 3090 peak numbers; fuse tiers per cmp170hx compute-throttle.md. -->
-  <rect x="1" y="1" width="1238" height="442" fill="#fdfdfb" stroke="#999"/>
+  <rect x="1" y="1" width="1238" height="446" fill="#fdfdfb" stroke="#999"/>
   <text x="24" y="34" font-size="20" font-weight="bold" fill="#111">Ampere GA10x SM（GA102/104/106/107 · CC 8.6）· 每时钟每 SM 吞吐</text>
   <text x="24" y="56" font-size="13" fill="#555">4 分区 × {32 FP32 + 1× 三代张量核 + SFU + LD/ST} ｜ 寄存器 64K ｜ 与 GA100（CC 8.0，32× FP64/SM）不同，消费 GA10x FP64 仅 2/SM</text>
 
@@ -41,13 +41,13 @@
   <rect x="24" y="244" width="1192" height="76" fill="#f4f4ee" stroke="#888" rx="6"/>
   <text x="36" y="264" font-size="13" fill="#111">白皮书峰值（3090 · GA102 · 82 SM · 1.71 GHz 自验算）：FP16·FP16acc 71 TFLOPS dense → FP32acc 35.3 = ×0.5 ｜ INT8 284 TOPS</text>
   <text x="36" y="284" font-size="13" fill="#111">TF32 35.6 ｜ FP64 0.56（≈ FP32 的 1/64，架构性）</text>
-  <text x="36" y="288" font-size="13" fill="#555">自验算：82 SM × 256 FMA × 2 FLOP × 1.71 GHz ≈ 71.5 TF ✓（张量核每 SM 每时钟 256 半字 FMA 口径成立）</text>
+  <text x="36" y="304" font-size="13" fill="#555">自验算：82 SM × 256 FMA × 2 FLOP × 1.71 GHz ≈ 71.5 TF ✓（张量核每 SM 每时钟 256 半字 FMA 口径成立）</text>
 
   <!-- evidence -->
-  <rect x="24" y="332" width="1192" height="72" fill="#eef6ee" stroke="#5a9a5a" rx="6"/>
-  <text x="36" y="352" font-size="13" fill="#111">本仓实测：3060 2504 FP16 1.80×（#70/#71）｜ 3090 20GB 形态 FP16 +48.9% / TF32 +79.9%（异常钳制形态）</text>
-  <text x="36" y="364" font-size="13" fill="#555">GA10x 白皮书把 FP32acc 半速直接写成消费卡规格——与 Ada「白皮书全速、出货半速」不同。</text>
+  <rect x="24" y="332" width="1192" height="64" fill="#eef6ee" stroke="#5a9a5a" rx="6"/>
+  <text x="36" y="356" font-size="13" fill="#111">本仓实测：3060 2504 FP16 1.80×（#70/#71）｜ 3090 20GB 形态 FP16 +48.9% / TF32 +79.9%（异常钳制形态）</text>
+  <text x="36" y="378" font-size="13" fill="#555">GA10x 白皮书把 FP32acc 半速直接写成消费卡规格——与 Ada「白皮书全速、出货半速」不同。</text>
 
   <text x="24" y="416" font-size="12" fill="#777">来源：GA102 白皮书 v2.1 / Ampere Tuning Guide（CC 8.6 FP32 吞吐 = 2× CC 8.0）/ cmp170hx compute-throttle.md 熔丝普查 / 本仓 compatibility.md。</text>
-  <text x="24" y="416" font-size="12" fill="#777">GA100（CC 8.0）不在本工具范围：FP64 32/SM、张量 gen3 全档、无消费钳制。</text>
+  <text x="24" y="434" font-size="12" fill="#777">GA100（CC 8.0）不在本工具范围：FP64 32/SM、张量 gen3 全档、无消费钳制。</text>
 </svg>
