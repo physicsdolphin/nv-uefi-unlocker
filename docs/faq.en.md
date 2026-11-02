@@ -177,6 +177,8 @@ ssdiag --reapply
 
 Default mode is read-only; `--select` filters by DeviceID. `--reapply` writes and verifies SS0/SS1 only behind an open gate; it does not write PLM. Turing remains read-only. On Linux, run `sudo python3 tools/diag-unlock.py` from the checkout root; `--bdf` selects an actual target address, and `--reapply` is also available.
 
+If you hit `MAP_PHYS win32 error 5` (mapping denied): 0.6.3+ prints a one-shot precondition breakdown (HVCI runtime / kernel-mode AV filter driver / driver refused load). **Pausing protection or exiting user-mode AV processes does NOT unload the kernel hooks** - two field closures (Kaspersky, cured after uninstall); see [platform gates and denied-map triage](ssdiag-platform-gates.md).
+
 | Read-back | Verdict / action |
 | --- | --- |
 | SS0=`0x88888888`, SS1 low nibble=`0x8` | Overrides effective; verify performance with a matched workload |
