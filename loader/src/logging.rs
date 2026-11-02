@@ -53,6 +53,13 @@ const FLUSH_MARKERS: &[&str] = &[
     "PHASE", "RESULT", "POST-", "FINAL", "RECONNECT", "DETACH", "CHAIN",
     "SELECTOR", "HANDOFF", "WATCHDOG", "AUTH-SCAN end",
     "claim:", "FLR", "BOOTER:", "FWSEC:",
+    // Issue #128 run 11: a freeze inside the native-GOP recovery block
+    // left the log blind at the 16-line cadence - run 10's post-block
+    // lines only reached the stick because the graceful path ran on to
+    // FINAL (marker flush + close). The whole recovery sequence is ~25
+    // lines, so per-line flush costs ~0.1-0.25 s worst case on USB BOT
+    // and turns any future hang into a between-two-lines answer.
+    "NATIVE-GOP", "VGA-RESTORE",
 ];
 
 /// Console whitelist for quiet mode (issue #38): with `\tx-quiet.txt` on

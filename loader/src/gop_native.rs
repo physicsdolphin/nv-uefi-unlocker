@@ -96,6 +96,7 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
     info!("NATIVE-GOP: source = {source_note}");
 
     // 2. Parse the expansion-ROM chain and take the code-type-0x03 image.
+    info!("NATIVE-GOP: ROM chain walk begin ({} bytes)", rom.len());
     let efi_images = romcore::walk::efi_images(&rom).map_err(|e| {
         info!("NATIVE-GOP: ROM chain walk failed: {e}");
         "rom walk failed"
@@ -150,6 +151,7 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
     );
 
     // 5. Load + start.
+    info!("NATIVE-GOP: LoadImage ({} bytes PE32+)", pe_image.len());
     let image_handle = boot::load_image(
         boot::image_handle(),
         boot::LoadImageSource::FromBuffer { buffer: &pe_image, file_path: None },
@@ -158,6 +160,7 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
         info!("NATIVE-GOP: LoadImage failed: {:?}", e.status());
         "load_image failed"
     })?;
+    info!("NATIVE-GOP: LoadImage ok ({image_handle:?}) - StartImage next");
     if let Err(e) = boot::start_image(image_handle) {
         info!("NATIVE-GOP: StartImage failed: {:?}", e.status());
         return Err("start_image failed");
@@ -197,6 +200,9 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
 /// file that EXISTS but fails parsing later is still a hard error — the
 /// operator asked for that specific image.
 fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'static str> {
+    // Every step below is bracketed by its own flushed line (NATIVE-GOP
+    // is a flush marker, issue #128 run 11): a hang must land BETWEEN two
+    // lines instead of after the last one.
     if let Some(content) = crate::tx::read_boot_file("\\tx-native-gop.txt") {
         let name = String::from_utf8_lossy(&content)
             .lines()
@@ -206,8 +212,10 @@ fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'stat
             .to_string();
         if !name.is_empty() {
             let path = if name.starts_with('\\') { name.clone() } else { format!("\\{name}") };
+            info!("NATIVE-GOP: marker names '{path}' - probing the boot volume");
             if let Some(bytes) = crate::tx::read_boot_file(&path) {
                 let n = bytes.len();
+                info!("NATIVE-GOP: volume file {path} loaded ({n} bytes)");
                 return Ok((bytes, alloc::format!("volume file {path} ({n} bytes)")));
             }
             info!(
@@ -215,11 +223,16 @@ fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'stat
             );
         }
     }
+    info!("NATIVE-GOP: acquiring the card's own shadowed ROM (PciIo RomImage/RomSize)");
     let Some(rom) = gpu.rom_image() else {
         info!("NATIVE-GOP: PciIo RomImage is empty (no shadowed option ROM)");
         return Err("no rom image");
     };
-    Ok((rom.to_vec(), alloc::format!("PciIo RomImage ({} bytes)", rom.len())))
+    info!("NATIVE-GOP: shadowed ROM acquired ({} bytes) - copying", rom.len());
+    let n = rom.len();
+    let rom = rom.to_vec();
+    info!("NATIVE-GOP: shadowed ROM copied ({} bytes)", rom.len());
+    Ok((rom, alloc::format!("PciIo RomImage ({n} bytes)")))
 }
 
 /// Run the firmware's EFI_DECOMPRESS_PROTOCOL over the payload (the
@@ -245,6 +258,7 @@ fn firmware_decompress(img: &[u8], payload: &efirom::EfiPayload) -> Result<Vec<u
             info!("NATIVE-GOP: EFI_DECOMPRESS_PROTOCOL unavailable ({status:?})");
             return Err("no decompress protocol");
         }
+        info!("NATIVE-GOP: EFI_DECOMPRESS_PROTOCOL located - GetInfo next");
         let src = &img[payload.stream_offset - 8..];
         let src_len = (payload.compressed_size + 8) as u32;
         if src.len() < src_len as usize {
@@ -265,6 +279,20 @@ fn firmware_decompress(img: &[u8], payload: &efirom::EfiPayload) -> Result<Vec<u
             );
             return Err("size disagreement");
         }
+        // Both allocations are firmware-supplied sizes: gate them before
+        // the vec![0u8; n] calls - a garbage size is an unbounded
+        // allocation and a silent freeze (the run-11 shape), not an error
+        // we could report afterwards. Real GOP drivers decompress to well
+        // under 1 MiB; these ceilings only catch garbage.
+        if dst_size as usize > 16 * 1024 * 1024 || scratch_size as usize > 64 * 1024 * 1024 {
+            info!(
+                "NATIVE-GOP: decompression sizes implausible (dst={dst_size} scratch={scratch_size}) - refusing",
+            );
+            return Err("implausible decompression sizes");
+        }
+        info!(
+            "NATIVE-GOP: GetInfo ok (dst={dst_size} scratch={scratch_size}) - decompressing"
+        );
         let mut dst = vec![0u8; dst_size as usize];
         let mut scratch = vec![0u8; scratch_size as usize];
         let status = ((*proto).decompress)(
@@ -280,6 +308,7 @@ fn firmware_decompress(img: &[u8], payload: &efirom::EfiPayload) -> Result<Vec<u
             info!("NATIVE-GOP: Decompress failed ({status:?})");
             return Err("decompress failed");
         }
+        info!("NATIVE-GOP: firmware decompress ok ({} bytes)", dst.len());
         Ok(dst)
     }
 }
