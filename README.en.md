@@ -12,6 +12,10 @@
 
 **Measured up to ~2.6× FP16 / BF16 / TF32 tensor throughput · FP8 up to ~1.9× · +14–75% image / video generation · up to +94% DirectML inference kernels · LLM inference prefill up to +19% (decode +5%) · no VBIOS flashing, cleared by power-off** (per-board data in the [compatibility matrix](docs/compatibility.en.md); gains are bounded by power limits and precision paths — the LLM row is a dual-GPU MoE end-to-end measurement, not a microbenchmark extrapolation)
 
+[![Theoretical post-unlock ceiling chart](docs/tools/tflops-ceiling.en.svg)](docs/tools/tflops-ceiling.html)
+
+*Theoretical post-unlock ceiling chart (FP16 · desktop) — [open the interactive version](docs/tools/tflops-ceiling.html): five precision tabs (FP32/TF32/FP16/BF16/FP8), the full RTX 20/30/40 desktop + laptop lineup, a toggle for as-shipped values; `?k=fp8` deep-links a precision. This is a theoretical yardstick and differs from the measured figures above; see [the theoretical uplift analysis](docs/theoretical-uplift.md).*
+
 A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 and RTX 20, 30, and 40 series.
 
 Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, unlock, and continue into Windows or Linux. No VBIOS flashing is needed; powering off clears the unlock.

@@ -12,6 +12,10 @@
 
 **实测 FP16 / BF16 / TF32 张量吞吐最高约 2.6× · FP8 最高约 1.9× · 图像 / 视频生成 +14–75% · DirectML 推理算子最高 +94% · LLM 推理 prefill 最高 +19%（decode +5%）· 无 VBIOS 刷写，断电即复原**（逐卡数据见[兼容性矩阵](docs/compatibility.md)；增益受功耗墙与精度路径制约——LLM 行为双卡 MoE 实测，非微基准外推）
 
+[![理论解锁上限天梯图](docs/tools/tflops-ceiling.svg)](docs/tools/tflops-ceiling.html)
+
+*理论解锁上限天梯图（FP16 · 桌面卡）——[打开可交互版](docs/tools/tflops-ceiling.html)：FP32/TF32/FP16/BF16/FP8 五个精度页签、含 20/30/40 系桌面+笔记本全量、可切换显示出厂现值；`?k=fp8` 直达指定精度。理论标尺与上方实测数字口径不同，见[理论提升分析](docs/theoretical-uplift.md)。*
+
 ## GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解锁工具 ##
 
 解开 NVIDIA 显卡的 Tensor 计算性能限制。从 U 盘启动，解锁后自动进入 Windows 或 Linux 或任意操作系统，无需刷写 VBIOS；断电后恢复原状。

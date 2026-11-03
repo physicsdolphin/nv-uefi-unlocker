@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="604" viewBox="0 0 720 604" role="img" aria-label="Theoretical post-unlock ceiling chart · FP16">
+<style>
+.bg{fill:#fff}.fg{fill:#111}.mut{fill:#666}.brd{fill:none;stroke:#ddd}.trk{fill:#eceef0}.g20{fill:#4d7c0f}.g30{fill:#0e7490}.g40{fill:#c2410c}.lock{fill:#b9bec4}text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif}@media (prefers-color-scheme:dark){.bg{fill:#111417}.fg{fill:#e6e8ea}.mut{fill:#9aa3ad}.brd{stroke:#333a42}.trk{fill:#232a31}.lock{fill:#5b636c}.g20{fill:#a3e635}.g30{fill:#22d3ee}.g40{fill:#fb923c}}
+</style>
+<rect class="bg" width="720" height="604" rx="10"/>
+<text class="fg" x="20" y="36" font-size="16" font-weight="600">Theoretical post-unlock ceiling · FP16</text>
+<text class="mut" x="20" y="57" font-size="12">Tensor cores · FP32 accumulate · halved from factory · dense TFLOPS · no sparsity</text>
+<text class="mut" x="20" y="78" font-size="12">grey = as shipped (clamped) · colour = theoretical post-unlock ceiling · peak 330.3 TFLOPS</text>
+<line class="brd" x1="20" y1="92" x2="700" y2="92"/>
+<text class="mut" x="34" y="116" font-size="11" text-anchor="end">1</text>
+<text class="fg" x="44" y="116" font-size="12">RTX 4090</text>
+<text class="mut" x="44" y="116" font-size="11"><tspan x="107.6">AD102 · 128 SM</tspan></text>
+<rect class="trk" x="252" y="109" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="109.0" width="330.0" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="109.0" width="165.0" height="9" rx="2"/>
+<text class="fg" x="700" y="116" font-size="11" text-anchor="end">165.2 → 330.3</text>
+<text class="mut" x="34" y="138" font-size="11" text-anchor="end">2</text>
+<text class="fg" x="44" y="138" font-size="12">RTX 4090 D</text>
+<text class="mut" x="44" y="138" font-size="11"><tspan x="122.0">AD102 · 114 SM</tspan></text>
+<rect class="trk" x="252" y="131" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="131.0" width="293.9" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="131.0" width="147.0" height="9" rx="2"/>
+<text class="fg" x="700" y="138" font-size="11" text-anchor="end">147.1 → 294.2</text>
+<text class="mut" x="34" y="160" font-size="11" text-anchor="end">3</text>
+<text class="fg" x="44" y="160" font-size="12">RTX 4080 SUPER</text>
+<text class="mut" x="44" y="160" font-size="11"><tspan x="150.8">AD103 · 80 SM</tspan></text>
+<rect class="trk" x="252" y="153" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="153.0" width="208.7" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="153.0" width="104.3" height="9" rx="2"/>
+<text class="fg" x="700" y="160" font-size="11" text-anchor="end">104.4 → 208.9</text>
+<text class="mut" x="34" y="182" font-size="11" text-anchor="end">4</text>
+<text class="fg" x="44" y="182" font-size="12">RTX 4080</text>
+<text class="mut" x="44" y="182" font-size="11"><tspan x="107.6">AD103 · 76 SM</tspan></text>
+<rect class="trk" x="252" y="175" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="175.0" width="194.7" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="175.0" width="97.4" height="9" rx="2"/>
+<text class="fg" x="700" y="182" font-size="11" text-anchor="end">97.5 → 194.9</text>
+<text class="mut" x="34" y="204" font-size="11" text-anchor="end">5</text>
+<text class="fg" x="44" y="204" font-size="12">RTX 4070 Ti SUPER</text>
+<text class="mut" x="44" y="204" font-size="11"><tspan x="172.4">AD103 · 66 SM</tspan></text>
+<rect class="trk" x="252" y="197" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="197.0" width="176.2" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="197.0" width="88.1" height="9" rx="2"/>
+<text class="fg" x="700" y="204" font-size="11" text-anchor="end">88.2 → 176.4</text>
+<text class="mut" x="34" y="226" font-size="11" text-anchor="end">6</text>
+<text class="fg" x="44" y="226" font-size="12">RTX 4070 Ti</text>
+<text class="mut" x="44" y="226" font-size="11"><tspan x="129.2">AD104 · 60 SM</tspan></text>
+<rect class="trk" x="252" y="219" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="219.0" width="160.3" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="219.0" width="80.1" height="9" rx="2"/>
+<text class="fg" x="700" y="226" font-size="11" text-anchor="end">80.2 → 160.4</text>
+<text class="mut" x="34" y="248" font-size="11" text-anchor="end">7</text>
+<text class="fg" x="44" y="248" font-size="12">RTX 4070 SUPER</text>
+<text class="mut" x="44" y="248" font-size="11"><tspan x="150.8">AD104 · 56 SM</tspan></text>
+<rect class="trk" x="252" y="241" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="241.0" width="141.8" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="241.0" width="70.9" height="9" rx="2"/>
+<text class="fg" x="700" y="248" font-size="11" text-anchor="end">71.0 → 141.9</text>
+<text class="mut" x="34" y="270" font-size="11" text-anchor="end">8</text>
+<text class="fg" x="44" y="270" font-size="12">Titan RTX</text>
+<text class="mut" x="44" y="270" font-size="11"><tspan x="114.8">TU102 · 72 SM</tspan></text>
+<rect class="trk" x="252" y="263" width="330" height="9" rx="2"/>
+<rect class="g20" x="252.0" y="263.0" width="130.4" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="263.0" width="65.1" height="9" rx="2"/>
+<text class="fg" x="700" y="270" font-size="11" text-anchor="end">65.2 → 130.5</text>
+<text class="mut" x="34" y="292" font-size="11" text-anchor="end">9</text>
+<text class="fg" x="44" y="292" font-size="12">RTX 4070</text>
+<text class="mut" x="44" y="292" font-size="11"><tspan x="107.6">AD104 · 46 SM</tspan></text>
+<rect class="trk" x="252" y="285" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="285.0" width="116.5" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="285.0" width="58.2" height="9" rx="2"/>
+<text class="fg" x="700" y="292" font-size="11" text-anchor="end">58.3 → 116.6</text>
+<text class="mut" x="34" y="314" font-size="11" text-anchor="end">10</text>
+<text class="fg" x="44" y="314" font-size="12">RTX 2080 Ti</text>
+<text class="mut" x="44" y="314" font-size="11"><tspan x="129.2">TU102 · 68 SM</tspan></text>
+<rect class="trk" x="252" y="307" width="330" height="9" rx="2"/>
+<rect class="g20" x="252.0" y="307.0" width="107.5" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="307.0" width="53.8" height="9" rx="2"/>
+<text class="fg" x="700" y="314" font-size="11" text-anchor="end">53.8 → 107.6</text>
+<text class="mut" x="34" y="336" font-size="11" text-anchor="end">11</text>
+<text class="fg" x="44" y="336" font-size="12">RTX 2080 SUPER</text>
+<text class="mut" x="44" y="336" font-size="11"><tspan x="150.8">TU104 · 48 SM</tspan></text>
+<rect class="trk" x="252" y="329" width="330" height="9" rx="2"/>
+<rect class="g20" x="252.0" y="329.0" width="89.1" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="329.0" width="44.6" height="9" rx="2"/>
+<text class="fg" x="700" y="336" font-size="11" text-anchor="end">44.6 → 89.2</text>
+<text class="mut" x="34" y="358" font-size="11" text-anchor="end">12</text>
+<text class="fg" x="44" y="358" font-size="12">RTX 4060 Ti 8 GB</text>
+<text class="mut" x="44" y="358" font-size="11"><tspan x="165.2">AD106 · 34 SM</tspan></text>
+<rect class="trk" x="252" y="351" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="351.0" width="88.2" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="351.0" width="44.1" height="9" rx="2"/>
+<text class="fg" x="700" y="358" font-size="11" text-anchor="end">44.1 → 88.3</text>
+<text class="mut" x="34" y="380" font-size="11" text-anchor="end">13</text>
+<text class="fg" x="44" y="380" font-size="12">RTX 4060 Ti 16 GB</text>
+<text class="mut" x="44" y="380" font-size="11"><tspan x="172.4">AD106 · 34 SM</tspan></text>
+<rect class="trk" x="252" y="373" width="330" height="9" rx="2"/>
+<rect class="g40" x="252.0" y="373.0" width="88.2" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="373.0" width="44.1" height="9" rx="2"/>
+<text class="fg" x="700" y="380" font-size="11" text-anchor="end">44.1 → 88.3</text>
+<text class="mut" x="34" y="402" font-size="11" text-anchor="end">14</text>
+<text class="fg" x="44" y="402" font-size="12">RTX 2080</text>
+<text class="mut" x="44" y="402" font-size="11"><tspan x="107.6">TU104 · 46 SM</tspan></text>
+<rect class="trk" x="252" y="395" width="330" height="9" rx="2"/>
+<rect class="g20" x="252.0" y="395.0" width="80.4" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="395.0" width="40.3" height="9" rx="2"/>
+<text class="fg" x="700" y="402" font-size="11" text-anchor="end">40.3 → 80.5</text>
+<text class="mut" x="34" y="424" font-size="11" text-anchor="end">15</text>
+<text class="fg" x="44" y="424" font-size="12">RTX 3090 Ti</text>
+<text class="mut" x="44" y="424" font-size="11"><tspan x="129.2">GA102 · 84 SM</tspan></text>
+<rect class="trk" x="252" y="417" width="330" height="9" rx="2"/>
+<rect class="g30" x="252.0" y="417.0" width="79.9" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="417.0" width="40.0" height="9" rx="2"/>
+<text class="fg" x="700" y="424" font-size="11" text-anchor="end">40.0 → 80.0</text>
+<text class="mut" x="34" y="446" font-size="11" text-anchor="end">16</text>
+<text class="fg" x="44" y="446" font-size="12">RTX 2070 SUPER</text>
+<text class="mut" x="44" y="446" font-size="11"><tspan x="150.8">TU104 · 40 SM</tspan></text>
+<rect class="trk" x="252" y="439" width="330" height="9" rx="2"/>
+<rect class="g20" x="252.0" y="439.0" width="72.4" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="439.0" width="36.2" height="9" rx="2"/>
+<text class="fg" x="700" y="446" font-size="11" text-anchor="end">36.2 → 72.5</text>
+<text class="mut" x="34" y="468" font-size="11" text-anchor="end">17</text>
+<text class="fg" x="44" y="468" font-size="12">RTX 3090</text>
+<text class="mut" x="44" y="468" font-size="11"><tspan x="107.6">GA102 · 82 SM</tspan></text>
+<rect class="trk" x="252" y="461" width="330" height="9" rx="2"/>
+<rect class="g30" x="252.0" y="461.0" width="71.1" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="461.0" width="35.6" height="9" rx="2"/>
+<text class="fg" x="700" y="468" font-size="11" text-anchor="end">35.6 → 71.2</text>
+<text class="mut" x="34" y="490" font-size="11" text-anchor="end">18</text>
+<text class="fg" x="44" y="490" font-size="12">RTX 3080 Ti</text>
+<text class="mut" x="44" y="490" font-size="11"><tspan x="129.2">GA102 · 80 SM</tspan></text>
+<rect class="trk" x="252" y="483" width="330" height="9" rx="2"/>
+<rect class="g30" x="252.0" y="483.0" width="68.1" height="9" rx="2"/>
+<rect class="lock" x="252.0" y="483.0" width="34.1" height="9" rx="2"/>
+<text class="fg" x="700" y="490" font-size="11" text-anchor="end">34.1 → 68.2</text>
+<text class="mut" x="20" y="514" font-size="11">……15 more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html</text>
+<line class="brd" x1="20" y1="560" x2="700" y2="560"/>
+<text class="mut" x="20" y="574" font-size="11">value = SM × FMA per SM per clock × 2 × boost clock; unlock restores the whitepaper rate, ×2 on clamped paths</text>
+<text class="mut" x="20" y="590" font-size="11">real-world results land below this: power limits, memory bandwidth and library routing each take a cut · † 30-series TF32 ships unclamped · desktop only, laptops are in the interactive version</text>
+</svg>
