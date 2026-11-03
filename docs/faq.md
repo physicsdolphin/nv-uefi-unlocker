@@ -167,7 +167,7 @@ sudo update-initramfs -u
 - 门已锁、设备失电或读数不可访问：`--reapply` 不能开门或恢复断电状态，需按恢复流程重新进入 U 盘。
 - SS 值仍正确但性能低：检查功耗、频率与测试方法。
 
-Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
+Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。**回锁值本身不是失败**：实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差，`HANDOFF-OUT` 里 `tu10x: plm=0xffffffef` 配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 就是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
 
 <a id="ssdiag"></a>
 
@@ -189,7 +189,7 @@ ssdiag --reapply
 | --- | --- |
 | SS0=`0x88888888`，SS1 低四位=`0x8` | 覆盖值有效；再用匹配负载验证性能 |
 | Ampere/Ada 门开、SS 值不符 | 可修复选择器，修复后再次读回 |
-| Turing 门重锁、SS 值正确 | 符合正常交棒状态 |
+| Turing 门重锁、SS 值正确 | 符合正常交棒状态；实测回锁值常为 `0xffffffef`（bits 5:6 置位，≠ 冷态默认 `0xffffff8f`），见 [冷态对照](cold-values.md) |
 | 门关闭且 SS 无效，或卡已失电 | 修复工具不能重新开门；按恢复流程重放 |
 
 将系统侧结果与 `loader.log` 的 `HANDOFF-OUT` 对照。若驱动初始化异常，同时检查设备管理器、nvlddmkm/Xid 与电源状态；不要只用 EFI 的成功状态替代系统内验证。

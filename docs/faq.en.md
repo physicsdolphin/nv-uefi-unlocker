@@ -162,7 +162,7 @@ Start with an [in-OS read-only check](#ssdiag):
 - Gate locked, device powered off or registers inaccessible: `--reapply` cannot open the gate or recover power-loss state; follow recovery and USB replay.
 - SS values correct but throughput low: check power, clocks and the test method.
 
-Turing intentionally relocks PLM at handoff; do not apply the Ampere/Ada closed-gate interpretation to it. Source: [Thunderbolt platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54).
+Turing intentionally relocks PLM at handoff; do not apply the Ampere/Ada closed-gate interpretation to it. **The relock value itself is not a failure**: the observed value is usually `0xffffffef` (bits 5:6 set) while the cold default is `0xffffff8f`, and it varies with board and driver version. `tu10x: plm=0xffffffef` in `HANDOFF-OUT` together with `tu10x_unlock=true` and SS0/SS1 still reading `0x88888888`/`0x8` is the normal handoff shape ([cold values](cold-values.md), [#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102), [#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)). Source: [Thunderbolt platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54).
 
 <a id="ssdiag"></a>
 
@@ -184,7 +184,7 @@ If you hit `MAP_PHYS win32 error 5` (mapping denied): 0.6.3+ prints a one-shot p
 | --- | --- |
 | SS0=`0x88888888`, SS1 low nibble=`0x8` | Overrides effective; verify performance with a matched workload |
 | Ampere/Ada gate open, SS values wrong | Selector repair is possible; read back after repair |
-| Turing gate relocked, SS values correct | Normal handoff state |
+| Turing gate relocked, SS values correct | Normal handoff state; the observed relock value is usually `0xffffffef` (bits 5:6 set, not the `0xffffff8f` cold default) - see [cold values](cold-values.md) |
 | Gate closed and SS invalid, or GPU powered off | Repair cannot reopen the gate; follow recovery and replay |
 
 Compare the OS result with `HANDOFF-OUT` in `loader.log`. For driver initialization failures, also inspect Device Manager, nvlddmkm/Xid and power state. EFI success does not replace OS verification.
