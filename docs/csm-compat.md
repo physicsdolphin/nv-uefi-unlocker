@@ -9,7 +9,7 @@
 但 CSM on 有一批**真实存在、无法简单弃用**的受众，他们的机器上 CSM 不是可选项：
 
 1. **依赖 legacy-only OPROM 的老设备**：部分老阵列卡/采集卡/专业卡只带 legacy x86 ROM，纯 UEFI 下固件根本不执行其 OPROM，设备无法在预引导阶段使用（RAID 卡引导卷、老卡自检画面等场景）；
-2. **亮机卡没有 UEFI GOP**：矿场搭配的极老亮机卡（GT 210/Quadro NVS 早期/GT 610 之前世代）VBIOS 里**没有 EFI 驱动可以提取**——本工具的 native-GOP 兼容路径与 ReBAR/引导都无从谈起，这类卡在纯 UEFI 下甚至可能点不亮；
+2. **亮机卡没有 UEFI GOP**：使用魔改CMP矿卡搭配老亮机卡使用的性价比用户（GT 210/Quadro NVS 早期/GT 610 之前世代/AMD HD7XXX甚至更早）VBIOS 里**没有 EFI 驱动可以提取**——本工具的 native-GOP 兼容路径与 ReBAR/引导都无从谈起，这类卡在纯 UEFI 下甚至可能点不亮；
 3. **VBIOS 容量太小插不进 GOP**：一些老卡 VBIOS 总共只有 64 KB 且已满，UEFI GOP 模块（~130 KB 压缩前）物理上放不进去——"刷个带 GOP 的 VBIOS"对它们不是选项；
 4. 传统引导的系统盘 / 老企业平台（部分 OEM 锁死 CSM 行为）。
 
