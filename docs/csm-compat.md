@@ -45,8 +45,8 @@ reconnect 之前**显式选择**原厂 GOP 驱动，不调用会卡死的通用 
 
 事务全绿（unlock_persist、FLR 按设计跳过）、HANDOFF-OUT 族标注首秀正确（`tu10x:unlock=true`），native-GOP 链走到 **Start=SUCCESS** 后发现一个驱动层事实：
 
-- **TU1xx GOP 驱动按显示器拓扑决定是否安装 GOP child**：显示器接核显（独显 D3cold 入场、事务唤醒后驱动绑定）时，`Supported=SUCCESS`/`Start=SUCCESS` 但 750 ms 三探内系统只有核显的 GOP child（probe 诊断 hex 解码 = `Acpi(PNP0A03,0)/Pci(0x2,0)/AcpiAdr`，恰为 PR13 已知的 child 形态）；显示器接独显时（同机 run 1）verify 通过、console 重绑成功。**驱动行为，非 loader bug**。
-- **定位收敛**：native-GOP 恢复路径的目标形态 = **独显接显示器的 CSM 板**（#107/#133 谱系，单卡或独显接屏）。核显接屏的混合形态下失败是**预期的优雅回落**（console 交 bootmgfw，核显 console 本就活着）——混合形态用户本就不需要独显 console。
+- **TU1xx GOP 驱动安装 child 与否并非确定性**（三轮修正）：同样的"显示器接核显"拓扑下，一轮 750 ms 三探只有核显的 GOP child（probe hex 解码 = `Acpi(PNP0A03,0)/Pci(0x2,0)/AcpiAdr`，恰为 PR13 已知的 child 形态），**另一轮 probe 0 即出现独显 child（36 B = 独显 path + AcpiAdr）→ `verified GOP child (3840x2160)` → `console rebound` → `complete (display path verified)`**——Turing native-GOP 首次端到端完整成功（证据 `evidence/tu106-native-gop-z170/loader-native-gop-success.log`）。安装与否的条件尚未切开（BIOS CSM 保存重置后的初始化顺序、驱动内部状态均为候选）；优雅回落设计覆盖两种结局，无需前置判断。
+- **定位收敛（混合形态的两种结局都已实证）**：native-GOP 成功时，核显接屏的物理屏会**冻结在 console 重绑那一刻**直到 Windows 里独显驱动接管点亮锁屏（本机实测：bootmgfw 阶段核显持有 console 输出、物理屏定帧，Windows 起来后独显直接显示锁屏界面，无 Code 12）——视觉上有一段"假死机"，属预期路径而非故障；失败时 console 交 bootmgfw、核显 console 本就活着。两种结局都不阻断进 Windows。
 - **休眠恢复入场不触发 Code 12**：冷启动 Windows 重跑资源仲裁才会撞仲裁失败（前轮实证）；从休眠恢复（hiberfile）进入的会话驱动/资源原样，独显直接可用。Code 12 定性再次收窄为**纯仲裁问题**。
 - 设备管理器禁用→启用不掉解锁（OS 内自救），见 compatibility.md TU106 节。
 - Z170 的 NVRAM Windows 选项 = **HD 短格式 + FILE 节点混合形态**（`hd(partN,sig) + file:"\EFI\Microsoft\Boot\BOOTMGFW.EFI"`），短格式 resolve 按 BmExpandPartitionDevicePath 分区身份匹配——真机三连全中（diag.5 字段验证第二平台）。
