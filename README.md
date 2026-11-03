@@ -59,17 +59,40 @@ GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解�
 | RTX 4070（形态未说明） | Pony 1024²：11.1 → 9.0 秒；Wan2.2 5B / 49 帧：96 → 78.2 秒 | [S44](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318864603793&comment_secondary_id=318864603793) |
 | RTX 4080 Laptop | 自述 FP16 约 57 → 80 TFLOPS | [S08](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318467714081&comment_secondary_id=318467714081) |
 | RTX 4080 SUPER | 成功自述、约 1.85×；未提供应用耗时 | [S24](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318597571313&comment_secondary_id=318597571313) |
-| RTX 4080 SUPER 32GB 改卡 | 含 TRX40 双卡；BF16 107.1 → 191.1，prefill +16.4%/+19.1%、decode +5.5% | [S11](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705) · [S32](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785) · [S43](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104) · [截图](docs/community-success.md#s32) |
+| RTX 4080 SUPER 32GB 改卡 | 含 TRX40 双卡；BF16 107.1 → 191.1，prefill +16.4%/+19.1%、decode +5.5% | [S11](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705) · [S32](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785) · [S43](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104) · [待补测上下文](docs/community-success.md#s32) |
 | RTX 4090 | 截图 TF32 79.4 → 148.5（单位未标）；本人另报 MOSS BF16 约 +15%–20% | [S40](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322535665616&comment_secondary_id=322535665616) · [S45](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322634742704&comment_secondary_id=322634742704) · [截图](docs/community-success.md#s45) |
 | RTX 4090 Laptop（配置截图标注） | 后续自述可用；型号来自本人附的 AI 配置识别图，无性能对比 | [S38](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318796399937&comment_secondary_id=318815524849) |
 
 ### 复现截图示例
 
-点击图片查看来源与测试条件。[完整图集：16 位观众的 23 张原图及说明](docs/community-success.md) · [来源与 SHA-256 索引](docs/evidence/bilibili-2026-11-02/sources.json)。
+点击图片查看来源与测试条件。[完整图集：15 位观众的 22 张图片及说明](docs/community-success.md) · [来源与 SHA-256 索引](docs/evidence/bilibili-2026-11-02/sources.json)。
 
-| **RTX 3060 12GB**<br><a href="docs/community-success.md#s30"><img src="docs/evidence/bilibili-2026-11-02/318661261937-1.png" width="420" alt="RTX 3060 12GB community report"></a><br>[原图、来源与条件](docs/community-success.md#s30) | **RTX 3080 10GB / UNLOCKED**<br><a href="docs/community-success.md#s28"><img src="docs/evidence/bilibili-2026-11-02/322392362704-2.png" width="420" alt="RTX 3080 10GB / UNLOCKED community report"></a><br>[原图、来源与条件](docs/community-success.md#s28) |
-| --- | --- |
-| **RTX 4060 Laptop**<br><a href="docs/community-success.md#s16"><img src="docs/evidence/bilibili-2026-11-02/318513166865-1.png" width="420" alt="RTX 4060 Laptop community report"></a><br>[原图、来源与条件](docs/community-success.md#s16) | **RTX 4070 Laptop**<br><a href="docs/community-success.md#s21"><img src="docs/evidence/bilibili-2026-11-02/322273213728-1.png" width="420" alt="RTX 4070 Laptop community report"></a><br>[原图、来源与条件](docs/community-success.md#s21) |
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 3060 12GB</b><br>
+<a href="docs/community-success.md#s30"><img src="docs/evidence/bilibili-2026-11-02/318661261937-1.png" width="420" alt="RTX 3060 12GB community report"></a><br>
+<a href="docs/community-success.md#s30">原图、来源与条件</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 3080 10GB / UNLOCKED</b><br>
+<a href="docs/community-success.md#s28"><img src="docs/evidence/bilibili-2026-11-02/322392362704-2.png" width="420" alt="RTX 3080 10GB / UNLOCKED community report"></a><br>
+<a href="docs/community-success.md#s28">原图、来源与条件</a>
+</td>
+</tr>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 4060 Laptop</b><br>
+<a href="docs/community-success.md#s16"><img src="docs/evidence/bilibili-2026-11-02/318513166865-1.png" width="420" alt="RTX 4060 Laptop community report"></a><br>
+<a href="docs/community-success.md#s16">原图、来源与条件</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 4070 Laptop</b><br>
+<a href="docs/community-success.md#s21"><img src="docs/evidence/bilibili-2026-11-02/322273213728-1.png" width="420" alt="RTX 4070 Laptop community report"></a><br>
+<a href="docs/community-success.md#s21">原图、来源与条件</a>
+</td>
+</tr>
+</table>
 
 ## 实战案例
 

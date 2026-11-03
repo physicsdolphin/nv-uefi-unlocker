@@ -59,17 +59,40 @@ The table distinguishes before/after measurements, post-unlock-only screenshots 
 | RTX 4070 (form factor unspecified) | Pony 1024²: 11.1 → 9.0 s; Wan2.2 5B / 49 frames: 96 → 78.2 s | [S44](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318864603793&comment_secondary_id=318864603793) |
 | RTX 4080 Laptop | Reports FP16 ~57 → ~80 TFLOPS | [S08](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318467714081&comment_secondary_id=318467714081) |
 | RTX 4080 SUPER | Reports success and ~1.85×; no application timing | [S24](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318597571313&comment_secondary_id=318597571313) |
-| RTX 4080 SUPER 32GB mod | Includes dual GPUs on TRX40; BF16 107.1 → 191.1, prefill +16.4%/+19.1%, decode +5.5% | [S11](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705) · [S32](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785) · [S43](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104) · [screenshots](docs/community-success.md#s32) |
+| RTX 4080 SUPER 32GB mod | Includes dual GPUs on TRX40; BF16 107.1 → 191.1, prefill +16.4%/+19.1%, decode +5.5% | [S11](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705) · [S32](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785) · [S43](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104) · [context with incomplete test conditions](docs/community-success.md#s32) |
 | RTX 4090 | Screenshot: TF32 79.4 → 148.5 (unit unspecified); reporter also describes ~15–20% faster MOSS BF16 | [S40](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322535665616&comment_secondary_id=322535665616) · [S45](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322634742704&comment_secondary_id=322634742704) · [screenshots](docs/community-success.md#s45) |
 | RTX 4090 Laptop (configuration screenshot label) | Later reports it works; model comes from their AI configuration screenshot, with no performance comparison | [S38](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318796399937&comment_secondary_id=318815524849) |
 
 ### Screenshot examples
 
-Click an example for its source and conditions. [All 23 original screenshots from 16 reporters, with attribution and notes (Chinese)](docs/community-success.md) · [Source and SHA-256 index](docs/evidence/bilibili-2026-11-02/sources.json).
+Click an example for its source and conditions. [All 22 images from 15 reporters, with attribution and notes (Chinese)](docs/community-success.md) · [Source and SHA-256 index](docs/evidence/bilibili-2026-11-02/sources.json).
 
-| **RTX 3060 12GB**<br><a href="docs/community-success.md#s30"><img src="docs/evidence/bilibili-2026-11-02/318661261937-1.png" width="420" alt="RTX 3060 12GB community report"></a><br>[report and conditions](docs/community-success.md#s30) | **RTX 3080 10GB / UNLOCKED**<br><a href="docs/community-success.md#s28"><img src="docs/evidence/bilibili-2026-11-02/322392362704-2.png" width="420" alt="RTX 3080 10GB / UNLOCKED community report"></a><br>[report and conditions](docs/community-success.md#s28) |
-| --- | --- |
-| **RTX 4060 Laptop**<br><a href="docs/community-success.md#s16"><img src="docs/evidence/bilibili-2026-11-02/318513166865-1.png" width="420" alt="RTX 4060 Laptop community report"></a><br>[report and conditions](docs/community-success.md#s16) | **RTX 4070 Laptop**<br><a href="docs/community-success.md#s21"><img src="docs/evidence/bilibili-2026-11-02/322273213728-1.png" width="420" alt="RTX 4070 Laptop community report"></a><br>[report and conditions](docs/community-success.md#s21) |
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 3060 12GB</b><br>
+<a href="docs/community-success.md#s30"><img src="docs/evidence/bilibili-2026-11-02/318661261937-1.png" width="420" alt="RTX 3060 12GB community report"></a><br>
+<a href="docs/community-success.md#s30">original, source and conditions</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 3080 10GB / UNLOCKED</b><br>
+<a href="docs/community-success.md#s28"><img src="docs/evidence/bilibili-2026-11-02/322392362704-2.png" width="420" alt="RTX 3080 10GB / UNLOCKED community report"></a><br>
+<a href="docs/community-success.md#s28">original, source and conditions</a>
+</td>
+</tr>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 4060 Laptop</b><br>
+<a href="docs/community-success.md#s16"><img src="docs/evidence/bilibili-2026-11-02/318513166865-1.png" width="420" alt="RTX 4060 Laptop community report"></a><br>
+<a href="docs/community-success.md#s16">original, source and conditions</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 4070 Laptop</b><br>
+<a href="docs/community-success.md#s21"><img src="docs/evidence/bilibili-2026-11-02/322273213728-1.png" width="420" alt="RTX 4070 Laptop community report"></a><br>
+<a href="docs/community-success.md#s21">original, source and conditions</a>
+</td>
+</tr>
+</table>
 
 ## Field cases
 

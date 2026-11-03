@@ -2,11 +2,11 @@
 
 [中文介绍](../README.md#社区成功反馈与复现截图) · [English overview](../README.en.md#community-success-reports-and-screenshots) · [兼容性矩阵](compatibility.md)
 
-这里收录 16 位观众的 23 张原图，来自[项目视频 BV1d6xN66ECM 的公开评论区](https://www.bilibili.com/video/BV1d6xN66ECM/)。资料采集于 **2026-11-02 18:51:09–19:07:33（北京时间）**。
+这里收录 15 位观众的 22 张图片，来自[项目视频 BV1d6xN66ECM 的公开评论区](https://www.bilibili.com/video/BV1d6xN66ECM/)。资料采集于 **2026-11-02 18:51:09–19:07:33（北京时间）**。
 
 这是观众反馈的存档，未独立实机复测。终端读回、前后基准、只有解锁后数值和 AI 汇总报告分别注明；AI 汇总图本身不能替代原始日志。相同型号的不同平台、VBIOS、功耗和驱动条件不可直接合并。记录中的版本与部署方式仅描述当时实验，当前操作请看 [README](../README.md#开始使用)。
 
-图片保持导出原始字节，包括横竖方向；点击图片可查看完整尺寸。每张图都保留评论者署名、原评论、原图链接与 SHA-256（见[来源索引](evidence/bilibili-2026-11-02/sources.json)）。索引还包含 README 硬件表中其余文字报告及必要上下文的链接，不包含完整评论导出或账号资料。
+21 张图片保持导出原始字节；S48 仅增加 EXIF 显示方向，让照片正向阅读，JPEG 图像数据未重编码。索引同时保留该图的原始 SHA-256 与发布文件 SHA-256；点击图片可查看完整尺寸。每张图都保留评论者署名、原评论、原图链接与 SHA-256（见[来源索引](evidence/bilibili-2026-11-02/sources.json)）。索引还包含 README 硬件表中其余文字报告及必要上下文的链接，不包含完整评论导出或账号资料。
 
 ## 有前后对比的报告
 
@@ -25,38 +25,55 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**基准与 Anima 生图对比（观众汇总）** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/ed342d333f7b788e39ce73a86b5e2357571852961.png)
-
-<a href="evidence/bilibili-2026-11-02/318661261937-1.png"><img src="evidence/bilibili-2026-11-02/318661261937-1.png" width="880" alt="RTX 3060 — 基准与 Anima 生图对比（观众汇总）"></a>
+<p align="center">
+<b>基准与 Anima 生图对比（观众汇总）</b><br>
+<a href="evidence/bilibili-2026-11-02/318661261937-1.png"><img src="evidence/bilibili-2026-11-02/318661261937-1.png" width="880" alt="基准与 Anima 生图对比（观众汇总）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/ed342d333f7b788e39ce73a86b5e2357571852961.png">评论原图</a> · <a href="#s30">来源与条件</a>
+</p>
 
 </details>
 
 <a id="s28"></a>
 
-### S28 · RTX 3080 · laxy2333
+### S28 · RTX 3080 10GB · laxy2333
 
-来源：[laxy2333，2026-10-30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704)（评论 `322392362704`）。
+来源：[laxy2333，2026-10-30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704)（评论 `322392362704`）。[此前成功反馈](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322352868720&comment_secondary_id=322352868720)与补图为同一作者；补图原文为“补图补图，丐版3080大约50%以上提升”。两张测试图均显示设备 NVIDIA GeForce RTX 3080、显存 10.0GB。
 
-**报告结果：** FP16 53.91 → 84.60 TFLOPS，+56.9%；BF16 54.97 → 81.74，+48.7%；附UNLOCKED状态。
+| 同一组补图中的指标 | 解锁前（图 1） | 解锁后（图 3） | 相对变化 |
+| --- | ---: | ---: | ---: |
+| FP16 混合负载测试摘要 | 53.91 TFLOPS | 84.60 TFLOPS | +56.9% |
+| BF16 混合负载测试摘要 | 54.97 TFLOPS | 81.74 TFLOPS | +48.7% |
+| 系统侧状态（图 2） | 未附对应读回 | `VERDICT [ampere]: UNLOCKED` | 状态截图单独列出 |
 
-**条件与边界：** 10GB；此前构建Family选错，指定ga102后成功。混合负载测试截图，不外推为所有应用增幅。
+**测试条件：** 混合负载脚本的 Phase 1 摘要，不是应用端到端耗时。图中未提供两轮对应的驱动版本、功耗、频率与超频设置，因此仅记录本次观众测试，不按严格控参实验外推。此前 Family 选错的操作记录只描述当时部署过程。
 
-型号或后续更正的上下文：[322352868720](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322352868720&comment_secondary_id=322352868720)。
+<details open>
+<summary>查看前后对照与系统侧状态（3 张原图）</summary>
 
-<details>
-<summary>查看原图（3 张）</summary>
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<p align="center">
+<b>解锁前</b><br>
+<a href="evidence/bilibili-2026-11-02/322392362704-1.png"><img src="evidence/bilibili-2026-11-02/322392362704-1.png" width="420" alt="解锁前"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/b839cdf0263aa0f4ba4a8f5a27fe0f55219938505.png">评论原图</a> · <a href="#s28">来源与条件</a>
+</p>
+</td>
+<td align="center" valign="top" width="50%">
+<p align="center">
+<b>解锁后</b><br>
+<a href="evidence/bilibili-2026-11-02/322392362704-3.png"><img src="evidence/bilibili-2026-11-02/322392362704-3.png" width="420" alt="解锁后"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/b662ff17923e795151329772fb5fd428219938505.png">评论原图</a> · <a href="#s28">来源与条件</a>
+</p>
+</td>
+</tr>
+</table>
 
-**解锁前混合负载测试** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/b839cdf0263aa0f4ba4a8f5a27fe0f55219938505.png)
-
-<a href="evidence/bilibili-2026-11-02/322392362704-1.png"><img src="evidence/bilibili-2026-11-02/322392362704-1.png" width="880" alt="RTX 3080 — 解锁前混合负载测试"></a>
-
-**系统侧寄存器与 UNLOCKED 状态** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/e0c3437116e95c583ce7a710b6f8f133219938505.png)
-
-<a href="evidence/bilibili-2026-11-02/322392362704-2.png"><img src="evidence/bilibili-2026-11-02/322392362704-2.png" width="880" alt="RTX 3080 — 系统侧寄存器与 UNLOCKED 状态"></a>
-
-**解锁后混合负载测试** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/b662ff17923e795151329772fb5fd428219938505.png)
-
-<a href="evidence/bilibili-2026-11-02/322392362704-3.png"><img src="evidence/bilibili-2026-11-02/322392362704-3.png" width="880" alt="RTX 3080 — 解锁后混合负载测试"></a>
+<p align="center">
+<b>系统侧 UNLOCKED 读回（不代替上方性能对比）</b><br>
+<a href="evidence/bilibili-2026-11-02/322392362704-2.png"><img src="evidence/bilibili-2026-11-02/322392362704-2.png" width="880" alt="系统侧 UNLOCKED 读回（不代替上方性能对比）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/e0c3437116e95c583ce7a710b6f8f133219938505.png">评论原图</a> · <a href="#s28">来源与条件</a>
+</p>
 
 </details>
 
@@ -73,13 +90,24 @@
 <details>
 <summary>查看原图（2 张）</summary>
 
-**解锁前测试** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/9cb9e7d16c254ba50f0ceda5a71defcd352059262.png)
-
-<a href="evidence/bilibili-2026-11-02/318487921761-1.png"><img src="evidence/bilibili-2026-11-02/318487921761-1.png" width="880" alt="RTX 3070 Laptop — 解锁前测试"></a>
-
-**解锁后测试** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/235b4e32699b20ff10b5e0b4df561ce9352059262.png)
-
-<a href="evidence/bilibili-2026-11-02/318487921761-2.png"><img src="evidence/bilibili-2026-11-02/318487921761-2.png" width="880" alt="RTX 3070 Laptop — 解锁后测试"></a>
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<p align="center">
+<b>解锁前</b><br>
+<a href="evidence/bilibili-2026-11-02/318487921761-1.png"><img src="evidence/bilibili-2026-11-02/318487921761-1.png" width="420" alt="解锁前"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/9cb9e7d16c254ba50f0ceda5a71defcd352059262.png">评论原图</a> · <a href="#s12">来源与条件</a>
+</p>
+</td>
+<td align="center" valign="top" width="50%">
+<p align="center">
+<b>解锁后</b><br>
+<a href="evidence/bilibili-2026-11-02/318487921761-2.png"><img src="evidence/bilibili-2026-11-02/318487921761-2.png" width="420" alt="解锁后"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/235b4e32699b20ff10b5e0b4df561ce9352059262.png">评论原图</a> · <a href="#s12">来源与条件</a>
+</p>
+</td>
+</tr>
+</table>
 
 </details>
 
@@ -96,9 +124,11 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**不同精度的前后对比（观众汇总）** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/26b7b00a4b14debdbd087154f334ca7b66820689.png)
-
-<a href="evidence/bilibili-2026-11-02/318513166865-1.png"><img src="evidence/bilibili-2026-11-02/318513166865-1.png" width="880" alt="RTX 4060 Laptop — 不同精度的前后对比（观众汇总）"></a>
+<p align="center">
+<b>不同精度的前后对比（观众汇总）</b><br>
+<a href="evidence/bilibili-2026-11-02/318513166865-1.png"><img src="evidence/bilibili-2026-11-02/318513166865-1.png" width="880" alt="不同精度的前后对比（观众汇总）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/26b7b00a4b14debdbd087154f334ca7b66820689.png">评论原图</a> · <a href="#s16">来源与条件</a>
+</p>
 
 </details>
 
@@ -117,9 +147,11 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**FP16 GEMM 前后对比（观众汇总）** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/bac394d7bcbf0837a688cdbd6814acda73701409.png)
-
-<a href="evidence/bilibili-2026-11-02/322273213728-1.png"><img src="evidence/bilibili-2026-11-02/322273213728-1.png" width="880" alt="RTX 4070 Laptop — FP16 GEMM 前后对比（观众汇总）"></a>
+<p align="center">
+<b>FP16 GEMM 前后对比（观众汇总）</b><br>
+<a href="evidence/bilibili-2026-11-02/322273213728-1.png"><img src="evidence/bilibili-2026-11-02/322273213728-1.png" width="880" alt="FP16 GEMM 前后对比（观众汇总）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/bac394d7bcbf0837a688cdbd6814acda73701409.png">评论原图</a> · <a href="#s21">来源与条件</a>
+</p>
 
 </details>
 
@@ -138,9 +170,11 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**系统侧状态与基准汇总；同时进行了超频** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/17a4d625a968d83de126f8f610d0f88287903194.png)
-
-<a href="evidence/bilibili-2026-11-02/318588984337-1.png"><img src="evidence/bilibili-2026-11-02/318588984337-1.png" width="880" alt="RTX 4070 Ti SUPER — 系统侧状态与基准汇总；同时进行了超频"></a>
+<p align="center">
+<b>系统侧状态与基准汇总；同时进行了超频</b><br>
+<a href="evidence/bilibili-2026-11-02/318588984337-1.png"><img src="evidence/bilibili-2026-11-02/318588984337-1.png" width="880" alt="系统侧状态与基准汇总；同时进行了超频"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/17a4d625a968d83de126f8f610d0f88287903194.png">评论原图</a> · <a href="#s23">来源与条件</a>
+</p>
 
 </details>
 
@@ -159,9 +193,11 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**测试汇总照片；底部视频耗时为推算，不作实测引用** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/8083040d148114726690cbc8249d12de636075104.jpg)
-
-<a href="evidence/bilibili-2026-11-02/322202417520-1.jpg"><img src="evidence/bilibili-2026-11-02/322202417520-1.jpg" width="880" alt="RTX 4070 台式机 — 测试汇总照片；底部视频耗时为推算，不作实测引用"></a>
+<p align="center">
+<b>测试汇总照片；底部视频耗时为推算，不作实测引用</b><br>
+<a href="evidence/bilibili-2026-11-02/322202417520-1.jpg"><img src="evidence/bilibili-2026-11-02/322202417520-1.jpg" width="880" alt="测试汇总照片；底部视频耗时为推算，不作实测引用"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/8083040d148114726690cbc8249d12de636075104.jpg">评论原图</a> · <a href="#s13">来源与条件</a>
+</p>
 
 </details>
 
@@ -178,44 +214,15 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**H3 工作流分阶段及单条总耗时对比** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/bd2588d7f6276996ed5f29628acc7e40540051932.jpg)
-
-<a href="evidence/bilibili-2026-11-02/322309028240-1.jpg"><img src="evidence/bilibili-2026-11-02/322309028240-1.jpg" width="880" alt="RTX 3090 Ti — H3 工作流分阶段及单条总耗时对比"></a>
-
-</details>
-
-<a id="s32"></a>
-
-### S32 · RTX 4080 SUPER 32GB 改卡 · Wulai0-0
-
-来源：[Wulai0-0，2026-10-30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785)（评论 `318683830785`）。
-
-**报告结果：** 基准93.4 → 181.9 TFLOPS；H3 INT8同工作流0.9MP/15秒视频，原730–760秒，解锁后冷699.82秒、热674.01秒。
-
-**条件与边界：** 注意：699.82与674.01均为解锁后两次，不能当解锁前后。后续本人明确原约750秒；保持功耗墙，提升有限。
-
-型号或后续更正的上下文：[318436712481](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318436712481&comment_secondary_id=318436712481) · [318772456913](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318772456913)。
-
-<details>
-<summary>查看原图（4 张）</summary>
-
-**解锁前基准终端输出** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/e4e272ebe04bb6b331c0f376ccf0b254285348395.png)
-
-<a href="evidence/bilibili-2026-11-02/318683830785-1.png"><img src="evidence/bilibili-2026-11-02/318683830785-1.png" width="880" alt="RTX 4080 SUPER 32GB 改卡 — 解锁前基准终端输出"></a>
-
-**解锁后基准终端输出** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/351d3f4af50686669e8026a4563eb17a285348395.png)
-
-<a href="evidence/bilibili-2026-11-02/318683830785-2.png"><img src="evidence/bilibili-2026-11-02/318683830785-2.png" width="880" alt="RTX 4080 SUPER 32GB 改卡 — 解锁后基准终端输出"></a>
-
-**32GB 配置与运行监控** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/dcdc97c73aabd2e16b45555230c54c66285348395.png)
-
-<a href="evidence/bilibili-2026-11-02/318683830785-3.png"><img src="evidence/bilibili-2026-11-02/318683830785-3.png" width="880" alt="RTX 4080 SUPER 32GB 改卡 — 32GB 配置与运行监控"></a>
-
-**H3 工作流与运行记录** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/943d1edf3f7fa2d9ed5d46d431d60033285348395.png)
-
-<a href="evidence/bilibili-2026-11-02/318683830785-4.png"><img src="evidence/bilibili-2026-11-02/318683830785-4.png" width="880" alt="RTX 4080 SUPER 32GB 改卡 — H3 工作流与运行记录"></a>
+<p align="center">
+<b>H3 工作流分阶段及单条总耗时对比</b><br>
+<a href="evidence/bilibili-2026-11-02/322309028240-1.jpg"><img src="evidence/bilibili-2026-11-02/322309028240-1.jpg" width="880" alt="H3 工作流分阶段及单条总耗时对比"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/bd2588d7f6276996ed5f29628acc7e40540051932.jpg">评论原图</a> · <a href="#s25">来源与条件</a>
+</p>
 
 </details>
+
+
 
 <a id="s46"></a>
 
@@ -232,9 +239,11 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**前后基准对比（观众汇总）** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/9219fa7fbfb0db7b4210a334bf622ec02833817.png)
-
-<a href="evidence/bilibili-2026-11-02/322654906480-1.png"><img src="evidence/bilibili-2026-11-02/322654906480-1.png" width="880" alt="RTX 3090 20GB OEM（本人标注） — 前后基准对比（观众汇总）"></a>
+<p align="center">
+<b>前后基准对比（观众汇总）</b><br>
+<a href="evidence/bilibili-2026-11-02/322654906480-1.png"><img src="evidence/bilibili-2026-11-02/322654906480-1.png" width="880" alt="前后基准对比（观众汇总）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/9219fa7fbfb0db7b4210a334bf622ec02833817.png">评论原图</a> · <a href="#s46">来源与条件</a>
+</p>
 
 </details>
 
@@ -251,9 +260,11 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**基准对比（AI 汇总；显卡品牌与文字反馈不一致）** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/8467017d9214a1c3af3722078446eee71525736.png)
-
-<a href="evidence/bilibili-2026-11-02/322634742704-1.png"><img src="evidence/bilibili-2026-11-02/322634742704-1.png" width="880" alt="RTX 4090 — 基准对比（AI 汇总；显卡品牌与文字反馈不一致）"></a>
+<p align="center">
+<b>基准对比（AI 汇总；显卡品牌与文字反馈不一致）</b><br>
+<a href="evidence/bilibili-2026-11-02/322634742704-1.png"><img src="evidence/bilibili-2026-11-02/322634742704-1.png" width="880" alt="基准对比（AI 汇总；显卡品牌与文字反馈不一致）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/8467017d9214a1c3af3722078446eee71525736.png">评论原图</a> · <a href="#s45">来源与条件</a>
+</p>
 
 </details>
 
@@ -265,14 +276,16 @@
 
 **报告结果：** TF32 38.5→66.7，FP16 73.9→123.2，BF16 74.8→125.8；FP32 26.5→26.4基本不变。
 
-**条件与边界：** 图片为AI汇总测试报告；1950MHz+且注明无降频，单位未明确。保留原图的方向及原始像素。
+**条件与边界：** 图片为 AI 汇总测试报告；1950MHz+ 且注明无降频，单位未明确。已通过 EXIF 将显示方向逆时针校正 90°，未重编码 JPEG 或改动图中文字；原始与发布文件的校验值均见索引。
 
 <details>
 <summary>查看原图（1 张）</summary>
 
-**基准对比照片（AI 汇总；保留原图方向）** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/0dbb11a6ec1a9389f103941290aadd1949804397.jpg)
-
-<a href="evidence/bilibili-2026-11-02/318960839137-1.jpg"><img src="evidence/bilibili-2026-11-02/318960839137-1.jpg" width="880" alt="RTX 3080 Ti（形态未说明） — 基准对比照片（AI 汇总；保留原图方向）"></a>
+<p align="center">
+<b>基准对比照片（AI 汇总；已校正显示方向）</b><br>
+<a href="evidence/bilibili-2026-11-02/318960839137-1.jpg"><img src="evidence/bilibili-2026-11-02/318960839137-1.jpg" width="880" alt="基准对比照片（AI 汇总；已校正显示方向）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/0dbb11a6ec1a9389f103941290aadd1949804397.jpg">评论原图</a> · <a href="#s48">来源与条件</a>
+</p>
 
 </details>
 
@@ -291,28 +304,41 @@
 <details>
 <summary>查看原图（1 张）</summary>
 
-**仅解锁后测试；没有解锁前对照** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/05bc00da1c33e312790c25f761c2c55d481086477.png)
-
-<a href="evidence/bilibili-2026-11-02/318379087793-1.png"><img src="evidence/bilibili-2026-11-02/318379087793-1.png" width="880" alt="RTX 4060 Laptop — 仅解锁后测试；没有解锁前对照"></a>
+<p align="center">
+<b>仅解锁后测试；没有解锁前对照</b><br>
+<a href="evidence/bilibili-2026-11-02/318379087793-1.png"><img src="evidence/bilibili-2026-11-02/318379087793-1.png" width="880" alt="仅解锁后测试；没有解锁前对照"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/05bc00da1c33e312790c25f761c2c55d481086477.png">评论原图</a> · <a href="#s01">来源与条件</a>
+</p>
 
 </details>
 
 <a id="s07"></a>
 
-### S07 · RTX 4070 Ti SUPER · 未然极光
+### S07 · RTX 4070 Ti SUPER 16GB · 未然极光
 
 来源：[未然极光，2026-10-28](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318434036593&comment_secondary_id=318434036593)（评论 `318434036593`）。
 
-**报告结果：** 仅解锁，热点温度 80°C → 100°C；截图 FP16 103.12 TFLOPS。
+原评论的测试背景：
 
-**条件与边界：** 原文型号带 v1；未给解锁前算力，温升不能用作性能增幅。
+> 仅解锁，不进行其他超频，4070tis v1 热点温度也从80提高到100
+
+| 项目 | 原评论或截图提供的内容 | 缺失的对照条件 |
+| --- | --- | --- |
+| 设备 | 评论写 4070 Ti SUPER v1；截图显示 RTX 4070 Ti SUPER、16.0GB | 未给完整板卡、VBIOS 与驱动版本 |
+| 操作 | 本人称仅解锁、不进行其他超频 | 未附前后功耗、频率和同负载日志 |
+| FP16 | 解锁后摘要 103.12 TFLOPS | 未提供解锁前算力，无法计算性能增幅 |
+| Hot Spot | 本人自述 80°C → 100°C | 缺少同环境、同负载、同散热的记录；温升不作为提速证明 |
+
+本条作为“仅解锁后测试和温度反馈”保留，性能对比可另看同型号的 [S23](#s23)；S23 同时进行了超频，两条报告不能拼成同一组前后对照。
 
 <details>
-<summary>查看原图（1 张）</summary>
+<summary>查看解锁后原图（1 张）</summary>
 
-**仅解锁后测试；没有解锁前对照** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/d46fdea662dbf1b23b7bfef38b11e840216963966.png)
-
-<a href="evidence/bilibili-2026-11-02/318434036593-1.png"><img src="evidence/bilibili-2026-11-02/318434036593-1.png" width="880" alt="RTX 4070 Ti SUPER — 仅解锁后测试；没有解锁前对照"></a>
+<p align="center">
+<b>仅解锁后测试；没有解锁前对照</b><br>
+<a href="evidence/bilibili-2026-11-02/318434036593-1.png"><img src="evidence/bilibili-2026-11-02/318434036593-1.png" width="880" alt="仅解锁后测试；没有解锁前对照"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/d46fdea662dbf1b23b7bfef38b11e840216963966.png">评论原图</a> · <a href="#s07">来源与条件</a>
+</p>
 
 </details>
 
@@ -329,32 +355,89 @@
 <details>
 <summary>查看原图（2 张）</summary>
 
-**仅解锁后 FP16 测试** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/8a0fb9ed2844a41bab800d5b7b531cc8306417542.jpg)
+<p align="center">
+<b>仅解锁后 FP16 测试</b><br>
+<a href="evidence/bilibili-2026-11-02/322434523792-1.jpg"><img src="evidence/bilibili-2026-11-02/322434523792-1.jpg" width="880" alt="仅解锁后 FP16 测试"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/8a0fb9ed2844a41bab800d5b7b531cc8306417542.jpg">评论原图</a> · <a href="#s34">来源与条件</a>
+</p>
 
-<a href="evidence/bilibili-2026-11-02/322434523792-1.jpg"><img src="evidence/bilibili-2026-11-02/322434523792-1.jpg" width="880" alt="RTX 4050 Laptop — 仅解锁后 FP16 测试"></a>
-
-**6GB 配置及超频、功耗设置** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/6c6e4b6723d055d7eeef6cc840022f08306417542.jpg)
-
-<a href="evidence/bilibili-2026-11-02/322434523792-2.jpg"><img src="evidence/bilibili-2026-11-02/322434523792-2.jpg" width="880" alt="RTX 4050 Laptop — 6GB 配置及超频、功耗设置"></a>
+<p align="center">
+<b>6GB 配置及超频、功耗设置</b><br>
+<a href="evidence/bilibili-2026-11-02/322434523792-2.jpg"><img src="evidence/bilibili-2026-11-02/322434523792-2.jpg" width="880" alt="6GB 配置及超频、功耗设置"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/6c6e4b6723d055d7eeef6cc840022f08306417542.jpg">评论原图</a> · <a href="#s34">来源与条件</a>
+</p>
 
 </details>
+
+## 仅文字反馈（未收录为对比截图）
 
 <a id="s42"></a>
 
 ### S42 · RTX 4060 Laptop · 网友陈胤平
 
-来源：[网友陈胤平，2026-11-01](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896)（评论 `322579294896`）。
+来源：[网友陈胤平，2026-11-01](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896)（评论 `322579294896`）。本人称两个生图工作流解锁前分别需“200多秒”和“140多秒”，并说明“不开性能模式，显卡也没超频”。
 
-**报告结果：** 两个生图工作流：200多秒→103.31秒；140多秒→54.79秒，自述快50%–60%。
+附件只有解锁后 103.31 秒与 54.79 秒的两个缩略图，没有解锁前截图，也没有模型、工作流或采样参数；无法形成可靠的前后对比，已从图集移除。README 保留为该观众的文字应用反馈，不据此计算精确增幅。原图链接与校验信息在来源索引的 `omitted_screenshots` 中保留。
 
-**条件与边界：** 未超频，未开性能模式；D盘小分区启动。前值为约数；作者口中的50%–60%更接近耗时减少，不等同吞吐提升。
+## 测试条件待补的原始反馈
+
+<a id="s32"></a>
+
+### S32 · RTX 4080 SUPER 32GB 改卡 · Wulai0-0（测试条件待补）
+
+来源：[Wulai0-0，2026-10-30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785)（评论 `318683830785`）。
+
+**设备身份与上下文：** 同一观众在[此前评论](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318436712481&comment_secondary_id=318436712481)明确写“我4080s（32g）改了”；下方图 3 的任务管理器显示 NVIDIA GeForce RTX 4080 SUPER、专用显存 32.0GB。型号、容量据这两项来源记录，不从算力读数反推。
+
+**原评论的应用测试条件：**
+
+> minimaxh3同一工作流同一素材和提示词，int8量化模型，跑0.9 15秒，没解锁之前是730-760之间，解锁后ComfyUI冷启动和热启动各跑了一次
+
+本人[后续更正](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318772456913)：“图片是解锁后冷热启动各跑一次的时间，没解锁前是750左右”。右上角任务队列中的两条均为解锁后记录：
+
+| H3 INT8 工作流状态 | 单次耗时 | 证据类型 |
+| --- | ---: | --- |
+| 解锁前 | 约 730–760 秒，后续概括为约 750 秒 | 仅本人文字自述，没有解锁前截图 |
+| 解锁后、ComfyUI 冷启动 | 699.82 秒 | 图 4 任务队列 `xiaoma_00001_` |
+| 解锁后、ComfyUI 热启动 | 674.01 秒 | 图 4 任务队列 `xiaoma_00002_` |
+
+**基准衰减与功耗背景：** 图 1 同一终端内先连续显示 180.5 → 85.9 TFLOPS，随后重新调用 `bench.py` 得到 93.4 TFLOPS；图 2 只显示一次 181.9 TFLOPS。缺少脚本、精度、矩阵规模、预热及同步方法，也没有与这些读数逐时对应的功耗、频率和限频标志。图 1 存在明显衰减，不能只取末尾 93.4 与图 2 的 181.9 确认解锁倍数。
+
+[作者当时的回复](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318685439137)据监控图判断“你的频率可见撞320W功耗墙严重”，报告者随后表示[“不折腾功耗了”](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318687001185)。这说明当时讨论了功耗限制；现有材料仍不足以独立确认衰减的唯一原因。因此本条保留为待补测试条件的原始反馈，不用于 README 的基准提升数字或兼容性验证等级；同型号较完整的独立反馈见 [S43 原评论](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104)。
 
 <details>
-<summary>查看原图（1 张）</summary>
+<summary>查看设备、终端与工作流原图（4 张；需结合上方上下文）</summary>
 
-**解锁后两个工作流的耗时；解锁前约数见评论** · [评论原图](http://i0.hdslb.com/bfs/new_dyn/96a6875d161c430117a6e2c8bb99e00640862625.png)
+<p align="center">
+<b>图 3：RTX 4080 SUPER 32GB 身份与运行监控</b><br>
+<a href="evidence/bilibili-2026-11-02/318683830785-3.png"><img src="evidence/bilibili-2026-11-02/318683830785-3.png" width="880" alt="图 3：RTX 4080 SUPER 32GB 身份与运行监控"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/dcdc97c73aabd2e16b45555230c54c66285348395.png">评论原图</a> · <a href="#s32">来源与条件</a>
+</p>
 
-<a href="evidence/bilibili-2026-11-02/322579294896-1.png"><img src="evidence/bilibili-2026-11-02/322579294896-1.png" width="880" alt="RTX 4060 Laptop — 解锁后两个工作流的耗时；解锁前约数见评论"></a>
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<p align="center">
+<b>图 1：解锁前终端（读数衰减，测试方法待补）</b><br>
+<a href="evidence/bilibili-2026-11-02/318683830785-1.png"><img src="evidence/bilibili-2026-11-02/318683830785-1.png" width="420" alt="图 1：解锁前终端（读数衰减，测试方法待补）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/e4e272ebe04bb6b331c0f376ccf0b254285348395.png">评论原图</a> · <a href="#s32">来源与条件</a>
+</p>
+</td>
+<td align="center" valign="top" width="50%">
+<p align="center">
+<b>图 2：解锁后单次读数（不能据此确认倍数）</b><br>
+<a href="evidence/bilibili-2026-11-02/318683830785-2.png"><img src="evidence/bilibili-2026-11-02/318683830785-2.png" width="420" alt="图 2：解锁后单次读数（不能据此确认倍数）"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/351d3f4af50686669e8026a4563eb17a285348395.png">评论原图</a> · <a href="#s32">来源与条件</a>
+</p>
+</td>
+</tr>
+</table>
+
+<p align="center">
+<b>图 4：工作流右上角的 699.82 秒与 674.01 秒均为解锁后结果</b><br>
+<a href="evidence/bilibili-2026-11-02/318683830785-4.png"><img src="evidence/bilibili-2026-11-02/318683830785-4.png" width="880" alt="图 4：工作流右上角的 699.82 秒与 674.01 秒均为解锁后结果"></a><br>
+<a href="http://i0.hdslb.com/bfs/new_dyn/943d1edf3f7fa2d9ed5d46d431d60033285348395.png">评论原图</a> · <a href="#s32">来源与条件</a>
+</p>
 
 </details>
 

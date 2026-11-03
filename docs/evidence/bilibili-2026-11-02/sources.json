@@ -4,8 +4,8 @@
   "export_completed_at_beijing": "2026-11-02 19:07:33",
   "hardware_groups": 26,
   "included_reporters": 37,
-  "screenshots": 23,
-  "note": "Selected public community reports, not independent hardware verification. Image bytes are unchanged from the supplied export. Report IDs refer to this export only.",
+  "screenshots": 22,
+  "note": "Selected public community reports, not independent hardware verification. 21 images are byte-exact from the supplied export; one JPEG only adds EXIF display orientation, preserving its original codestream and source SHA-256. Report IDs refer to this export only.",
   "reports": [
     {
       "id": "S01",
@@ -82,6 +82,14 @@
           "source_url": "http://i0.hdslb.com/bfs/new_dyn/d46fdea662dbf1b23b7bfef38b11e840216963966.png",
           "bytes": 28890,
           "sha256": "4f8d98843fd082a188d9bd11790700505cc1e81a10509d6d154d5668b05d5900"
+        }
+      ],
+      "quoted_context": [
+        {
+          "comment_id": "318434036593",
+          "author": "未然极光",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318434036593&comment_secondary_id=318434036593",
+          "excerpt": "仅解锁，不进行其他超频，4070tis v1 热点温度也从80提高到100"
         }
       ]
     },
@@ -351,6 +359,14 @@
           "bytes": 202932,
           "sha256": "5d4ad6928bbe9f0258bcd381f0ba2abb8872b650789a0999c060efa83e9fba16"
         }
+      ],
+      "quoted_context": [
+        {
+          "comment_id": "322392362704",
+          "author": "laxy2333",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704",
+          "excerpt": "补图补图，丐版3080大约50%以上提升"
+        }
       ]
     },
     {
@@ -407,6 +423,14 @@
         {
           "comment_id": "318772456913",
           "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318772456913"
+        },
+        {
+          "comment_id": "318685439137",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318685439137"
+        },
+        {
+          "comment_id": "318687001185",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318687001185"
         }
       ],
       "screenshots": [
@@ -442,7 +466,40 @@
           "bytes": 369890,
           "sha256": "7e096dd58ef78e0455c4895f8a2cd3d459135334f955dddb85661ef7e64bae02"
         }
-      ]
+      ],
+      "quoted_context": [
+        {
+          "comment_id": "318436712481",
+          "author": "Wulai0-0",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318436712481&comment_secondary_id=318436712481",
+          "excerpt": "我4080s（32g）改了对minimaxh3提升能有多大？"
+        },
+        {
+          "comment_id": "318683830785",
+          "author": "Wulai0-0",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785",
+          "excerpt": "算力93解锁至181，minimaxh3同一工作流同一素材和提示词，int8量化模型，跑0.9 15秒，没解锁之前是730-760之间，解锁后ComfyUI冷启动和热启动各跑了一次"
+        },
+        {
+          "comment_id": "318685439137",
+          "author": "Physicsdolphin",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318685439137",
+          "excerpt": "你的频率可见撞320W功耗墙严重"
+        },
+        {
+          "comment_id": "318687001185",
+          "author": "Wulai0-0",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318687001185",
+          "excerpt": "不折腾功耗了"
+        },
+        {
+          "comment_id": "318772456913",
+          "author": "Wulai0-0",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318772456913",
+          "excerpt": "图片是解锁后冷热启动各跑一次的时间，没解锁前是750左右"
+        }
+      ],
+      "evidence_status": "Application baseline is approximate and text-only. GEMM comparison lacks method and matched power/clock logs; retained as incomplete source material, not a verified speedup."
     },
     {
       "id": "S33",
@@ -549,14 +606,20 @@
       "comment_id": "322579294896",
       "comment_url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896",
       "context": [],
-      "screenshots": [
+      "screenshots": [],
+      "omitted_screenshots": [
         {
-          "file": "322579294896-1.png",
-          "caption": "解锁后两个工作流的耗时；解锁前约数见评论",
-          "image_comment_id": "322579294896",
           "source_url": "http://i0.hdslb.com/bfs/new_dyn/96a6875d161c430117a6e2c8bb99e00640862625.png",
-          "bytes": 22101,
-          "sha256": "eaae13bf542384ca322f3e6df5791e3ebacbcfba0bc768a963d30bd8010ba440"
+          "source_sha256": "eaae13bf542384ca322f3e6df5791e3ebacbcfba0bc768a963d30bd8010ba440",
+          "reason": "Only post-unlock workflow thumbnails; no baseline screenshot, model or reproducible workflow conditions. Kept as a text-only report."
+        }
+      ],
+      "quoted_context": [
+        {
+          "comment_id": "322579294896",
+          "author": "网友陈胤平",
+          "url": "https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896",
+          "excerpt": "原来跑这两个工作流分别是200多秒和140多秒。不开性能模式，显卡也没超频"
         }
       ]
     },
@@ -643,11 +706,18 @@
       "screenshots": [
         {
           "file": "318960839137-1.jpg",
-          "caption": "基准对比照片（AI 汇总；保留原图方向）",
+          "caption": "基准对比照片（AI 汇总；已校正显示方向）",
           "image_comment_id": "318960839137",
           "source_url": "http://i0.hdslb.com/bfs/new_dyn/0dbb11a6ec1a9389f103941290aadd1949804397.jpg",
-          "bytes": 2238093,
-          "sha256": "1bb340607bc3cc138d3b6ca18c6a29bcc7692c58cdecb21d73b077c4dcbd5c35"
+          "bytes": 2238129,
+          "sha256": "d6deee88ba8e1f21feb60ecc339d3ee181e52048f8cd81792f20754076f35796",
+          "source_sha256": "1bb340607bc3cc138d3b6ca18c6a29bcc7692c58cdecb21d73b077c4dcbd5c35",
+          "source_bytes": 2238093,
+          "display_transform": {
+            "exif_orientation": 8,
+            "rotation": "90 degrees counterclockwise for upright reading",
+            "jpeg_codestream_unchanged": true
+          }
         }
       ]
     },
@@ -690,5 +760,6 @@
       "context": [],
       "screenshots": []
     }
-  ]
+  ],
+  "screenshot_reporters": 15
 }
