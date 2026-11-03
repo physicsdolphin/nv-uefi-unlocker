@@ -97,9 +97,12 @@ struct DriverBindingProto {
 }
 
 /// Entry point. `initial_attrs` = the PciIo attributes captured BEFORE the
-/// transaction's claim cleared them (see detach_and_claim).
+/// transaction's claim cleared them (see detach_and_claim). Default since
+/// the native-GOP merge - the marker `\tx-native-gop.txt` is no longer an
+/// enable switch but an OPTIONAL pin naming a specific GOP module file on
+/// the boot volume (empty/absent = the card's own shadowed ROM).
 pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> Result<(), &'static str> {
-    info!("NATIVE-GOP: recovery begin (\\tx-native-gop.txt)");
+    info!("NATIVE-GOP: recovery begin (default console rebuild)");
 
     // 1. Locate the GOP EFI image.
     let (rom, source_note) = locate_source(gpu)?;
@@ -214,14 +217,14 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
     Ok(())
 }
 
-/// `\tx-native-gop.txt` first line names a volume file; empty/absent
-/// content — or a named file that does not resolve on the boot volume —
-/// falls through to the card's own shadowed ROM (issue #128 run 10: a
-/// zero-byte marker was refused by the content reader and a mistyped name
-/// aborted the whole recovery; both now degrade to the ROM path, which is
-/// the default semantics the marker's documentation promises). A named
-/// file that EXISTS but fails parsing later is still a hard error — the
-/// operator asked for that specific image.
+/// Optional GOP module pin: `\tx-native-gop.txt`'s first line names a
+/// volume file to use INSTEAD of the card's own shadowed ROM (compatibility
+/// package form). Empty/absent content — or a named file that does not
+/// resolve on the boot volume — falls through to the shadowed ROM (issue
+/// #128 run 10: a zero-byte marker was refused by the content reader and a
+/// mistyped name aborted the whole recovery; both now degrade to the ROM
+/// path). A named file that EXISTS but fails parsing later is still a hard
+/// error — the operator asked for that specific image.
 fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'static str> {
     // Every step below is bracketed by its own flushed line (NATIVE-GOP
     // is a flush marker, issue #128 run 11): a hang must land BETWEEN two

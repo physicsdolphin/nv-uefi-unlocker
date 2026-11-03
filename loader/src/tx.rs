@@ -1346,25 +1346,26 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // Restore the display path before handing off (TOTORONG craft): the
     // FLR-rebooted function re-binds its vendor GOP/driver stack. Non-fatal
     // - bootmgfw self-establishes a console regardless.
-    // Turing: reconnect ON by default. The full 16-fire series + the
-    // GSP-mode Windows closure (2026-10-27) showed the TDRs came from the
-    // LEGACY driver path (EnableGpuFirmware unset), not from the GOP
-    // devinit - with the GSP-mode driver the unlock session is stable, and
-    // the reconnect just restores the boot console earlier (Run A's
-    // shape-change when it was removed turned out to be coincidental).
-    // A \tu10x-no-reconnect.txt marker skips it again for experiments.
+    //
+    // DEFAULT since the native-GOP merge: rebuild the console with the
+    // card's OWN GOP driver from its shadowed ROM ("however the console
+    // came up, that is how it continues"). Rationale (issues #106/#107/
+    // #133/#134/#157): the firmware ConnectController hard-hangs on CSM
+    // boards, and a wrong reconnect is worse than none - on ANY failure
+    // the console stays however boot left it and bootmgfw self-establishes
+    // (field-proven across four Z170 rounds: both native-GOP outcomes and
+    // the zero-reconnect path all reached Windows). A wrong reconnect
+    // being worse than none is the design axiom here.
+    // `\tx-reconnect-legacy.txt` restores the old reconnect_all path
+    // (recursive + PR#13 non-recursive logic) as an escape hatch;
+    // `\tu10x-no-reconnect.txt` keeps its experimental skip for Turing.
     if assets.family == "tu10x" && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
         info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
-    } else if crate::tx::probe_file("\\tx-native-gop.txt") {
-        // Issue #107 CSM class: the generic recursive reconnect hangs
-        // re-binding BiosVideo. Start the native GOP explicitly instead;
-        // on any failure the console is left to bootmgfw (never falls
-        // back to the hanging ConnectController).
-        if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
-            info!("TX: native-GOP recovery failed: {e} - console left to bootmgfw");
-        }
-    } else {
+    } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
+        info!("TX: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
         crate::tx_detach::reconnect_all(pci_handle);
+    } else if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
+        info!("TX: native-GOP recovery failed: {e} - console left to bootmgfw (a wrong reconnect is worse than none)");
     }
     // Chain-2 code-12 fix (issue #109, unconditional): whatever the
     // reconnect decision was, the boot-VGA owner must hold legacy VGA at
