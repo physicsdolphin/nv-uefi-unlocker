@@ -24,7 +24,7 @@
 
 ## What files and options belong on the USB stick?
 
-The maker emits a flat local `usbroot/` directory and already places `EFI/BOOT/BOOTX64.EFI` in it. Copy the **contents** to the stick root (do not copy the directory itself as `U:\usbroot\`). Do not copy extraction intermediates as runtime assets.
+The maker emits the assets into a local `usbroot/` directory (the `*.bin` files flat, plus `EFI/BOOT/BOOTX64.EFI`). Copy the **contents** to the stick root (do not copy the directory itself as `U:\usbroot\`). Do not copy extraction intermediates as runtime assets.
 
 `F` is `ad102` (40 series), `ga102` (30 series) or `tu10x` (20 / 16 series):
 
