@@ -31,14 +31,19 @@
 
 ## 社区成功反馈与复现
 
-以下 **硬件型号 / 形态分组**l部分来源自[视频评论区](https://www.bilibili.com/video/BV1d6xN66ECM/)，部分选自[兼容性矩阵](docs/community.md)。评论区部分是观众报告。现行支持与已知限制仍以全量[兼容性矩阵](docs/compatibility.md)为准。
+以下 **31 项硬件型号 / 形态分组**部分来源自[视频评论区](https://www.bilibili.com/video/BV1d6xN66ECM/)，部分选自[社区验证汇总](docs/community-reports.md)；评论区部分是观众报告。同一型号多条报告时取信息量最大的一条。现行支持与已知限制仍以全量[兼容性矩阵](docs/compatibility.md)为准。
 
 表中分别注明前后实测、只有解锁后截图和文字自述。基准算力增幅不等于实际应用增幅；同时超频或改变功耗条件的报告单独标注。
 
-| 硬件型号 / 形态 | 观众报告的结果与条件 | 来源 |
+| 硬件型号 / 形态 | 社区报告的结果与条件 | 来源 |
 | --- | --- | --- |
-| RTX 2080 Ti | 自述解锁成功、计算提速；H3 收益不明显 | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
+| RTX 2080 Ti | 自述解锁成功、计算提速；H3 收益不明显；另有 Linux 专有驱动下 +48.5% 的原厂 11GB 全链记录 | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) · [#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103) |
 | RTX 2080 Ti 22GB 改卡 | 自述最后一次尝试成功；未给性能对比 | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
+| RTX 2080 Super 8GB | 0x91 修复后复测通过：46 → 68 TFLOPS（+47.8%）；该修复链的首个成功验证 | [#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14) |
+| RTX 2080 8GB | v2.1.8 修复后通过；报告者以 8 轮单变量和与成功机逐位 diff 定位 0x91（未给性能数值） | [#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62) |
+| RTX 2070 Laptop 8GB | v2.1.3 通过；首个 Turing 笔记本成功记录，跨芯片同签名推动 >4G 分配修复（未给性能数值） | [#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16) |
+| RTX 2060 12GB | 修复后通过；六轮单变量与 PROM 离线分析把 staging 钉在 4 GiB 边界（未给性能数值） | [#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) |
+| RTX 2060 Super 8GB | 全链通过：FWSEC → WPR2 → BOOT_DIRECT → PLM 开启 → SS0/SS1 读回；签名还原、Windows 交棒正常 | [#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12) |
 | RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS；Anima 生图 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [截图](docs/community-success.md#s30) |
 | RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS；150W VBIOS + 超频环境 | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [截图](docs/community-success.md#s12) |
 | RTX 3070 Ti Laptop | WMMA FP16 45.51 → 88.84 TFLOPS；cuBLAS FP16 基本不变 | [S36](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128) |
