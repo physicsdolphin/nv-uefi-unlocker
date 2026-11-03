@@ -720,6 +720,9 @@ fn read_boot_file_uncached(path: &str) -> Inner {
         Ok(p) => p,
         Err(_) => { info!("TX-ASSET-DIAG: {path} not UCS-2 convertible"); return Inner::Failed; }
     };
+    // Keep the &str form: the issue-#139 subfolder retry runs after `path`
+    // is shadowed by the CStr16 the file protocol takes.
+    let orig_path = path;
     let path: &uefi::CStr16 = &path_c;
     use alloc::vec::Vec;
     use uefi::proto::media::file::{File, FileInfo, FileMode, FileAttribute};
@@ -737,6 +740,22 @@ fn read_boot_file_uncached(path: &str) -> Inner {
         Err(e) => {
             // NOT_FOUND is the one error that means "the stick does not carry it".
             if e.status() == uefi::Status::NOT_FOUND {
+                // Issue #139: both makers default to `-Out .\usbroot`, and a user
+                // who runs them with the STICK as the working directory leaves the
+                // whole folder on the volume instead of its contents. Root-only
+                // reads turned that into a silent "card skipped" with no unlock
+                // attempt at all (symptom: transaction never ran, ssdiag says
+                // NOT_UNLOCKED, reporter files it as a failed unlock).
+                // One read-only retry, one level down, guarded against recursion.
+                if !orig_path.starts_with("\\usbroot\\") {
+                    let alt = alloc::format!("\\usbroot{}", orig_path);
+                    let probe = read_boot_file_uncached(&alt);
+                    if matches!(probe, Inner::Content(_)) {
+                        info!("TX-ASSET-DIAG: {path} absent at the volume root - using {alt}");
+                        info!("TX: assets sit in a subfolder - the loader reads only the volume root; copy the CONTENTS of \\usbroot\\ to the stick root (issue #139)");
+                        return probe;
+                    }
+                }
                 info!("TX-ASSET-DIAG: {path} absent");
                 return Inner::Absent;
             }
