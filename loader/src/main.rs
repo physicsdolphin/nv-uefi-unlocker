@@ -177,7 +177,16 @@ fn main() -> Status {
 
     #[cfg(feature = "tx")]
     if let keywait::Confirm::Proceed = confirmed {
-        tx_phase(&gpus);
+        // \tx-dry-run.txt (issue #146): skip the transaction entirely - the
+        // armed prep still filled the asset cache and the OS loader is still
+        // preloaded, so the chain hands bootmgfw the FULL residency with zero
+        // GPU writes, no detach, no reconnect. The decisive control between
+        // "handoff residency" and "transaction side effects".
+        if chainload::boot_volume_has(cstr16!(r"\tx-dry-run.txt")) {
+            info!("TX-DRY-RUN: \\tx-dry-run.txt present - the GPU transaction is SKIPPED this boot (zero writes, no detach; prep + preload residency control, issue #146)");
+        } else {
+            tx_phase(&gpus);
+        }
     }
     #[cfg(not(feature = "tx"))]
     drop(confirmed);
@@ -276,6 +285,12 @@ fn tx_phase(gpus: &[pci::FoundGpu]) {
             "TX: FINAL: 0 card(s) unlocked - no transaction was attempted (reason(s) above); \
 nothing was written, nothing was detached"
         );
+    }
+    // \tx-free-assets.txt (issue #146): the cache is dead weight after the
+    // transaction - return it before the chain. Marker-gated for the A/B;
+    // the CHAIN-MEMMAP dump in chainload is the read-back.
+    if tx::probe_file(r"\tx-free-assets.txt") {
+        tx::clear_asset_cache();
     }
 }
 
