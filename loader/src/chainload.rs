@@ -48,6 +48,8 @@ const GENERIC_LAST: &CStr16 = cstr16!(r"\EFI\BOOT\BOOTX64.EFI");
 const NODE_TYPE_MEDIA: u8 = 0x04;
 const NODE_SUBTYPE_FILE: u8 = 0x04;
 const NODE_TYPE_END: u8 = 0x7f;
+/// MEDIA node subtype 0x01: Hard Drive (partition number + signature).
+const NODE_SUBTYPE_HD: u8 = 0x01;
 /// END_ENTIRE node: type 0x7f, subtype 0xff, length 0x0004 (little endian).
 const END_ENTIRE: [u8; 4] = [0x7f, 0xff, 0x04, 0x00];
 
@@ -166,7 +168,7 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
                 continue;
             };
             if dir.open(path, FileMode::Read, FileAttribute::empty()).is_ok() {
-                info!("CHAIN: loader found on {:?} ({}): {}", handle, volume_tag(*handle), path);
+                info!("CHAIN: loader found on {:?} ({}): {}", handle, volume_tag(*handle), cstr16_lossy(path));
                 drop(dir);
                 return start_loader(*handle, path);
             }
@@ -204,7 +206,7 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
             info!("CHAIN: no generic loader on {:?} (own={})", handle, is_own);
             continue;
         }
-        info!("CHAIN: generic loader present on {:?}: {}", handle, GENERIC_LAST);
+        info!("CHAIN: generic loader present on {:?}: {}", handle, cstr16_lossy(GENERIC_LAST));
         drop(dir);
         info!("CHAIN: fallback in 5 s - press ANY KEY to abort to the firmware shell");
         info!("CHAIN: unlock is COMPLETE and logged; the GPU is in a normal cold state -");
@@ -524,19 +526,68 @@ fn log_firmware_boot_order() {
     }
 }
 
-/// Short hex fingerprint of a volume handle's device path (first 24
-/// bytes) - enough to tell two ESPs apart in one log line.
+/// The node sequence of a volume's device path with the END node stripped.
+fn volume_path_bytes(handle: uefi::Handle) -> Option<Vec<u8>> {
+    // Safety: GetProtocol on the SFS handle, read-only byte view.
+    let dp = unsafe {
+        boot::open_protocol::<DevicePath>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .ok()?;
+    Some(strip_end_node(dp.as_bytes()).to_vec())
+}
+
+/// Decode an HD node payload's signature field into text (GPT GUID or MBR
+/// 4-byte ID). Payload layout: part @0..4, signature @20..36, type @36.
+fn hd_sig_text(payload: &[u8]) -> Option<alloc::string::String> {
+    if payload.len() < 37 {
+        return None;
+    }
+    let sig = &payload[20..36];
+    if payload[36] == 0x02 {
+        // GPT: the 16-byte signature IS the partition UUID, but UUIDs
+        // render with the first three fields byte-swapped.
+        let guid = uefi::Guid::from_bytes(sig.try_into().ok()?);
+        Some(alloc::format!("{guid}"))
+    } else {
+        Some(
+            sig.iter()
+                .take(4)
+                .map(|b| alloc::format!("{b:02x}"))
+                .collect::<alloc::vec::Vec<_>>()
+                .join(""),
+        )
+    }
+}
+
+/// One-line volume identity for the chain logs: the HD node decoded -
+/// partition number + signature (GUID form for GPT, 4-byte MBR form
+/// otherwise) - so two ESPs on two disks can be told apart AND matched
+/// against the boot option dump's hd(part,sig) fields by eye (issue #128
+/// self-diagnosis ask). Falls back to a short hex fingerprint when no HD
+/// node is present.
 fn volume_tag(handle: uefi::Handle) -> alloc::string::String {
     let tag = (|| {
-        // Safety: GetProtocol on the SFS handle, read-only byte view.
-        let dp = unsafe {
-            boot::open_protocol::<DevicePath>(
-                OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
-                OpenProtocolAttributes::GetProtocol,
-            )
+        let bytes = volume_path_bytes(handle)?;
+        let mut off = 0usize;
+        while off + 4 <= bytes.len() {
+            let len = u16::from_le_bytes([bytes[off + 2], bytes[off + 3]]) as usize;
+            if len < 4 || off + len > bytes.len() {
+                break;
+            }
+            if bytes[off] == NODE_TYPE_MEDIA && bytes[off + 1] == NODE_SUBTYPE_HD {
+                let payload = &bytes[off + 4..off + len];
+                let part = payload
+                    .get(..4)
+                    .map(|p| u32::from_le_bytes([p[0], p[1], p[2], p[3]]))
+                    .unwrap_or(0);
+                let sig = hd_sig_text(payload)?;
+                return Some(alloc::format!("hd(part{part},sig{sig})"));
+            }
+            off += len;
         }
-        .ok()?;
-        let bytes = dp.as_bytes();
         let n = bytes.len().min(24);
         Some(
             bytes[..n]
@@ -548,6 +599,88 @@ fn volume_tag(handle: uefi::Handle) -> alloc::string::String {
     })()
     .unwrap_or_else(|| alloc::string::String::from("nopath"));
     alloc::format!("vol={}", tag)
+}
+
+/// Diagnostic render of a device-path node sequence: one node per entry,
+/// with HD signatures decoded and generic payloads hexed (issue #128
+/// self-diagnosis: name the nodes instead of only "matched nothing").
+fn describe_nodes(bytes: &[u8]) -> alloc::string::String {
+    use alloc::format;
+    let mut out = alloc::string::String::new();
+    let mut off = 0usize;
+    let mut n = 0usize;
+    while off + 4 <= bytes.len() && n < 24 {
+        let (t, st) = (bytes[off], bytes[off + 1]);
+        let len = u16::from_le_bytes([bytes[off + 2], bytes[off + 3]]) as usize;
+        if len < 4 || off + len > bytes.len() {
+            out.push_str(&format!(" [{n}] malformed(len={len})"));
+            break;
+        }
+        let payload = &bytes[off + 4..off + len];
+        match (t, st) {
+            (0x7f, _) => out.push_str(&format!(" [{n}] end")),
+            (0x04, 0x04) => {
+                out.push_str(&format!(" [{n}] file:\"{}\"", ucs2_lossy_prefix(payload, 64)));
+            }
+            (0x04, 0x01) => {
+                let part = payload
+                    .get(..4)
+                    .map(|p| u32::from_le_bytes([p[0], p[1], p[2], p[3]]))
+                    .unwrap_or(0);
+                match hd_sig_text(payload) {
+                    Some(sig) => out.push_str(&format!(" [{n}] hd(part{part},sig{sig})")),
+                    None => out.push_str(&format!(" [{n}] hd(short,len={len})")),
+                }
+            }
+            _ => {
+                out.push_str(&format!(" [{n}] {t:#04x}/{st:#04x}/{len}:"));
+                for b in payload.iter().take(24) {
+                    out.push_str(&format!("{b:02x}"));
+                }
+                if payload.len() > 24 {
+                    out.push_str("..");
+                }
+            }
+        }
+        n += 1;
+        off += len;
+    }
+    if out.is_empty() {
+        out.push_str(" <empty>");
+    }
+    out
+}
+
+/// One device-path node at `off`: (type, subtype, payload). None when the
+/// node header or length runs past the buffer.
+fn node_at(bytes: &[u8], off: usize) -> Option<(u8, u8, &[u8])> {
+    if off + 4 > bytes.len() {
+        return None;
+    }
+    let len = u16::from_le_bytes([bytes[off + 2], bytes[off + 3]]) as usize;
+    if len < 4 || off + len > bytes.len() {
+        return None;
+    }
+    Some((bytes[off], bytes[off + 1], &bytes[off + 4..off + len]))
+}
+
+/// Ordinal of the first node where two node sequences differ; equal
+/// sequences diverge at their shared node count.
+fn first_divergent_node(a: &[u8], b: &[u8]) -> usize {
+    let (mut i, mut j, mut n) = (0usize, 0usize, 0usize);
+    loop {
+        match (node_at(a, i), node_at(b, j)) {
+            (Some((ta, sa, pa)), Some((tb, sb, pb))) => {
+                if ta != tb || sa != sb || pa != pb {
+                    return n;
+                }
+                i += 4 + pa.len();
+                j += 4 + pb.len();
+                n += 1;
+            }
+            _ => return n,
+        }
+    }
 }
 
 /// Parse `\chain-target.txt`: the first non-empty, non-`#` line is the
@@ -789,17 +922,20 @@ impl TargetPath {
     fn label(&self) -> alloc::string::String {
         match self {
             TargetPath::Pinned(_, s) => s.clone(),
-            TargetPath::BuiltIn(p) => alloc::format!("{p}"),
+            TargetPath::BuiltIn(p) => cstr16_lossy(p),
             TargetPath::Firmware(_, s) => s.clone(),
         }
     }
 }
 
-/// Split an EFI_LOAD_OPTION payload into (volume-prefix bytes, loader
-/// path): everything before the first FilePath node, and the UTF-16 path
-/// that node names. None when the option carries no plain file path (FV
-/// entries like UiApp/the built-in Shell) or is malformed.
-fn parse_load_option_paths(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc::string::String)> {
+/// Split a boot option's FilePathList into (device prefix, optional FILE
+/// path). Bulk entries - firmware-created volume entries carrying no FILE
+/// node (the QEMU/OVMF control showed the shape; bcdedit's "path" column
+/// is not part of the NVRAM option) - return the whole node list as the
+/// prefix with an empty path: the firmware chose the VOLUME, the loader
+/// finds the loader file among its candidates there. The FILE form keeps
+/// its exact path. None only when the list is malformed or empty.
+fn parse_option_device_scope(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc::vec::Vec<u8>)> {
     let mut i = 4usize; // attributes
     while i + 1 < data.len() {
         let c = u16::from_le_bytes([data[i], data[i + 1]]);
@@ -816,7 +952,7 @@ fn parse_load_option_paths(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc::s
             return None;
         }
         if t == NODE_TYPE_END {
-            return None;
+            break;
         }
         if t == NODE_TYPE_MEDIA && st == NODE_SUBTYPE_FILE {
             let prefix = data[i..off].to_vec();
@@ -824,11 +960,17 @@ fn parse_load_option_paths(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc::s
             if prefix.is_empty() || path.is_empty() || !path.starts_with('\\') {
                 return None;
             }
-            return Some((prefix, path));
+            return Some((prefix, path.into_bytes()));
         }
         off += len;
     }
-    None
+    // No FILE node: the whole node list is the device scope (empty list ->
+    // no scope at all, caller skips the entry).
+    let prefix = data[i..off].to_vec();
+    if prefix.is_empty() {
+        return None;
+    }
+    Some((prefix, alloc::vec::Vec::new()))
 }
 
 /// Does this SFS volume's device path match the option's volume prefix?
@@ -918,45 +1060,129 @@ fn firmware_resolved_target(fs_handles: &[uefi::Handle]) -> Option<(uefi::Handle
             info!("CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} unreadable - skipped", num);
             continue;
         };
-        let Some((prefix, path)) = parse_load_option_paths(&data) else {
+        let Some((prefix, path)) = parse_option_device_scope(&data) else {
             info!(
-                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} names no plain loader file (FV/bulk device entry) - skipped",
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} carries no device path (FV-only entry) - skipped",
                 num
             );
             continue;
         };
+        // An empty path is NOT a file path: it is the bulk form (the
+        // firmware chose the volume). Parsing it as "" reaches Dir::open
+        // with an empty CStr16, which INVALID_PARAMETERs (run8 control).
+        let file_path = if path.is_empty() {
+            None
+        } else {
+            match core::str::from_utf8(&path) {
+                Ok(s) => Some(alloc::string::String::from(s)),
+                Err(_) => {
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} loader path is not UTF-8 - volume candidate scan",
+                        num
+                    );
+                    None
+                }
+            }
+        };
+        let mut matched_volume = false;
         for handle in fs_handles.iter() {
             if !sfs_handle_matches_prefix(*handle, &prefix) {
                 continue;
             }
+            matched_volume = true;
             if own_volume_by_probe(*handle) {
-                info!("CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} resolves to OUR volume - skipped", num);
+                info!(
+                    "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} resolves to OUR volume {:?} ({}) - skipped",
+                    num,
+                    handle,
+                    volume_tag(*handle)
+                );
                 break;
             }
-            let Ok(path_c) = uefi::CString16::try_from(path.as_str()) else { break };
             let Some((mut dir, _)) = open_volume_logged(*handle) else { break };
-            match dir.open(path_ref(&path_c), FileMode::Read, FileAttribute::empty()) {
-                Ok(_) => {
-                    info!(
-                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} -> '{}' on the firmware's volume - chaining its choice",
-                        num, path
-                    );
-                    return Some((*handle, TargetPath::Firmware(path_c, path)));
+            // FILE-node form: the option names the loader file exactly.
+            if let Some(p) = file_path.as_ref() {
+                let Ok(path_c) = uefi::CString16::try_from(p.as_str()) else { break };
+                match dir.open(path_ref(&path_c), FileMode::Read, FileAttribute::empty()) {
+                    Ok(_) => {
+                        info!(
+                            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} -> '{}' on the firmware's volume - chaining its choice",
+                            num, p
+                        );
+                        return Some((*handle, TargetPath::Firmware(path_c, alloc::string::String::from(p))));
+                    }
+                    Err(e) => {
+                        info!(
+                            "CHAIN-BOOT: firmware resolve: [{rank}] '{}' does not open on {:?} ({}) ({:?}) - skipped",
+                            p,
+                            handle,
+                            volume_tag(*handle),
+                            e.status()
+                        );
+                        break;
+                    }
                 }
-                Err(e) => {
+            }
+            // Bulk form (no FILE node - the common real-firmware shape):
+            // the firmware chose the VOLUME; run the candidate scan on it.
+            // The volume's own removable default is the final probe: a bulk
+            // entry means "boot whatever this volume is set up to boot".
+            info!(
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} bulk device scope matched {:?} ({}) - scanning its candidates",
+                num,
+                handle,
+                volume_tag(*handle)
+            );
+            let mut picked: Option<&'static CStr16> = None;
+            for cand in CANDIDATES.iter().copied().chain(core::iter::once(GENERIC_LAST)) {
+                if dir.open(cand, FileMode::Read, FileAttribute::empty()).is_ok() {
+                    picked = Some(cand);
+                    break;
+                }
+            }
+            match picked {
+                Some(cand) => {
+                    let cand_str = cstr16_lossy(cand);
+                    let Ok(cand_c) = uefi::CString16::try_from(cand_str.as_str()) else { break };
                     info!(
-                        "CHAIN-BOOT: firmware resolve: [{rank}] '{}' does not open on the matched volume ({:?}) - skipped",
-                        path,
-                        e.status()
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} bulk device -> '{}' found on the firmware's volume - chaining its choice",
+                        num, cand_str
+                    );
+                    return Some((*handle, TargetPath::Firmware(cand_c, cand_str)));
+                }
+                None => {
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} bulk device volume carries no candidate loader - skipped",
+                        num
                     );
                     break;
                 }
             }
         }
-        info!(
-            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} '{}' matched no SimpleFileSystem volume by its device-path prefix - skipped",
-            num, path
-        );
+        if !matched_volume {
+            // Self-diagnosis (issue #128): the option's node list next to
+            // every live volume path, plus the first divergence ordinal -
+            // "which byte of which node differs" in one log block. Without
+            // this a systematic mismatch (stored path vs live enumeration)
+            // only ever reads as "matched nothing".
+            info!(
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} matched no SimpleFileSystem volume - prefix nodes:{}",
+                num,
+                describe_nodes(&prefix)
+            );
+            for (vi, handle) in fs_handles.iter().enumerate() {
+                let Some(vol) = volume_path_bytes(*handle) else { continue };
+                let div = first_divergent_node(&prefix, &vol);
+                info!(
+                    "CHAIN-BOOT: fs[{vi}] {:?} {} | first divergence node {div} (prefix {} B, volume {} B):{}",
+                    handle,
+                    volume_tag(*handle),
+                    prefix.len(),
+                    vol.len(),
+                    describe_nodes(&vol)
+                );
+            }
+        }
     }
     info!("CHAIN-BOOT: firmware resolve: no resolvable firmware option - volume scan fallback");
     None
@@ -965,6 +1191,20 @@ fn firmware_resolved_target(fs_handles: &[uefi::Handle]) -> Option<(uefi::Handle
 /// Borrow helper keeping the long match arm tidy.
 fn path_ref(c: &uefi::CString16) -> &CStr16 {
     c
+}
+
+/// Lossy UCS-2 decode of a CStr16 (format! on uefi-rs 0.41's CStr16
+/// Display rendered empty in the field; this is the explicit path).
+fn cstr16_lossy(c: &CStr16) -> alloc::string::String {
+    let mut s = alloc::string::String::new();
+    for unit in c.as_slice() {
+        let u: u16 = (*unit).into();
+        if u == 0 {
+            break;
+        }
+        s.push(char::from_u32(u as u32).unwrap_or('?'));
+    }
+    s
 }
 
 /// The specific-candidate scan (pinned pass 0 + built-in candidates pass 1),
