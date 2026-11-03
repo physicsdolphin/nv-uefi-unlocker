@@ -57,7 +57,7 @@
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；2484 仅 EFI、Windows 不保留 · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
-| GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限；**2520 为笔记本，GC6/D3cold 唤醒后、驱动 bind 前回锁，#126**）；🟢 其余；2560 待复测 · [详情](#device-13) |
+| GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限；**2520 为笔记本，观测到 GC6/D3cold 唤醒后、驱动 bind 前回锁，#126**）；🟢 其余；2560 待复测 · [详情](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9** / MX570 25a6 / 3050 Laptop **25a2** 等 | 🟡 待验证 · [详情](#device-14) |
 | **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14**；其余：2070 Rev.A1 早期 1f02 / 2060 1f08 / 2060 12GB QS 1f42、1f47 / 2070M 1f10、1f50 / 2060M 1f11、1f12、**1f15（独显直连载板 ✅ / MUXless 回锁）**、1f51、1f55 / 2070M MQ-Refresh 1f14、1f54 / Quadro RTX 3000M 1f36、1f76 / CMP 40HX **1f0b** / GTX 1660S（TU106 版）1f09 / GTX 1650（TU106 版）1f0a / 裸 TU106 1f04、TU106M 1f2e | ✅ 1f07/1f06/1f03/1f14；🟢 其余 · [详情](#device-15) |
 | TU102 | **RTX 2080 Ti 1e07（Rev. A）/ 1e04 / 1e06、2080 Ti 12GB 1e03** / TITAN RTX **1e02** / ES 1e2d、1e2e / CMP 50HX **1e09** / Quadro RTX 6000/8000 1e30、1e78 / Tesla T10 1e35、1e37、T40 1e38 / 裸 TU102GL 1e3c–1e3e | ✅ 1e07（原厂 11GB 与 22G 改装两形态，subsystem 1043/107D/19DA 等）；1e02 强注入无增益（出厂满速）；🟢 其余 · [详情](#device-16) |
@@ -173,7 +173,9 @@
 
 `1f07` / `1f06` / `1f03` / `1f14` 通过全链与系统侧验证。`1f03`（2060 12GB）在 v2.1.6 上 FWSEC 阶段 EXCI 失败，经 [issue #89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) 六轮受控实验定位为 4 GiB 边界 staging DMA 不可达（与 #74 同形），**FWSEC VRAM staging + BridgeMaster guard 修复后跑通**（2026-11-01）。`1f14`（2070 Laptop，炫龙 CNH5L 独显直连）为 0x91 家族修复验证（v2.1.3+，[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)）。**同 die 矿卡注记**：CMP 40HX = TU106 硅（`1f0b`，Pry 论文与 PZH1gdmu/CMP40HX-Unlock 的实机载体——TU106 事务族的谱系源头），段内可跑。Windows 必须启用 GSP-RM 并重启；交棒时 FEAT PLM 重锁、解锁值保留，解锁路径跳过 FLR。非标准显存容量应核对日志中的可用显存解码结果。**进行中**：驱动 621.01（GSP 620.67.01）与 630.20（GSP 630.03）下 Windows 侧出现 `nvlddmkm` PF FLR 复位冲回厂值（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)，1f06 与 1f07 双数据点，调查中）。
 
-**拓扑维度（2026-11-03 起单列为判据）**：回锁的决定变量是平台与显示拓扑，不是 SKU。同一颗 `1f15`、同一驱动 617.42 / GSP 615.78.05、逐字节相同的资产，在 X99 独显直连上 UEFI 全绿且启动后 10 分 15 秒 6 次采样恒定 `UNLOCKED`（`nvlddmkm` 0 事件，`GFW_PLM` 与 FEAT PLM 不趋同 = 初始化路径未触碰 FEAT 块），同一颗 die 回到 MUXless Optimus 笔记本则在绑定期回锁（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)）。同形态在 Ampere 上有独立复现且落在 GC6/D3cold 唤醒后、驱动 bind 之前（[#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)），即触发点是 dGPU 被停泊后再唤醒/再 bind 时固件或 EC 重跑 devinit。推论：对笔记本用户"升级驱动"只是换一条回锁路径，不是修复（直连平台 617.42 即可存活）。`#99` 的 PF FLR 属该族第二个子形态（复位型），两者分桶。
+**拓扑维度（观测模式，2026-11-03）**：目前只有两个数据点把回锁变量指向平台与显示拓扑而非 SKU——同一颗 `1f15`、同一驱动 617.42 / GSP 615.78.05、逐字节相同的资产，在 X99 独显直连上 UEFI 全绿且启动后 10 分 15 秒 6 次采样恒定 `UNLOCKED`（`nvlddmkm` 0 事件，`GFW_PLM` 与 FEAT PLM 不趋同 = 初始化路径未触碰 FEAT 块），同一颗 die 回到 MUXless Optimus 笔记本则在绑定期回锁（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)）；同形态在 Ampere 上有独立复现并落在 GC6/D3cold 唤醒后、驱动 bind 之前（[#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)）。**两例都还没做桌面 replay 反向对照，故按观测记录、不作定性。**
+
+机理上：**非独显直连平台上，解锁能否活过引导，取决于 MUX controller 的厂商行为设计与 EC 的厂商行为设计**——两者都会在自己认为该复位的时候重跑 devinit（把 FEAT 块推回厂值），且都不在驱动控制范围内。由此得到一条待验证的推论：对笔记本用户"升级驱动"只是换一条回锁路径，不是修复（直连平台 617.42 即可存活）。`#99` 的 PF FLR 记为同族的另一个观测形态（复位型），与回锁型分桶。
 
 来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89)、[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)、[GSP 前置](faq.md#turing)。
 
