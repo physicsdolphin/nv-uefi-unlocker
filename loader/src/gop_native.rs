@@ -413,15 +413,46 @@ fn handle_protocol_raw(handle: Handle, guid: &uefi::Guid) -> Option<*mut DriverB
 
 /// Readback (constitution §1.1): the target GPU must now own a GOP handle
 /// whose device path extends the GPU's device path.
+///
+/// The child may be installed a beat AFTER Start returns (notification-
+/// event paths inside the GOP driver), so this probes up to three times
+/// with a settle delay - Z170 run 2 saw Start=SUCCESS and then "no GOP
+/// child" 26 ms later with zero visibility into what the enumeration DID
+/// contain. Every probe now logs each GOP handle it saw (path length +
+/// belongs verdict); on the first probe non-belonging handles also dump a
+/// capped path hex, which separates "child exists but the path check
+/// rejects it" (a path-belongs_to bug, PR13-shaped) from "the driver
+/// really did not create a child" (timing/driver behavior) in one boot.
 fn verify_gop_child(pci_handle: Handle) -> Result<Handle, &'static str> {
-    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&GraphicsOutput::GUID))
-        .map_err(|_| "no gop handles after start")?;
-    for i in 0..handles.len() {
-        let gop = handles[i];
-        if path_belongs_to(
-            &device_path_bytes(pci_handle).unwrap_or_default(),
-            &device_path_bytes(gop).unwrap_or_default(),
-        ) {
+    let parent = device_path_bytes(pci_handle).unwrap_or_default();
+    for attempt in 0..3u32 {
+        if attempt > 0 {
+            boot::stall(core::time::Duration::from_millis(250));
+        }
+        let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&GraphicsOutput::GUID))
+            .map_err(|_| "no gop handles after start")?;
+        for i in 0..handles.len() {
+            let gop = handles[i];
+            let child_path = device_path_bytes(gop).unwrap_or_default();
+            let belongs = path_belongs_to(&parent, &child_path);
+            if belongs || attempt == 0 {
+                info!(
+                    "NATIVE-GOP: probe {attempt}: GOP handle {:?} path {} bytes belongs_to_target={belongs}",
+                    gop,
+                    child_path.len()
+                );
+                if !belongs && child_path.len() >= 4 {
+                    let n = child_path.len().min(40);
+                    let hex: alloc::string::String = child_path[..n]
+                        .iter()
+                        .map(|b| alloc::format!("{b:02x}"))
+                        .collect();
+                    info!("NATIVE-GOP: probe {attempt}: non-matching GOP path hex: {hex}");
+                }
+            }
+            if !belongs {
+                continue;
+            }
             // Opening the GOP is part of the check, not a bonus (issue
             // #107 review): a child whose GOP cannot be opened is not a
             // verified display path, so it must not count as success.
@@ -438,7 +469,10 @@ fn verify_gop_child(pci_handle: Handle) -> Result<Handle, &'static str> {
             } {
                 Ok(g) => {
                     let (w, h) = g.current_mode_info().resolution();
-                    info!("NATIVE-GOP: verified GOP child {:?} ({}x{})", gop, w, h);
+                    info!(
+                        "NATIVE-GOP: verified GOP child {:?} ({}x{}) after {attempt} probe(s)",
+                        gop, w, h
+                    );
                 }
                 Err(e) => {
                     info!(
@@ -450,8 +484,12 @@ fn verify_gop_child(pci_handle: Handle) -> Result<Handle, &'static str> {
             }
             return Ok(gop);
         }
+        info!(
+            "NATIVE-GOP: probe {attempt}: no GOP child on the target ({} GOP handle(s) on the system)",
+            handles.len()
+        );
     }
-    info!("NATIVE-GOP: no GOP child on the target after Start");
+    info!("NATIVE-GOP: no GOP child on the target after Start (3 probes, ~750 ms settle)");
     Err("no gop child on target")
 }
 
