@@ -125,7 +125,7 @@
 
 ### GA102 · 3090 Ti 2203 / 3090 2204 / 3080 2206 / 3080 12GB 220a / 3080 LHR 2216 / 3080 Ti 2208 / CMP 90HX 220d 等（0x2200..=0x223f 全段放行）
 
-`2206` / `2216` 通过固件读回与 Windows 性能验证；`2208`（3080 Ti，EVGA FTW3）经 [B 站 opus](https://www.bilibili.com/opus/1266090375307591685) 实测：冷启动不跑 U 盘 vs `--reapply` 同脚本 A/B——TF32 +73%/FP16 +67%/BF16 +68%、FP32 对照持平、官方 dense 达成率 91–98%；`2204`（3090）在 [Discussion #96](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/96) 有**双卡（X99-T8）系统侧成功**：ComfyUI bf16 工作流 +30~40%（口头数字、日志未附，按仅系统侧收录）；其余同族设备全段放行。实际收益受功耗和工作负载影响。
+`2206` / `2216` 通过固件读回与 Windows 性能验证；`2204`（3090）经 [#159](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/159) 在 Z790/AMI **免 marker 全绿**（对照 #106 同 ID X570 卡死——平台反差对），273 W 降压下 TF32 +58%/BF16 +50%/FP16 +44%、300 s 稳态 +38%，**输出哈希级 A/B**（SM 1440→1015 MHz 同功耗做更多功——功耗墙形态自证）；`2208`（3080 Ti，EVGA FTW3）经 [B 站 opus](https://www.bilibili.com/opus/1266090375307591685) 实测：冷启动不跑 U 盘 vs `--reapply` 同脚本 A/B——TF32 +73%/FP16 +67%/BF16 +68%、FP32 对照持平、官方 dense 达成率 91–98%；`2204`（3090）在 [Discussion #96](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/96) 有**双卡（X99-T8）系统侧成功**：ComfyUI bf16 工作流 +30~40%（口头数字、日志未附，按仅系统侧收录）；其余同族设备全段放行。实际收益受功耗和工作负载影响。
 
 `2206` **B350M-A 收官**（[#133](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/133)，2026-11-03，首个 AMD 300 系数据点）：recursive/non-recursive 双挂的 C1 形态经 **CSM Disabled 单变量消除**（`ConnectController` 1.45 s 正常返回）；`pnputil` 资源表前后对照实锤 CSM 模块占 legacy VGA（IO 3B0-3BB/3C0-3DF + A0000-BFFFF 关后消失、其余不变——C1 家族"CSM 占用"的参照证据形态）。性能（4096³ GEMM F32 acc，15 次中位）：FP16/BF16 53.5→101.5（**+90%**）、TF32 27→51.9（+92%）、FP32 持平；与 #29 的 MSI Z490 UNIFY 2206 相互印证。
 
