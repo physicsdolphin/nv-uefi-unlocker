@@ -1,0 +1,188 @@
+[   1356ms] INFO : loader::logging: log file \loader.log opened on boot volume
+[   1392ms] INFO : loader::logging: nv-uefi-unloader v2.1.9 (M0 skeleton: read-only)
+[   2641ms] INFO : loader: QUIET: \tx-quiet.txt present - console shows verdict lines only; every line still lands in \loader.log
+[   2660ms] INFO : loader: WATCHDOG: disabled
+[   2672ms] INFO : loader::banner: ==================================================
+[   2672ms] INFO : loader::banner:  nv-uefi-unlocker v2.1.9 (built Sun 2026-11-01 23:40:32 +08:00)
+[   2691ms] INFO : loader::banner:  ** TX BUILD: CONTAINS GPU-WRITE PATHS **
+[   2701ms] INFO : loader::banner: PROMPT: PRESS SPACE or ENTER to CONTINUE; other key / 30s no-key = ABORT (unlocks NOTHING)
+[   2720ms] INFO : loader::banner: PROMPT: armed \i_know_what_i_am_doing.txt = 5s auto-run, any key aborts; multi-GPU: all supported cards in order, \tx-select-bdf.txt (bb:dd.f) pins one; failure = no retry (next card still runs)
+[   2749ms] INFO : loader::banner: ==================================================
+[   2749ms] INFO : loader::banner: PHASE: CONFIRM
+[   2777ms] INFO : loader: CONFIRM: \i_know_what_i_am_doing.txt present - ARMED: 1s countdown auto-runs, ANY key aborts
+[   2796ms] INFO : loader::tx_prep: PREP: enumerate begin
+[   2796ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[   2818ms] INFO : loader::pci: ENUMERATE: 23 PciIo handles
+[   2818ms] INFO : loader::pci: PCI 0000:00:00.0 8086:3e20 class 000600
+[   2831ms] INFO : loader::pci: PCI 0000:00:01.0 8086:1901 class 000604
+[   2831ms] INFO : loader::pci: PCI 0000:01:00.0 10de:1f07 class 000300
+[   2831ms] INFO : loader::pci: NVIDIA GPU? 0000:01:00.0 device 1f07
+[   2831ms] INFO : loader::pci:   BAR0 32-bit mem base 0xde000000
+[   2831ms] INFO : loader::pci:   BAR1 64-bit mem base 0x00000000c0000000
+[   2831ms] INFO : loader::pci:   BAR3 64-bit mem base 0x00000000d0000000
+[   2831ms] INFO : loader::pci:   BAR5 io base 0xe000
+[   2831ms] INFO : loader::pci:   cap 0x01 @0x60
+[   2831ms] INFO : loader::pci:   cap 0x05 @0x68
+[   2831ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x11908de1 (FLR yes) LINKCAP 0x00454d03
+[   2844ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   2844ms] INFO : loader::pci: PCI 0000:01:00.1 10de:10f9 class 000403
+[   2844ms] INFO : loader::pci: NVIDIA fn 0000:01:00.1 device 10f9
+[   2844ms] INFO : loader::pci:   BAR0 32-bit mem base 0xdf080000
+[   2844ms] INFO : loader::pci:   cap 0x01 @0x60
+[   2844ms] INFO : loader::pci:   cap 0x05 @0x68
+[   2857ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x01908de1 (FLR no) LINKCAP 0x00454d03
+[   2870ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   2870ms] INFO : loader::pci: PCI 0000:01:00.2 10de:1ada class 000c03
+[   2870ms] INFO : loader::pci: NVIDIA fn 0000:01:00.2 device 1ada
+[   2870ms] INFO : loader::pci:   BAR0 64-bit mem base 0x00000000d2000000
+[   2870ms] INFO : loader::pci:   BAR3 64-bit mem base 0x00000000d2040000
+[   2870ms] INFO : loader::pci:   cap 0x05 @0x68
+[   2870ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x01908de0 (FLR no) LINKCAP 0x00454d03
+[   2883ms] INFO : loader::pci:   cap 0x01 @0xb4
+[   2883ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   2883ms] INFO : loader::pci: PCI 0000:01:00.3 10de:1adb class 000c80
+[   2883ms] INFO : loader::pci: NVIDIA fn 0000:01:00.3 device 1adb
+[   2883ms] INFO : loader::pci:   BAR0 32-bit mem base 0xdf084000
+[   2883ms] INFO : loader::pci:   cap 0x05 @0x68
+[   2883ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x01908de0 (FLR no) LINKCAP 0x00454d03
+[   2895ms] INFO : loader::pci:   cap 0x01 @0xb4
+[   2908ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   2908ms] INFO : loader::pci: PCI 0000:00:02.0 8086:3e9b class 000300
+[   2908ms] INFO : loader::pci: PCI 0000:00:14.0 8086:a12f class 000c03
+[   2908ms] INFO : loader::pci: PCI 0000:00:17.0 8086:a102 class 000106
+[   2908ms] INFO : loader::pci: PCI 0000:00:1b.0 8086:a167 class 000604
+[   2908ms] INFO : loader::pci: PCI 0000:00:1c.0 8086:a110 class 000604
+[   2908ms] INFO : loader::pci: PCI 0000:03:00.0 1b21:1242 class 000c03
+[   2908ms] INFO : loader::pci: PCI 0000:00:1c.2 8086:a112 class 000604
+[   2908ms] INFO : loader::pci: PCI 0000:04:00.0 1b21:1080 class 000604
+[   2908ms] INFO : loader::pci: PCI 0000:00:1c.5 8086:a115 class 000604
+[   2908ms] INFO : loader::pci: PCI 0000:06:00.0 8086:2723 class 000280
+[   2908ms] INFO : loader::pci: PCI 0000:00:1d.0 8086:a118 class 000604
+[   2908ms] INFO : loader::pci: PCI 0000:07:00.0 144d:a808 class 000108
+[   2908ms] INFO : loader::pci: PCI 0000:00:1f.0 8086:a145 class 000601
+[   2908ms] INFO : loader::pci: PCI 0000:00:1f.2 8086:a121 class 000580
+[   2908ms] INFO : loader::pci: PCI 0000:00:1f.3 8086:a170 class 000403
+[   4146ms] INFO : loader::pci: PCI 0000:00:1f.4 8086:a123 class 000c05
+[   4146ms] INFO : loader::pci: PCI 0000:00:1f.6 8086:15b8 class 000200
+[   4146ms] INFO : loader::tx_prep: CONFIRM: key Printable(' ') during the 1s armed countdown - ABORT (no GPU writes this boot)
+[   4165ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[   4188ms] INFO : loader::pci: ENUMERATE: 23 PciIo handles
+[   4188ms] INFO : loader::pci: PCI 0000:00:00.0 8086:3e20 class 000600
+[   4188ms] INFO : loader::pci: PCI 0000:00:01.0 8086:1901 class 000604
+[   4188ms] INFO : loader::pci: PCI 0000:01:00.0 10de:1f07 class 000300
+[   4188ms] INFO : loader::pci: NVIDIA GPU? 0000:01:00.0 device 1f07
+[   4188ms] INFO : loader::pci:   BAR0 32-bit mem base 0xde000000
+[   4188ms] INFO : loader::pci:   BAR1 64-bit mem base 0x00000000c0000000
+[   4188ms] INFO : loader::pci:   BAR3 64-bit mem base 0x00000000d0000000
+[   4188ms] INFO : loader::pci:   BAR5 io base 0xe000
+[   4188ms] INFO : loader::pci:   cap 0x01 @0x60
+[   4188ms] INFO : loader::pci:   cap 0x05 @0x68
+[   4188ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x11908de1 (FLR yes) LINKCAP 0x00454d03
+[   4201ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   4201ms] INFO : loader::pci: PCI 0000:01:00.1 10de:10f9 class 000403
+[   4201ms] INFO : loader::pci: NVIDIA fn 0000:01:00.1 device 10f9
+[   4201ms] INFO : loader::pci:   BAR0 32-bit mem base 0xdf080000
+[   4201ms] INFO : loader::pci:   cap 0x01 @0x60
+[   4201ms] INFO : loader::pci:   cap 0x05 @0x68
+[   4201ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x01908de1 (FLR no) LINKCAP 0x00454d03
+[   4214ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   4214ms] INFO : loader::pci: PCI 0000:01:00.2 10de:1ada class 000c03
+[   4214ms] INFO : loader::pci: NVIDIA fn 0000:01:00.2 device 1ada
+[   4214ms] INFO : loader::pci:   BAR0 64-bit mem base 0x00000000d2000000
+[   4214ms] INFO : loader::pci:   BAR3 64-bit mem base 0x00000000d2040000
+[   4214ms] INFO : loader::pci:   cap 0x05 @0x68
+[   4214ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x01908de0 (FLR no) LINKCAP 0x00454d03
+[   4227ms] INFO : loader::pci:   cap 0x01 @0xb4
+[   4227ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   4239ms] INFO : loader::pci: PCI 0000:01:00.3 10de:1adb class 000c80
+[   4239ms] INFO : loader::pci: NVIDIA fn 0000:01:00.3 device 1adb
+[   4239ms] INFO : loader::pci:   BAR0 32-bit mem base 0xdf084000
+[   4239ms] INFO : loader::pci:   cap 0x05 @0x68
+[   4239ms] INFO : loader::pci:   PCIe cap @0x78: DEVCAP 0x01908de0 (FLR no) LINKCAP 0x00454d03
+[   4252ms] INFO : loader::pci:   cap 0x01 @0xb4
+[   4252ms] ERROR: loader::pci: cfg_read32(0x0100) status UNSUPPORTED
+[   4252ms] INFO : loader::pci: PCI 0000:00:02.0 8086:3e9b class 000300
+[   4252ms] INFO : loader::pci: PCI 0000:00:14.0 8086:a12f class 000c03
+[   4252ms] INFO : loader::pci: PCI 0000:00:17.0 8086:a102 class 000106
+[   4252ms] INFO : loader::pci: PCI 0000:00:1b.0 8086:a167 class 000604
+[   4252ms] INFO : loader::pci: PCI 0000:00:1c.0 8086:a110 class 000604
+[   4252ms] INFO : loader::pci: PCI 0000:03:00.0 1b21:1242 class 000c03
+[   4252ms] INFO : loader::pci: PCI 0000:00:1c.2 8086:a112 class 000604
+[   4252ms] INFO : loader::pci: PCI 0000:04:00.0 1b21:1080 class 000604
+[   4252ms] INFO : loader::pci: PCI 0000:00:1c.5 8086:a115 class 000604
+[   5478ms] INFO : loader::pci: PCI 0000:06:00.0 8086:2723 class 000280
+[   5478ms] INFO : loader::pci: PCI 0000:00:1d.0 8086:a118 class 000604
+[   5478ms] INFO : loader::pci: PCI 0000:07:00.0 144d:a808 class 000108
+[   5478ms] INFO : loader::pci: PCI 0000:00:1f.0 8086:a145 class 000601
+[   5478ms] INFO : loader::pci: PCI 0000:00:1f.2 8086:a121 class 000580
+[   5478ms] INFO : loader::pci: PCI 0000:00:1f.3 8086:a170 class 000403
+[   5478ms] INFO : loader::pci: PCI 0000:00:1f.4 8086:a123 class 000c05
+[   5478ms] INFO : loader::pci: PCI 0000:00:1f.6 8086:15b8 class 000200
+[   5478ms] INFO : loader::gop: PHASE: GOP-PROBE (read-only)
+[   5500ms] INFO : loader::gop: GOP-PROBE: 1 GOP handles
+[   5500ms] INFO : loader::gop: GOP handle Handle(0x3a120ad8): 1024x768 Bgr
+[   5500ms] INFO : loader::sample: PHASE: SAMPLE (M1 read-only cold state)
+[   5523ms] INFO : loader::sample: SAMPLE: GPU 10de:1f07 @ 0000:01:00.0
+[   5523ms] INFO : loader::sample: SAMPLE PMC_BOOT_0 chip-id = 0xffffffff [NO_DECODE]
+[   5523ms] INFO : loader::sample: SAMPLE FB_SIZE_MIB 0x1183a4 = 0xffffffff [NO_DECODE]
+[   5523ms] INFO : loader::sample: SAMPLE VGA_WORKSPACE 0x625f04 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE GFW_PLM 0x118128 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE GFW_SCRATCH 0x118234 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE GSP_CPUCTL 0x110100 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE PGC6_BSI_SCRATCH15 0x1180fc = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE MMU_PLM 0x1fa7c8 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE MMU_LOCK_LO 0x1fa82c = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE MMU_LOCK_HI 0x1fa830 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE WPR2_LO 0x1fa824 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE WPR2_HI 0x1fa828 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE SEC2_CPUCTL 0x840100 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE FUSE_OPT_FEAT_OVR_DISABLE 0x8203f0 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE FUSE_VER 0x824140 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE FUSE_VER_DECODE 0x8241c0 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE AD1xx CYA 0x88724 = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE AD1xx CFG 0x88dcc = 0xffffffff [NO_DECODE]
+[   5536ms] INFO : loader::sample: SAMPLE AD1xx XVE_PLM 0x88ff4 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE AD1xx BAR1_CAP_MIRROR 0x88bbc = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE ADA WPR_PLM 0x1fa7c4 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE ADA WPRCFG_PLM 0x1fa7cc = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE ADA FBPA_PLM 0x9a0148 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE TU10x FEAT_PLM 0x409650 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE TU10x FEAT_SS0 0x409664 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE TU10x FEAT_READOUT 0x409668 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XP3G PLM0 0x8e1b0 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XP3G PLMC 0x8e1bc = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XP3G OVR0 0x8e110 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XP3G VAL0 0x8e120 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XVE LNKCAP 0x88084 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XVE LNKCTL 0x88088 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XVE LNKCAP2 0x880a4 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE XVE LNKCTL2 0x880a8 = 0xffffffff [NO_DECODE]
+[   5548ms] INFO : loader::sample: SAMPLE LNK MISC_1 0x8841c = 0xffffffff [NO_DECODE]
+[   6787ms] INFO : loader::sample: SAMPLE LNK VSEC_HIER 0x88610 = 0xffffffff [NO_DECODE]
+[   6787ms] INFO : loader::sample: SAMPLE LNK LTSSM_KICK 0x8872c = 0xffffffff [NO_DECODE]
+[   6787ms] INFO : loader::sample: SAMPLE LNK LINK_CONFIG_0 0x8c040 = 0xffffffff [NO_DECODE]
+[   6787ms] INFO : loader::sample: SAMPLE LNK PL_LINK_RATE 0x8c1c0 = 0xffffffff [NO_DECODE]
+[   6787ms] INFO : loader::sample: SAMPLE LNK CYA_DISG2 0x8c2c0 = 0xffffffff [NO_DECODE]
+[   6787ms] INFO : loader::sample: SAMPLE FEAT sweep 0x823800-0x82382f+0x823b00 (dword stride): 0 ok / 0 badf / 13 all-ones / 0 read-errors
+[   6787ms] INFO : loader::sample: SAMPLE: BAR0 not decoding at sample time (all-ones) - MEM enable happens in the claim; a card that stays all-ones after it is powered off (D3cold)
+[   6787ms] INFO : loader::sample: SAMPLE FEAT_READOUT_1 = 0xffffffff (0 = no compute throttle active)
+[   6787ms] INFO : loader::sample: SAMPLE PSTRAPS SET0 0x101000 = 0xffffffff [NO_DECODE] / SET1 0x10100c = 0xffffffff [NO_DECODE]
+[   6794ms] INFO : loader::sample: SAMPLE NV_PROM first 0x10000 bytes: crc32 0xdeab7e4e, magic 0xffffffff (window all-ones - CRC not an identity)
+[   6794ms] INFO : loader::sample: SAMPLE complete (read-only, nothing restored because nothing touched)
+[   6794ms] INFO : loader::chainload: PHASE: CHAIN
+[   6816ms] INFO : loader::chainload: CHAIN-BOOT: BootOrder 3 entries
+[   6839ms] INFO : loader::chainload: CHAIN-BOOT: [0] Boot0001: attrs=0x1 desc="UEFI: General UDisk 5.00, Partition 1" path= node(0x02,0x01,12) node(0x01,0x01,6) node(0x03,0x05,6) hd(part1,sig2:2161f02086280a4a87a4746778042193) END
+[   6882ms] INFO : loader::chainload: CHAIN-BOOT: [1] Boot0002: attrs=0x1 desc="UEFI: General UDisk 5.00, Partition 2" path= node(0x02,0x01,12) node(0x01,0x01,6) node(0x03,0x05,6) hd(part2,sig2:dbd391c81422294e896546a6ff8a638b) END
+[   6924ms] INFO : loader::chainload: CHAIN-BOOT: [2] Boot0000: attrs=0x9 desc="tWindows Boot Manager" path= hd(part1,sig2:c1908b28d826c04bbb969cc03997723e) file:"\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI" END  <WINDOWS>
+[   6966ms] INFO : loader::chainload: CHAIN-BOOT: firmware's first Windows target = [2] Boot0000
+[   6997ms] INFO : loader::chainload: CHAIN: reconnect pass over 23 PciIo handles (NVIDIA display skipped)
+[   7029ms] INFO : loader::chainload: CHAIN: reconnect skipped on NVIDIA display Handle(0x3a1d6e58)
+[   7191ms] INFO : loader::chainload: CHAIN: reconnect pass done
+[   7512ms] INFO : loader::chainload: CHAIN: 8 SimpleFileSystem handles
+[   7536ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: 3 entries, self=Boot0001
+[   7568ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [0] Boot0001 is this boot (self) - skipped
+[   7600ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [1] Boot0002 resolves to OUR volume Handle(0x3a113e18) (vol=hd(part2,sigc891d3db-2214-4e29-8965-46a6ff8a638b)) - skipped
+[   7642ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [2] Boot0000 short-form HD option hd(part1,sig288b90c1-26d8-4bc0-bb96-9cc03997723e) - matching partition identity (firmware BmExpandPartitionDevicePath)
+[   7684ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [2] Boot0000 short-form HD identity match on Handle(0x3a49b898) (vol=hd(part1,sig288b90c1-26d8-4bc0-bb96-9cc03997723e)) - not by path alignment
+[   7726ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [2] Boot0000 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI' on the firmware's volume - chaining its choice
+[   7767ms] INFO : loader::chainload: CHAIN: LoadImage (FromDevicePath)
