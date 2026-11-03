@@ -928,14 +928,40 @@ impl TargetPath {
     }
 }
 
-/// Split a boot option's FilePathList into (device prefix, optional FILE
-/// path). Bulk entries - firmware-created volume entries carrying no FILE
-/// node (the QEMU/OVMF control showed the shape; bcdedit's "path" column
-/// is not part of the NVRAM option) - return the whole node list as the
-/// prefix with an empty path: the firmware chose the VOLUME, the loader
-/// finds the loader file among its candidates there. The FILE form keeps
-/// its exact path. None only when the list is malformed or empty.
-fn parse_option_device_scope(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc::vec::Vec<u8>)> {
+/// The device scope of a boot option's FilePathList (issue #128). Three
+/// shapes reach real firmware; two of them are "short forms" (UEFI 2.10
+/// §3.3) that never align with a live volume path node 0 and therefore
+/// cannot be resolved by prefix comparison:
+///
+/// - `Volume`: full device path prefix (head-aligned). An empty `path` is
+///   the bulk form - firmware-created volume entries carrying no FILE node
+///   (the QEMU/OVMF control showed the shape; bcdedit's "path" column is
+///   not part of the NVRAM option): the firmware chose the VOLUME, the
+///   loader finds the loader file among its candidates there;
+/// - `ShortFormHd`: the list starts at an HD node - exactly what
+///   `bcfg boot addp` writes ("Only the portion of the device path
+///   starting with the hard drive partition is placed in the option").
+///   Firmware expands it in `BmExpandPartitionDevicePath` by partition
+///   identity, never by alignment. run17 (#128) is this shape: a 42-byte
+///   single HD node against 66-82-byte volume paths;
+/// - `ShortFormFile`: a bare FilePath node - firmware searches every
+///   volume for it (`BmExpandFileDevicePath`).
+///
+/// None only when the list is malformed or empty.
+enum OptionScope {
+    Volume { prefix: alloc::vec::Vec<u8>, path: alloc::vec::Vec<u8> },
+    ShortFormHd {
+        /// The HD node itself.
+        hd: alloc::vec::Vec<u8>,
+        /// Nodes between the HD node and the FILE node (nested partitions;
+        /// empty in practice).
+        tail: alloc::vec::Vec<u8>,
+        path: alloc::vec::Vec<u8>,
+    },
+    ShortFormFile { path: alloc::vec::Vec<u8> },
+}
+
+fn parse_option_device_scope(data: &[u8]) -> Option<OptionScope> {
     let mut i = 4usize; // attributes
     while i + 1 < data.len() {
         let c = u16::from_le_bytes([data[i], data[i + 1]]);
@@ -944,9 +970,14 @@ fn parse_option_device_scope(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc:
             break;
         }
     }
+    let list = i;
+    // Node boundaries up to END so the shape can be classified before the
+    // FILE split: a leading FILE node means a bare short form, not an
+    // empty device prefix.
+    let mut nodes: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::new();
     let mut off = i;
     while off + 4 <= data.len() {
-        let (t, st) = (data[off], data[off + 1]);
+        let t = data[off];
         let len = u16::from_le_bytes([data[off + 2], data[off + 3]]) as usize;
         if len < 4 || off + len > data.len() {
             return None;
@@ -954,23 +985,192 @@ fn parse_option_device_scope(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc:
         if t == NODE_TYPE_END {
             break;
         }
-        if t == NODE_TYPE_MEDIA && st == NODE_SUBTYPE_FILE {
-            let prefix = data[i..off].to_vec();
-            let path = ucs2_lossy_prefix(&data[off + 4..off + len], 240);
-            if prefix.is_empty() || path.is_empty() || !path.starts_with('\\') {
+        nodes.push((off, off + len));
+        off += len;
+    }
+    if nodes.is_empty() {
+        return None;
+    }
+    let file_node = nodes
+        .iter()
+        .position(|(s, _)| data[*s] == NODE_TYPE_MEDIA && data[*s + 1] == NODE_SUBTYPE_FILE);
+    if file_node == Some(0) {
+        let (s, e) = nodes[0];
+        let path = ucs2_lossy_prefix(&data[s + 4..e], 240);
+        if path.is_empty() || !path.starts_with('\\') {
+            return None;
+        }
+        return Some(OptionScope::ShortFormFile { path: path.into_bytes() });
+    }
+    let (device_end, path) = match file_node {
+        Some(k) => {
+            let (s, e) = nodes[k];
+            let path = ucs2_lossy_prefix(&data[s + 4..e], 240);
+            if path.is_empty() || !path.starts_with('\\') {
                 return None;
             }
-            return Some((prefix, path.into_bytes()));
+            (s, path.into_bytes())
+        }
+        // No FILE node: the whole node list is the device scope (bulk).
+        None => (off, alloc::vec::Vec::new()),
+    };
+    if device_end <= list {
+        return None;
+    }
+    if data[list] == NODE_TYPE_MEDIA && data[list + 1] == NODE_SUBTYPE_HD {
+        let hd_end = nodes[0].1;
+        return Some(OptionScope::ShortFormHd {
+            hd: data[list..hd_end].to_vec(),
+            tail: data[hd_end..device_end].to_vec(),
+            path,
+        });
+    }
+    Some(OptionScope::Volume { prefix: data[list..device_end].to_vec(), path })
+}
+
+/// HD node identity match, EDK2 `BmMatchPartitionDevicePathNode`
+/// semantics (MdeModulePkg/Library/UefiBootManagerLib/BmBoot.c): walk the
+/// WHOLE volume path for an HD node and compare the four identity fields
+/// only - partition number, MBR type, signature type, 16-byte signature.
+/// Start/size are not identity (they move when a partition is resized or
+/// re-created; firmware never compares them). GPT signatures are the
+/// partition GUID, not the disk GUID.
+fn hd_identity_match_in(bytes: &[u8], option_hd: &[u8], option_tail: &[u8]) -> bool {
+    // 4 header + 4 part + 8 start + 8 size + 16 sig + 2 type bytes.
+    const HD_LEN: usize = 42;
+    if option_hd.len() < HD_LEN {
+        return false;
+    }
+    let vol = strip_end_node(bytes);
+    let mut off = 0usize;
+    while off + 4 <= vol.len() {
+        let len = u16::from_le_bytes([vol[off + 2], vol[off + 3]]) as usize;
+        if len < 4 || off + len > vol.len() {
+            return false;
+        }
+        if vol[off] == NODE_TYPE_MEDIA && vol[off + 1] == NODE_SUBTYPE_HD && len >= HD_LEN {
+            let node = &vol[off..off + len];
+            // Nodes the option carries AFTER the HD node (nested
+            // partitions) must line up with the volume's remainder; the
+            // empty tail is the normal case and trivially true.
+            if node[4..8] == option_hd[4..8]
+                && node[24..40] == option_hd[24..40]
+                && node[40] == option_hd[40]
+                && node[41] == option_hd[41]
+                && vol[off + len..].starts_with(option_tail)
+            {
+                return true;
+            }
         }
         off += len;
     }
-    // No FILE node: the whole node list is the device scope (empty list ->
-    // no scope at all, caller skips the entry).
-    let prefix = data[i..off].to_vec();
-    if prefix.is_empty() {
+    false
+}
+
+/// `hd_identity_match_in` against a live volume handle.
+fn hd_identity_matches(handle: uefi::Handle, option_hd: &[u8], option_tail: &[u8]) -> bool {
+    // Safety: GetProtocol discipline for a byte view of the device path.
+    let Ok(dp) = (unsafe {
+        boot::open_protocol::<DevicePath>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        return false;
+    };
+    hd_identity_match_in(dp.as_bytes(), option_hd, option_tail)
+}
+
+/// `hd(partN,sig...)` for logs - the option's own identity fields.
+fn describe_hd(node: &[u8]) -> alloc::string::String {
+    let part = if node.len() >= 8 {
+        u32::from_le_bytes([node[4], node[5], node[6], node[7]])
+    } else {
+        0
+    };
+    match hd_sig_text(node.get(4..).unwrap_or(&[])) {
+        Some(sig) => alloc::format!("hd(part{part},sig{sig})"),
+        None => alloc::format!("hd(part{part})"),
+    }
+}
+
+/// Open the chosen volume and take `path` verbatim, or run the bulk
+/// candidate scan when the option named no file.
+fn chain_on_option_volume(
+    handle: uefi::Handle,
+    num: u16,
+    rank: usize,
+    path: Option<&str>,
+) -> Option<(uefi::Handle, TargetPath)> {
+    let (mut dir, _) = open_volume_logged(handle)?;
+    match path {
+        Some(p) => {
+            let Ok(path_c) = uefi::CString16::try_from(p) else { return None };
+            match dir.open(path_ref(&path_c), FileMode::Read, FileAttribute::empty()) {
+                Ok(_) => {
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{num:04X} -> '{}' on the firmware's volume - chaining its choice",
+                        p
+                    );
+                    Some((handle, TargetPath::Firmware(path_c, alloc::string::String::from(p))))
+                }
+                Err(e) => {
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] '{}' does not open on {:?} ({}) ({:?}) - skipped",
+                        p,
+                        handle,
+                        volume_tag(handle),
+                        e.status()
+                    );
+                    None
+                }
+            }
+        }
+        None => {
+            // Bulk form (no FILE node - the common real-firmware shape):
+            // the firmware chose the VOLUME; run the candidate scan on it.
+            // The volume's own removable default is the final probe: a bulk
+            // entry means "boot whatever this volume is set up to boot".
+            info!(
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{num:04X} bulk device scope matched {:?} ({}) - scanning its candidates",
+                handle,
+                volume_tag(handle)
+            );
+            let mut picked: Option<&'static CStr16> = None;
+            for cand in CANDIDATES.iter().copied().chain(core::iter::once(GENERIC_LAST)) {
+                if dir.open(cand, FileMode::Read, FileAttribute::empty()).is_ok() {
+                    picked = Some(cand);
+                    break;
+                }
+            }
+            let cand = picked?;
+            let cand_str = cstr16_lossy(cand);
+            let Ok(cand_c) = uefi::CString16::try_from(cand_str.as_str()) else { return None };
+            info!(
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{num:04X} bulk device -> '{}' found on the firmware's volume - chaining its choice",
+                cand_str
+            );
+            Some((handle, TargetPath::Firmware(cand_c, cand_str)))
+        }
+    }
+}
+
+/// Decode an option's loader path, logging the non-UTF-8 case. Empty is
+/// `None` (bulk: never feed `""` to `Dir::open`, it INVALID_PARAMETERs -
+/// run8 control).
+fn option_file_path(path: &[u8], num: u16, rank: usize) -> Option<alloc::string::String> {
+    if path.is_empty() {
         return None;
     }
-    Some((prefix, alloc::vec::Vec::new()))
+    match core::str::from_utf8(path) {
+        Ok(s) => Some(alloc::string::String::from(s)),
+        Err(_) => {
+            info!(
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{num:04X} loader path is not UTF-8 - volume candidate scan"
+            );
+            None
+        }
+    }
 }
 
 /// Does this SFS volume's device path match the option's volume prefix?
@@ -1060,126 +1260,163 @@ fn firmware_resolved_target(fs_handles: &[uefi::Handle]) -> Option<(uefi::Handle
             info!("CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} unreadable - skipped", num);
             continue;
         };
-        let Some((prefix, path)) = parse_option_device_scope(&data) else {
+        let Some(scope) = parse_option_device_scope(&data) else {
             info!(
-                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} carries no device path (FV-only entry) - skipped",
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} carries no parsable device path (FV-only or malformed) - skipped",
                 num
             );
             continue;
         };
-        // An empty path is NOT a file path: it is the bulk form (the
-        // firmware chose the volume). Parsing it as "" reaches Dir::open
-        // with an empty CStr16, which INVALID_PARAMETERs (run8 control).
-        let file_path = if path.is_empty() {
-            None
-        } else {
-            match core::str::from_utf8(&path) {
-                Ok(s) => Some(alloc::string::String::from(s)),
-                Err(_) => {
-                    info!(
-                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} loader path is not UTF-8 - volume candidate scan",
-                        num
-                    );
-                    None
-                }
-            }
-        };
-        let mut matched_volume = false;
-        for handle in fs_handles.iter() {
-            if !sfs_handle_matches_prefix(*handle, &prefix) {
-                continue;
-            }
-            matched_volume = true;
-            if own_volume_by_probe(*handle) {
-                info!(
-                    "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} resolves to OUR volume {:?} ({}) - skipped",
-                    num,
-                    handle,
-                    volume_tag(*handle)
-                );
-                break;
-            }
-            let Some((mut dir, _)) = open_volume_logged(*handle) else { break };
-            // FILE-node form: the option names the loader file exactly.
-            if let Some(p) = file_path.as_ref() {
-                let Ok(path_c) = uefi::CString16::try_from(p.as_str()) else { break };
-                match dir.open(path_ref(&path_c), FileMode::Read, FileAttribute::empty()) {
-                    Ok(_) => {
-                        info!(
-                            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} -> '{}' on the firmware's volume - chaining its choice",
-                            num, p
-                        );
-                        return Some((*handle, TargetPath::Firmware(path_c, alloc::string::String::from(p))));
+        match scope {
+            OptionScope::Volume { prefix, path } => {
+                let file_path = option_file_path(&path, *num, rank);
+                let mut matched_volume = false;
+                for handle in fs_handles.iter() {
+                    if !sfs_handle_matches_prefix(*handle, &prefix) {
+                        continue;
                     }
-                    Err(e) => {
+                    matched_volume = true;
+                    if own_volume_by_probe(*handle) {
                         info!(
-                            "CHAIN-BOOT: firmware resolve: [{rank}] '{}' does not open on {:?} ({}) ({:?}) - skipped",
-                            p,
+                            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} resolves to OUR volume {:?} ({}) - skipped",
+                            num,
                             handle,
-                            volume_tag(*handle),
-                            e.status()
+                            volume_tag(*handle)
                         );
                         break;
                     }
+                    match chain_on_option_volume(*handle, *num, rank, file_path.as_deref()) {
+                        Some(target) => return Some(target),
+                        None => break,
+                    }
+                }
+                if !matched_volume {
+                    // Self-diagnosis (issue #128): the option's node list next
+                    // to every live volume path, plus the first divergence
+                    // ordinal - "which byte of which node differs" in one log
+                    // block. Without this a systematic mismatch (stored path
+                    // vs live enumeration) only ever reads as "matched
+                    // nothing".
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} matched no SimpleFileSystem volume - prefix nodes:{}",
+                        num,
+                        describe_nodes(&prefix)
+                    );
+                    for (vi, handle) in fs_handles.iter().enumerate() {
+                        let Some(vol) = volume_path_bytes(*handle) else { continue };
+                        let div = first_divergent_node(&prefix, &vol);
+                        info!(
+                            "CHAIN-BOOT: fs[{vi}] {:?} {} | first divergence node {div} (prefix {} B, volume {} B):{}",
+                            handle,
+                            volume_tag(*handle),
+                            prefix.len(),
+                            vol.len(),
+                            describe_nodes(&vol)
+                        );
+                    }
                 }
             }
-            // Bulk form (no FILE node - the common real-firmware shape):
-            // the firmware chose the VOLUME; run the candidate scan on it.
-            // The volume's own removable default is the final probe: a bulk
-            // entry means "boot whatever this volume is set up to boot".
-            info!(
-                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} bulk device scope matched {:?} ({}) - scanning its candidates",
-                num,
-                handle,
-                volume_tag(*handle)
-            );
-            let mut picked: Option<&'static CStr16> = None;
-            for cand in CANDIDATES.iter().copied().chain(core::iter::once(GENERIC_LAST)) {
-                if dir.open(cand, FileMode::Read, FileAttribute::empty()).is_ok() {
-                    picked = Some(cand);
+            OptionScope::ShortFormHd { hd, tail, path } => {
+                // UEFI §3.3 short form (what `bcfg boot addp` writes):
+                // firmware expands by partition identity, not by node
+                // alignment. Head-prefix comparison can never match here -
+                // node 0 is HD against PciRoot on every volume (run17).
+                let file_path = option_file_path(&path, *num, rank);
+                let ident = describe_hd(&hd);
+                info!(
+                    "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} short-form HD option {} - matching partition identity (firmware BmExpandPartitionDevicePath)",
+                    num, ident
+                );
+                let mut matched_volume = false;
+                for handle in fs_handles.iter() {
+                    if !hd_identity_matches(*handle, &hd, &tail) {
+                        continue;
+                    }
+                    matched_volume = true;
+                    if own_volume_by_probe(*handle) {
+                        info!(
+                            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} short-form HD resolves to OUR volume {:?} ({}) - skipped",
+                            num,
+                            handle,
+                            volume_tag(*handle)
+                        );
+                        break;
+                    }
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} short-form HD identity match on {:?} ({}) - not by path alignment",
+                        num,
+                        handle,
+                        volume_tag(*handle)
+                    );
+                    if !tail.is_empty() {
+                        info!(
+                            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} HD option carries {} trailing node byte(s) - file opened on the matched volume",
+                            num,
+                            tail.len()
+                        );
+                    }
+                    match chain_on_option_volume(*handle, *num, rank, file_path.as_deref()) {
+                        Some(target) => return Some(target),
+                        None => break,
+                    }
+                }
+                if !matched_volume {
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} short-form HD identity {} matched no SimpleFileSystem volume",
+                        num, ident
+                    );
+                }
+            }
+            OptionScope::ShortFormFile { path } => {
+                // UEFI §3.3 short form: bare FilePath node. Firmware
+                // searches every volume and takes the first holder
+                // (`BmExpandFileDevicePath`); our own volume is kept only
+                // as the last resort so it cannot beat a real target.
+                let Some(p) = option_file_path(&path, *num, rank) else { continue };
+                let Ok(path_c) = uefi::CString16::try_from(p.as_str()) else { continue };
+                info!(
+                    "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} short-form FILE option '{}' - searching every volume (firmware BmExpandFileDevicePath)",
+                    num, p
+                );
+                let mut own: Option<uefi::Handle> = None;
+                let mut chosen: Option<uefi::Handle> = None;
+                for handle in fs_handles.iter() {
+                    let Some((mut dir, _)) = open_volume_logged(*handle) else { continue };
+                    if dir.open(path_ref(&path_c), FileMode::Read, FileAttribute::empty()).is_err() {
+                        continue;
+                    }
+                    if own_volume_by_probe(*handle) {
+                        info!(
+                            "CHAIN-BOOT: firmware resolve: [{rank}] '{}' also opens on OUR volume {:?} ({}) - last resort",
+                            p,
+                            handle,
+                            volume_tag(*handle)
+                        );
+                        own = Some(*handle);
+                        continue;
+                    }
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] '{}' found on {:?} ({}) - chaining its choice",
+                        p,
+                        handle,
+                        volume_tag(*handle)
+                    );
+                    chosen = Some(*handle);
                     break;
                 }
-            }
-            match picked {
-                Some(cand) => {
-                    let cand_str = cstr16_lossy(cand);
-                    let Ok(cand_c) = uefi::CString16::try_from(cand_str.as_str()) else { break };
-                    info!(
-                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} bulk device -> '{}' found on the firmware's volume - chaining its choice",
-                        num, cand_str
-                    );
-                    return Some((*handle, TargetPath::Firmware(cand_c, cand_str)));
+                if let Some(handle) = chosen {
+                    return Some((handle, TargetPath::Firmware(path_c, p)));
                 }
-                None => {
+                if let Some(handle) = own {
                     info!(
-                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} bulk device volume carries no candidate loader - skipped",
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} chaining its choice from OUR volume (only holder)",
                         num
                     );
-                    break;
+                    return Some((handle, TargetPath::Firmware(path_c, p)));
                 }
-            }
-        }
-        if !matched_volume {
-            // Self-diagnosis (issue #128): the option's node list next to
-            // every live volume path, plus the first divergence ordinal -
-            // "which byte of which node differs" in one log block. Without
-            // this a systematic mismatch (stored path vs live enumeration)
-            // only ever reads as "matched nothing".
-            info!(
-                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} matched no SimpleFileSystem volume - prefix nodes:{}",
-                num,
-                describe_nodes(&prefix)
-            );
-            for (vi, handle) in fs_handles.iter().enumerate() {
-                let Some(vol) = volume_path_bytes(*handle) else { continue };
-                let div = first_divergent_node(&prefix, &vol);
                 info!(
-                    "CHAIN-BOOT: fs[{vi}] {:?} {} | first divergence node {div} (prefix {} B, volume {} B):{}",
-                    handle,
-                    volume_tag(*handle),
-                    prefix.len(),
-                    vol.len(),
-                    describe_nodes(&vol)
+                    "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} short-form FILE option opens on no volume - skipped",
+                    num
                 );
             }
         }
