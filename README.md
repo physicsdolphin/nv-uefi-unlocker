@@ -388,6 +388,8 @@ bash release/make-usbroot.sh --family 40 \
   [PBX Science](https://pbxscience.com/open-source-nv-uefi-unlocker-lifts-tensor-core-limits-on-rtx-20-30-and-40-gpus-with-gains-of-up-to-75-in-tests/)（EN） ·
   [Fosswire](https://fosswire.org/news/open-source-nv-uefi-unlocker-tool-removes-nvidia-tensor-limi)（EN） ·
   [YouTube/Kempinator Gaming](https://www.youtube.com/watch?v=TulzjBvbdjo)（EN） ·
+  [YouTube/duffytechnology – overview](https://www.youtube.com/watch?v=y11Pluqoqhg)（EN） ·
+  [YouTube/duffytechnology – full walkthrough](https://www.youtube.com/watch?v=hrw1KBTM1EQ)（EN）
   [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/)（EN） ·
   [Quasar Zone](https://quasarzone.com/bbs/qn_hardware/views/2085634)（KO） ·
   [GiggleHD](https://gigglehd.com/gg/hard/19358883)（KO） ·
