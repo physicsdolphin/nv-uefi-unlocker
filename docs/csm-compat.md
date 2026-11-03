@@ -34,6 +34,13 @@ reconnect 之前**显式选择**原厂 GOP 驱动，不调用会卡死的通用 
 | 3 | CSM on + `\tx-reconnect-nonrecursive.txt` | 非递归 vendor-GOP-only 绑定在 CSM 下的行为 |
 | 4 | CSM on + `\tx-native-gop.txt` | **本计划主体**：显式原厂 GOP 恢复（#107 报告者已在自有实现上验证该思路可行） |
 
+## 3.1 实测记录（2026-11-03 更新）
+
+- **CSM Disabled 单变量消除 C1 已有三例**：#107（B550/AD103，原报告）、#133（B350M/2206，+90% 收官）、#134 同板族待回。**CSM off 是 C1 的第一动作**（先于任何 marker 实验）。
+- **"CSM 占用 legacy VGA" 的参照证据形态**（#133 实证）：`pnputil /enum-devices /resources` 在 CSM on 时含 IO `3B0-3BB`/`3C0-3DF` + MEM `A0000-BFFFF`，CSM off 后消失、其余不变。
+- **黑屏误判警告**（#133 报告者实测踩坑）：清除全部 marker 后 loader 在 CONFIRM 停 30 s 然后 `ABORT (zero GPU writes)`——黑屏下极易误读为"CSM 没起作用"。判读点：日志末行为 ABORT = 没跑事务，不是事务失败。
+- 空 marker（0 字节）自 v2.1.9 重建资产（`fc1f70ac` 起）起即为合法开关形态，无需占位字节。
+
 ## 4. GOP 模块的来源（无下载依赖，按宪法 §1.6）
 
 1. **本卡影子 ROM（默认，零下载）**：固件枚举时已把整块 Option ROM 影子拷进 UEFI RAM（`PciIo RomImage`），loader 直接解析——与卡绝对匹配，无分发问题。
