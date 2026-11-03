@@ -37,7 +37,7 @@
 <text class="fg" x="700" y="182" font-size="11" text-anchor="end">97.5 → 194.9</text>
 <text class="mut" x="34" y="204" font-size="11" text-anchor="end">5</text>
 <text class="fg" x="44" y="204" font-size="12">RTX 4070 Ti SUPER</text>
-<text class="mut" x="44" y="204" font-size="11"><tspan x="172.4">AD103 · 66 SM</tspan></text>
+<text class="mut" x="44" y="204" font-size="11"><tspan x="172.4">AD103 · 亦有 AD102 变体（同规格） · 66 SM</tspan></text>
 <rect class="trk" x="252" y="197" width="330" height="9" rx="2"/>
 <rect class="g40" x="252.0" y="197.0" width="176.2" height="9" rx="2"/>
 <rect class="lock" x="252.0" y="197.0" width="88.1" height="9" rx="2"/>

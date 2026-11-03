@@ -45,10 +45,16 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
 #gpu-ceiling .g20 .bar{background:var(--gc-20)}
 #gpu-ceiling .g30 .bar{background:var(--gc-30)}
 #gpu-ceiling .g40 .bar{background:var(--gc-40)}
+#gpu-ceiling .g50 .bar{background:var(--muted-foreground)}
 #gpu-ceiling .trk .bar.lock{background:var(--muted);background-color:var(--gc-lock)}
 #gpu-ceiling .ft{margin-top:8px;font-size:11px;line-height:1.5;color:var(--muted-foreground)}
 #gpu-ceiling .ft p{margin:0 0 2px}
 #gpu-ceiling .ft code{font-size:11px}
+#gpu-ceiling .rw.sel{background:var(--muted);box-shadow:inset 3px 0 0 var(--foreground)}
+#gpu-ceiling .rw.sel .nm{font-weight:600}
+#gpu-ceiling .jr{font-size:11px;color:var(--foreground);border:1px solid var(--border);border-radius:3px;padding:0 3px;margin-left:5px;font-variant-numeric:tabular-nums;vertical-align:1px}
+#gpu-ceiling.cmp .rw:not(.na){cursor:pointer}
+#gpu-ceiling .sw.dis{opacity:.45}
 @media (max-width:440px){
   #gpu-ceiling .rw{grid-template-columns:18px minmax(0,1fr) 92px;row-gap:2px}
   #gpu-ceiling .trk{grid-column:2/4}
@@ -73,6 +79,8 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
   <span class="sws">
     <label class="sw"><input type="checkbox" id="gc-stock" checked> 显示出厂现值</label>
     <label class="sw"><input type="checkbox" id="gc-mob" checked> 含笔记本</label>
+    <label class="sw"><input type="checkbox" id="gc-cmp"> 比较模式</label>
+    <label class="sw"><input type="checkbox" id="gc-r50" checked> 50 系对照</label>
   </span>
   <span id="gc-peak" class="peak"></span>
 </div>
@@ -82,6 +90,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
   <span><i style="background:var(--gc-20)"></i>20 系</span>
   <span><i style="background:var(--gc-30)"></i>30 系</span>
   <span><i style="background:var(--gc-40)"></i>解锁后上限</span>
+  <span><i style="background:var(--muted-foreground)"></i>50 系对照（不支持解锁）</span>
 </div>
 
 <ul class="rows" id="gc-rows" role="list"></ul>
@@ -91,7 +100,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
 
 <script>
 (function(){
-  var D=[{"n":"GeForce RTX 2060","g":"20","c":"TU106","s":30,"f":6.5,"t":null,"h":[25.8,51.6],"b":null,"e":null},{"n":"GeForce RTX 2060 TU104","g":"20","c":"TU104（TU106 标准版换芯）","s":30,"f":12.9,"t":null,"h":[25.8,51.6],"b":null,"e":null},{"n":"GeForce RTX 2060 SUPER","g":"20","c":"TU106","s":34,"f":7.2,"t":null,"h":[28.7,57.4],"b":null,"e":null},{"n":"GeForce RTX 2070","g":"20","c":"TU106","s":36,"f":7.5,"t":null,"h":[29.9,59.7],"b":null,"e":null},{"n":"GeForce RTX 2070 SUPER","g":"20","c":"TU104","s":40,"f":9.1,"t":null,"h":[36.2,72.5],"b":null,"e":null},{"n":"GeForce RTX 2080","g":"20","c":"TU104","s":46,"f":10.1,"t":null,"h":[40.3,80.5],"b":null,"e":null},{"n":"GeForce RTX 2080 SUPER","g":"20","c":"TU104","s":48,"f":11.2,"t":null,"h":[44.6,89.2],"b":null,"e":null},{"n":"GeForce RTX 2080 Ti","g":"20","c":"TU102","s":68,"f":13.4,"t":null,"h":[53.8,107.6],"b":null,"e":null},{"n":"Titan RTX","g":"20","c":"TU102","s":72,"f":16.3,"t":null,"h":[65.2,130.5],"b":null,"e":null},{"n":"GeForce RTX 3050 6 GB","g":"30","c":"GA107","s":18,"f":6.8,"t":[6.8,6.8],"h":[6.8,13.5],"b":[6.8,13.5],"e":null},{"n":"GeForce RTX 3050","g":"30","c":"GA107/GA106 双芯","s":20,"f":9.1,"t":[9.1,9.1],"h":[9.1,18.2],"b":[9.1,18.2],"e":null},{"n":"GeForce RTX 3060 8 GB","g":"30","c":"GA106 · 亦有 GA104 变体","s":28,"f":12.7,"t":[12.7,12.7],"h":[12.7,25.5],"b":[12.7,25.5],"e":null},{"n":"GeForce RTX 3060 8 GB GA104","g":"30","c":"GA104（GA106 标准版换芯）","s":28,"f":12.7,"t":[12.7,12.7],"h":[25.4,50.8],"b":[25.4,50.8],"e":null},{"n":"GeForce RTX 3060 12 GB","g":"30","c":"GA106","s":28,"f":12.7,"t":[12.7,12.7],"h":[12.7,25.5],"b":[12.7,25.5],"e":null},{"n":"GeForce RTX 3060 Ti","g":"30","c":"GA104","s":38,"f":16.2,"t":[16.2,16.2],"h":[16.2,32.4],"b":[16.2,32.4],"e":null},{"n":"GeForce RTX 3070","g":"30","c":"GA104","s":46,"f":20.3,"t":[20.3,20.3],"h":[20.3,40.6],"b":[20.3,40.6],"e":null},{"n":"GeForce RTX 3070 Ti","g":"30","c":"GA104","s":48,"f":21.8,"t":[21.8,21.8],"h":[21.8,43.5],"b":[21.8,43.5],"e":null},{"n":"GeForce RTX 3080","g":"30","c":"GA102","s":68,"f":29.8,"t":[29.8,29.8],"h":[29.8,59.5],"b":[29.8,59.5],"e":null},{"n":"GeForce RTX 3080 12 GB","g":"30","c":"GA102","s":70,"f":30.6,"t":[30.6,30.6],"h":[30.6,61.3],"b":[30.6,61.3],"e":null},{"n":"GeForce RTX 3080 Ti","g":"30","c":"GA102","s":80,"f":34.1,"t":[34.1,34.1],"h":[34.1,68.2],"b":[34.1,68.2],"e":null},{"n":"GeForce RTX 3090","g":"30","c":"GA102","s":82,"f":35.6,"t":[35.6,35.6],"h":[35.6,71.2],"b":[35.6,71.2],"e":null},{"n":"GeForce RTX 3090 Ti","g":"30","c":"GA102","s":84,"f":40.0,"t":[40.0,40.0],"h":[40.0,80.0],"b":[40.0,80.0],"e":null},{"n":"GeForce RTX 4060","g":"40","c":"AD107","s":24,"f":15.1,"t":[15.1,30.2],"h":[30.2,60.5],"b":[30.2,60.5],"e":[60.5,120.9]},{"n":"GeForce RTX 4060 Ti 8 GB","g":"40","c":"AD106","s":34,"f":22.1,"t":[22.1,44.1],"h":[44.1,88.3],"b":[44.1,88.3],"e":[88.3,176.5]},{"n":"GeForce RTX 4060 Ti 16 GB","g":"40","c":"AD106","s":34,"f":22.1,"t":[22.1,44.1],"h":[44.1,88.3],"b":[44.1,88.3],"e":[88.3,176.5]},{"n":"GeForce RTX 4070","g":"40","c":"AD104","s":46,"f":29.1,"t":[29.1,58.3],"h":[58.3,116.6],"b":[58.3,116.6],"e":[116.6,233.2]},{"n":"GeForce RTX 4070 SUPER","g":"40","c":"AD104","s":56,"f":35.5,"t":[35.5,71.0],"h":[71.0,141.9],"b":[71.0,141.9],"e":[141.9,283.9]},{"n":"GeForce RTX 4070 Ti","g":"40","c":"AD104","s":60,"f":40.1,"t":[40.1,80.2],"h":[80.2,160.4],"b":[80.2,160.4],"e":[160.4,320.7]},{"n":"GeForce RTX 4070 Ti SUPER","g":"40","c":"AD103","s":66,"f":44.1,"t":[44.1,88.2],"h":[88.2,176.4],"b":[88.2,176.4],"e":[176.4,352.8]},{"n":"GeForce RTX 4080","g":"40","c":"AD103","s":76,"f":48.7,"t":[48.7,97.5],"h":[97.5,194.9],"b":[97.5,194.9],"e":[194.9,389.9]},{"n":"GeForce RTX 4080 SUPER","g":"40","c":"AD103","s":80,"f":52.2,"t":[52.2,104.4],"h":[104.4,208.9],"b":[104.4,208.9],"e":[208.9,417.8]},{"n":"GeForce RTX 4090 D","g":"40","c":"AD102","s":114,"f":73.5,"t":[73.5,147.1],"h":[147.1,294.2],"b":[147.1,294.2],"e":[294.2,588.4]},{"n":"GeForce RTX 4090","g":"40","c":"AD102","s":128,"f":82.6,"t":[82.6,165.2],"h":[165.2,330.3],"b":[165.2,330.3],"e":[330.3,660.6]},{"n":"RTX 2050","g":"20","c":"GA107（Ampere 硅片）","s":16,"f":6.0,"t":[6.0,6.0],"h":[12.0,24.0],"b":[12.0,24.0],"e":null,"m":1},{"n":"RTX 2060","g":"20","c":"TU106 · 亦有 TU104 变体","s":30,"f":9.2,"t":null,"h":[18.4,36.8],"b":null,"e":null,"m":1},{"n":"RTX 2070","g":"20","c":"TU106 · 亦有 TU104 变体","s":36,"f":13.3,"t":null,"h":[26.6,53.2],"b":null,"e":null,"m":1},{"n":"RTX 2070 SUPER","g":"20","c":"TU104","s":40,"f":14.1,"t":null,"h":[28.2,56.4],"b":null,"e":null,"m":1},{"n":"RTX 2080","g":"20","c":"TU104","s":46,"f":18.7,"t":null,"h":[37.4,74.8],"b":null,"e":null,"m":1},{"n":"RTX 2080 SUPER","g":"20","c":"TU104","s":48,"f":19.2,"t":null,"h":[38.4,76.8],"b":null,"e":null,"m":1},{"n":"RTX 3050","g":"30","c":"GA107","s":16,"f":6.1,"t":[6.1,6.1],"h":[12.2,24.4],"b":[12.2,24.4],"e":null,"m":1},{"n":"RTX 3050 Ti","g":"30","c":"GA107","s":20,"f":8.7,"t":[8.7,8.7],"h":[17.4,34.8],"b":[17.4,34.8],"e":null,"m":1},{"n":"RTX 3060","g":"30","c":"GA106 · 8 GB 版=GA104","s":30,"f":13.1,"t":[13.1,13.1],"h":[26.2,52.4],"b":[26.2,52.4],"e":null,"m":1},{"n":"RTX 3070","g":"30","c":"GA104","s":40,"f":17.6,"t":[17.6,17.6],"h":[35.2,70.4],"b":[35.2,70.4],"e":null,"m":1},{"n":"RTX 3070 Ti","g":"30","c":"GA104","s":46,"f":17.5,"t":[17.5,17.5],"h":[35.0,70.0],"b":[35.0,70.0],"e":null,"m":1},{"n":"RTX 3080","g":"30","c":"GA104","s":48,"f":22.2,"t":[22.2,22.2],"h":[44.4,88.8],"b":[44.4,88.8],"e":null,"m":1},{"n":"RTX 3080 Ti","g":"30","c":"GA103","s":58,"f":23.6,"t":[23.6,23.6],"h":[47.2,94.4],"b":[47.2,94.4],"e":null,"m":1},{"n":"RTX 4050","g":"40","c":"AD107","s":20,"f":12.1,"t":[12.1,24.2],"h":[24.2,48.4],"b":[24.2,48.4],"e":[48.4,96.8],"m":1},{"n":"RTX 4060","g":"40","c":"AD107","s":24,"f":14.6,"t":[14.6,29.2],"h":[29.2,58.4],"b":[29.2,58.4],"e":[58.4,116.8],"m":1},{"n":"RTX 4070","g":"40","c":"AD106","s":36,"f":20.0,"t":[20.0,40.0],"h":[40.0,80.0],"b":[40.0,80.0],"e":[80.0,160.0],"m":1},{"n":"RTX 4080","g":"40","c":"AD104","s":58,"f":33.9,"t":[33.9,67.8],"h":[67.8,135.6],"b":[67.8,135.6],"e":[135.6,271.2],"m":1},{"n":"RTX 4090","g":"40","c":"AD103","s":76,"f":50.2,"t":[50.2,100.4],"h":[100.4,200.8],"b":[100.4,200.8],"e":[200.8,401.6],"m":1}];
+  var D=[{"n":"GeForce RTX 2060","g":"20","c":"TU106","s":30,"f":6.5,"t":null,"h":[25.8,51.6],"b":null,"e":null},{"n":"GeForce RTX 2060 TU104","g":"20","c":"TU104（TU106 标准版换芯）","s":30,"f":12.9,"t":null,"h":[25.8,51.6],"b":null,"e":null},{"n":"GeForce RTX 2060 SUPER","g":"20","c":"TU106","s":34,"f":7.2,"t":null,"h":[28.7,57.4],"b":null,"e":null},{"n":"GeForce RTX 2070","g":"20","c":"TU106","s":36,"f":7.5,"t":null,"h":[29.9,59.7],"b":null,"e":null},{"n":"GeForce RTX 2070 SUPER","g":"20","c":"TU104","s":40,"f":9.1,"t":null,"h":[36.2,72.5],"b":null,"e":null},{"n":"GeForce RTX 2080","g":"20","c":"TU104","s":46,"f":10.1,"t":null,"h":[40.3,80.5],"b":null,"e":null},{"n":"GeForce RTX 2080 SUPER","g":"20","c":"TU104","s":48,"f":11.2,"t":null,"h":[44.6,89.2],"b":null,"e":null},{"n":"GeForce RTX 2080 Ti","g":"20","c":"TU102","s":68,"f":13.4,"t":null,"h":[53.8,107.6],"b":null,"e":null},{"n":"Titan RTX","g":"20","c":"TU102","s":72,"f":16.3,"t":null,"h":[65.2,130.5],"b":null,"e":null},{"n":"GeForce RTX 3050 6 GB","g":"30","c":"GA107","s":18,"f":6.8,"t":[6.8,6.8],"h":[6.8,13.5],"b":[6.8,13.5],"e":null},{"n":"GeForce RTX 3050","g":"30","c":"GA107/GA106 双芯","s":20,"f":9.1,"t":[9.1,9.1],"h":[9.1,18.2],"b":[9.1,18.2],"e":null},{"n":"GeForce RTX 3060 8 GB","g":"30","c":"GA106 · 亦有 GA104 变体","s":28,"f":12.7,"t":[12.7,12.7],"h":[12.7,25.5],"b":[12.7,25.5],"e":null},{"n":"GeForce RTX 3060 8 GB GA104","g":"30","c":"GA104（GA106 标准版换芯）","s":28,"f":12.7,"t":[12.7,12.7],"h":[25.4,50.8],"b":[25.4,50.8],"e":null},{"n":"GeForce RTX 3060 12 GB","g":"30","c":"GA106","s":28,"f":12.7,"t":[12.7,12.7],"h":[12.7,25.5],"b":[12.7,25.5],"e":null},{"n":"GeForce RTX 3060 Ti","g":"30","c":"GA104","s":38,"f":16.2,"t":[16.2,16.2],"h":[16.2,32.4],"b":[16.2,32.4],"e":null},{"n":"GeForce RTX 3070","g":"30","c":"GA104","s":46,"f":20.3,"t":[20.3,20.3],"h":[20.3,40.6],"b":[20.3,40.6],"e":null},{"n":"GeForce RTX 3070 Ti","g":"30","c":"GA104","s":48,"f":21.8,"t":[21.8,21.8],"h":[21.8,43.5],"b":[21.8,43.5],"e":null},{"n":"GeForce RTX 3080","g":"30","c":"GA102","s":68,"f":29.8,"t":[29.8,29.8],"h":[29.8,59.5],"b":[29.8,59.5],"e":null},{"n":"GeForce RTX 3080 12 GB","g":"30","c":"GA102","s":70,"f":30.6,"t":[30.6,30.6],"h":[30.6,61.3],"b":[30.6,61.3],"e":null},{"n":"GeForce RTX 3080 Ti","g":"30","c":"GA102","s":80,"f":34.1,"t":[34.1,34.1],"h":[34.1,68.2],"b":[34.1,68.2],"e":null},{"n":"GeForce RTX 3090","g":"30","c":"GA102","s":82,"f":35.6,"t":[35.6,35.6],"h":[35.6,71.2],"b":[35.6,71.2],"e":null},{"n":"GeForce RTX 3090 Ti","g":"30","c":"GA102","s":84,"f":40.0,"t":[40.0,40.0],"h":[40.0,80.0],"b":[40.0,80.0],"e":null},{"n":"GeForce RTX 4060","g":"40","c":"AD107","s":24,"f":15.1,"t":[15.1,30.2],"h":[30.2,60.5],"b":[30.2,60.5],"e":[60.5,120.9]},{"n":"GeForce RTX 4060 Ti 8 GB","g":"40","c":"AD106","s":34,"f":22.1,"t":[22.1,44.1],"h":[44.1,88.3],"b":[44.1,88.3],"e":[88.3,176.5]},{"n":"GeForce RTX 4060 Ti 16 GB","g":"40","c":"AD106","s":34,"f":22.1,"t":[22.1,44.1],"h":[44.1,88.3],"b":[44.1,88.3],"e":[88.3,176.5]},{"n":"GeForce RTX 4070","g":"40","c":"AD104","s":46,"f":29.1,"t":[29.1,58.3],"h":[58.3,116.6],"b":[58.3,116.6],"e":[116.6,233.2]},{"n":"GeForce RTX 4070 SUPER","g":"40","c":"AD104","s":56,"f":35.5,"t":[35.5,71.0],"h":[71.0,141.9],"b":[71.0,141.9],"e":[141.9,283.9]},{"n":"GeForce RTX 4070 Ti","g":"40","c":"AD104","s":60,"f":40.1,"t":[40.1,80.2],"h":[80.2,160.4],"b":[80.2,160.4],"e":[160.4,320.7]},{"n":"GeForce RTX 4070 Ti SUPER","g":"40","c":"AD103 · 亦有 AD102 变体（同规格）","s":66,"f":44.1,"t":[44.1,88.2],"h":[88.2,176.4],"b":[88.2,176.4],"e":[176.4,352.8]},{"n":"GeForce RTX 4080","g":"40","c":"AD103","s":76,"f":48.7,"t":[48.7,97.5],"h":[97.5,194.9],"b":[97.5,194.9],"e":[194.9,389.9]},{"n":"GeForce RTX 4080 SUPER","g":"40","c":"AD103","s":80,"f":52.2,"t":[52.2,104.4],"h":[104.4,208.9],"b":[104.4,208.9],"e":[208.9,417.8]},{"n":"GeForce RTX 4090 D","g":"40","c":"AD102","s":114,"f":73.5,"t":[73.5,147.1],"h":[147.1,294.2],"b":[147.1,294.2],"e":[294.2,588.4]},{"n":"GeForce RTX 4090","g":"40","c":"AD102","s":128,"f":82.6,"t":[82.6,165.2],"h":[165.2,330.3],"b":[165.2,330.3],"e":[330.3,660.6]},{"n":"RTX 2050","g":"20","c":"GA107（Ampere 硅片）","s":16,"f":6.0,"t":[6.0,6.0],"h":[12.0,24.0],"b":[12.0,24.0],"e":null,"m":1},{"n":"RTX 2060","g":"20","c":"TU106 · 亦有 TU104 变体","s":30,"f":4.6,"t":null,"h":[18.4,36.8],"b":null,"e":null,"m":1},{"n":"RTX 2070","g":"20","c":"TU106 · 亦有 TU104 变体","s":36,"f":6.6,"t":null,"h":[26.6,53.2],"b":null,"e":null,"m":1},{"n":"RTX 2070 SUPER","g":"20","c":"TU104","s":40,"f":7.1,"t":null,"h":[28.2,56.4],"b":null,"e":null,"m":1},{"n":"RTX 2080","g":"20","c":"TU104","s":46,"f":9.4,"t":null,"h":[37.4,74.8],"b":null,"e":null,"m":1},{"n":"RTX 2080 SUPER","g":"20","c":"TU104","s":48,"f":9.6,"t":null,"h":[38.4,76.8],"b":null,"e":null,"m":1},{"n":"RTX 3050","g":"30","c":"GA107","s":16,"f":6.1,"t":[6.1,6.1],"h":[12.2,24.4],"b":[12.2,24.4],"e":null,"m":1},{"n":"RTX 3050 Ti","g":"30","c":"GA107","s":20,"f":8.7,"t":[8.7,8.7],"h":[17.4,34.8],"b":[17.4,34.8],"e":null,"m":1},{"n":"RTX 3060","g":"30","c":"GA106","s":30,"f":13.1,"t":[13.1,13.1],"h":[26.2,52.4],"b":[26.2,52.4],"e":null,"m":1},{"n":"RTX 3070","g":"30","c":"GA104","s":40,"f":17.6,"t":[17.6,17.6],"h":[35.2,70.4],"b":[35.2,70.4],"e":null,"m":1},{"n":"RTX 3070 Ti","g":"30","c":"GA104","s":46,"f":17.5,"t":[17.5,17.5],"h":[35.0,70.0],"b":[35.0,70.0],"e":null,"m":1},{"n":"RTX 3080","g":"30","c":"GA104","s":48,"f":22.2,"t":[22.2,22.2],"h":[44.4,88.8],"b":[44.4,88.8],"e":null,"m":1},{"n":"RTX 3080 Ti","g":"30","c":"GA103","s":58,"f":23.6,"t":[23.6,23.6],"h":[47.2,94.4],"b":[47.2,94.4],"e":null,"m":1},{"n":"RTX 4050","g":"40","c":"AD107","s":20,"f":12.1,"t":[12.1,24.2],"h":[24.2,48.4],"b":[24.2,48.4],"e":[48.4,96.8],"m":1},{"n":"RTX 4060","g":"40","c":"AD107","s":24,"f":14.6,"t":[14.6,29.2],"h":[29.2,58.4],"b":[29.2,58.4],"e":[58.4,116.8],"m":1},{"n":"RTX 4070","g":"40","c":"AD106","s":36,"f":20.0,"t":[20.0,40.0],"h":[40.0,80.0],"b":[40.0,80.0],"e":[80.0,160.0],"m":1},{"n":"RTX 4080","g":"40","c":"AD104","s":58,"f":33.9,"t":[33.9,67.8],"h":[67.8,135.6],"b":[67.8,135.6],"e":[135.6,271.2],"m":1},{"n":"RTX 4090","g":"40","c":"AD103","s":76,"f":50.2,"t":[50.2,100.4],"h":[100.4,200.8],"b":[100.4,200.8],"e":[200.8,401.6],"m":1},{"n":"CMP 40HX","g":"20","c":"TU106-100 · 2176 核","s":34,"f":[0.2,7.2],"t":null,"h":[1.8,57.4],"b":null,"e":null,"k":1},{"n":"CMP 50HX","g":"20","c":"TU102-100 · 3584 核","s":56,"f":[0.3,11.1],"t":null,"h":[2.8,88.6],"b":null,"e":null,"k":1},{"n":"CMP 70HX","g":"30","c":"GA104-100 · 3840 核","s":30,"f":[0.33,10.7],"t":[0.33,10.7],"h":[0.67,21.4],"b":[0.67,21.4],"e":null,"k":1},{"n":"CMP 90HX","g":"30","c":"GA102-100","s":50,"f":[0.7,21.9],"t":[0.7,21.9],"h":[1.4,43.8],"b":[1.4,43.8],"e":null,"k":1},{"n":"CMP 170HX","g":"30","c":"GA100-105F · 4480 核","s":70,"f":[0.4,12.6],"t":[3.2,101.1],"h":[6.3,202.1],"b":[6.3,202.1],"e":null,"k":1},{"n":"GeForce RTX 5060","g":"50","c":"GB206-250","s":30,"f":19.2,"t":null,"h":[76.7,76.7],"b":[76.7,76.7],"e":[153.4,153.4],"ref":1},{"n":"GeForce RTX 5060 Ti 8 GB","g":"50","c":"GB206-300","s":36,"f":23.7,"t":null,"h":[94.8,94.8],"b":[94.8,94.8],"e":[189.6,189.6],"ref":1},{"n":"GeForce RTX 5060 Ti 16 GB","g":"50","c":"GB206-300","s":36,"f":23.7,"t":null,"h":[94.8,94.8],"b":[94.8,94.8],"e":[189.6,189.6],"ref":1},{"n":"GeForce RTX 5070","g":"50","c":"GB205-300","s":48,"f":30.9,"t":null,"h":[123.5,123.5],"b":[123.5,123.5],"e":[246.9,246.9],"ref":1},{"n":"GeForce RTX 5070 Ti","g":"50","c":"GB203-300","s":70,"f":43.9,"t":null,"h":[175.8,175.8],"b":[175.8,175.8],"e":[351.5,351.5],"ref":1},{"n":"GeForce RTX 5080","g":"50","c":"GB203-400","s":84,"f":56.3,"t":null,"h":[225.1,225.1],"b":[225.1,225.1],"e":[450.2,450.2],"ref":1},{"n":"GeForce RTX 5090 D","g":"50","c":"GB202-250","s":170,"f":104.8,"t":null,"h":[419.0,419.0],"b":[419.0,419.0],"e":[838.0,838.0],"ref":1},{"n":"GeForce RTX 5090","g":"50","c":"GB202-300","s":170,"f":104.8,"t":null,"h":[419.0,419.0],"b":[419.0,419.0],"e":[838.0,838.0],"ref":1}];
 
   var TABS=[{k:"f",l:"FP32",t:false},{k:"t",l:"TF32",t:true},{k:"h",l:"FP16",t:true},{k:"b",l:"BF16",t:true},{k:"e",l:"FP8",t:true}];
   var NOTES={f:"FP32 走 CUDA 核，出厂即全速，解锁不改变它。",
@@ -101,7 +110,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
     e:"FP8 仅 40 系具备（四代张量核），出厂钳制在半速。"};
   var root=document.getElementById("gpu-ceiling"),rowsEl=document.getElementById("gc-rows"),
       peakEl=document.getElementById("gc-peak"),ftEl=document.getElementById("gc-ft"),
-      stockEl=document.getElementById("gc-stock"),mobEl=document.getElementById("gc-mob");
+      stockEl=document.getElementById("gc-stock"),mobEl=document.getElementById("gc-mob"),cmpEl=document.getElementById("gc-cmp"),r50El=document.getElementById("gc-r50");
   var KMAP={fp32:"f",tf32:"t",fp16:"h",bf16:"b",fp8:"e"};
   var qk=new URLSearchParams(location.search).get("k");qk=KMAP[qk]||qk;
   var cur=TABS.some(function(t){return t.k===qk;})?qk:((window.zcode&&window.zcode.widgetState&&window.zcode.widgetState.modelContent||{}).p||"f");
@@ -110,8 +119,15 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
   var showMob=(window.zcode&&window.zcode.widgetState&&window.zcode.widgetState.privateContent||{}).mo;
   if(showMob===undefined)showMob=true;
   stockEl.checked=show;mobEl.checked=showMob;
+  var pc0=(window.zcode&&window.zcode.widgetState&&window.zcode.widgetState.privateContent)||{};
+  var cmp=pc0.c||false;
+  var show50=!(pc0.r50===false);
+  var sel={};
+  (pc0.l||[]).forEach(function(n){sel[n]=true;});
+  cmpEl.checked=cmp;r50El.checked=show50;
 
-  function val(c,k){ return k==="f"?[c.f,c.f]:c[k]; }
+  function val(c,k){ return k==="f"?(Array.isArray(c.f)?c.f:[c.f,c.f]):c[k]; }
+  function full(c){ return Array.isArray(c.f)?c.f[1]:c.f; }
   function fmt(v){ return v.toFixed(1); }
 
   function draw(){
@@ -119,62 +135,80 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
     document.querySelectorAll("#gpu-ceiling .tab").forEach(function(b){
       b.setAttribute("aria-selected", b.getAttribute("data-k")===cur ? "true":"false");
     });
-    var items=D.filter(function(c){return showMob||!c.m;}).map(function(c){
+    root.classList.toggle("cmp",cmp);
+    stockEl.disabled=cmp;
+    stockEl.parentNode.classList.toggle("dis",cmp);
+    var items=D.filter(function(c){return (showMob||!c.m)&&(show50||c.g!=="50");}).map(function(c){
       var v=val(c,cur);
       return {c:c, v:v, max: v?v[1]:null, lo: v?v[0]:null};
     });
     var sup=items.filter(function(i){return i.max!==null;});
     var maxV=sup.reduce(function(m,i){return Math.max(m,i.max);},0.1);
-    sup.sort(function(a,b){return b.max-a.max;});
-    var rest=items.filter(function(i){return i.max===null;}).sort(function(a,b){return b.c.f-a.c.f;});
+    var stockRank={};
+    sup.slice().sort(function(a,b){return b.lo-a.lo||full(b.c)-full(a.c);}).forEach(function(i,ix){stockRank[i.c.n]=ix+1;});
+    function eff(i){return cmp&&sel[i.c.n]?i.max:i.lo;}
+    if(cmp)sup.sort(function(a,b){var d=eff(b)-eff(a);return d||full(b.c)-full(a.c);});
+    else sup.sort(function(a,b){return b.max-a.max;});
+    var rest=items.filter(function(i){return i.max===null;}).sort(function(a,b){return full(b.c)-full(a.c);});
     var list=sup.concat(rest);
 
     rowsEl.innerHTML="";
     list.forEach(function(it,n){
       var c=it.c,li=document.createElement("li");
-      li.className="rw g"+c.g+(it.max===null?" na":"");
+      var isSel=cmp&&!!sel[c.n];
+      li.className="rw g"+c.g+(it.max===null?" na":"")+(isSel?" sel":"");
+      li.setAttribute("data-n",c.n);
+      var jr="";
+      if(isSel&&it.max!==null&&stockRank[c.n]&&stockRank[c.n]!==n+1)
+        jr='<span class="jr">出厂第'+stockRank[c.n]+' → 现第'+(n+1)+'</span>';
       var desc;
       if(it.max===null){
         desc=c.n+"：该代无此精度路径";
       }else if(!tab.t){
-        desc=c.n+"：解锁前后同为 "+fmt(c.f)+" TFLOPS";
+        desc=c.n+"：解锁前后同为 "+full(c)+" TFLOPS";
+      }else if(cmp){
+        desc=c.n+(isSel?("：已选中，按解锁后 "+fmt(it.max)+" TFLOPS 排位（出厂第"+stockRank[c.n]+"）")
+                        :("：未选中，按出厂 "+fmt(it.lo)+" TFLOPS 排位"));
       }else{
         desc=c.n+"：出厂 "+fmt(it.lo)+"，解锁后理论上限 "+fmt(it.max)+" TFLOPS";
       }
       li.setAttribute("aria-label",desc);
-      var pctFull=it.max===null?0:it.max/maxV*100;
-      var pctLo=(it.max!==null&&show)?it.lo/maxV*100:0;
-      var arrow=(it.max!==null&&show&&it.lo!==it.max);
+      if(cmp&&it.max!==null){li.setAttribute("role","button");li.setAttribute("tabindex","0");}
+      var ov=(it.max!==null&&(isSel||(!cmp&&show))&&it.lo!==it.max);
+      var pctFull=it.max===null?0:((cmp&&!isSel)?it.lo:it.max)/maxV*100;
+      var pctLo=ov?it.lo/maxV*100:0;
       li.innerHTML='<div class="rk">'+(it.max===null?"—":n+1)+'</div>'+
-        '<div class="nm">'+c.n+(c.m?'<span class="bd mb">笔记本</span>':'')+'<span class="bd">'+c.g+'系</span><span class="mt">'+c.c+' · '+c.s+' SM</span>'+
+        '<div class="nm">'+c.n+(c.m?'<span class="bd mb">笔记本</span>':'')+(c.k?'<span class="bd mb">矿卡</span>':'')+'<span class="bd">'+c.g+'系</span><span class="mt">'+c.c+' · '+c.s+' SM</span>'+jr+
         (cur==="t"&&c.t&&c.t[0]===c.t[1]?'<span class="up">†</span>':'')+'</div>'+
         '<div class="trk">'+(it.max===null?'':('<div class="bar" style="width:'+pctFull+'%"></div>'+
-          (show&&it.lo!==it.max?'<div class="bar lock" style="width:'+pctLo+'%"></div>':'')+'</div>'))+
+          (ov?'<div class="bar lock" style="width:'+pctLo+'%"></div>':'')+'</div>'))+
         '<div class="vl">'+(it.max===null?'<span class="nw">不支持</span>':
-          (arrow?fmt(it.lo)+' <span class="ar">→</span> ':'')+fmt(it.max))+'</div>';
+          (ov?fmt(it.lo)+' <span class="ar">→</span> ':'')+fmt(ov?it.max:(cmp&&!isSel?it.lo:it.max)))+'</div>';
       rowsEl.appendChild(li);
     });
 
-    peakEl.textContent=sup.length?("该精度最高 "+sup[0].c.n.replace("GeForce RTX ","RTX ")+" · "+(sup[0].lo===sup[0].max?fmt(sup[0].max):fmt(sup[0].lo)+" → "+fmt(sup[0].max))):"该精度无可用型号";
+    peakEl.textContent=sup.length?("该精度最高 "+sup[0].c.n.replace("GeForce RTX ","RTX ")+" · "+(cmp?fmt(eff(sup[0])):(sup[0].lo===sup[0].max?fmt(sup[0].max):fmt(sup[0].lo)+" → "+fmt(sup[0].max)))):"该精度无可用型号";
     document.querySelectorAll("#gpu-ceiling .tab").forEach(function(b){
       var k=b.getAttribute("data-k");
       var n=D.filter(function(c){return (showMob||!c.m)&&(k==="f"?c.f:c[k])!==null;}).length;
       if(!b.querySelector(".ct")){var s=document.createElement("span");s.className="ct";b.appendChild(s);}
       b.querySelector(".ct").textContent=" "+n;
     });
-    var unmoved=TABS.filter(function(t){return t.t&&t.k!=="t";});
     ftEl.innerHTML='<p>'+NOTES[cur]+'</p>'+
       '<p>数值 = SM × 每 SM 每时钟 FMA × 2 × 加速频率。解锁 = 恢复白皮书全速，钳制路径 ×2；不含稀疏。</p>'+
       '<p>实际到手通常低于此值：功耗墙、显存带宽、库路由各自打折（见 <code>docs/theoretical-uplift.md</code>）。</p>'+
       (cur==="t"?'<p>† 该卡 TF32 出厂未被钳制（30 系与 GA107 的 2050），解锁不带来增益，故 ×2 不适用。</p>':'')+
-      '<p>核心列注记：同名卡存在多种硅片时逐条注明（如 RTX 3050 8 GB 有 GA107/GA106 双芯批次、RTX 3060 8 GB 有 GA104 变体、RTX 2060 有 TU104 变体、RTX 2050 实为 GA107）；独立成行的变体按其实际芯片与频率单列。</p>';
+      '<p>核心列注记：同名卡存在多种硅片时逐条注明（如 RTX 3050 8 GB 有 GA107/GA106 双芯批次、RTX 4070 Ti SUPER 有 AD102 变体、RTX 2060 有 TU104 变体、RTX 2050 实为 GA107）；独立成行的变体按其实际芯片与频率单列。</p>'+
+      '<p>矿卡（CMP）：全路出厂 ÷32（与 GeForce 写同一组 SS0/SS1 速率寄存器，解锁原理相同），故解锁增益 32×；170HX 实测 FP32 0.395→12.7 TFLOPS 印证该模型。40/50HX=Turing 硅片，70/90/170HX=Ampere 硅片；30HX（TU116，无张量核）未列。</p>'+
+      '<p>50 系为出厂对照行（本工具不支持 RTX 50）：取 Wikipedia/白皮书出货列，dense FP16=4×FP32、dense FP8=8×FP32（5060 Ti 行逐位验证）；TF32 列源表未提供故留空，非硬件不支持。5090 D V2 资料不全未列。</p>';
     ftEl.innerHTML+=(showMob?'<p>笔记本行取该型号最高 boost，未按 OEM TGP 折算——解锁后受功耗墙压制更狠；Max-Q 变体未单列。RTX 2050 实为 GA107（Ampere）硅片，故有 TF32/BF16。</p>':'');
+    ftEl.innerHTML+=(cmp?'<p>比较模式：点击卡片行选中你的卡（可多选，再点取消）——选中卡按解锁后数值排位并高亮，其余卡按出厂值排位；行内徽标显示排位变化，切到其他精度页签可带着同一组选择继续比较。</p>':'');
     save();
   }
 
   function save(){
     if(!window.zcode||!window.zcode.setWidgetState)return;
-    try{window.zcode.setWidgetState({modelContent:{p:cur},privateContent:{s:show,mo:showMob}}).catch(function(){});}catch(e){}
+    try{window.zcode.setWidgetState({modelContent:{p:cur},privateContent:{s:show,mo:showMob,c:cmp,r50:show50,l:Object.keys(sel).filter(function(n){return sel[n];})}}).catch(function(){});}catch(e){}
   }
 
   document.querySelectorAll("#gpu-ceiling .tab").forEach(function(b){
@@ -182,12 +216,36 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
   });
   stockEl.addEventListener("change",function(){show=stockEl.checked;draw();});
   mobEl.addEventListener("change",function(){showMob=mobEl.checked;draw();});
+  cmpEl.addEventListener("change",function(){cmp=cmpEl.checked;draw();});
+  r50El.addEventListener("change",function(){show50=r50El.checked;draw();});
+  function toggleRow(li){
+    var nm=li.getAttribute("data-n");
+    if(!nm)return;
+    if(sel[nm])delete sel[nm];else sel[nm]=true;
+    draw();
+  }
+  rowsEl.addEventListener("click",function(ev){
+    if(!cmp)return;
+    var li=ev.target.closest(".rw");
+    if(!li||li.classList.contains("na"))return;
+    toggleRow(li);
+  });
+  rowsEl.addEventListener("keydown",function(ev){
+    if(!cmp||(ev.key!=="Enter"&&ev.key!==" "))return;
+    var li=ev.target.closest?ev.target.closest(".rw"):null;
+    if(!li||li.classList.contains("na"))return;
+    ev.preventDefault();
+    toggleRow(li);
+  });
   document.addEventListener("zcode:set_globals",function(e){
     var g=e.detail&&e.detail.globals&&e.detail.globals.widgetState;
     if(!g)return;
     if(g.modelContent&&g.modelContent.p&&TABS.some(function(t){return t.k===g.modelContent.p;}))cur=g.modelContent.p;
     if(g.privateContent&&typeof g.privateContent.s==="boolean"){show=g.privateContent.s;stockEl.checked=show;}
     if(g.privateContent&&typeof g.privateContent.mo==="boolean"){showMob=g.privateContent.mo;mobEl.checked=showMob;}
+    if(g.privateContent&&typeof g.privateContent.c==="boolean"){cmp=g.privateContent.c;cmpEl.checked=cmp;}
+    if(g.privateContent&&typeof g.privateContent.r50==="boolean"){show50=g.privateContent.r50;r50El.checked=show50;}
+    if(g.privateContent&&g.privateContent.l&&g.privateContent.l.forEach){sel={};g.privateContent.l.forEach(function(n){sel[n]=true;});}
     draw();
   });
   draw();

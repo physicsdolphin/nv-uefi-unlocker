@@ -71,7 +71,7 @@ def render(precision: str, top: int, lang: str) -> str:
     key, label, (blurb_en, blurb_zh) = PRECISIONS[precision]
     T = TEXT[lang]
     blurb = blurb_en if lang == "en" else blurb_zh
-    rows = [r for r in load_rows() if r.get(key) and not r.get("m")]
+    rows = [r for r in load_rows() if r.get(key) and not r.get("m") and not r.get("k") and r.get("g") != "50"]
     rows.sort(key=lambda r: -r[key][1])
     peak = rows[0][key][1]
 
