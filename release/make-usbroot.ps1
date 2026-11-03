@@ -487,12 +487,20 @@ foreach ($fam in $Families) {
 $expected += "BOOTX64.EFI"
 Copy-Item $BootEfi (Join-Path $Out "BOOTX64.EFI") -Force
 
+# The firmware only auto-boots \EFI\BOOT\BOOTX64.EFI; a flat copy of $Out puts the
+# executable at the root and the boot menu silently bounces back (issue #142). Emit
+# the real path too, so "copy the contents" is literally sufficient.
+New-Item -ItemType Directory -Force -Path (Join-Path $Out "EFI/BOOT") | Out-Null
+Copy-Item $BootEfi (Join-Path $Out "EFI/BOOT/BOOTX64.EFI") -Force
+
 foreach ($f in $expected) {
     if (-not (Test-Path (Join-Path $Out $f))) { throw "missing: $f" }
     Write-Host ("  {0,-28} {1,10} bytes" -f $f, (Get-Item (Join-Path $Out $f)).Length)
 }
+Write-Host ("  {0,-28} {1,10} bytes" -f "EFI/BOOT/BOOTX64.EFI", (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length)
 
 Write-Host "`nDONE ($($Families -join ', ')). Copy the CONTENTS of $Out to a FAT32 USB stick root."
+Write-Host "The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, do not flatten it."
 Write-Host "Unlock mode requires the v67-*.bin payload for the target card's family"
 Write-Host "($($unlockFiles -join ', ')); removing it switches the EFI into"
 Write-Host "replay/diagnostic mode for that family."

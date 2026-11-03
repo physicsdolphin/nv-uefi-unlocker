@@ -84,7 +84,7 @@ bash make-usbroot.sh
 
 Windows 需要 PowerShell 5+；Linux 版需要 glibc ≥ 2.34（如 Ubuntu 22.04+ / Debian 12+）。首次生成需要联网，下载或校验失败时先处理错误，不要换固件版本。
 
-生成的文件位于本地 `usbroot/`。将脚本完成时列出的固件文件复制到 U 盘根目录，再把 `BOOTX64.EFI` 放入 `EFI/BOOT/`。其余抽取中间文件不需要复制。
+生成的文件位于本地 `usbroot/`，其中已含 `EFI/BOOT/BOOTX64.EFI`。把 `usbroot/` 的**内容**复制到 U 盘根目录即可（不要连目录一起拷成 `U:\usbroot\`）。其余抽取中间文件不需要复制。
 
 ```text
 U 盘（FAT32）

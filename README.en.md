@@ -84,7 +84,7 @@ bash make-usbroot.sh --family "$gpu_series"
 
 Windows requires PowerShell 5+; the Linux binary requires glibc ≥ 2.34 (for example, Ubuntu 22.04+ / Debian 12+). Initial generation needs internet access. Resolve download or verification failures without substituting another firmware version.
 
-Files are generated in the local `usbroot/` directory. Copy the firmware files listed at the end of the script to the stick root, then put `BOOTX64.EFI` in `EFI/BOOT/`. The other extraction intermediates do not need to be copied.
+Files are generated in the local `usbroot/` directory, which already contains `EFI/BOOT/BOOTX64.EFI`. Copy the **contents** of `usbroot/` to the stick root (do not copy the directory itself as `U:\usbroot\`). The other extraction intermediates do not need to be copied.
 
 ```text
 USB stick (FAT32)

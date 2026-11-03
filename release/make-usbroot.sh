@@ -612,13 +612,20 @@ done
 cp -f "$BOOT_EFI" "$OUT/BOOTX64.EFI"
 expected+=("BOOTX64.EFI")
 
+# Firmware only auto-boots \EFI\BOOT\BOOTX64.EFI; a flat copy of $OUT leaves the
+# executable at the root and the boot menu bounces back (issue #142).
+mkdir -p "$OUT/EFI/BOOT"
+cp -f "$BOOT_EFI" "$OUT/EFI/BOOT/BOOTX64.EFI"
+
 for f in "${expected[@]}"; do
     [ -f "$OUT/$f" ] || die "missing: $f"
     printf '  %-28s %10s bytes\n' "$f" "$(size_of "$OUT/$f")"
 done
+printf '  %-28s %10s bytes\n' "EFI/BOOT/BOOTX64.EFI" "$(size_of "$OUT/EFI/BOOT/BOOTX64.EFI")"
 
 log ""
 log "DONE (${FAMILIES[*]}). Copy the CONTENTS of $OUT to a FAT32 USB stick root."
+log "The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, do not flatten it."
 log "Format hint (Linux): sudo mkfs.fat -F 32 /dev/sdXN   # wipes the stick!"
 log "Unlock mode requires the v67-*.bin payload for the target card's family"
 log "(${unlock_files[*]}); removing it switches the EFI into replay/diagnostic"
