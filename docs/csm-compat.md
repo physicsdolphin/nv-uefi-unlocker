@@ -15,7 +15,7 @@
 
 这些人**同样有解锁需求**（矿卡/老卡恰是钳制重灾区），而他们的 CSM-on 环境正是 reconnect 卡死族（[#106](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/106)/[#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)/[#133](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/133)/[#134](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/134)/[#157](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/157)）的暴露面——所以这个兼容补丁不是给"懒得关 CSM"的人准备的便利，是给**没有关闭选项**的机器准备的。如果你不确定自己是否属于上述场景：**先关 CSM 试，通了就别开回来**。
 
-**2026-11-04 起 native-GOP 已是默认行为**（维护者裁定，四轮 Z170 本机验证 + [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)/[#128](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/128) 两台真机字段记录）：本卡影子 ROM 原厂 GOP 重建 console 取代 firmware `ConnectController` 重连。设计公理 = **错误重连不如不连，console 怎么起来的就怎么继续**——原厂驱动从原厂 ROM 重建，任何失败（提取/解压/绑定/child 校验）都保持 boot 时的原样、交给 bootmgfw 自建，**永不回落到会卡死的 ConnectController**。风险不对称论证：CSM 板上旧默认的最坏情况是硬挂死必须断电，native-GOP 的最坏情况是冻帧到 Windows 接管（四轮全数进 Windows）；已知失败形态只有"混合接屏下 child 安装不确定"（CSM 模块抢 console 所致，两轮相反结局），优雅回落两头接住。退出阀 = U 盘根 `\tx-reconnect-legacy.txt`（恢复旧版 recursive + PR#13 逻辑）；`\tx-native-gop.txt` 保留为可选 GOP 模块 pin。失败形态若出现 **StartImage 内部挂死**（非 verify 失败）则撤回默认化——这是唯一敬畏的失败面。
+**2026-11-04 起 native-GOP 已是默认行为**（维护者裁定，四轮 Z170 本机验证 + [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)/[#128](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/128) 两台真机字段记录）：本卡影子 ROM 原厂 GOP 重建 console 取代 firmware `ConnectController` 重连。设计公理 = **错误重连不如不连，console 怎么起来的就怎么继续**——原厂驱动从原厂 ROM 重建，任何失败（提取/解压/绑定/child 校验）都保持 boot 时的原样、交给 bootmgfw 自建，**永不回落到会卡死的 ConnectController**。风险不对称论证：CSM 板上旧默认的最坏情况是硬挂死必须断电，native-GOP 的最坏情况是冻帧到 Windows 接管（四轮全数进 Windows）；已知失败形态只有"混合接屏下 child 安装不确定"（CSM 模块抢 console 所致，两轮相反结局），优雅回落两头接住。退出阀 = U 盘根 `\tx-reconnect-legacy.txt`（恢复旧版 recursive + PR#13 逻辑）；`\tx-native-gop.txt` 保留为可选 GOP 模块 pin。失败形态若出现 **StartImage 内部挂死**（非 verify 失败）则撤回默认化——这是唯一担心的失败面。
 
 ## 1. 病理签名
 
@@ -38,7 +38,7 @@ reconnect 之前**显式选择**原厂 GOP 驱动，不调用会卡死的通用 
 5. console 恢复只在 **GOP child** 上做 `ConnectController(child, non-recursive)`——child 级连接不会触碰 PCI 级驱动，BiosVideo 无从被再次选中。
 6. VGA forwarding（pre-claim 捕获的 `0x001C` 子集）+ IO|MEM 解码经 PciIo Attributes 恢复；**BME 保持 off**（交棒形状不变）。
 
-失败策略：任何一步失败 → 大声记录并交给 bootmgfw 自建 console（实证的安全落点），**永不回退到会卡死的 ConnectController**。
+失败策略：任何一步失败 → 记录并交给 bootmgfw 自建 console（实证的安全落点），**永不回退到会卡死的 ConnectController**。
 
 ## 3. 实验矩阵（按序，全部 marker 门控、默认关）
 
