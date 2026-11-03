@@ -80,6 +80,7 @@ pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
         }
         info!("CHAIN: preloaded start failed - falling back to the post-transaction volume scan");
     }
+    log_firmware_boot_order();
     chain_load_bootmgfw_inner()
 }
 
@@ -133,7 +134,7 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
                         continue;
                     };
                     if dir.open(target_ref, FileMode::Read, FileAttribute::empty()).is_ok() {
-                        info!("CHAIN: pinned loader found on {:?}: {}", handle, target);
+                        info!("CHAIN: pinned loader found on {:?} ({}): {}", handle, volume_tag(*handle), target);
                         drop(dir);
                         return start_loader(*handle, target_ref);
                     }
@@ -157,7 +158,7 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
                 continue;
             };
             if dir.open(path, FileMode::Read, FileAttribute::empty()).is_ok() {
-                info!("CHAIN: loader found on {:?}: {}", handle, path);
+                info!("CHAIN: loader found on {:?} ({}): {}", handle, volume_tag(*handle), path);
                 drop(dir);
                 return start_loader(*handle, path);
             }
@@ -369,6 +370,176 @@ fn open_volume_logged(
         }
     };
     Some((dir, is_own))
+}
+
+/// The firmware's own boot-option namespace (EFI_GLOBAL_VARIABLE).
+const GLOBAL_VARIABLE: uefi::runtime::VariableVendor =
+    uefi::runtime::VariableVendor(uefi::guid!("8be4df61-93ca-11d2-aa0d-00e098032b8c"));
+/// Logged once per boot, before the first chain decision.
+static BOOT_ORDER_LOGGED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Decode UCS-2LE code units until NUL (or cap) into a lossy String.
+fn ucs2_lossy_prefix(bytes: &[u8], max_chars: usize) -> alloc::string::String {
+    let mut s = alloc::string::String::new();
+    let mut i = 0usize;
+    while i + 1 < bytes.len() && s.chars().count() < max_chars {
+        let c = u16::from_le_bytes([bytes[i], bytes[i + 1]]);
+        if c == 0 {
+            break;
+        }
+        s.push(char::from_u32(c as u32).unwrap_or('?'));
+        i += 2;
+    }
+    s
+}
+
+/// One-line summary of an EFI_LOAD_OPTION payload: attributes, description,
+/// then the device-path list node by node (HD nodes report their partition
+/// signature - the exact "which drive" datum; FILE nodes decode their
+/// UTF-16 loader path). Never fails outward: anything malformed is logged
+/// as a hex prefix instead.
+fn describe_boot_option(data: &[u8]) -> alloc::string::String {
+    use alloc::format;
+    if data.len() < 6 {
+        return format!("payload {} bytes (too short)", data.len());
+    }
+    let attrs = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    let mut i = 4usize;
+    let mut desc = alloc::string::String::new();
+    while i + 1 < data.len() {
+        let c = u16::from_le_bytes([data[i], data[i + 1]]);
+        if c == 0 {
+            i += 2;
+            break;
+        }
+        desc.push(char::from_u32(c as u32).unwrap_or('?'));
+        i += 2;
+        if desc.chars().count() >= 64 {
+            break;
+        }
+    }
+    let mut out = format!("attrs={:#x} desc=\"{desc}\" path=", attrs);
+    let mut shown = 0usize;
+    let mut off = i;
+    loop {
+        if off + 4 > data.len() || shown >= 12 {
+            break;
+        }
+        let (t, st) = (data[off], data[off + 1]);
+        let len = u16::from_le_bytes([data[off + 2], data[off + 3]]) as usize;
+        if len < 4 || off + len > data.len() {
+            out.push_str(&format!(" [malformed node at {off:#x}"));
+            break;
+        }
+        let payload = &data[off + 4..off + len];
+        match (t, st) {
+            (0x7f, _) => {
+                out.push_str(" END");
+                break;
+            }
+            (0x04, 0x04) => {
+                let p = ucs2_lossy_prefix(payload, 96);
+                out.push_str(&format!(" file:\"{p}\""));
+            }
+            (0x04, 0x01) if payload.len() >= 38 => {
+                let part = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                let sig_type = payload[36];
+                let sig = payload
+                    .iter()
+                    .skip(20)
+                    .take(16)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<alloc::vec::Vec<_>>()
+                    .join("");
+                out.push_str(&format!(" hd(part{part},sig{sig_type}:{sig})"));
+            }
+            (t, st) => out.push_str(&format!(" node({t:#04x},{st:#04x},{len})")),
+        }
+        shown += 1;
+        off += len;
+    }
+    out
+}
+
+/// LOG-ONLY dump of the firmware's BootOrder and every Boot#### option
+/// (issue #142: the volume scan chains the first bootmgfw in enumeration
+/// order, which on a dual-ESP machine can be the OTHER drive's leftover
+/// loader; these lines let one log show both what the firmware itself
+/// would have booted and what our scan picked instead). No chain decision
+/// depends on anything here - every read is best-effort, every failure a
+/// one-line log.
+fn log_firmware_boot_order() {
+    use core::sync::atomic::Ordering;
+    if BOOT_ORDER_LOGGED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let order_name = match uefi::CString16::try_from("BootOrder") {
+        Ok(n) => n,
+        Err(_) => return,
+    };
+    let order: alloc::vec::Vec<u16> = match uefi::runtime::get_variable_boxed(&order_name, &GLOBAL_VARIABLE) {
+        Ok((data, _)) => data
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect(),
+        Err(e) => {
+            info!("CHAIN-BOOT: BootOrder unreadable ({:?}) - firmware boot option context unavailable", e.status());
+            return;
+        }
+    };
+    info!("CHAIN-BOOT: BootOrder {} entr{}", order.len(), if order.len() == 1 { "y" } else { "ies" });
+    let mut first_windows = None;
+    for (rank, num) in order.iter().enumerate() {
+        let name = alloc::format!("Boot{:04X}", num);
+        let Ok(name_c) = uefi::CString16::try_from(name.as_str()) else {
+            continue;
+        };
+        match uefi::runtime::get_variable_boxed(&name_c, &GLOBAL_VARIABLE) {
+            Ok((data, _)) => {
+                let summary = describe_boot_option(&data);
+                let windows = summary.contains("bootmgfw") || summary.contains("Windows Boot Manager");
+                if windows && first_windows.is_none() {
+                    first_windows = Some((rank, alloc::string::String::from(&name)));
+                }
+                info!(
+                    "CHAIN-BOOT: [{rank}] {name}: {}{}",
+                    summary,
+                    if windows { "  <WINDOWS>" } else { "" }
+                );
+            }
+            Err(e) => info!("CHAIN-BOOT: [{rank}] {name} unreadable ({:?})", e.status()),
+        }
+    }
+    match first_windows {
+        Some((rank, name)) => info!("CHAIN-BOOT: firmware's first Windows target = [{rank}] {name}"),
+        None => info!("CHAIN-BOOT: no Windows Boot Manager among the firmware's boot options"),
+    }
+}
+
+/// Short hex fingerprint of a volume handle's device path (first 24
+/// bytes) - enough to tell two ESPs apart in one log line.
+fn volume_tag(handle: uefi::Handle) -> alloc::string::String {
+    let tag = (|| {
+        // Safety: GetProtocol on the SFS handle, read-only byte view.
+        let dp = unsafe {
+            boot::open_protocol::<DevicePath>(
+                OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        }
+        .ok()?;
+        let bytes = dp.as_bytes();
+        let n = bytes.len().min(24);
+        Some(
+            bytes[..n]
+                .iter()
+                .map(|b| alloc::format!("{b:02x}"))
+                .collect::<alloc::vec::Vec<_>>()
+                .join(""),
+        )
+    })()
+    .unwrap_or_else(|| alloc::string::String::from("nopath"));
+    alloc::format!("vol={}", tag)
 }
 
 /// Parse `\chain-target.txt`: the first non-empty, non-`#` line is the
