@@ -29,15 +29,15 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | RTX 40 · Ada | Fully compatible on laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
 
-## Community success reports and screenshots
+## Community success reports and reproductions
 
-The following **31 hardware/model groups** come from the [video comment section](https://www.bilibili.com/video/BV1d6xN66ECM/) and repository issues/discussions, with material up to **2026-11-03 (Beijing time)**. These are community reports, **not independent verification or a guarantee for every board of the same model**. Desktop, laptop and modified cards remain separate; missing model, form-factor and unit details are left unspecified. Where a model has several reports, the most informative one is kept. Current support and known limitations remain in the [compatibility matrix](docs/compatibility.en.md).
+The following **31 hardware/model groups** are sourced partly from the [video comment section](https://www.bilibili.com/video/BV1d6xN66ECM/), partly from the [community validation archive](docs/community-reports.md); the comment-section portion consists of viewer reports. Where a model has several reports, the most informative one is kept. Current support and known limitations remain in the full [compatibility matrix](docs/compatibility.en.md).
 
 The table distinguishes before/after measurements, post-unlock-only screenshots and text-only reports. Benchmark gains are not application gains; reports involving overclocking or different power settings are marked accordingly.
 
 | Reported hardware | Community report / conditions | Sources |
 | --- | --- | --- |
-| RTX 2080 Ti 11GB | Unlock survives into the proprietary Linux driver: tensor 60.31 → 89.57 TFLOPS (+48.5%); first full TU102 chain on a stock 11GB card, AMD platform; another report describes success with no H3 gain | [#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103) · [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
+| RTX 2080 Ti | Reports a successful unlock and faster compute; H3 gain is not obvious; a separate stock 11GB run survives into the proprietary Linux driver at +48.5% | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) · [#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103) |
 | RTX 2080 Ti 22GB mod | Reports success on the final attempt; no performance comparison | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
 | RTX 2080 Super 8GB | Retest passes after the 0x91 fix: 46 → 68 TFLOPS (+47.8%); first success in that fix chain | [#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14) |
 | RTX 2080 8GB | Passes after the v2.1.8 fix; reporter pinned 0x91 with eight single-variable rounds and a bitwise diff against a working machine (no performance numbers) | [#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62) |
