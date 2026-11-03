@@ -850,7 +850,26 @@ fn sfs_handle_matches_prefix(handle: uefi::Handle, prefix: &[u8]) -> bool {
         return false;
     };
     let bytes = dp.as_bytes();
-    !bytes.is_empty() && bytes.len() <= prefix.len() && bytes == &prefix[..bytes.len()]
+    // as_bytes() includes the trailing END node; the option's FilePathList
+    // prefix stops before its FILE node. Compare node bodies only.
+    let vol = strip_end_node(bytes);
+    !vol.is_empty() && vol.len() <= prefix.len() && vol == &prefix[..vol.len()]
+}
+
+/// Drop a trailing END-of-node sequence (any 0x7F-type node at the tail).
+fn strip_end_node(bytes: &[u8]) -> &[u8] {
+    let mut off = 0usize;
+    while off + 4 <= bytes.len() {
+        let len = u16::from_le_bytes([bytes[off + 2], bytes[off + 3]]) as usize;
+        if len < 4 || off + len > bytes.len() {
+            return &bytes[..off];
+        }
+        if bytes[off] == NODE_TYPE_END {
+            return &bytes[..off];
+        }
+        off += len;
+    }
+    &bytes[..off]
 }
 
 /// Resolve the loader the FIRMWARE itself would boot next: walk BootOrder,
@@ -934,6 +953,10 @@ fn firmware_resolved_target(fs_handles: &[uefi::Handle]) -> Option<(uefi::Handle
                 }
             }
         }
+        info!(
+            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} '{}' matched no SimpleFileSystem volume by its device-path prefix - skipped",
+            num, path
+        );
     }
     info!("CHAIN-BOOT: firmware resolve: no resolvable firmware option - volume scan fallback");
     None
