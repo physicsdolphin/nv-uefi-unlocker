@@ -58,7 +58,8 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-flush-lines.txt` | 首行数字（0–4096）覆盖日志计数 flush 频率（缺省 16 行/次；0=仅阶段标记行 flush）。调大减少 USB 偶发慢写停顿（2026-11-01 TU106 实测 4 次 ~1.2s 停顿全与 flush 对齐），代价是挂死时丢更多日志尾巴；阶段标记行始终 flush |
 | `tx-quiet.txt` | 安静模式（issue #38）：console 只显示裁决行（banner/确认/每卡目标与结果/HANDOFF/FINAL/CHAIN），`loader.log` 仍逐行全量记录；log 文件打不开时自动回退全量 console。慢 iGPU（~1 行/秒刷新）机器上把分钟级回显压到秒级；与 `i_know_what_i_am_doing.txt` 组合即全自动无人值守快速跑。事务期间画面停在最后一行属正常，不是卡死 |
 | `tx-gop-disconnect.txt` | 诊断开关：断开所有 GOP 句柄（含 iGPU）而非仅目标卡。**不要当提速手段用**——console 静默后无增益，且他卡 console 被杀后 loader 不会恢复它（依赖 bootmgfw 重建，存在 Code 12 风险形态，见 issue #35） |
-| `tx-native-gop.txt`（tx 构建） | CSM 机器 `RECONNECT: ConnectController begin` 卡死（#107 类）：重连前显式启动原厂 GOP（本卡 ROM 或 `tx-native-gop.txt` 首行指定的卷上模块），不再调用会卡死的通用重连；失败自动回落 bootmgfw。详见 docs/csm-compat.md |
+| `tx-reconnect-legacy.txt`（tx 构建） | **退出阀**：恢复旧版重连路径（递归 ConnectController + PR#13 自动非递归逻辑）。默认已改为 native-GOP console 重建（本卡影子 ROM 原厂 GOP），仅当新版在你的板上有异常时使用 |
+| `tx-native-gop.txt`（tx 构建） | **可选 pin**：native-GOP 已是默认行为，此 marker 不再是启用开关；首行写卷上 GOP 模块路径可指定用该模块替代本卡影子 ROM（兼容包形态），空/缺省=影子 ROM |
 | `i_know_what_i_am_doing.txt` | 5 秒倒计时后自动运行，任意键中止；文件存在即启用，内容忽略 |
 
 无自动运行标记时，事务只接受空格或回车确认，其他键或 30 秒超时均中止。链回顺序为 Windows Boot Manager → 受支持的 Linux shim/grub/systemd-boot/Limine → 通用 `EFI/BOOT/BOOTX64.EFI`；最后一档提供 5 秒按键退出窗口。慢速 console 的提速走 `tx-quiet.txt` 的 console 白名单（issue #38），不做异步输出——UEFI 引导服务单线程，GOP 文本渲染本身是同步调用，异步提不了吞吐；每行日志带 `[+ms]` 阶段计时前缀，回显耗时与事务等待在 `loader.log` 里直接可分。
