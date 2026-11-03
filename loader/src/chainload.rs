@@ -76,6 +76,7 @@ fn is_nvidia_display(handle: uefi::Handle) -> bool {
 /// path below, unchanged.
 pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
     info!("PHASE: CHAIN");
+    log_handoff_memmap();
     if let Some(pre) = pre.as_ref() {
         if start_preloaded(pre).is_ok() {
             return Ok(());
@@ -84,6 +85,45 @@ pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
     }
     log_firmware_boot_order();
     chain_load_bootmgfw_inner()
+}
+
+/// Memory map at handoff time (issue #146): what the OS loader - and
+/// winload after it - actually inherits from the chained path. The
+/// transaction-time MEMMAP capture in pci.rs predates the final frees and
+/// reconnect; this one runs immediately before StartImage, so the residency
+/// question (preload + asset cache + pool fragmentation tail below 4GiB)
+/// has its read-back on the record in the same log. Read-only; every build.
+fn log_handoff_memmap() {
+    use uefi::mem::memory_map::{MemoryMap as _, MemoryType};
+    let Ok(mmap) = boot::memory_map(MemoryType::BOOT_SERVICES_DATA) else {
+        info!("CHAIN-MEMMAP: capture failed");
+        return;
+    };
+    let mut lines = 0u32;
+    let mut conv_below4g_mib: u64 = 0;
+    let mut resident_below4g_mib: u64 = 0;
+    for d in mmap.entries() {
+        let end = d.phys_start.saturating_add((d.page_count as u64) * 4096);
+        let mib = ((d.page_count as u64) * 4096) >> 20;
+        if end <= 0x1_0000_0000 {
+            if d.ty == MemoryType::CONVENTIONAL {
+                conv_below4g_mib += mib;
+            }
+            // LOADER_DATA / BOOT_SERVICES_DATA: what our own path keeps
+            // resident (image, caches, pool buckets) - winload cannot
+            // allocate from these before ExitBootServices.
+            if matches!(d.ty, MemoryType::LOADER_DATA | MemoryType::BOOT_SERVICES_DATA) {
+                resident_below4g_mib += mib;
+            }
+        }
+        if end >= 0x0800_0000 && lines < 64 {
+            info!("CHAIN-MEMMAP: {:#x}-{:#x} ({} MiB) type={:?}", d.phys_start, end, mib, d.ty);
+            lines += 1;
+        }
+    }
+    info!(
+        "CHAIN-MEMMAP: {conv_below4g_mib} MiB conventional / {resident_below4g_mib} MiB resident (LOADER+BS) below 4GiB ({lines} descriptors shown)"
+    );
 }
 
 fn chain_load_bootmgfw_inner() -> Result<()> {
