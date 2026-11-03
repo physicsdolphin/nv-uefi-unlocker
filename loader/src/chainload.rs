@@ -147,6 +147,14 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
         }
     }
 
+    // Pass 0.5 (issue #128/#142): the firmware's own boot choice beats
+    // enumeration order - a dual-ESP machine chains the leftover drive's
+    // stale BCD otherwise. Same precedence as the preload scan: pin >
+    // firmware option > built-in candidates.
+    if let Some((handle, target)) = firmware_resolved_target(&fs_handles) {
+        return start_loader(handle, target.cstr());
+    }
+
     // Pass 1: specific candidates in GLOBAL priority order - bootmgfw on
     // ANY volume first (the normal Windows chain), then the common Linux
     // loaders. Our own volume is not excluded here: on a Windows install
@@ -761,11 +769,13 @@ pub struct PreloadedOsLoader {
     path: TargetPath,
 }
 
-/// The chain target as found: the pinned path (already UCS-2 converted) or
-/// a built-in candidate (static). Avoids a String -> CStr16 round-trip.
+/// The chain target as found: the pinned path (already UCS-2 converted), a
+/// built-in candidate (static), or the firmware BootOrder's own choice
+/// (issue #128/#142). Avoids a String -> CStr16 round-trip.
 enum TargetPath {
     Pinned(uefi::CString16, alloc::string::String),
     BuiltIn(&'static CStr16),
+    Firmware(uefi::CString16, alloc::string::String),
 }
 
 impl TargetPath {
@@ -773,14 +783,165 @@ impl TargetPath {
         match self {
             TargetPath::Pinned(c, _) => c,
             TargetPath::BuiltIn(p) => p,
+            TargetPath::Firmware(c, _) => c,
         }
     }
     fn label(&self) -> alloc::string::String {
         match self {
             TargetPath::Pinned(_, s) => s.clone(),
             TargetPath::BuiltIn(p) => alloc::format!("{p}"),
+            TargetPath::Firmware(_, s) => s.clone(),
         }
     }
+}
+
+/// Split an EFI_LOAD_OPTION payload into (volume-prefix bytes, loader
+/// path): everything before the first FilePath node, and the UTF-16 path
+/// that node names. None when the option carries no plain file path (FV
+/// entries like UiApp/the built-in Shell) or is malformed.
+fn parse_load_option_paths(data: &[u8]) -> Option<(alloc::vec::Vec<u8>, alloc::string::String)> {
+    let mut i = 4usize; // attributes
+    while i + 1 < data.len() {
+        let c = u16::from_le_bytes([data[i], data[i + 1]]);
+        i += 2;
+        if c == 0 {
+            break;
+        }
+    }
+    let mut off = i;
+    while off + 4 <= data.len() {
+        let (t, st) = (data[off], data[off + 1]);
+        let len = u16::from_le_bytes([data[off + 2], data[off + 3]]) as usize;
+        if len < 4 || off + len > data.len() {
+            return None;
+        }
+        if t == NODE_TYPE_END {
+            return None;
+        }
+        if t == NODE_TYPE_MEDIA && st == NODE_SUBTYPE_FILE {
+            let prefix = data[i..off].to_vec();
+            let path = ucs2_lossy_prefix(&data[off + 4..off + len], 240);
+            if prefix.is_empty() || path.is_empty() || !path.starts_with('\\') {
+                return None;
+            }
+            return Some((prefix, path));
+        }
+        off += len;
+    }
+    None
+}
+
+/// Does this SFS volume's device path match the option's volume prefix?
+/// The prefix must be a byte-prefix of the option's FilePathList (both are
+/// complete node sequences, so byte-prefix == node-aligned-prefix). Two
+/// ESPs on one controller differ inside the HD node, so exactly one
+/// volume matches.
+fn sfs_handle_matches_prefix(handle: uefi::Handle, prefix: &[u8]) -> bool {
+    if prefix.is_empty() {
+        return false;
+    }
+    // Safety: GetProtocol discipline for a byte view of the device path.
+    let Ok(dp) = (unsafe {
+        boot::open_protocol::<DevicePath>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        return false;
+    };
+    let bytes = dp.as_bytes();
+    !bytes.is_empty() && bytes.len() <= prefix.len() && bytes == &prefix[..bytes.len()]
+}
+
+/// Resolve the loader the FIRMWARE itself would boot next: walk BootOrder,
+/// skip our own boot entry (BootCurrent) and our own volume (fingerprint),
+/// take the first option whose FilePathList names a plain file that opens
+/// on the matching volume. This is the machine owner's configured boot
+/// preference - the dual-ESP wrong-ESP pick (#128/#142: leftover drive's
+/// stale BCD -> 0xc000000f/0xc0000225) cannot survive it. Precedence:
+/// operator pin > this > enumeration-order scan. Every failure is a
+/// logged no-op and falls through.
+fn firmware_resolved_target(fs_handles: &[uefi::Handle]) -> Option<(uefi::Handle, TargetPath)> {
+    use alloc::format;
+    let boot_current: Option<u16> = (|| {
+        let Ok(n) = uefi::CString16::try_from("BootCurrent") else { return None };
+        let Ok((data, _)) = uefi::runtime::get_variable_boxed(&n, &GLOBAL_VARIABLE) else { return None };
+        if data.len() < 2 { return None; }
+        Some(u16::from_le_bytes([data[0], data[1]]))
+    })();
+    let Ok(order_name) = uefi::CString16::try_from("BootOrder") else { return None };
+    let order: alloc::vec::Vec<u16> = match uefi::runtime::get_variable_boxed(&order_name, &GLOBAL_VARIABLE) {
+        Ok((data, _)) => data
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect(),
+        Err(e) => {
+            info!("CHAIN-BOOT: firmware resolve: BootOrder unreadable ({:?}) - volume scan fallback", e.status());
+            return None;
+        }
+    };
+    info!(
+        "CHAIN-BOOT: firmware resolve: {} entr{}, self=Boot{:04X}{}",
+        order.len(),
+        if order.len() == 1 { "y" } else { "ies" },
+        boot_current.unwrap_or(0xFFFF),
+        if boot_current.is_none() { " (unreadable)" } else { "" }
+    );
+    for (rank, num) in order.iter().enumerate() {
+        if Some(*num) == boot_current {
+            info!("CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} is this boot (self) - skipped", num);
+            continue;
+        }
+        let Ok(name_c) = uefi::CString16::try_from(format!("Boot{:04X}", num).as_str()) else {
+            continue;
+        };
+        let Ok((data, _)) = uefi::runtime::get_variable_boxed(&name_c, &GLOBAL_VARIABLE) else {
+            info!("CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} unreadable - skipped", num);
+            continue;
+        };
+        let Some((prefix, path)) = parse_load_option_paths(&data) else {
+            info!(
+                "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} names no plain loader file (FV/bulk device entry) - skipped",
+                num
+            );
+            continue;
+        };
+        for handle in fs_handles.iter() {
+            if !sfs_handle_matches_prefix(*handle, &prefix) {
+                continue;
+            }
+            if own_volume_by_probe(*handle) {
+                info!("CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} resolves to OUR volume - skipped", num);
+                break;
+            }
+            let Ok(path_c) = uefi::CString16::try_from(path.as_str()) else { break };
+            let Some((mut dir, _)) = open_volume_logged(*handle) else { break };
+            match dir.open(path_ref(&path_c), FileMode::Read, FileAttribute::empty()) {
+                Ok(_) => {
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} -> '{}' on the firmware's volume - chaining its choice",
+                        num, path
+                    );
+                    return Some((*handle, TargetPath::Firmware(path_c, path)));
+                }
+                Err(e) => {
+                    info!(
+                        "CHAIN-BOOT: firmware resolve: [{rank}] '{}' does not open on the matched volume ({:?}) - skipped",
+                        path,
+                        e.status()
+                    );
+                    break;
+                }
+            }
+        }
+    }
+    info!("CHAIN-BOOT: firmware resolve: no resolvable firmware option - volume scan fallback");
+    None
+}
+
+/// Borrow helper keeping the long match arm tidy.
+fn path_ref(c: &uefi::CString16) -> &CStr16 {
+    c
 }
 
 /// The specific-candidate scan (pinned pass 0 + built-in candidates pass 1),
@@ -802,6 +963,12 @@ fn find_loader_target() -> Option<(uefi::Handle, TargetPath)> {
                 }
             }
         }
+    }
+    // Pass 0.5 (issue #128/#142): the firmware's own boot choice beats
+    // enumeration order - a dual-ESP machine chains the leftover drive's
+    // stale BCD otherwise.
+    if let Some((handle, target)) = firmware_resolved_target(&fs_handles) {
+        return Some((handle, target));
     }
     for path in CANDIDATES {
         for handle in fs_handles.iter() {
