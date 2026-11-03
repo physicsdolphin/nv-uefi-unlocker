@@ -47,10 +47,17 @@ pub const DECODE_MASK: u64 = 0x0300;
 const DECOMPRESS_GUID: uefi::Guid = guid!("d8117cfe-94a6-11d4-9a3a-0090273fc14d");
 const DRIVER_BINDING_GUID: uefi::Guid = guid!("18a031ab-b443-4d1a-a5c0-0c09261e9f71");
 
-/// EFI_DECOMPRESS_PROTOCOL (MdePkg/Include/Protocol/Decompress.h).
+/// EFI_DECOMPRESS_PROTOCOL (MdePkg/Include/Protocol/Decompress.h): two
+/// function pointers and NOTHING else - there is no Revision field. A
+/// phantom `_revision: u32` here shifted our `get_info` slot onto the
+/// firmware's Decompress pointer, so the "GetInfo" call actually ran
+/// Decompress with GetInfo's argument list - a full 164608-byte
+/// decompression into the 4-byte `dst_size` stack slot, i.e. a stack
+/// smash and the silent freeze #128 logged at its `GetInfo next` line
+/// (caught by seti9585's #107 source review; the firmware service was
+/// never at fault). Layout pinned by the asserts below.
 #[repr(C)]
 struct DecompressProto {
-    _revision: u32,
     get_info: unsafe extern "efiapi" fn(
         this: *mut DecompressProto,
         source: *const u8,
@@ -68,6 +75,9 @@ struct DecompressProto {
         scratch_size: u32,
     ) -> uefi::Status,
 }
+const _: () = assert!(core::mem::offset_of!(DecompressProto, get_info) == 0);
+const _: () = assert!(core::mem::offset_of!(DecompressProto, decompress) == 8);
+const _: () = assert!(core::mem::size_of::<DecompressProto>() == 16);
 
 /// EFI_DRIVER_BINDING_PROTOCOL (MdePkg/Include/Protocol/DriverBinding.h).
 #[repr(C)]
@@ -178,16 +188,29 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
 
     // 8. Console: bind the console stack onto the fresh GOP child only.
     // A child-level connect never re-runs the PCI-level drivers, so
-    // BiosVideo cannot be re-selected even under CSM.
-    match boot::connect_controller(child, &[], None, false) {
-        Ok(()) => info!("NATIVE-GOP: console rebound to the native GOP child"),
-        Err(e) => info!("NATIVE-GOP: console rebind failed {:?} (bootmgfw will self-establish)", e.status()),
-    }
+    // BiosVideo cannot be re-selected even under CSM. The two outcomes
+    // stay distinguishable in the log (issue #107 review): a rebound
+    // console is a verified display path; a failed rebind is a
+    // structural success that leaves display recovery unproven.
+    let console_rebound = match boot::connect_controller(child, &[], None, false) {
+        Ok(()) => {
+            info!("NATIVE-GOP: console rebound to the native GOP child");
+            true
+        }
+        Err(e) => {
+            info!("NATIVE-GOP: console rebind failed {:?} (bootmgfw will self-establish)", e.status());
+            false
+        }
+    };
 
     // 9. VGA forwarding + decode, never BME.
     restore_vga(gpu, initial_attrs);
 
-    info!("NATIVE-GOP: complete");
+    if console_rebound {
+        info!("NATIVE-GOP: complete (display path verified)");
+    } else {
+        info!("NATIVE-GOP: complete (STRUCTURAL: console left to bootmgfw - display recovery NOT verified)");
+    }
     Ok(())
 }
 
@@ -222,6 +245,13 @@ fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'stat
                 "NATIVE-GOP: \\tx-native-gop.txt names {path} but it is not on the boot volume - falling back to the card's own shadowed ROM"
             );
         }
+    } else {
+        // Present (recover() only runs when the presence probe fired) but
+        // the content reader refused it - on this path that means the
+        // size-0 form, which is the documented marker shape, not a
+        // failure. The reader's own TX-ASSET-DIAG refusal line reads like
+        // one (issue #128 run 12 cosmetic note), so say so explicitly.
+        info!("NATIVE-GOP: marker present but empty/unreadable (size-0 is the documented form) - using the card's own shadowed ROM");
     }
     info!("NATIVE-GOP: acquiring the card's own shadowed ROM (PciIo RomImage/RomSize)");
     let Some(rom) = gpu.rom_image() else {
@@ -314,44 +344,50 @@ fn firmware_decompress(img: &[u8], payload: &efirom::EfiPayload) -> Result<Vec<u
 }
 
 /// Find the Driver Binding installed by `image_handle` (exactly one) and
-/// run Supported/Start against the target PCI handle.
+/// run Supported/Start against the target PCI handle. Uniqueness is
+/// established BEFORE any callback runs (issue #107 review: invoking
+/// Supported/Start while still counting means a second match would have
+/// already executed its callbacks by the time the count check fires).
 fn bind_explicitly(image_handle: Handle, pci_handle: Handle) -> Result<(), &'static str> {
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&DRIVER_BINDING_GUID))
         .map_err(|_| "no driver bindings")?;
     let mut matches = 0usize;
-    let mut bound = false;
+    let mut unique: Option<(*mut DriverBindingProto, Handle)> = None;
     for i in 0..handles.len() {
         let Some(binding) = handle_protocol_raw(handles[i], &DRIVER_BINDING_GUID) else {
             continue;
         };
-        // Safety: protocol pointers live for the boot services lifetime.
+        // Safety: read-only field access inside the unsafe block below.
         unsafe {
             if (*binding).image_handle != image_handle {
                 continue;
             }
             matches += 1;
-            let supported = ((*binding).supported)(binding, pci_handle, null_mut());
-            info!(
-                "NATIVE-GOP: binding {:?} version={:#x} Supported={supported:?}",
-                handles[i],
-                (*binding).version
-            );
-            if supported != uefi::Status::SUCCESS {
-                continue;
-            }
-            let start = ((*binding).start)(binding, pci_handle, null_mut());
-            info!("NATIVE-GOP: binding Start={start:?}");
-            if start == uefi::Status::SUCCESS {
-                bound = true;
-            }
+            unique = Some((binding, handles[i]));
         }
     }
     if matches != 1 {
         info!("NATIVE-GOP: expected exactly one Driver Binding from the loaded image, found {matches}");
         return Err("binding identity mismatch");
     }
-    if !bound {
-        return Err("driver binding start failed");
+    // Safety: protocol pointers live for the boot services lifetime;
+    // exactly one matching binding, validated above.
+    let (binding, binding_handle) = unique.unwrap();
+    unsafe {
+        info!(
+            "NATIVE-GOP: unique binding {binding_handle:?} version={:#x} - Supported next",
+            (*binding).version
+        );
+        let supported = ((*binding).supported)(binding, pci_handle, null_mut());
+        info!("NATIVE-GOP: binding Supported={supported:?}");
+        if supported != uefi::Status::SUCCESS {
+            return Err("driver binding supported refused");
+        }
+        let start = ((*binding).start)(binding, pci_handle, null_mut());
+        info!("NATIVE-GOP: binding Start={start:?}");
+        if start != uefi::Status::SUCCESS {
+            return Err("driver binding start failed");
+        }
     }
     Ok(())
 }
@@ -386,8 +422,11 @@ fn verify_gop_child(pci_handle: Handle) -> Result<Handle, &'static str> {
             &device_path_bytes(pci_handle).unwrap_or_default(),
             &device_path_bytes(gop).unwrap_or_default(),
         ) {
+            // Opening the GOP is part of the check, not a bonus (issue
+            // #107 review): a child whose GOP cannot be opened is not a
+            // verified display path, so it must not count as success.
             // Safety: GetProtocol, read-only mode info.
-            if let Ok(g) = unsafe {
+            match unsafe {
                 boot::open_protocol::<GraphicsOutput>(
                     OpenProtocolParams {
                         handle: gop,
@@ -397,8 +436,17 @@ fn verify_gop_child(pci_handle: Handle) -> Result<Handle, &'static str> {
                     OpenProtocolAttributes::GetProtocol,
                 )
             } {
-                let (w, h) = g.current_mode_info().resolution();
-                info!("NATIVE-GOP: verified GOP child {:?} ({}x{})", gop, w, h);
+                Ok(g) => {
+                    let (w, h) = g.current_mode_info().resolution();
+                    info!("NATIVE-GOP: verified GOP child {:?} ({}x{})", gop, w, h);
+                }
+                Err(e) => {
+                    info!(
+                        "NATIVE-GOP: child {gop:?} extends the target path but GOP open failed {:?} - not verified",
+                        e.status()
+                    );
+                    return Err("gop open on child failed");
+                }
             }
             return Ok(gop);
         }
