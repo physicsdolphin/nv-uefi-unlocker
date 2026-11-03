@@ -31,14 +31,19 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 
 ## Community success reports and screenshots
 
-The following **26 hardware/model groups** come from the [video comment section](https://www.bilibili.com/video/BV1d6xN66ECM/), exported on **2026-11-02 (Beijing time)**. These are community reports, **not independent verification or a guarantee for every board of the same model**. Desktop, laptop and modified cards remain separate; missing model, form-factor and unit details are left unspecified. Current support and known limitations remain in the [compatibility matrix](docs/compatibility.en.md).
+The following **31 hardware/model groups** come from the [video comment section](https://www.bilibili.com/video/BV1d6xN66ECM/) and repository issues/discussions, with material up to **2026-11-03 (Beijing time)**. These are community reports, **not independent verification or a guarantee for every board of the same model**. Desktop, laptop and modified cards remain separate; missing model, form-factor and unit details are left unspecified. Where a model has several reports, the most informative one is kept. Current support and known limitations remain in the [compatibility matrix](docs/compatibility.en.md).
 
 The table distinguishes before/after measurements, post-unlock-only screenshots and text-only reports. Benchmark gains are not application gains; reports involving overclocking or different power settings are marked accordingly.
 
-| Reported hardware | Reported result / conditions | Sources |
+| Reported hardware | Community report / conditions | Sources |
 | --- | --- | --- |
-| RTX 2080 Ti | Reports a successful unlock and faster compute; no H3 gain | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
+| RTX 2080 Ti 11GB | Unlock survives into the proprietary Linux driver: tensor 60.31 → 89.57 TFLOPS (+48.5%); first full TU102 chain on a stock 11GB card, AMD platform; another report describes success with no H3 gain | [#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103) · [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
 | RTX 2080 Ti 22GB mod | Reports success on the final attempt; no performance comparison | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
+| RTX 2080 Super 8GB | Retest passes after the 0x91 fix: 46 → 68 TFLOPS (+47.8%); first success in that fix chain | [#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14) |
+| RTX 2080 8GB | Passes after the v2.1.8 fix; reporter pinned 0x91 with eight single-variable rounds and a bitwise diff against a working machine (no performance numbers) | [#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62) |
+| RTX 2070 Laptop 8GB | Passes on v2.1.3; first Turing laptop success, and its cross-chip signature drove the >4G allocation fix (no performance numbers) | [#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16) |
+| RTX 2060 12GB | Passes after the fix; six single-variable rounds and offline PROM analysis placed staging exactly on the 4 GiB boundary (no performance numbers) | [#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) |
+| RTX 2060 Super 8GB | Full chain passes: FWSEC → WPR2 → BOOT_DIRECT → PLM open → SS0/SS1 readback; signatures restored and Windows handoff normal | [#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12) |
 | RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS; Anima generation 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [screenshots](docs/community-success.md#s30) |
 | RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS; 150W VBIOS and overclocked setup | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [screenshots](docs/community-success.md#s12) |
 | RTX 3070 Ti Laptop | WMMA FP16 45.51 → 88.84 TFLOPS; cuBLAS FP16 largely unchanged | [S36](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128) |
