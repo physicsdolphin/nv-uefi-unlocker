@@ -28,6 +28,72 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | RTX 40 · Ada | Fully compatible on laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
 
+## Community success reports and screenshots
+
+The following **26 hardware/model groups** come from the [video comment section](https://www.bilibili.com/video/BV1d6xN66ECM/), exported on **2026-11-02 (Beijing time)**. These are community reports, **not independent verification or a guarantee for every board of the same model**. Desktop, laptop and modified cards remain separate; missing model, form-factor and unit details are left unspecified. Current support and known limitations remain in the [compatibility matrix](docs/compatibility.en.md).
+
+The table distinguishes before/after measurements, post-unlock-only screenshots and text-only reports. Benchmark gains are not application gains; reports involving overclocking or different power settings are marked accordingly.
+
+| Reported hardware | Reported result / conditions | Sources |
+| --- | --- | --- |
+| RTX 2080 Ti | Reports a successful unlock and faster compute; no H3 gain | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
+| RTX 2080 Ti 22GB mod | Reports success on the final attempt; no performance comparison | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
+| RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS; Anima generation 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [screenshots](docs/community-success.md#s30) |
+| RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS; 150W VBIOS and overclocked setup | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [screenshots](docs/community-success.md#s12) |
+| RTX 3070 Ti Laptop | WMMA FP16 45.51 → 88.84 TFLOPS; cuBLAS FP16 largely unchanged | [S36](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128) |
+| RTX 3080 10GB | OS-side UNLOCKED; FP16 53.91 → 84.60 TFLOPS | [S28](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704) · [screenshots](docs/community-success.md#s28) |
+| RTX 3080 Laptop | Reports success and ~33% higher BF16; no absolute before/after values | [S18](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318503929089&comment_secondary_id=318523189905) |
+| RTX 3080 Ti Laptop | v2.1.0 success report; another reports BF16 45 → 72 TFLOPS with overclocking also mentioned | [S04](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322101380288&comment_secondary_id=322138152256) · [S09](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322187811968&comment_secondary_id=322187811968) |
+| RTX 3080 Ti (form factor unspecified) | Screenshot: FP16 73.9 → 123.2, unit unspecified; FP32 control largely unchanged | [S48](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318960839137&comment_secondary_id=318960839137) · [screenshots](docs/community-success.md#s48) |
+| RTX 3090 | Qwen-Image2.1 Turbo BF16: nearly 60 → 22 s/image (approximate baseline) | [S49](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322473751376&comment_secondary_id=322473751376) |
+| RTX 3090 20GB OEM (reporter label) | FP16 77.36 → 115.20 TFLOPS; reporter also notes unlock loss after sleep/resume | [S46](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322654906480&comment_secondary_id=322654906480) · [screenshots](docs/community-success.md#s46) |
+| RTX 3090 Ti | H3 INT8 workflow at the same 418.5W: total 123.47 → 108.08 s/item | [S25](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322309028240&comment_secondary_id=322309028240) · [screenshots](docs/community-success.md#s25) |
+| RTX 4050 Laptop 6GB | Success report; post-unlock FP16 39.15 TFLOPS only, with overclock settings | [S34](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322434523792&comment_secondary_id=322434523792) · [screenshots](docs/community-success.md#s34) |
+| RTX 4060 Laptop | Screenshot: FP16/FP32 accumulation 31.12 → 54.33 (unit unspecified); generation reports also available | [S01](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318379087793&comment_secondary_id=318379087793) · [S16](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318513166865&comment_secondary_id=318513166865) · [S42](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896) · [screenshots](docs/community-success.md#s16) |
+| RTX 4060 Ti 16GB | Two reporters describe successful unlocks and faster generation, including ASUS B550M | [S05](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318384860033&comment_secondary_id=318425336033) · [S50](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318780355665&comment_secondary_id=318780355665) |
+| RTX 4060 8GB (form factor unspecified) | MOSS Image, 1024×1536, 30 steps: ~240 → ~200 s | [S31](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318678373665&comment_secondary_id=318678373665) |
+| RTX 4070 Laptop | FP16 N=4096: 33.296 → 64.005 TFLOPS; another success report | [S21](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322273213728&comment_secondary_id=322273213728) · [S39](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322525434896&comment_secondary_id=322525434896) · [screenshots](docs/community-success.md#s21) |
+| RTX 4070 Ti SUPER | Includes an OS-side UNLOCKED screenshot; the 57.00 → 150.93 TFLOPS report also changed overclocking | [S07](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318434036593&comment_secondary_id=318434036593) · [S10](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322192703296&comment_secondary_id=322192703296) · [S23](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318588984337&comment_secondary_id=318588984337) · [S51](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318800216993&comment_secondary_id=318800216993) · [screenshots](docs/community-success.md#s23) |
+| RTX 4070 desktop | FP16 61.99 → 76.32–87.82 TFLOPS (150W/200W conditions); generation 35 → 27 s | [S13](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322202417520&comment_secondary_id=322202417520) · [screenshots](docs/community-success.md#s13) |
+| RTX 4070M mod | AD106 / 10de:2820; success after an update, FP16 40 → 70 (unit unspecified) | [S02](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322092618224&comment_secondary_id=322120397328) |
+| RTX 4070 (form factor unspecified) | Pony 1024²: 11.1 → 9.0 s; Wan2.2 5B / 49 frames: 96 → 78.2 s | [S44](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318864603793&comment_secondary_id=318864603793) |
+| RTX 4080 Laptop | Reports FP16 ~57 → ~80 TFLOPS | [S08](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318467714081&comment_secondary_id=318467714081) |
+| RTX 4080 SUPER | Reports success and ~1.85×; no application timing | [S24](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318597571313&comment_secondary_id=318597571313) |
+| RTX 4080 SUPER 32GB mod | Includes dual GPUs on TRX40; BF16 107.1 → 191.1, prefill +16.4%/+19.1%, decode +5.5% | [S11](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705) · [S32](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785) · [S43](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104) · [context with incomplete test conditions](docs/community-success.md#s32) |
+| RTX 4090 | Screenshot: TF32 79.4 → 148.5 (unit unspecified); reporter also describes ~15–20% faster MOSS BF16 | [S40](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322535665616&comment_secondary_id=322535665616) · [S45](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322634742704&comment_secondary_id=322634742704) · [screenshots](docs/community-success.md#s45) |
+| RTX 4090 Laptop (configuration screenshot label) | Later reports it works; model comes from their AI configuration screenshot, with no performance comparison | [S38](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318796399937&comment_secondary_id=318815524849) |
+
+### Screenshot examples
+
+Click an example for its source and conditions. [All 22 images from 15 reporters, with attribution and notes (Chinese)](docs/community-success.md) · [Source and SHA-256 index](docs/evidence/bilibili-2026-11-02/sources.json).
+
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 3060 12GB</b><br>
+<a href="docs/community-success.md#s30"><img src="docs/evidence/bilibili-2026-11-02/318661261937-1.png" width="420" alt="RTX 3060 12GB community report"></a><br>
+<a href="docs/community-success.md#s30">original, source and conditions</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 3080 10GB / UNLOCKED</b><br>
+<a href="docs/community-success.md#s28"><img src="docs/evidence/bilibili-2026-11-02/322392362704-2.png" width="420" alt="RTX 3080 10GB / UNLOCKED community report"></a><br>
+<a href="docs/community-success.md#s28">original, source and conditions</a>
+</td>
+</tr>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 4060 Laptop</b><br>
+<a href="docs/community-success.md#s16"><img src="docs/evidence/bilibili-2026-11-02/318513166865-1.png" width="420" alt="RTX 4060 Laptop community report"></a><br>
+<a href="docs/community-success.md#s16">original, source and conditions</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 4070 Laptop</b><br>
+<a href="docs/community-success.md#s21"><img src="docs/evidence/bilibili-2026-11-02/322273213728-1.png" width="420" alt="RTX 4070 Laptop community report"></a><br>
+<a href="docs/community-success.md#s21">original, source and conditions</a>
+</td>
+</tr>
+</table>
+
 ## Field cases
 
 Beyond the matrix, these closed cases show the engineering depth behind the tool — each with full logs and an evidence chain:

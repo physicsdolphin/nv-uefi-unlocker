@@ -28,6 +28,72 @@ GTX 16 + RTX 20 + RTX 30 + RTX 40 系列通用的 UEFI 预驱动 NVIDIA GPU 解�
 | RTX 40 · Ada | 全系兼容，支持笔记本与台式 |
 | Pascal 及更早 / GA100 / RTX 50 | 不支持 |
 
+## 社区成功反馈与复现截图
+
+以下 **26 项硬件型号 / 形态分组**整理自[视频评论区](https://www.bilibili.com/video/BV1d6xN66ECM/)，资料截至 **2026-11-02（北京时间）**。这些是观众报告，**未经独立实机复测，也不代表同型号所有板卡与平台都通过**。笔记本、台式和改卡分别保留；缺失的型号、形态、单位不补猜。现行支持与已知限制仍以[兼容性矩阵](docs/compatibility.md)为准。
+
+表中分别注明前后实测、只有解锁后截图和文字自述。基准算力增幅不等于实际应用增幅；同时超频或改变功耗条件的报告单独标注。
+
+| 硬件型号 / 形态 | 观众报告的结果与条件 | 来源 |
+| --- | --- | --- |
+| RTX 2080 Ti | 自述解锁成功、计算提速；H3 未见收益 | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
+| RTX 2080 Ti 22GB 改卡 | 自述最后一次尝试成功；未给性能对比 | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
+| RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS；Anima 生图 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [截图](docs/community-success.md#s30) |
+| RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS；150W VBIOS + 超频环境 | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [截图](docs/community-success.md#s12) |
+| RTX 3070 Ti Laptop | WMMA FP16 45.51 → 88.84 TFLOPS；cuBLAS FP16 基本不变 | [S36](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128) |
+| RTX 3080 10GB | 系统侧 UNLOCKED；FP16 53.91 → 84.60 TFLOPS | [S28](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704) · [截图](docs/community-success.md#s28) |
+| RTX 3080 Laptop | 自述成功，BF16 约 +33%；无前后绝对值 | [S18](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318503929089&comment_secondary_id=318523189905) |
+| RTX 3080 Ti Laptop | v2.1.0 成功自述；另一报告 BF16 45 → 72 TFLOPS，另有超频 | [S04](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322101380288&comment_secondary_id=322138152256) · [S09](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322187811968&comment_secondary_id=322187811968) |
+| RTX 3080 Ti（形态未说明） | 截图 FP16 73.9 → 123.2，单位未标；FP32 对照基本不变 | [S48](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318960839137&comment_secondary_id=318960839137) · [截图](docs/community-success.md#s48) |
+| RTX 3090 | Qwen-Image2.1 Turbo BF16 每图接近 60 秒 → 22 秒（前值为约数） | [S49](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322473751376&comment_secondary_id=322473751376) |
+| RTX 3090 20GB OEM（本人标注） | FP16 77.36 → 115.20 TFLOPS；本人另报睡眠唤醒后失效 | [S46](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322654906480&comment_secondary_id=322654906480) · [截图](docs/community-success.md#s46) |
+| RTX 3090 Ti | H3 INT8 工作流同 418.5W，单条总耗时 123.47 → 108.08 秒 | [S25](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322309028240&comment_secondary_id=322309028240) · [截图](docs/community-success.md#s25) |
+| RTX 4050 Laptop 6GB | 成功自述；仅解锁后 FP16 39.15 TFLOPS，另有超频设置 | [S34](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322434523792&comment_secondary_id=322434523792) · [截图](docs/community-success.md#s34) |
+| RTX 4060 Laptop | 截图 FP16/FP32 累加 31.12 → 54.33（单位未标）；另有生图反馈 | [S01](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318379087793&comment_secondary_id=318379087793) · [S16](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318513166865&comment_secondary_id=318513166865) · [S42](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896) · [截图](docs/community-success.md#s16) |
+| RTX 4060 Ti 16GB | 两位观众报告成功及生图变快；含华硕 B550M 平台 | [S05](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318384860033&comment_secondary_id=318425336033) · [S50](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318780355665&comment_secondary_id=318780355665) |
+| RTX 4060 8GB（形态未说明） | MOSS Image 1024×1536、30 步，约 240 → 200 秒 | [S31](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318678373665&comment_secondary_id=318678373665) |
+| RTX 4070 Laptop | FP16 N=4096：33.296 → 64.005 TFLOPS；另有成功自述 | [S21](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322273213728&comment_secondary_id=322273213728) · [S39](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322525434896&comment_secondary_id=322525434896) · [截图](docs/community-success.md#s21) |
+| RTX 4070 Ti SUPER | 含系统侧 UNLOCKED 截图；57.00 → 150.93 TFLOPS 的报告同时超频 | [S07](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318434036593&comment_secondary_id=318434036593) · [S10](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322192703296&comment_secondary_id=322192703296) · [S23](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318588984337&comment_secondary_id=318588984337) · [S51](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318800216993&comment_secondary_id=318800216993) · [截图](docs/community-success.md#s23) |
+| RTX 4070 台式机 | FP16 61.99 → 76.32–87.82 TFLOPS（150W/200W 条件）；生图 35 → 27 秒 | [S13](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322202417520&comment_secondary_id=322202417520) · [截图](docs/community-success.md#s13) |
+| RTX 4070M 魔改卡 | AD106 / 10de:2820；自述更新后成功，FP16 40 → 70（单位未标） | [S02](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322092618224&comment_secondary_id=322120397328) |
+| RTX 4070（形态未说明） | Pony 1024²：11.1 → 9.0 秒；Wan2.2 5B / 49 帧：96 → 78.2 秒 | [S44](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318864603793&comment_secondary_id=318864603793) |
+| RTX 4080 Laptop | 自述 FP16 约 57 → 80 TFLOPS | [S08](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318467714081&comment_secondary_id=318467714081) |
+| RTX 4080 SUPER | 成功自述、约 1.85×；未提供应用耗时 | [S24](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318597571313&comment_secondary_id=318597571313) |
+| RTX 4080 SUPER 32GB 改卡 | 含 TRX40 双卡；BF16 107.1 → 191.1，prefill +16.4%/+19.1%、decode +5.5% | [S11](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705) · [S32](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785) · [S43](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104) · [待补测上下文](docs/community-success.md#s32) |
+| RTX 4090 | 截图 TF32 79.4 → 148.5（单位未标）；本人另报 MOSS BF16 约 +15%–20% | [S40](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322535665616&comment_secondary_id=322535665616) · [S45](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322634742704&comment_secondary_id=322634742704) · [截图](docs/community-success.md#s45) |
+| RTX 4090 Laptop（配置截图标注） | 后续自述可用；型号来自本人附的 AI 配置识别图，无性能对比 | [S38](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318796399937&comment_secondary_id=318815524849) |
+
+### 复现截图示例
+
+点击图片查看来源与测试条件。[完整图集：15 位观众的 22 张图片及说明](docs/community-success.md) · [来源与 SHA-256 索引](docs/evidence/bilibili-2026-11-02/sources.json)。
+
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 3060 12GB</b><br>
+<a href="docs/community-success.md#s30"><img src="docs/evidence/bilibili-2026-11-02/318661261937-1.png" width="420" alt="RTX 3060 12GB community report"></a><br>
+<a href="docs/community-success.md#s30">原图、来源与条件</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 3080 10GB / UNLOCKED</b><br>
+<a href="docs/community-success.md#s28"><img src="docs/evidence/bilibili-2026-11-02/322392362704-2.png" width="420" alt="RTX 3080 10GB / UNLOCKED community report"></a><br>
+<a href="docs/community-success.md#s28">原图、来源与条件</a>
+</td>
+</tr>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 4060 Laptop</b><br>
+<a href="docs/community-success.md#s16"><img src="docs/evidence/bilibili-2026-11-02/318513166865-1.png" width="420" alt="RTX 4060 Laptop community report"></a><br>
+<a href="docs/community-success.md#s16">原图、来源与条件</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 4070 Laptop</b><br>
+<a href="docs/community-success.md#s21"><img src="docs/evidence/bilibili-2026-11-02/322273213728-1.png" width="420" alt="RTX 4070 Laptop community report"></a><br>
+<a href="docs/community-success.md#s21">原图、来源与条件</a>
+</td>
+</tr>
+</table>
+
 ## 实战案例
 
 兼容矩阵之外，这几个已闭环的案例展示了本工具背后的工程深度——每个都附完整日志与证据链：
