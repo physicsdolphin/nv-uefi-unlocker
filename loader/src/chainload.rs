@@ -1222,6 +1222,13 @@ fn strip_end_node(bytes: &[u8]) -> &[u8] {
 /// stale BCD -> 0xc000000f/0xc0000225) cannot survive it. Precedence:
 /// operator pin > this > enumeration-order scan. Every failure is a
 /// logged no-op and falls through.
+/// The full volume-divergence table prints once per boot; every further
+/// no-match firmware entry collapses to a one-line summary (issue: the
+/// Z170 round's three messaging-scope entries × 8 volumes burned ~8 s and
+/// most of the log).
+static BOOT_DIVERGENCE_DUMPED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
 fn firmware_resolved_target(fs_handles: &[uefi::Handle]) -> Option<(uefi::Handle, TargetPath)> {
     use alloc::format;
     let boot_current: Option<u16> = (|| {
@@ -1296,7 +1303,21 @@ fn firmware_resolved_target(fs_handles: &[uefi::Handle]) -> Option<(uefi::Handle
                     // ordinal - "which byte of which node differs" in one log
                     // block. Without this a systematic mismatch (stored path
                     // vs live enumeration) only ever reads as "matched
-                    // nothing".
+                    // nothing". Z170 field round: firmware entries whose
+                    // scope is a messaging device (UART etc., type 0x05)
+                    // never match any volume - full-dumping 8 volumes per
+                    // entry burned ~8 s and most of the log across three
+                    // such entries, so the full block prints ONCE per boot;
+                    // every further no-match entry gets a one-line summary.
+                    if BOOT_DIVERGENCE_DUMPED.swap(true, core::sync::atomic::Ordering::Relaxed) {
+                        info!(
+                            "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} matched no SimpleFileSystem volume (scope {} B, {} node(s); full divergence table already printed this boot)",
+                            num,
+                            prefix.len(),
+                            describe_nodes(&prefix).matches('[').count()
+                        );
+                        continue;
+                    }
                     info!(
                         "CHAIN-BOOT: firmware resolve: [{rank}] Boot{:04X} matched no SimpleFileSystem volume - prefix nodes:{}",
                         num,
