@@ -613,11 +613,11 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
     true
 }
 
-/// Does this path exist as a readable regular file? No size gate and no content:
-/// the UI switches are zero-byte marker files by design (`\tx-require-d0.txt`
-/// is documented as "drop an empty file"), so anything that treats "size 0" as
-/// "absent" silently disables them. Kept separate from the asset reader, whose
-/// size rules are about DMA windows, not about intent.
+
+
+/// Does this path exist as a readable regular file? No size gate and no
+/// content: the UI switches are zero-byte marker files by design, so
+/// anything that treats "size 0" as "absent" silently disables them.
 pub fn probe_file(path: &str) -> bool {
     let Ok(path_c) = uefi::CString16::try_from(path) else {
         return false;
@@ -632,7 +632,6 @@ pub fn probe_file(path: &str) -> bool {
     dir.open(&path_c, FileMode::Read, uefi::proto::media::file::FileAttribute::empty())
         .is_ok()
 }
-
 
 /// Read one ASSET (never a marker) with the three states kept apart:
 /// `Ok(None)` = not on the stick (the caller may legitimately run without it),
@@ -1356,6 +1355,14 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // A \tu10x-no-reconnect.txt marker skips it again for experiments.
     if assets.family == "tu10x" && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
         info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
+    } else if crate::tx::probe_file("\\tx-native-gop.txt") {
+        // Issue #107 CSM class: the generic recursive reconnect hangs
+        // re-binding BiosVideo. Start the native GOP explicitly instead;
+        // on any failure the console is left to bootmgfw (never falls
+        // back to the hanging ConnectController).
+        if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
+            info!("TX: native-GOP recovery failed: {e} - console left to bootmgfw");
+        }
     } else {
         crate::tx_detach::reconnect_all(pci_handle);
     }

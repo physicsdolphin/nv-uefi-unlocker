@@ -22,6 +22,8 @@ mod timing;
 #[cfg(feature = "tx")]
 mod tx;
 #[cfg(feature = "tx")]
+mod gop_native;
+#[cfg(feature = "tx")]
 mod claim_plm;
 #[cfg(feature = "tx")]
 mod tx_fwsec;

@@ -12,6 +12,7 @@ use log::info;
 use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams};
 use uefi::proto::console::gop::GraphicsOutput;
 use uefi::proto::device_path::DevicePath;
+use uefi::proto::loaded_image::LoadedImage;
 use uefi::{Handle, Identify};
 
 use crate::pci::PciIo;
@@ -25,7 +26,7 @@ fn open_count(handle: Handle) -> usize {
 
 /// Raw device-path bytes of a handle (same technique as the chainload
 /// self-volume fingerprint).
-fn device_path_bytes(handle: Handle) -> Option<alloc::vec::Vec<u8>> {
+pub(crate) fn device_path_bytes(handle: Handle) -> Option<alloc::vec::Vec<u8>> {
     let dp = unsafe {
         boot::open_protocol::<DevicePath>(
             OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
@@ -120,9 +121,25 @@ fn log_openers(label: &str, handle: Handle, guid: &uefi::Guid) {
         }
         for i in 0..n {
             let e = &*buf.add(i);
+            // Issue #107 logging ask: identify the DRIVING IMAGE behind each
+            // opener (BiosVideo vs the vendor GOP driver build), not just the
+            // opaque agent pointer. Image base+size is a stable per-build
+            // fingerprint; a recursive ConnectController hang log then shows
+            // exactly which display driver was being (re)selected.
+            let image_note = match boot::open_protocol::<LoadedImage>(
+                OpenProtocolParams {
+                    handle: Handle::from_ptr(e.agent.cast()).unwrap_or(handle),
+                    agent: boot::image_handle(),
+                    controller: None,
+                },
+                OpenProtocolAttributes::GetProtocol,
+            ) {
+                Ok(li) => alloc::format!(" image={:p}+{:#x}", (li.info().0).cast::<u8>(), li.info().1),
+                Err(_) => alloc::string::String::new(),
+            };
             info!(
-                "DIAG {label}: {:?} agent={:p} controller={:p} attr={:#x} count={}",
-                handle, e.agent, e.controller, e.attributes, e.open_count
+                "DIAG {label}: {:?} agent={:p} controller={:p} attr={:#x} count={}{}",
+                handle, e.agent, e.controller, e.attributes, e.open_count, image_note
             );
         }
         if let Some(p) = core::ptr::NonNull::new(buf.cast::<u8>()) {
@@ -203,18 +220,20 @@ pub fn pm_preflight(pci: &PciIo) -> Result<PmEntry, &'static str> {
     Ok(PmEntry { cap: Some(cap), pmcsr: before, warm })
 }
 
-/// Staged detach + exclusive claim. Returns the config-space baseline taken
-/// while exclusively owned (drift reference for the post-transaction check).
 /// What `detach_and_claim` hands to the transaction: the config-space
-/// baseline (drift reference) and the firmware-tracked PciIo attributes
-/// captured BEFORE the claim's Set(0x0007) rewrote them - the handoff
-/// restores the VGA forwarding subset from here (issue #109 chain-2
-/// code-12 class: the boot-VGA owner must hold legacy VGA at handoff).
+/// baseline (drift reference for the post-transaction check) and the
+/// firmware-tracked PciIo attributes captured BEFORE the claim's
+/// Set(0x0007) rewrote them - the handoff restores the VGA forwarding
+/// subset from here (issue #109 chain-2 code-12 class: the boot-VGA
+/// owner must hold legacy VGA at handoff).
 pub struct Claim {
     pub baseline: alloc::vec::Vec<u32>,
     pub initial_attrs: Option<u64>,
 }
 
+/// Staged detach + exclusive claim. Returns the config-space baseline
+/// taken while exclusively owned (drift reference for the
+/// post-transaction check).
 pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     info!("DETACH: staged console/driver detach begin (TOTORONG craft)");
     log_display_topology(pci_handle);
@@ -230,7 +249,11 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
         } {
             Ok(pci) => {
                 let attrs = pci.attributes_get();
-                info!("DETACH: pre-claim attributes {attrs:?} (VGA subset {:#x})", attrs.unwrap_or(0) & 0x001C);
+                info!(
+                    "DETACH: pre-claim attributes raw={:#x} (VGA legacy subset {:#x} = 0x001C mask; 0x0300 alone means IO|MEM decode with no legacy VGA routing)",
+                    attrs.unwrap_or(0),
+                    attrs.unwrap_or(0) & 0x001C
+                );
                 attrs
             }
             Err(e) => {
@@ -347,6 +370,7 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
         return Err("PCI command MEMORY bit did not stick after both enable paths");
     }
     Ok(Claim { baseline, initial_attrs })
+
 }
 
 /// Post-transaction GOP/console reconnect (TOTORONG craft): after the FLR

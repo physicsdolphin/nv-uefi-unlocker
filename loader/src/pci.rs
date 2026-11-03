@@ -305,6 +305,42 @@ impl PciIo {
         Some(attrs)
     }
 
+    /// The PciBus-shadowed option ROM (EFI_PCI_IO_PROTOCOL RomImage/
+    /// RomSize fields, pinned at slots 19/18 of PciIoRaw). This is the
+    /// copy the firmware fetched at enumeration - the native-GOP path
+    /// extracts the card's own GOP driver from it.
+    #[cfg(feature = "tx")]
+    pub fn rom_image(&self) -> Option<&[u8]> {
+        // Verbatim slot dump BEFORE any use (issue #128 run 11: the log
+        // went dark inside the recovery block; a garbage RomSize fed
+        // straight into a copy is an unbounded allocation -> silent
+        // freeze, and the flushed ptr/size pair is what localises a
+        // mid-copy fault). "NATIVE-GOP" is a flush marker.
+        log::info!(
+            "NATIVE-GOP: PciIo RomImage slots raw: ptr={:#x} RomSize={} ({:#x})",
+            self.0.rom_image as usize,
+            self.0.rom_size,
+            self.0.rom_size
+        );
+        if self.0.rom_image.is_null() || self.0.rom_size == 0 {
+            return None;
+        }
+        if !(512..=16 * 1024 * 1024).contains(&self.0.rom_size) {
+            log::info!(
+                "NATIVE-GOP: RomSize {} outside the plausible option-ROM window (512..=16MiB) - treating as absent",
+                self.0.rom_size
+            );
+            return None;
+        }
+        // Safety: RomImage points into a firmware-allocated buffer of
+        // RomSize bytes, valid for the boot services lifetime.
+        Some(unsafe {
+            core::slice::from_raw_parts(self.0.rom_image as *const u8, self.0.rom_size as usize)
+        })
+    }
+
+
+
     /// THE BAR write primitive — consumed only by `tx` builds. M0/M1
     /// binaries contain no call sites (constitution §1.7 audit anchor).
     #[cfg(feature = "tx")]
