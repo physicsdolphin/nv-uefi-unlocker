@@ -58,9 +58,10 @@ reconnect 之前**显式选择**原厂 GOP 驱动，不调用会卡死的通用 
 
 事务全绿（unlock_persist、FLR 按设计跳过）、HANDOFF-OUT 族标注首秀正确（`tu10x:unlock=true`），native-GOP 链走到 **Start=SUCCESS** 后发现一个驱动层事实：
 
-- **TU1xx GOP 驱动安装 child 与否并非确定性**（三轮修正）：同样的"显示器接核显"拓扑下，一轮 750 ms 三探只有核显的 GOP child（probe hex 解码 = `Acpi(PNP0A03,0)/Pci(0x2,0)/AcpiAdr`，恰为 PR13 已知的 child 形态），**另一轮 probe 0 即出现独显 child（36 B = 独显 path + AcpiAdr）→ `verified GOP child (3840x2160)` → `console rebound` → `complete (display path verified)`**——Turing native-GOP 首次端到端完整成功（证据 `evidence/tu106-native-gop-z170/loader-native-gop-success.log`）。安装与否的条件尚未切开（BIOS CSM 保存重置后的初始化顺序、驱动内部状态均为候选）；优雅回落设计覆盖两种结局，无需前置判断。
+- **TU1xx GOP 驱动安装 child 与否并非确定性**（四轮修正）：同样的"显示器接核显"拓扑下，一轮 750 ms 三探只有核显的 GOP child（probe hex 解码 = `Acpi(PNP0A03,0)/Pci(0x2,0)/AcpiAdr`，恰为 PR13 已知的 child 形态），**另一轮 probe 0 即出现独显 child（36 B = 独显 path + AcpiAdr）→ `verified GOP child (3840x2160)` → `console rebound` → `complete (display path verified)`**——Turing native-GOP 首次端到端完整成功（证据 `evidence/tu106-native-gop-z170/loader-native-gop-success.log`）。
+- **第四轮（纯 UEFI 对照）把变量精确化：决定"child 装不装"的是谁持有 boot console**（`loader-pure-uefi-success.log`）。切回纯 UEFI 后 console 归属反转——GOP-PROBE 唯一句柄是**独显的**（36 B，`on_target=true`），dGPU 从 D3cold 入场变为 **D0 活跃入场**（SAMPLE 全可读、NV_PROM crc 正常；CSM-on 轮独显被 RTD3 停泊、SAMPLE 全 all-ones），`pre-claim attributes raw=0x300`（CSM-on 轮是 0x0——CSM 模块连 PciIo attributes 跟踪都扰乱），detach 正常清放（GOP 6→4→no handles）。native-GOP **probe 0 即中 4K** → console rebound → Windows 全程独显可见、无假死机段。结论：**CSM-on 下 CSM 模块把 boot console 抢给核显，是独显 child 安装不确定性的根源**；纯 UEFI 下确定性恢复。native-GOP 在纯 UEFI 下同样工作良好（其实际作用 = 无缝重建被 detach 的独显 console，不等 bootmgfw 重绑）——marker 非 CSM 专属。附带观察：0x823xxx FEAT 别名镜像在 CSM-on 轮可读、纯 UEFI 轮全 badf（0x4096xx 恒可读）——别名 decode 差异待查，不影响事务。
 - **定位收敛（混合形态的两种结局都已实证）**：native-GOP 成功时，核显接屏的物理屏会**冻结在 console 重绑那一刻**直到 Windows 里独显驱动接管点亮锁屏（本机实测：bootmgfw 阶段核显持有 console 输出、物理屏定帧，Windows 起来后独显直接显示锁屏界面，无 Code 12）——视觉上有一段"假死机"，属预期路径而非故障；失败时 console 交 bootmgfw、核显 console 本就活着。两种结局都不阻断进 Windows。
-- **休眠恢复入场不触发 Code 12**：冷启动 Windows 重跑资源仲裁才会撞仲裁失败（前轮实证）；从休眠恢复（hiberfile）进入的会话驱动/资源原样，独显直接可用。Code 12 定性再次收窄为**纯仲裁问题**。
+- **休眠恢复两形态**：恢复成功时（hiberfile 被接受）驱动/资源原样，无 Code 12、独显直接可用——冷启动 Windows 重跑资源仲裁才会撞仲裁失败，Code 12 定性收窄为**纯仲裁问题**；恢复失败时 Windows 检测到 GPU 状态与 hiberfile 不符，**丢弃镜像转正常启动**（本机第四轮实测），无损失、解锁正常。休眠 + 解锁组合仍属敏感路径，推荐日常用普通关机/重启。
 - 设备管理器禁用→启用不掉解锁（OS 内自救），见 compatibility.md TU106 节。
 - Z170 的 NVRAM Windows 选项 = **HD 短格式 + FILE 节点混合形态**（`hd(partN,sig) + file:"\EFI\Microsoft\Boot\BOOTMGFW.EFI"`），短格式 resolve 按 BmExpandPartitionDevicePath 分区身份匹配——真机三连全中（diag.5 字段验证第二平台）。
 
