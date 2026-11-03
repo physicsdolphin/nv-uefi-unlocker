@@ -60,6 +60,8 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-gop-disconnect.txt` | 诊断开关：断开所有 GOP 句柄（含 iGPU）而非仅目标卡。**不要当提速手段用**——console 静默后无增益，且他卡 console 被杀后 loader 不会恢复它（依赖 bootmgfw 重建，存在 Code 12 风险形态，见 issue #35） |
 | `tx-reconnect-legacy.txt`（tx 构建） | **退出阀**：恢复旧版重连路径（递归 ConnectController + PR#13 自动非递归逻辑）。默认已改为 native-GOP console 重建（本卡影子 ROM 原厂 GOP），仅当新版在你的板上有异常时使用 |
 | `tx-native-gop.txt`（tx 构建） | **可选 pin**：native-GOP 已是默认行为，此 marker 不再是启用开关；首行写卷上 GOP 模块路径可指定用该模块替代本卡影子 ROM（兼容包形态），空/缺省=影子 ROM |
+| `tx-prom-sha256.txt`（tx 构建） | **可选身份门**：64 位十六进制，钉住 `BAR0+0x300000` 固定 1 MiB PROM 窗口的 SHA-256（只读 `cargo efi` 构建会把实测值打进日志，供登记）。缺省=未配置，事务照常进行；存在=必须匹配（两次稳定读取）才会调用 `run_transaction`，缺失/格式错/读不稳/不匹配都在任何写入之前拒绝，判定与资产缺失同级 |
+| `tx-stop-on-failure.txt`（tx 构建） | **可选的硬失败即 STOP**：文件存在即启用，内容忽略。缺省（不存在）行为不变——通用失败照常跑 `emergency_flr`，多卡循环继续下一张。存在此 marker 时，通用失败改为立即停止：不跑 FLR、不交棒、不换下一张卡，loader 也不会链式启动 Windows——打印恢复说明后等待完全断电重启。用默认的"保证能进系统/半事务可恢复"换成"状态已不可信的卡不再有任何后续动作" |
 | `i_know_what_i_am_doing.txt` | 5 秒倒计时后自动运行，任意键中止；文件存在即启用，内容忽略 |
 
 无自动运行标记时，事务只接受空格或回车确认，其他键或 30 秒超时均中止。链回顺序为 Windows Boot Manager → 受支持的 Linux shim/grub/systemd-boot/Limine → 通用 `EFI/BOOT/BOOTX64.EFI`；最后一档提供 5 秒按键退出窗口。慢速 console 的提速走 `tx-quiet.txt` 的 console 白名单（issue #38），不做异步输出——UEFI 引导服务单线程，GOP 文本渲染本身是同步调用，异步提不了吞吐；每行日志带 `[+ms]` 阶段计时前缀，回显耗时与事务等待在 `loader.log` 里直接可分。

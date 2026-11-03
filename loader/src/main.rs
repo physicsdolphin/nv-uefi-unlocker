@@ -18,6 +18,8 @@ mod keywait;
 mod logging;
 mod pci;
 mod sample;
+mod identity;
+mod identity_core;
 mod timing;
 #[cfg(feature = "tx")]
 mod tx;
@@ -143,12 +145,31 @@ fn main() -> Status {
         gop::enumerate_gop();
     }
 
-    // Phase: SAMPLE (M1: read-only cold-state register sweep, first card).
+    // Phase: SAMPLE (M1: read-only cold-state register sweep). Bug fix:
+    // this used to always run gpus.first(), ignoring tx-select-bdf.txt - on
+    // a multi-GPU box the read-only sweep could silently sample a different
+    // card than the one the TX phase pins. select_sample_targets mirrors
+    // select_tx_targets' marker semantics so both phases agree.
     if !prep_ran {
-        if let Some(gpu) = gpus.first() {
-            sample::run(gpu);
+        let targets = pci::select_sample_targets(&gpus);
+        if targets.is_empty() {
+            info!("SAMPLE: no NVIDIA GPU selected or present, skipped (negative control path)");
         } else {
-            info!("SAMPLE: no NVIDIA GPU present, skipped (negative control path)");
+            for (idx, gpu) in targets.iter().enumerate() {
+                if targets.len() > 1 {
+                    info!(
+                        "SAMPLE: target {}/{} (10de:{:04x} @ {:04x}:{:02x}:{:02x}.{})",
+                        idx + 1,
+                        targets.len(),
+                        gpu.device_id,
+                        gpu.seg,
+                        gpu.bus,
+                        gpu.dev,
+                        gpu.fun
+                    );
+                }
+                sample::run(gpu);
+            }
         }
     }
 
@@ -169,11 +190,31 @@ fn main() -> Status {
     };
 
     #[cfg(feature = "tx")]
-    if let keywait::Confirm::Proceed = confirmed {
-        tx_phase(&gpus);
+    let hard_stop = if let keywait::Confirm::Proceed = confirmed {
+        tx_phase(&gpus)
+    } else {
+        false
+    };
+    #[cfg(not(feature = "tx"))]
+    {
+        drop(confirmed);
     }
     #[cfg(not(feature = "tx"))]
-    drop(confirmed);
+    let hard_stop = false;
+
+    // Opt-in STOP-on-hard-failure (see tx_one_card / \tx-stop-on-failure.txt):
+    // a hard TX failure with that marker present means this session must not
+    // act on the card again or hand off on its own - the firmware may still
+    // be mid-operation. No further GPU interaction, no chain-load; recovery
+    // is manual (full power-off, remove the stick, normal boot).
+    if hard_stop {
+        info!("STOP: hard TX failure with \\tx-stop-on-failure.txt armed - halting without FLR, without trying another GPU, without chain-loading Windows");
+        info!("STOP: power off completely, remove the USB stick, then boot normally. Do not retry this session.");
+        logging::finish();
+        loop {
+            uefi::boot::stall(core::time::Duration::from_millis(500));
+        }
+    }
 
     // Phase: CHAIN. Read-only LoadImage/StartImage of the ESP bootmgfw.efi.
     // The verdict lines above are in \loader.log; no pause before handing
@@ -233,15 +274,33 @@ fn asset_family(dev: u16) -> Option<&'static str> {
     }
 }
 
+/// Outcome of one card's transaction attempt (see `tx_one_card`).
 #[cfg(feature = "tx")]
-fn tx_phase(gpus: &[pci::FoundGpu]) {
+enum CardOutcome {
+    /// Gated out before any GPU touch - no assets, no family mapping, PciIo
+    /// open failure, or the (opt-in) identity gate refused it.
+    NotAttempted,
+    /// Reached `run_transaction`, whatever its outcome - upstream's existing
+    /// "attempted" telemetry (issue #139).
+    Attempted,
+    /// Opt-in `\tx-stop-on-failure.txt` is present and a genuine hard
+    /// failure occurred: the whole multi-GPU run stops here, and `main`
+    /// must not chain-load Windows either.
+    HardStop,
+}
+
+/// Returns `true` iff a `CardOutcome::HardStop` occurred, in which case the
+/// caller (`main`) must not chain-load Windows.
+#[cfg(feature = "tx")]
+fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
     let targets = pci::select_tx_targets(gpus);
     if targets.is_empty() {
         info!("TX: no transaction target (selection marker refused, or no supported GPU) - chain-loading unchanged Windows");
-        return;
+        return false;
     }
     tx::list_root_entries();
     let mut attempted = 0usize;
+    let mut hard_stop = false;
     for (i, g) in targets.iter().enumerate() {
         info!(
             "TX: ===== target {}/{}: 10de:{:04x} @ {:04x}:{:02x}:{:02x}.{} =====",
@@ -253,8 +312,20 @@ fn tx_phase(gpus: &[pci::FoundGpu]) {
             g.dev,
             g.fun
         );
-        if tx_one_card(g) {
-            attempted += 1;
+        match tx_one_card(g) {
+            CardOutcome::NotAttempted => {}
+            CardOutcome::Attempted => attempted += 1,
+            CardOutcome::HardStop => {
+                attempted += 1;
+                hard_stop = true;
+                info!(
+                    "TX: hard stop on target {}/{} - the remaining {} target(s) will NOT run this session",
+                    i + 1,
+                    targets.len(),
+                    targets.len() - (i + 1)
+                );
+                break;
+            }
         }
     }
     let skipped = targets.len() - attempted;
@@ -270,19 +341,26 @@ fn tx_phase(gpus: &[pci::FoundGpu]) {
 nothing was written, nothing was detached"
         );
     }
+    hard_stop
 }
 
-/// One card's full transaction. Every outcome continues the multi-GPU
-/// loop: EALREADY/EWarm are skip-class, a hard failure gets its own
-/// emergency FLR on THIS card only - the next card still runs.
+/// One card's full transaction. EALREADY/EWarm/EBusy/EClaimUnreadable are
+/// skip-class: nothing was torn down, the multi-GPU loop continues. A
+/// generic (hard) failure keeps the field-proven default (emergency FLR,
+/// continue to the next card) UNLESS the opt-in `\tx-stop-on-failure.txt`
+/// marker is present, in which case it becomes a `CardOutcome::HardStop`
+/// instead - see that file's doc comment and the `CardOutcome` enum above.
 ///
-/// Returns `true` when the transaction was actually ATTEMPTED (the card was
-/// eligible and its asset set reached `run_transaction`, whatever the
-/// outcome), `false` when the card was gated out before any GPU touch -
-/// no assets / no family mapping / PciIo open failure. tx_phase turns that
-/// into the summary and the `FINAL: 0 card(s) unlocked` verdict (issue #139).
+/// Returns `CardOutcome::Attempted` when the transaction was actually
+/// ATTEMPTED (the card was eligible, its asset set reached
+/// `run_transaction`, and - if the opt-in identity gate is configured - it
+/// was verified), `CardOutcome::NotAttempted` when the card was gated out
+/// before any GPU touch (no assets / no family mapping / PciIo open
+/// failure / identity gate refusal), and `CardOutcome::HardStop` as above.
+/// `tx_phase` turns `Attempted`/`NotAttempted` into the summary and the
+/// `FINAL: 0 card(s) unlocked` verdict (issue #139).
 #[cfg(feature = "tx")]
-fn tx_one_card(g: &pci::FoundGpu) -> bool {
+fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams};
     let proto = unsafe {
         boot::open_protocol::<pci::PciIo>(
@@ -292,7 +370,7 @@ fn tx_one_card(g: &pci::FoundGpu) -> bool {
     };
     let Ok(pci) = proto else {
         info!("TX: open PciIo failed");
-        return false;
+        return CardOutcome::NotAttempted;
     };
     let gpu = tx::TxGpu { pci: &pci, bar: 0 };
 
@@ -300,7 +378,7 @@ fn tx_one_card(g: &pci::FoundGpu) -> bool {
     let dev = g.device_id;
     let Some(family) = asset_family(dev) else {
         info!("TX: device 10de:{dev:04x} has no asset family mapping - skipping");
-        return false;
+        return CardOutcome::NotAttempted;
     };
     info!("TX: device 10de:{dev:04x} -> asset family '{family}'");
 
@@ -321,7 +399,7 @@ folder one level down is invisible to the loader (issues #139/#142)"
             "TX: card 10de:{dev:04x} NOT touched - asset set for family '{family}' absent, \
 so no transaction was attempted and nothing was written"
         );
-        return false;
+        return CardOutcome::NotAttempted;
     }
 
     // Assets: `Ok(None)` = the stick does not carry it (skip this card);
@@ -337,7 +415,7 @@ so no transaction was attempted and nothing was written"
                         "TX: ", $what, " is present but unreadable (damaged stick or pulled media)",
                         " - aborting before any GPU interaction"
                     ));
-                    return false;
+                    return CardOutcome::NotAttempted;
                 }
             }
         };
@@ -361,7 +439,7 @@ so no transaction was attempted and nothing was written"
         Ok(None) => must_asset!("v67 payload", tx::read_asset_fmt("\\v67-{}-four-plm.bin", family)),
         Err(()) => {
             info!("TX: \\v67-direct-ss.bin is present but unreadable (damaged stick or pulled media) - aborting before any GPU interaction");
-            return false;
+            return CardOutcome::NotAttempted;
         }
     };
     let bl = if family == "tu10x" {
@@ -372,7 +450,7 @@ so no transaction was attempted and nothing was written"
     let (Some(booter), Some(gsp_boot), Some(gsp_image), Some(stock_sig)) =
         (booter, gsp_boot, gsp_image, stock_sig) else {
         info!("TX: assets missing for family '{family}' (booter_load_*/gsp_boot_*/fwimage_*/fwsignature_*) - skipping");
-        return false;
+        return CardOutcome::NotAttempted;
     };
     if v67.is_none() {
         info!("TX: NO V67 file - chain-replay mode (no unlock writes)");
@@ -381,7 +459,7 @@ so no transaction was attempted and nothing was written"
     }
     if family == "tu10x" && bl.is_none() {
         info!("TX: tu10x missing \\sec2_bl_tu10x.bin (WITH_LOADER FWSEC needs the generic falcon BL) - skipping");
-        return false;
+        return CardOutcome::NotAttempted;
     }
     // Turing track enabled 2026-10-27 (user M3 go): the chain is the
     // cmp50hx-proven TU106 recipe - FWSEC BOOT_WITH_LOADER via the generic
@@ -393,12 +471,29 @@ so no transaction was attempted and nothing was written"
     // stick must be refused here - the DMA copies use fixed windows.
     if let Err(e) = tx::validate_asset_sizes(&assets) {
         info!("TX: asset validation failed ({e:?}) - nothing was touched, chain-loading Windows");
-        return false;
+        return CardOutcome::NotAttempted;
     }
-    match tx::run_transaction(&gpu, &assets, g.handle) {
+
+    // Opt-in pre-transaction identity gate (see identity.rs). Absent
+    // \tx-prom-sha256.txt = not configured, proceed exactly as before
+    // (field-proven default). Present-but-refused = refuse here, before any
+    // GPU interaction - this is NOT skip-class, the operator asked for a
+    // check and it failed, so it is reported as not-attempted rather than
+    // silently treated the same as "no supported assets".
+    let identity = match identity::authorize(&pci) {
+        identity::IdentityOutcome::NotConfigured => None,
+        identity::IdentityOutcome::Verified(v) => Some(v),
+        identity::IdentityOutcome::Refused => {
+            info!("IDENTITY: gate configured (\\tx-prom-sha256.txt present) but refused (see above) - transaction skipped before any GPU interaction");
+            return CardOutcome::NotAttempted;
+        }
+    };
+
+    match tx::run_transaction(&gpu, &assets, g.handle, identity) {
         Ok(()) => {
             info!("SELECTOR RESULT: transaction complete");
             tx::handoff_out(&pci);
+            CardOutcome::Attempted
         }
         // Already-open PLM = already unlocked or not cold: skip (success
         // class, gpu-unlock-ada da96e3f), definitely no FLR - it would wipe
@@ -406,6 +501,7 @@ so no transaction was attempted and nothing was written"
         Err(tx::TxError::EAlready) => {
             info!("TX: already unlocked / not cold (EALREADY) - skipped, nothing to unwind");
             tx::handoff_out(&pci);
+            CardOutcome::Attempted
         }
         // The claim read cannot establish whether an unlock is already
         // present. Detach/claim and an optional pre-FLR may have happened;
@@ -413,6 +509,7 @@ so no transaction was attempted and nothing was written"
         Err(tx::TxError::EClaimUnreadable) => {
             info!("TX: claim PLM transport read failed - transaction skipped, no additional failure reset");
             tx::handoff_out(&pci);
+            CardOutcome::Attempted
         }
         // Warm entry with the require-D0 switch: nothing was written, the
         // card was not even reset - the clean "come back after a Restart"
@@ -421,6 +518,7 @@ so no transaction was attempted and nothing was written"
         Err(tx::TxError::EWarm) => {
             info!("TX: aborted on warm/resume entry before any GPU write - chain-loading unchanged Windows (use a Restart or cold boot)");
             tx::handoff_out(&pci);
+            CardOutcome::Attempted
         }
         // The cold-state guard refused: WPR2 was already initialized this power
         // cycle, i.e. a driver owned this card before we did. By here the card
@@ -435,14 +533,30 @@ so no transaction was attempted and nothing was written"
         Err(tx::TxError::EBusy) => {
             info!("TX: refused (EBUSY: WPR2 already initialized this power cycle) - config space touched + console detached by the claim, no MMIO write, no reset, baseline not restored");
             tx::handoff_out(&pci);
+            CardOutcome::Attempted
         }
+        // Generic/hard failure. Field-proven default (marker absent): run
+        // emergency_flr and hand off, same as always. Opt-in
+        // \tx-stop-on-failure.txt (see that file + CardOutcome::HardStop):
+        // per the safety-constitution discussion in the PR, a reset or a
+        // freed resource issued while the firmware may still be
+        // mid-operation is itself an uncontrolled write to a card whose
+        // state is no longer trusted - so with the marker present, do
+        // neither: no FLR, no handoff, no next card, no chain-load. This is
+        // a deliberate tradeoff against the default's guaranteed-boot
+        // behavior, which is why it is opt-in rather than a silent flip.
         Err(e) => {
-            info!("TX: transaction failed: {e:?} - NOT retrying this session");
-            // Failure unwind: FLR wipes our half-states (engine resets, BCR,
-            // DMA queues) so the Windows driver gets a cold-boot card.
-            tx::emergency_flr(g.handle);
-            tx::handoff_out(&pci);
+            if tx::probe_file("\\tx-stop-on-failure.txt") {
+                info!("TX: transaction failed: {e:?} - opt-in STOP (\\tx-stop-on-failure.txt present): no FLR, no handoff, no next card, no chain-load this session");
+                CardOutcome::HardStop
+            } else {
+                info!("TX: transaction failed: {e:?} - NOT retrying this session");
+                // Failure unwind: FLR wipes our half-states (engine resets, BCR,
+                // DMA queues) so the Windows driver gets a cold-boot card.
+                tx::emergency_flr(g.handle);
+                tx::handoff_out(&pci);
+                CardOutcome::Attempted
+            }
         }
     }
-    true
 }
