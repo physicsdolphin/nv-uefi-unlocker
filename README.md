@@ -37,7 +37,7 @@
 
 | 硬件型号 / 形态 | 观众报告的结果与条件 | 来源 |
 | --- | --- | --- |
-| RTX 2080 Ti | 自述解锁成功、计算提速；H3 未见收益 | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
+| RTX 2080 Ti | 自述解锁成功、计算提速；H3 收益不明显 | [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
 | RTX 2080 Ti 22GB 改卡 | 自述最后一次尝试成功；未给性能对比 | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
 | RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS；Anima 生图 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [截图](docs/community-success.md#s30) |
 | RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS；150W VBIOS + 超频环境 | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [截图](docs/community-success.md#s12) |
