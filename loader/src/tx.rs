@@ -850,7 +850,20 @@ pub fn validate_asset_sizes(assets: &TxAssets) -> Result<(), TxError> {
 /// guards -> gfw -> layout -> FWSEC ignition (WPR2) -> [booter fire ->
 /// triad -> selectors -> signature restore -> FLR + post-FLR].
 /// The bracketed tail lands with the booter-publication tranche.
-pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle) -> Result<(), TxError> {
+///
+/// `_identity` is `None` when the opt-in identity gate is not configured
+/// (`\tx-prom-sha256.txt` absent - field-proven default, unchanged), `Some`
+/// when it is configured and `identity::authorize` verified this card. The
+/// call site (`tx_one_card`) cannot reach this function at all without
+/// going through `authorize()` first and handling its `Refused` case, so
+/// the gate - when an operator opts into it - cannot be bypassed by a
+/// missed call site.
+pub fn run_transaction(
+    gpu: &TxGpu,
+    assets: &TxAssets,
+    pci_handle: uefi::Handle,
+    _identity: Option<crate::identity::VerifiedIdentity<'_>>,
+) -> Result<(), TxError> {
     info!("TX: BEGIN (phases: detach claim pre-flr scrub gfw layout fwsec booter verify selectors restore flr)");
 
     // Experimental override (\tx-force-continue.txt): on a booter-stage
@@ -1084,23 +1097,25 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     info!("TX: WprMeta published (payload_mode={payload_mode})");
 
     // Bus master on the bridges above the GPU, with the DMA path logged before
-    // and after. The guard lives until run_transaction returns, early error
-    // returns included, then clears what it set.
+    // and after.
     // \tx-no-bridge-master.txt skips the bridge writes (guarded-overlay parity
     // T3): on boards whose bridges already carry BME the enable is a no-op
     // anyway - the marker exists to rule the write itself out on boards where
     // the log above shows it actually set a bit.
-    // The guard is hoisted out of the branch so it lives until run_transaction
-    // returns, as the comment above promises - bound inside the else block it
-    // would drop at the closing brace and clear BME again before the booter
-    // fires (booter 0x89 family, PR #87).
+    // The guard is hoisted out of the branch so it is still in scope at the
+    // success tail below - bound inside the else block it would drop at the
+    // closing brace and clear BME again before the booter fires (booter 0x89
+    // family, PR #87). Release is now explicit (see BridgeMaster's doc
+    // comment): this binding is never implicitly cleared any more, success
+    // or failure; only the explicit `release()` call at the success tail
+    // clears it.
     crate::pci::log_dma_path("before-bridge-bme", gpu.pci);
-    let _bridge_master;
+    let mut bridge_master;
     if probe_file("\\tx-no-bridge-master.txt") {
         info!("TX: \\tx-no-bridge-master.txt present - BridgeMaster::enable skipped (guarded-overlay parity)");
-        _bridge_master = None;
+        bridge_master = None;
     } else {
-        _bridge_master = Some(crate::pci::BridgeMaster::enable(gpu.pci));
+        bridge_master = Some(crate::pci::BridgeMaster::enable(gpu.pci));
     }
     crate::pci::log_dma_path("after-bridge-bme", gpu.pci);
 
@@ -1380,7 +1395,14 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let _ = boot_dma.release(gpu.pci);
     let mut radix = radix;
     let _ = radix.dma.release(gpu.pci);
-    info!("FINAL: transaction complete, all DMA released");
+    // Clear bridge bus-master only here, on the clean success tail (see
+    // BridgeMaster's doc comment). Every `?` between its construction and
+    // this point returns Err without reaching this line, so a failed
+    // transaction leaves bridge BME exactly as it was.
+    if let Some(bm) = &mut bridge_master {
+        bm.release();
+    }
+    info!("FINAL: transaction complete, all DMA released, bridge BME restored");
     Ok(())
 }
 
