@@ -17,6 +17,7 @@
 解开 NVIDIA 显卡的 Tensor 计算性能限制。从 U 盘启动，解锁后自动进入 Windows 或 Linux 或任意操作系统，无需刷写 VBIOS；断电后恢复原状。
 
 [观看项目宣传片 ↗](https://www.bilibili.com/video/BV1d6xN66ECM/)
+[官方视频：工具概览 ↗](https://www.youtube.com/watch?v=y11Pluqoqhg) · [完整实操走录 ↗](https://www.youtube.com/watch?v=hrw1KBTM1EQ)
 
 ## 兼容性速览
 

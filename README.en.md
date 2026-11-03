@@ -17,6 +17,7 @@ A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 and RTX 20, 30, and 40 seri
 Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, unlock, and continue into Windows or Linux. No VBIOS flashing is needed; powering off clears the unlock.
 
 [Watch the project trailer ↗](https://www.bilibili.com/video/BV1d6xN66ECM/) (Simplified Chinese)
+[Official videos: tool overview ↗](https://www.youtube.com/watch?v=y11Pluqoqhg) · [full unedited walkthrough ↗](https://www.youtube.com/watch?v=hrw1KBTM1EQ)
 
 ## Compatibility at a glance
 
