@@ -239,6 +239,7 @@ fn tx_phase(gpus: &[pci::FoundGpu]) {
         return;
     }
     tx::list_root_entries();
+    let mut attempted = 0usize;
     for (i, g) in targets.iter().enumerate() {
         info!(
             "TX: ===== target {}/{}: 10de:{:04x} @ {:04x}:{:02x}:{:02x}.{} =====",
@@ -250,16 +251,36 @@ fn tx_phase(gpus: &[pci::FoundGpu]) {
             g.dev,
             g.fun
         );
-        tx_one_card(g);
+        if tx_one_card(g) {
+            attempted += 1;
+        }
     }
-    info!("TX: multi-GPU pass complete ({} target(s) processed)", targets.len());
+    let skipped = targets.len() - attempted;
+    // "processed" used to mean "walked past", which read as success in a report
+    // where no transaction ran at all (issue #139). Say what actually happened.
+    info!(
+        "TX: multi-GPU pass complete ({} target(s): {attempted} attempted, {skipped} skipped - per-card verdicts above)",
+        targets.len()
+    );
+    if attempted == 0 {
+        info!(
+            "TX: FINAL: 0 card(s) unlocked - no transaction was attempted (reason(s) above); \
+nothing was written, nothing was detached"
+        );
+    }
 }
 
 /// One card's full transaction. Every outcome continues the multi-GPU
 /// loop: EALREADY/EWarm are skip-class, a hard failure gets its own
 /// emergency FLR on THIS card only - the next card still runs.
+///
+/// Returns `true` when the transaction was actually ATTEMPTED (the card was
+/// eligible and its asset set reached `run_transaction`, whatever the
+/// outcome), `false` when the card was gated out before any GPU touch -
+/// no assets / no family mapping / PciIo open failure. tx_phase turns that
+/// into the summary and the `FINAL: 0 card(s) unlocked` verdict (issue #139).
 #[cfg(feature = "tx")]
-fn tx_one_card(g: &pci::FoundGpu) {
+fn tx_one_card(g: &pci::FoundGpu) -> bool {
     use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams};
     let proto = unsafe {
         boot::open_protocol::<pci::PciIo>(
@@ -269,7 +290,7 @@ fn tx_one_card(g: &pci::FoundGpu) {
     };
     let Ok(pci) = proto else {
         info!("TX: open PciIo failed");
-        return;
+        return false;
     };
     let gpu = tx::TxGpu { pci: &pci, bar: 0 };
 
@@ -277,7 +298,7 @@ fn tx_one_card(g: &pci::FoundGpu) {
     let dev = g.device_id;
     let Some(family) = asset_family(dev) else {
         info!("TX: device 10de:{dev:04x} has no asset family mapping - skipping");
-        return;
+        return false;
     };
     info!("TX: device 10de:{dev:04x} -> asset family '{family}'");
 
@@ -289,10 +310,16 @@ fn tx_one_card(g: &pci::FoundGpu) {
     let booter_probe = tx::read_asset_fmt("\\booter_load_{}.bin", family);
     if matches!(booter_probe, Ok(None)) {
         info!(
-            "TX: family '{family}' assets are NOT on this stick - this card would be skipped. \
-Rebuild with: .\\make-usbroot.ps1 -Family all"
+            "TX: family '{family}' assets are NOT at this stick's volume root - this card \
+would be skipped. Rebuild with: .\\make-usbroot.ps1 -Family all, or copy the CONTENTS of \
+.\\usbroot (the maker's default -Out) to the stick root: a folder one level down is \
+invisible to the loader (issue #139)"
         );
-        return;
+        info!(
+            "TX: card 10de:{dev:04x} NOT touched - asset set for family '{family}' absent, \
+so no transaction was attempted and nothing was written"
+        );
+        return false;
     }
 
     // Assets: `Ok(None)` = the stick does not carry it (skip this card);
@@ -308,7 +335,7 @@ Rebuild with: .\\make-usbroot.ps1 -Family all"
                         "TX: ", $what, " is present but unreadable (damaged stick or pulled media)",
                         " - aborting before any GPU interaction"
                     ));
-                    return;
+                    return false;
                 }
             }
         };
@@ -332,7 +359,7 @@ Rebuild with: .\\make-usbroot.ps1 -Family all"
         Ok(None) => must_asset!("v67 payload", tx::read_asset_fmt("\\v67-{}-four-plm.bin", family)),
         Err(()) => {
             info!("TX: \\v67-direct-ss.bin is present but unreadable (damaged stick or pulled media) - aborting before any GPU interaction");
-            return;
+            return false;
         }
     };
     let bl = if family == "tu10x" {
@@ -343,7 +370,7 @@ Rebuild with: .\\make-usbroot.ps1 -Family all"
     let (Some(booter), Some(gsp_boot), Some(gsp_image), Some(stock_sig)) =
         (booter, gsp_boot, gsp_image, stock_sig) else {
         info!("TX: assets missing for family '{family}' (booter_load_*/gsp_boot_*/fwimage_*/fwsignature_*) - skipping");
-        return;
+        return false;
     };
     if v67.is_none() {
         info!("TX: NO V67 file - chain-replay mode (no unlock writes)");
@@ -352,7 +379,7 @@ Rebuild with: .\\make-usbroot.ps1 -Family all"
     }
     if family == "tu10x" && bl.is_none() {
         info!("TX: tu10x missing \\sec2_bl_tu10x.bin (WITH_LOADER FWSEC needs the generic falcon BL) - skipping");
-        return;
+        return false;
     }
     // Turing track enabled 2026-10-27 (user M3 go): the chain is the
     // cmp50hx-proven TU106 recipe - FWSEC BOOT_WITH_LOADER via the generic
@@ -364,7 +391,7 @@ Rebuild with: .\\make-usbroot.ps1 -Family all"
     // stick must be refused here - the DMA copies use fixed windows.
     if let Err(e) = tx::validate_asset_sizes(&assets) {
         info!("TX: asset validation failed ({e:?}) - nothing was touched, chain-loading Windows");
-        return;
+        return false;
     }
     match tx::run_transaction(&gpu, &assets, g.handle) {
         Ok(()) => {
@@ -415,4 +442,5 @@ Rebuild with: .\\make-usbroot.ps1 -Family all"
             tx::handoff_out(&pci);
         }
     }
+    true
 }
