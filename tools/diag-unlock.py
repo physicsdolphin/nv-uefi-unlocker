@@ -40,12 +40,33 @@ GAADA = {
     "ss1": 0x0082_3820,
     "readout": 0x0082_3818,
 }
-# union with the reference unlockers (loader M1 + cmp170hx survey + chenxluo)
-CORE_EXTRA = [
+# Core/debug block, synced to ssdiag 0.6.4 (CORE_ROWS): the 2026-11-04 sync
+# brings the python twin to the ssdiag 0.5/0.6 probe surface - 26-register
+# PLM survey was already here; the PCIe/XP3G/OPT/Ada-fuse tables, the
+# full core block and the badf classification are new.
+CORE_ROWS = [
+    ("PMC_BOOT_0", 0x0000_0000),
+    ("PSTRAPS_SET0", 0x0010_1000),
+    ("PSTRAPS_SET1", 0x0010_100C),
+    ("FB_SIZE_MIB", 0x0011_83A4),
+    ("GFW_PLM", 0x0011_8128),
+    ("GFW_SCRATCH", 0x0011_8234),
+    ("BSI_SCRATCH15", 0x0011_80FC),
     ("VGA_WORKSPACE", 0x0062_5F04),
+    ("WPR2_LO", 0x001F_A824),
+    ("WPR2_HI", 0x001F_A828),
     ("MMU_PLM", 0x001F_A7C8),
+    ("MMU_LOCK_LO", 0x001F_A82C),
+    ("MMU_LOCK_HI", 0x001F_A830),
+    ("GSP_CPUCTL", 0x0011_0100),
+    ("GSP_EXCI", 0x0011_00D0),
+    ("SEC2_CPUCTL", 0x0084_0100),
+    ("SEC2_MBOX0", 0x0084_0040),
+    ("SEC2_MBOX1", 0x0084_0044),
+    ("SEC2_EXCI", 0x0084_00D0),
     ("FUSE_VER_DECODE", 0x0082_41C0),
 ]
+PRIV_ROWS = [("FUSE_OPT_FEATURE_OVR", 0x0082_03F0), ("FUSE_VER", 0x0082_4140)]
 ADA_ROWS = [
     ("WPR_PLM", 0x001F_A7C4),
     ("WPR_CFG_PLM", 0x001F_A7CC),
@@ -56,6 +77,23 @@ AD1X_ROWS = [
     ("AD1X_CFG", 0x0008_8DCC),
     ("AD1X_XVE_PLM", 0x0008_8FF4),
     ("AD1X_BAR1_CAP_MIRROR", 0x0008_8BBC),
+]
+# Ada fuse-controller / TPC-disable block (ssdiag 0.6.4, KohakUnlock #16):
+# badf on non-Ada dies is expected and is data.
+ADA_FUSE_ROWS = [
+    ("FUSE_CTRL", 0x0082_0000),
+    ("FUSE_ADDR", 0x0082_0004),
+    ("FUSE_REG_50", 0x0082_0050),
+    ("FUSE_REG_54", 0x0082_0054),
+    ("FUSE_DEBUGCTRL", 0x0082_0060),
+    ("DISABLE_FUSE_PROG", 0x0082_007C),
+    ("TPC_DEFECT_G0T0A", 0x0082_03A4),
+    ("TPC_DEFECT_G0T0B", 0x0082_03AC),
+    ("TPC_DEFECT_G0T0C", 0x0082_05C4),
+    ("TPC_DEFECT_G0T0D", 0x0082_05C8),
+    ("TPC_OPT_G0T0", 0x0082_0C38),
+    ("TPC_OPT_G1T0", 0x0082_0C3C),
+    ("CTRL_OPT_9C8", 0x0082_09C8),
 ]
 PLM_SURVEY = [
     0x0082_00D0, 0x0082_00D4, 0x0082_00D8, 0x0082_00DC, 0x0082_00E0, 0x0082_00E4,
@@ -69,6 +107,56 @@ AMPADA_SWEEP = [
     0x0082_3800, 0x0082_3808, 0x0082_380C, 0x0082_3810, 0x0082_3814, 0x0082_3824,
     0x0082_3828, 0x0082_382C, 0x0082_3B00,
 ]
+# PCIe link block (ssdiag field round 3 union: cmp50hx patch04 + cmpunlocker
+# 0007 + gpu-unlock-bar1 + AD102 L2 research). XVE shadow base 0x88000.
+PCIE_LINK_ROWS = [
+    ("LNKCAP", 0x0008_8084),
+    ("LNKCTL_LNKSTA", 0x0008_8088),
+    ("LNKCAP2", 0x0008_80A4),
+    ("LNKCTL2_LNKSTA2", 0x0008_80A8),
+    ("PRIV_MISC_1", 0x0008_841C),
+    ("VSEC_DEVICE", 0x0008_860C),
+    ("VSEC_HIERARCHY", 0x0008_8610),
+    ("XVE_OVR_LTSSM", 0x0008_872C),
+    ("XVE_B_PLM", 0x0008_8AB4),
+    ("XVE_D0_PLM", 0x0008_8FE8),
+    ("XVE_D4_PLM", 0x0008_8FEC),
+    ("XVE_D8_PLM", 0x0008_8FF0),
+    ("XVE_C_PLM", 0x0008_8FF8),
+    ("LINK_CONFIG_0", 0x0008_C040),
+    ("PL_LINK_RATE", 0x0008_C1C0),
+    ("CYA_0_DISG2", 0x0008_C2C0),
+]
+# XP3G fuse-override block: the Gen2 capability layer - XP3G_PLM0 must read
+# OPEN before any policy write can land.
+XP3G_ROWS = [
+    ("XP3G_STATUS0", 0x0008_E100),
+    ("XP3G_STATUS3", 0x0008_E10C),
+    ("XP3G_OVR0", 0x0008_E110),
+    ("XP3G_OVR3", 0x0008_E11C),
+    ("XP3G_VAL0", 0x0008_E120),
+    ("XP3G_VAL3", 0x0008_E12C),
+    ("XP3G_PLM0", 0x0008_E1B0),
+    ("XP3G_PLM4", 0x0008_E1B4),
+    ("XP3G_PLM8", 0x0008_E1B8),
+    ("XP3G_PLMC", 0x0008_E1BC),
+]
+# Fuse/OPT region union: the Gen2 fuse wall, the GPC-disable shadow, the
+# AD102 L2 disable-mask layer (effective = fuse layer | SW mask).
+OPT_FUSE_ROWS = [
+    ("OPT_GPC_DISABLE", 0x0082_0350),
+    ("OPT_MAGIC", 0x0082_0520),
+    ("OPT_GEN23", 0x0082_057C),
+    ("OPT_GEN3", 0x0082_0580),
+    ("L2_CANDIDATE", 0x0082_1200),
+    ("L2_SW_MASK", 0x0082_2080),
+    ("L2_EFF_MASK", 0x0082_2900),
+]
+# cmpunlocker PR#55's GA100 per-GPC SM override/status banks. On 20-40
+# series expect badf - the existence/nonexistence answer per die, read-only.
+GA100_SM_OVR_BASE = 0x0082_0A40
+GA100_SM_STATUS_BASE = 0x0082_0C38
+GA100_GPCS = 8
 
 
 def find_gpus():
@@ -152,6 +240,23 @@ def decode_plm(v):
     return "closed (non-standard)"
 
 
+def badf_bucket(v):
+    """ssdiag 0.6.x classification: 0xBADF5040 privilege violation,
+    0xBADF1100 undecoded, 0xBADF20xx floorswept, all-ones no decode."""
+    if v == 0xFFFF_FFFF:
+        return "NO_DECODE"
+    if (v >> 16) != 0xBADF:
+        return None
+    lo = v & 0xFFFF
+    if v == 0xBADF_5040:
+        return "PRIV_VIOLATION"
+    if lo == 0x1100:
+        return "BADF_UNDECODED"
+    if (lo >> 8) == 0x20:
+        return "BADF_FLOORSWEPT"
+    return "BADF"
+
+
 def decode_ss(v, width):
     # 4-bit fields: bit3 = override-enable, bits[2:0] = rate (0 full 1 half 2 quarter 3 eighth)
     names = {0: "full", 1: "1/2", 2: "1/4", 3: "1/8"}
@@ -167,7 +272,53 @@ def decode_ss(v, width):
     return " ".join(fields)
 
 
-def report(bar, tag=""):
+def rrow(bar, rows, plm_suffix="PLM"):
+    for name, off in rows:
+        v = bar.rd(off)
+        note = f" ({decode_plm(v)})" if name.endswith(plm_suffix) else ""
+        b = badf_bucket(v)
+        tag = f" [{b}]" if b else ""
+        print(f"  {name:<22} = {v:#010x}{note}{tag}")
+
+
+def read_rebar(devpath):
+    """ReBAR ECAM probe via sysfs config (ssdiag 0.5.x parity, loader
+    pci.rs decode semantics): walk the extended-capability chain for cap
+    id 0x15, then decode ctrl/cap - size_idx n = 2^n MiB, supported size
+    = 2^(bit-4) MiB for set bits >= 4 in the capability dword."""
+    try:
+        with open(os.path.join(devpath, "config"), "rb") as f:
+            cfg = f.read(4096)
+    except OSError as e:
+        print(f"  ReBAR: config space unreadable ({e})")
+        return
+    if len(cfg) < 0x100:
+        return
+    off = 0x100
+    seen = 0
+    while 0x100 <= off <= len(cfg) - 4 and seen < 48:
+        cap_id = int.from_bytes(cfg[off : off + 2], "little")
+        nxt = int.from_bytes(cfg[off + 2 : off + 4], "little") >> 4
+        if cap_id == 0x15:  # PCI_EXT_CAP_ID_REBAR
+            for bar_idx in range(8):
+                ctrl = int.from_bytes(cfg[off + 4 + bar_idx * 4 : off + 8 + bar_idx * 4], "little") & 0x3FFF
+                capd = int.from_bytes(cfg[off + 4 + 32 + bar_idx * 4 : off + 8 + 32 + bar_idx * 4], "little")
+                idx = ctrl & 0xF
+                sizes = [f"{1 << (b - 4)}G" if b >= 4 else f"{1 << (b + 10)}M"
+                         for b in range(32) if capd & (1 << b) and b >= 4]
+                if idx or capd:
+                    cur = f"{1 << idx}MiB" if idx else "disabled"
+                    print(f"  ReBAR BAR{bar_idx}: supported [{'/'.join(sizes) or '-'}]"
+                          f" current {cur} (size_idx {idx}, ctrl {ctrl:#06x}, cap {capd:#09x})")
+            return
+        if nxt == 0:
+            break
+        off = nxt
+        seen += 1
+    print("  ReBAR: no resizable-BAR extended capability (0x15) in the ECAM chain")
+
+
+def report(bar, tag="", devpath=None):
     boot0 = bar.rd(0x0)
     fam, regs = family_of(boot0)
     if fam is None:
@@ -191,13 +342,33 @@ def report(bar, tag=""):
         ro = bar.rd(regs["readout"])
         note = "PLM-blocked" if (ro & 0xFFFF0000) == 0xBADF0000 else ("full speed" if ro == 0 else "")
         print(f"  READOUT_1 = {ro:#010x} {note}")
-    for name, off in CORE_EXTRA:
-        print(f"  {name:<22} = {bar.rd(off):#010x}")
-    print("  --- family-specific / survey (badf on the wrong die is expected) ---")
-    for name, off in ADA_ROWS + AD1X_ROWS:
+
+    def rd_tagged(name, off):
         v = bar.rd(off)
-        note = f" ({decode_plm(v)})" if name.endswith("PLM") else ""
-        print(f"  {name:<22} = {v:#010x}{note}")
+        b = badf_bucket(v)
+        return v, (f" [{b}]" if b else "")
+
+    print("  --- core/debug block (ssdiag 0.6.4 surface) ---")
+    for name, off in CORE_ROWS:
+        v, t = rd_tagged(name, off)
+        print(f"  {name:<22} = {v:#010x}{t}")
+    print("  --- privileged (badf at PL0 is the norm, still data) ---")
+    rrow(bar, PRIV_ROWS)
+    print("  --- family-specific / survey (badf on the wrong die is expected) ---")
+    rrow(bar, ADA_ROWS)
+    rrow(bar, AD1X_ROWS)
+    if fam in ("ampere", "ada"):
+        rrow(bar, ADA_FUSE_ROWS)
+        rrow(bar, OPT_FUSE_ROWS)
+        print("  --- GA100-style per-GPC SM banks (badf elsewhere = absent) ---")
+        ovr = "  ".join(f"{bar.rd(GA100_SM_OVR_BASE + 4 * g):#010x}" for g in range(GA100_GPCS))
+        stat = "  ".join(f"{bar.rd(GA100_SM_STATUS_BASE + 4 * g):#010x}" for g in range(GA100_GPCS))
+        print(f"  GA100_SM_OVR  {ovr}")
+        print(f"  GA100_SM_STAT {stat}")
+        print("  --- PCIe link block (XVE shadows; consumer dies read stock/benign) ---")
+        rrow(bar, PCIE_LINK_ROWS)
+        print("  --- XP3G fuse-override block (Gen2 capability layer) ---")
+        rrow(bar, XP3G_ROWS)
     for i in range(0, len(PLM_SURVEY), 4):
         row = PLM_SURVEY[i:i+4]
         print("  " + "  ".join(f"{o:#09x}={bar.rd(o):#010x}" for o in row))
@@ -238,7 +409,8 @@ def main():
             print(f"  BAR0 unavailable: {e}")
             rc = 1
             continue
-        st = report(bar)
+        st = report(bar, devpath=devpath)
+        read_rebar(devpath)
         if st is None:
             continue
         fam, regs, plm, unlocked = st
