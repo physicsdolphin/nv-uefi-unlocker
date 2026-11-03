@@ -41,6 +41,16 @@ reconnect 之前**显式选择**原厂 GOP 驱动，不调用会卡死的通用 
 - **黑屏误判警告**（#133 报告者实测踩坑）：清除全部 marker 后 loader 在 CONFIRM 停 30 s 然后 `ABORT (zero GPU writes)`——黑屏下极易误读为"CSM 没起作用"。判读点：日志末行为 ABORT = 没跑事务，不是事务失败。
 - 空 marker（0 字节）自 v2.1.9 重建资产（`fc1f70ac` 起）起即为合法开关形态，无需占位字节。
 
+## 3.2 TU106 本机复验（2026-11-04，Z170 + 2070，native-GOP 首轮 Turing 真机）
+
+事务全绿（unlock_persist、FLR 按设计跳过）、HANDOFF-OUT 族标注首秀正确（`tu10x:unlock=true`），native-GOP 链走到 **Start=SUCCESS** 后发现一个驱动层事实：
+
+- **TU1xx GOP 驱动按显示器拓扑决定是否安装 GOP child**：显示器接核显（独显 D3cold 入场、事务唤醒后驱动绑定）时，`Supported=SUCCESS`/`Start=SUCCESS` 但 750 ms 三探内系统只有核显的 GOP child（probe 诊断 hex 解码 = `Acpi(PNP0A03,0)/Pci(0x2,0)/AcpiAdr`，恰为 PR13 已知的 child 形态）；显示器接独显时（同机 run 1）verify 通过、console 重绑成功。**驱动行为，非 loader bug**。
+- **定位收敛**：native-GOP 恢复路径的目标形态 = **独显接显示器的 CSM 板**（#107/#133 谱系，单卡或独显接屏）。核显接屏的混合形态下失败是**预期的优雅回落**（console 交 bootmgfw，核显 console 本就活着）——混合形态用户本就不需要独显 console。
+- **休眠恢复入场不触发 Code 12**：冷启动 Windows 重跑资源仲裁才会撞仲裁失败（前轮实证）；从休眠恢复（hiberfile）进入的会话驱动/资源原样，独显直接可用。Code 12 定性再次收窄为**纯仲裁问题**。
+- 设备管理器禁用→启用不掉解锁（OS 内自救），见 compatibility.md TU106 节。
+- Z170 的 NVRAM Windows 选项 = **HD 短格式 + FILE 节点混合形态**（`hd(partN,sig) + file:"\EFI\Microsoft\Boot\BOOTMGFW.EFI"`），短格式 resolve 按 BmExpandPartitionDevicePath 分区身份匹配——真机三连全中（diag.5 字段验证第二平台）。
+
 ## 4. GOP 模块的来源（无下载依赖，按宪法 §1.6）
 
 1. **本卡影子 ROM（默认，零下载）**：固件枚举时已把整块 Option ROM 影子拷进 UEFI RAM（`PciIo RomImage`），loader 直接解析——与卡绝对匹配，无分发问题。
