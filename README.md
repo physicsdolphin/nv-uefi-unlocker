@@ -31,7 +31,7 @@
 
 ## 社区成功反馈与复现
 
-以下 **33 项硬件型号 / 形态分组**部分来源自[视频评论区](https://www.bilibili.com/video/BV1d6xN66ECM/)，部分选自[社区验证汇总](docs/community-reports.md)；评论区部分是观众报告。同一型号多条报告时取信息量最大的一条。现行支持与已知限制仍以全量[兼容性矩阵](docs/compatibility.md)为准。
+以下 **35 项硬件型号 / 形态分组**部分来源自[视频评论区](https://www.bilibili.com/video/BV1d6xN66ECM/)，部分选自[社区验证汇总](docs/community-reports.md)；评论区部分是观众报告。同一型号多条报告时取信息量最大的一条。现行支持与已知限制仍以全量[兼容性矩阵](docs/compatibility.md)为准。
 
 表中分别注明前后实测、只有解锁后截图和文字自述。基准算力增幅不等于实际应用增幅；同时超频或改变功耗条件的报告单独标注。
 
@@ -47,6 +47,7 @@
 | RTX 2080 Ti | 同卡精确 A/B：FP16（FP32 累加）持续 58.70 → 94.97 TFLOPS（+62%），每时钟 ×1.80，60 s 浸泡 0 停顿、无 TDR/WHEA；FP32/INT8/带宽不变（300 W 墙、GSP 开启）。另有原厂 11GB 在 Linux 专有驱动下 60.31 → 89.57 TFLOPS 的跨平台全链记录；H3 收益不明显 | [#125](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/125) · [#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103) · [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
 | RTX 2080 Ti 22GB 改卡 | 自述最后一次尝试成功；未给性能对比 | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
 | RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS；Anima 生图 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [截图](docs/community-success.md#s30) |
+| RTX 3060 Ti LHR | v2.1.0 全链通过：PLM `0xffffff8f` → `0xffffffff` 翻转读回（约 149 ms）、SS0/SS1 读回、Windows 交棒正常；跨厂刷映众冰龙 VBIOS（未给性能数值） | [#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11) |
 | RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS；150W VBIOS + 超频环境 | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [截图](docs/community-success.md#s12) |
 | RTX 3070 Ti Laptop | WMMA FP16 45.51 → 88.84 TFLOPS；cuBLAS FP16 基本不变 | [S36](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128) |
 | RTX 3080 10GB | 系统侧 UNLOCKED；FP16 53.91 → 84.60 TFLOPS | [S28](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704) · [截图](docs/community-success.md#s28) |
@@ -61,6 +62,7 @@
 | RTX 4060 Ti 16GB | 两位观众报告成功及生图变快；含华硕 B550M 平台 | [S05](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318384860033&comment_secondary_id=318425336033) · [S50](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318780355665&comment_secondary_id=318780355665) |
 | RTX 4060 8GB（形态未说明） | MOSS Image 1024×1536、30 步，约 240 → 200 秒 | [S31](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318678373665&comment_secondary_id=318678373665) |
 | RTX 4070 Laptop | FP16 N=4096：33.296 → 64.005 TFLOPS；另有成功自述 | [S21](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322273213728&comment_secondary_id=322273213728) · [S39](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322525434896&comment_secondary_id=322525434896) · [截图](docs/community-success.md#s21) |
+| RTX 4070 Ti（华硕 TUF OC） | 本地修改版 v2.1.9 全链读回通过（POST-FLR verified、HANDOFF-OUT 全对）；cuBLAS 8192³：FP16 80.35 → 137.97（1.72×）、BF16 80.44 → 144.13（1.79×），FP32 对照 1.01× | [Discussion #140](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/140) |
 | RTX 4070 Ti SUPER | 含系统侧 UNLOCKED 截图；57.00 → 150.93 TFLOPS 的报告同时超频 | [S07](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318434036593&comment_secondary_id=318434036593) · [S10](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322192703296&comment_secondary_id=322192703296) · [S23](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318588984337&comment_secondary_id=318588984337) · [S51](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318800216993&comment_secondary_id=318800216993) · [截图](docs/community-success.md#s23) |
 | RTX 4070 台式机 | FP16 61.99 → 76.32–87.82 TFLOPS（150W/200W 条件）；生图 35 → 27 秒 | [S13](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322202417520&comment_secondary_id=322202417520) · [截图](docs/community-success.md#s13) |
 | RTX 4070M 魔改卡 | AD106 / 10de:2820；自述更新后成功，FP16 40 → 70（单位未标） | [S02](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322092618224&comment_secondary_id=322120397328) |
