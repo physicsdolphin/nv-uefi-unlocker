@@ -138,6 +138,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 2. **显存带宽绑定**：LLM decode 每 token 读全量权重，算力翻倍换不来带宽 → decode +5.5% vs prefill +16~19%（132K 上下文两组区间零重叠，2702 双卡 MoE 实测）。图像/视频生成 +14–75%、DirectML +94% 属于混合谱（算力档占比不同的算子集合），处于两堵墙之间。
 3. **逐 die 分箱**：SS0/SS1 出厂覆盖值逐 die 不同，个别形态（屏蔽修复卡、OEM 改动形态）钳制更深或路径更多（3090 20GB 的 TF32 +79.9% 即此类），逐卡以 `FEAT_READOUT_1` 与实测为准。
 4. **栈/库路由与实现率**：框架端到端测的可能不是被锁路径本身——cuBLAS 13 的 COMPUTE_32F FP16/BF16 行 ≈ FP8 行 ÷2（§5 第三条），stock 基线已在全速类，PyTorch 用户感知的 FP16/BF16 增益仅 1.0–1.3×（2684：除 TF32 1.96× 外全表 1.00–1.33×），而裸管线口径是 2.00×（2757 mma_bench）。banner 的 ~2×/FP8 ~1.9× 是 mma_bench/stressor 口径，框架用户感知可以显著更低——2702 的 cuBLAS 1.66–1.78× 与 2684 的 1.1–1.45× 离散亦属此墙（栈版本/die 待判）。另：解锁后 F32acc 半精度行 realized 60–76% 且随 N 爬升（非硬 cap：破自身类天花板 115–134%、同累加模式的 TF32 到满反例），未达 fp16acc parity（#69 定频缺口 1.39×）的成因三选一（kernel 实现率 / 管线属性 / 路由），判别见 §8。
+5. **端到端/微基准比值双向**（2026-11-03 补，两例闭环）：Amdahl 占比决定方向。下界形态——3060 `2504`/X99 端到端 1.43× < 张量 1.79×，报告者 Amdahl 反解 ~68% 采样耗时在 matmul/attention（[D#131](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/131)）；上界形态——4070 Ti SUPER 真实 3D 生成管线端到端 **2.0–2.2×** > BF16 微基准 1.69×，解锁缩短小算子依赖链+GPU 空闲占比缩小（[D#143](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/143)）。报告端到端数字时标注占比方向，避免"微基准没翻倍"或"端到端超过 2×"的双向误读。
 
 ## 8. 开放项（如实记录）
 
