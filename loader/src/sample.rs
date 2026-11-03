@@ -156,6 +156,15 @@ pub fn run(gpu: &FoundGpu) {
         }
     };
 
+    // Opt-in identity enrollment surface: logs the SHA-256 of the fixed
+    // 1 MiB PROM window so an operator can pin it into \tx-prom-sha256.txt
+    // for identity::authorize's (opt-in) tx-build gate. Never enrolls or
+    // authorizes anything by itself, and is a no-op log line if BAR0 memory
+    // decode happens to be off here.
+    if crate::identity::measure(&pci).is_none() {
+        info!("IDENTITY: PROM measurement unavailable - no reference may be enrolled");
+    }
+
     for Reg(name, off) in TABLE {
         let v = pci.bar_read_u32(BAR0, *off as u64);
         info!("SAMPLE {name} = {v:#010x} [{}]", classify(v));

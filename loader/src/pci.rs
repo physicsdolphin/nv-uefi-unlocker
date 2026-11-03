@@ -19,7 +19,7 @@ use uefi::mem::memory_map::MemoryMap as _;
 #[cfg(feature = "tx")]
 use uefi::mem::memory_map::MemoryType;
 use uefi::proto::unsafe_protocol;
-use uefi::{Identify, Status};
+use uefi::{cstr16, Identify, Status};
 
 pub const NVIDIA_VENDOR_ID: u16 = 0x10de;
 
@@ -823,8 +823,9 @@ pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
     }
 }
 
-/// Parse "bb:dd.f" or "dddd:bb:dd.f" (hex, whitespace/NUL tolerant).
-#[cfg(feature = "tx")]
+/// Parse "bb:dd.f" or "dddd:bb:dd.f" (hex, whitespace/NUL tolerant). Shared by
+/// `select_tx_targets` (tx builds) and `select_sample_targets` (every build)
+/// below - pure string parsing, nothing tx-feature-specific about it.
 fn parse_bdf(raw: &[u8]) -> Option<(usize, usize, usize, usize)> {
     let clean: alloc::vec::Vec<u8> = raw
         .iter()
@@ -844,6 +845,33 @@ fn parse_bdf(raw: &[u8]) -> Option<(usize, usize, usize, usize)> {
     let dev = usize::from_str_radix(dev_s, 16).ok()?;
     let fun = usize::from_str_radix(fun_s, 16).ok()?;
     Some((seg, bus, dev, fun))
+}
+
+/// Read-only M1 SAMPLE-phase target selection (bug report: SAMPLE always ran
+/// `gpus.first()`, ignoring `tx-select-bdf.txt`, so on a multi-GPU box the
+/// cold-state register sweep could pin a different card than the TX phase).
+/// Mirrors `select_tx_targets`'s marker semantics (absent = every supported
+/// card, parsed+matched = only that one, parsed+unmatched/unparsable = none)
+/// so SAMPLE and TX always agree on the same pinned card.
+///
+/// Available in every build, not just `tx` ones - SAMPLE has no feature gate.
+/// That means it cannot use `tx::read_asset`'s three-state read (that module
+/// is `tx`-gated); it uses `chainload::boot_volume_read` instead, which only
+/// distinguishes present/absent, not absent/corrupt. For this read-only phase
+/// that is an accepted, lower-stakes tradeoff: the worst a corrupt marker can
+/// do here is widen a register dump to every card, not touch anything.
+pub fn select_sample_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
+    match crate::chainload::boot_volume_read(cstr16!(r"\tx-select-bdf.txt")) {
+        None => all.to_vec(),
+        Some(raw) => match parse_bdf(&raw) {
+            Some(bdf) => all
+                .iter()
+                .find(|c| (c.seg, c.bus, c.dev, c.fun) == bdf)
+                .map(|c| alloc::vec![*c])
+                .unwrap_or_default(),
+            None => alloc::vec::Vec::new(),
+        },
+    }
 }
 
 /// Resolve the PCI Express capability offset for the FLR path. The walk is
@@ -1180,7 +1208,18 @@ pub fn diag_bridge_routing(tag: &str) {
 /// `enable` sets COMMAND bit 2 (bus master) on every PCI-to-PCI bridge in the
 /// GPU's segment whose secondary..subordinate range contains the GPU's bus,
 /// only where the bit is clear, and records the bridges whose readback shows it
-/// set. Drop clears bit 2 again on exactly those bridges.
+/// set.
+///
+/// Release is EXPLICIT (`release`), not an implicit `Drop`. `run_transaction`
+/// binds the guard at function scope specifically so it survives until the
+/// booter has fired (PR #87 / booter 0x89 family) - but that same function
+/// scope means an implicit `Drop` would also fire on every *failure* return,
+/// including ones that happen while SEC2 may still have DMA in flight through
+/// these exact bridges. Clearing bus-master under a live transfer is itself an
+/// uncontrolled write to a card whose state is no longer trusted. `release()`
+/// is called only from `run_transaction`'s clean success tail; every early
+/// failure return leaves the guard un-released (bridges keep whatever
+/// bus-master state they had going in - never worse than doing nothing).
 #[cfg(feature = "tx")]
 pub struct BridgeMaster {
     /// (bridge handle, location for logs) of every bridge this guard enabled.
@@ -1235,11 +1274,12 @@ impl BridgeMaster {
         }
         BridgeMaster { enabled }
     }
-}
 
-#[cfg(feature = "tx")]
-impl Drop for BridgeMaster {
-    fn drop(&mut self) {
+    /// Clear bit 2 again on exactly the bridges `enable` set it on. Call
+    /// ONLY from a clean success path (see the struct doc comment) - a
+    /// failed transaction must leave this un-called. Idempotent (a second
+    /// call finds `enabled` already drained and does nothing).
+    pub fn release(&mut self) {
         for (handle, loc) in self.enabled.drain(..) {
             // Safety: GetProtocol performs no driver binding.
             let Ok(pci) = (unsafe {

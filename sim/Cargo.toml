@@ -7,3 +7,6 @@ description = "Behavioral fake-MMIO GPU model + transaction scenarios (GPL-2.0-o
 
 [lib]
 path = "src/lib.rs"
+
+[dev-dependencies]
+sha2 = { version = "0.10", default-features = false }
