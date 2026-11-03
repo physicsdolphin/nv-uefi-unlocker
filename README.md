@@ -103,6 +103,8 @@ U 盘（FAT32）
 3. 等待工具完成并自动链回系统，日志在 U 盘根目录 `loader.log`。
 4. Windows 下用发布包的 `ssdiag-x86_64-windows.exe` 检查系统内状态，并用相同负载比较解锁前后的性能。Linux 可在源码仓库运行 `sudo python3 tools/diag-unlock.py`。详见 [验证与修复](docs/faq.md#ssdiag)。每次冷启动需要重放。
 
+选了 U 盘一闪回到启动菜单（或直接进系统）、盘上没有 `loader.log`，说明 EFI 根本没被执行——此时也没有任何写入；多数是缺 `EFI/BOOT/BOOTX64.EFI` 或 Secure Boot 还开着，按 [无法启动排查](docs/faq.md#no-boot)逐条核对。
+
 遇到 STOP、异常或黑屏卡死，**同会话不要重试**；完全断电后拔 U 盘，走原系统引导，再按 [恢复说明](docs/faq.md#recovery)检查。
 
 让 Agent 帮忙部署：[部署指南](AGENTS.deploy.md)。可以直接把下面这句话交给它：

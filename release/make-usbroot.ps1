@@ -499,7 +499,15 @@ foreach ($f in $expected) {
 }
 Write-Host ("  {0,-28} {1,10} bytes" -f "EFI/BOOT/BOOTX64.EFI", (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length)
 
-Write-Host "`nDONE ($($Families -join ', ')). Copy the CONTENTS of $Out to a FAT32 USB stick root."
+$outFull = (Resolve-Path -LiteralPath $Out).Path
+$outRoot = [System.IO.Path]::GetPathRoot($outFull)
+if ($outRoot -and ($outRoot.TrimEnd('\') -ieq $outFull.TrimEnd('\'))) {
+    Write-Host "`nDONE ($($Families -join ', ')). $outFull already IS the stick root - nothing to copy, boot it directly."
+} else {
+    Write-Host "`nDONE ($($Families -join ', ')). The stick root must receive the layout; for example (X: = the FAT32 stick):"
+    Write-Host ("  xcopy `"{0}\*`" X:\ /E /H /Y" -f $outFull)
+    Write-Host "Or re-run with -Out X:\ to write the stick root directly."
+}
 Write-Host "The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, do not flatten it."
 Write-Host "Unlock mode requires the v67-*.bin payload for the target card's family"
 Write-Host "($($unlockFiles -join ', ')); removing it switches the EFI into"

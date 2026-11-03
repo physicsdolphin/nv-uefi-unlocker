@@ -47,9 +47,9 @@ If building from source is needed, follow [Build](README.en.md#build-from-source
 
 ## Assemble and check the USB
 
-Use an identified FAT32 USB volume; preserve existing files and back up any destination `EFI/BOOT/BOOTX64.EFI`. Do not format a volume without explicit authorization. Generate into a local staging directory, not directly onto an existing boot medium: maker removes matching earlier assets from its output directory.
+Use an identified FAT32 USB volume; preserve existing files and back up any destination `EFI/BOOT/BOOTX64.EFI`. Do not format a volume without explicit authorization. Generate into a local staging directory by default: maker removes matching earlier assets from its output directory. Passing a mounted stick root (`-Out G:\` / `--out /media/stick`) is also fine - the maker detects it, only matching asset names are refreshed, and it prints "nothing to copy".
 
-The maker output is **flat and contains intermediates**. Use its final `expected` list, not every `.bin` in the output. Required destination files (`F` = normalized family):
+The maker output contains intermediates next to the assets: keep the flat `.bin` files and the generated `EFI/BOOT/BOOTX64.EFI`. Use its final `expected` list, not every `.bin` in the output. Required destination files (`F` = normalized family):
 
 | Destination | Source / condition |
 | --- | --- |
@@ -58,7 +58,7 @@ The maker output is **flat and contains intermediates**. Use its final `expected
 | USB root, `ad102` / `ga102` | `scrubber_ad10x.bin` |
 | USB root, `tu10x` | `sec2_bl_tu10x.bin`; preserve generated `gsp-gate.txt` as the build record |
 
-Verify the destination set and family against maker output before calling media preparation complete. Never mix families within a single-family build; the only sanctioned multi-family form is an explicit `-Family all` / `--family all` stick shipped as the full expected union. Do not copy extraction intermediates as loader assets. Missing `v67-F-four-plm.bin` means replay, which still performs GPU writes/firmware execution/reset; it is not read-only diagnosis.
+Verify the destination set, the exact `EFI/BOOT/BOOTX64.EFI` path and family against maker output before calling media preparation complete, and confirm Secure Boot is off or the self-signed EFI is trusted; a stick that flashes and bounces back to the menu with no `loader.log` never ran the EFI (see the FAQ's no-boot entry). Never mix families within a single-family build; the only sanctioned multi-family form is an explicit `-Family all` / `--family all` stick shipped as the full expected union. Do not copy extraction intermediates as loader assets. Missing `v67-F-four-plm.bin` means replay, which still performs GPU writes/firmware execution/reset; it is not read-only diagnosis.
 
 Do not write the system ESP, change NVRAM BootOrder, install a resident boot entry or format/repartition disks as part of the default workflow. Inspect existing markers before handoff; normal deployment must leave `i_know_what_i_am_doing.txt` absent (it enables automatic execution after 5 seconds). Back up an existing armed marker outside the USB root before removing it; retain armed mode only for an explicit unattended-operation request. Preserve normal manual confirmation. Advanced markers such as `no-reconnect.txt` need a matching FAQ symptom; do not blanket-enable workarounds.
 

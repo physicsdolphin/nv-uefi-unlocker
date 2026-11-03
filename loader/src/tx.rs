@@ -752,7 +752,7 @@ fn read_boot_file_uncached(path: &str) -> Inner {
                     let probe = read_boot_file_uncached(&alt);
                     if matches!(probe, Inner::Content(_)) {
                         info!("TX-ASSET-DIAG: {path} absent at the volume root - using {alt}");
-                        info!("TX: assets sit in a subfolder - the loader reads only the volume root; copy the CONTENTS of \\usbroot\\ to the stick root (issue #139)");
+                        info!("TX: assets sit in a subfolder - the loader reads only the volume root; copy the CONTENTS of \\usbroot\\ to the stick root, keeping EFI/BOOT/BOOTX64.EFI (issues #139/#142)");
                         return probe;
                     }
                 }

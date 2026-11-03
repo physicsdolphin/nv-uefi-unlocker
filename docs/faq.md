@@ -11,6 +11,7 @@
 - [怎样在系统内检查或修复解锁？](#ssdiag)
 - [pmxdrv.sys 的安全模型与权衡（必读披露）](#pmxdrv)
 - [booter status 0x89 是什么？](#bridge-bme)
+- [选 U 盘一闪回到启动菜单或直接进系统，盘上没有 loader.log？](#no-boot)
 - [事务成功后为什么会复位或黑屏？](#reconnect)
 - [黑屏、STOP 或驱动异常后怎样恢复？](#recovery)
 - [有哪些安全约束和实现边界？](#safety)
@@ -235,6 +236,21 @@ ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊�
 loader 会为 GPU 上游路径中需要的桥开启 Bus Master 并读回，结束时还原；日志包含 `DMA-PATH` / `BRIDGE-BME`。遇到错误时保留完整日志，检查这些行与 GPU 状态，不要仅凭状态码自行归因或改 BIOS。
 
 SVM、VT-x 和 VT-d 在已验证平台上不需要关闭。任务管理器的“虚拟化”不是 PCI Command 的 Bus Master 位。部分 AMI 机型 BIOS 的 "BME DMA Mitigation" 选项即是桥 BME 清零态的固件侧来源，保持默认即可，loader 不依赖它的开关状态。机制与证据见 [桥 BME 根因报告](bridge-bme-root-cause.md)。
+
+<a id="no-boot"></a>
+
+## 选 U 盘一闪回到启动菜单或直接进系统，盘上没有 loader.log？
+
+先说结论：**EFI 根本没被执行，什么也没写。** loader 在读取任何资产之前（约 110 ms）就开始写 `loader.log`；盘上没有这个文件、也没有 `tx-log.txt`，就说明一条指令都没跑。解锁本身是易失的，即使真跑过也随断电消失。
+
+按顺序查，命中即停：
+
+1. **盘上没有 `EFI\BOOT\BOOTX64.EFI`。** 固件对可移动介质只自动引导这一条默认路径；`BOOTX64.EFI` 放在盘根，或整包被拷成 `U:\usbroot\`，都不会被自动引导。重跑 maker 再复制**内容**（布局里已带该路径），或手工把 `BOOTX64.EFI` 放进 `EFI\BOOT\`。
+2. **Secure Boot 还开着。** 多数主板只切“其他操作系统”不够：进 Key Management 删除 PK/KEK/db 全部密钥，重启后用 `Confirm-SecureBootUEFI` 确认返回 `False`。
+3. **从非 `UEFI:` 前缀的条目进了 CSM。** 启动菜单里选带 `UEFI:` 前缀的那条，顺手关掉 Fast Boot。
+4. 以上都正确仍无 `loader.log`：换 USB 口（优先板载后置口）、换 U 盘；仍不行就是固件侧限制，回报时附主板型号与 BIOS 版本。
+
+盘能起来、能出日志之后的失败才轮到事务排障，见[恢复说明](#recovery)。
 
 <a id="reconnect"></a>
 

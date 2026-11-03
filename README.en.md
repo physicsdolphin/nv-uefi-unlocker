@@ -103,6 +103,8 @@ Back up an existing `EFI/BOOT/BOOTX64.EFI` before replacing it. Do not copy into
 3. Wait for the automatic OS handoff. The log is `loader.log` at the stick root.
 4. On Windows, run the release’s `ssdiag-x86_64-windows.exe` to check the in-OS state, then compare performance using the same workload. On Linux, run `sudo python3 tools/diag-unlock.py` from a source checkout. See [verification and repair](docs/faq.en.md#ssdiag). Replay after each cold boot.
 
+If picking the stick flashes and bounces back to the boot menu (or straight into the OS) with no `loader.log`, the EFI never executed - and nothing was written; usually `EFI/BOOT/BOOTX64.EFI` is missing or Secure Boot is still on. Work through [the no-boot checks](docs/faq.en.md#no-boot).
+
 On STOP, a fault or a stuck black screen, **do not retry in the same session**. Fully power off, remove the stick and boot normally; follow the [recovery instructions](docs/faq.en.md#recovery).
 
 For agent-assisted setup, use the [deployment guide](AGENTS.deploy.md). Copy this request:

@@ -624,7 +624,13 @@ done
 printf '  %-28s %10s bytes\n' "EFI/BOOT/BOOTX64.EFI" "$(size_of "$OUT/EFI/BOOT/BOOTX64.EFI")"
 
 log ""
-log "DONE (${FAMILIES[*]}). Copy the CONTENTS of $OUT to a FAT32 USB stick root."
+if mountpoint -q "$OUT" 2>/dev/null; then
+    log "DONE (${FAMILIES[*]}). $OUT already IS a filesystem root - nothing to copy, boot it directly."
+else
+    log "DONE (${FAMILIES[*]}). The stick root must receive the layout; for example:"
+    log "  cp -a \"$OUT\"/. /media/\$USER/<stick>/      # or: sudo cp -a \"$OUT\"/. /mnt/<mount>/"
+    log "Or re-run with --out <mountpoint> to write a mounted stick directly."
+fi
 log "The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, do not flatten it."
 log "Format hint (Linux): sudo mkfs.fat -F 32 /dev/sdXN   # wipes the stick!"
 log "Unlock mode requires the v67-*.bin payload for the target card's family"

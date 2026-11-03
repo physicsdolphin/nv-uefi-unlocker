@@ -11,6 +11,7 @@
 - [How do I check or repair the unlock in the OS?](#ssdiag)
 - [The pmxdrv.sys security model and trade-off (required disclosure)](#pmxdrv)
 - [What does booter status 0x89 mean?](#bridge-bme)
+- [The stick flashes and bounces back to the boot menu (or straight into the OS) - no loader.log?](#no-boot)
 - [Why does the platform reset after a successful transaction?](#reconnect)
 - [How do I recover from a black screen, STOP or driver failure?](#recovery)
 - [What are the safety rules and implementation limits?](#safety)
@@ -230,6 +231,21 @@ Not installing, not running, not understanding it does not affect the unlock its
 The loader enables Bus Master where needed on the upstream bridge path, verifies it and restores it on completion. Logs contain `DMA-PATH` / `BRIDGE-BME`. Preserve the complete log and inspect those lines and GPU state; do not diagnose from the status alone or change BIOS settings blindly.
 
 SVM, VT-x and VT-d need not be disabled on verified platforms. Task Manager's virtualization status is not the PCI Command Bus Master bit. See the [bridge BME report](bridge-bme-root-cause.md) for mechanism and evidence.
+
+<a id="no-boot"></a>
+
+## The stick flashes and bounces back to the boot menu (or straight into the OS) - no loader.log?
+
+Short answer: **the EFI never executed, so nothing was written.** The loader starts `loader.log` about 110 ms in, before it reads any asset; no `loader.log` and no `tx-log.txt` on the stick means not a single instruction ran. The unlock is volatile anyway - even a real run is gone after power-off.
+
+Check in this order and stop at the first hit:
+
+1. **No `EFI\BOOT\BOOTX64.EFI` on the stick.** That is the only default path removable media is auto-booted from; a `BOOTX64.EFI` at the stick root, or the whole folder landing as `U:\usbroot\`, is invisible to auto-boot. Re-run the maker and copy the **contents** (the layout already carries this path), or move `BOOTX64.EFI` under `EFI\BOOT\`.
+2. **Secure Boot is still on.** Toggling "Other OS" is not enough on most boards: go to Key Management, delete all PK/KEK/db keys, reboot, and verify `Confirm-SecureBootUEFI` returns `False`.
+3. **You entered through a non-`UEFI:` entry (CSM).** Pick the `UEFI:`-prefixed entry and turn Fast Boot off.
+4. Still no `loader.log` with all of the above correct: try another USB port (prefer a rear onboard one) and another stick; if it still fails, report the board model and BIOS version.
+
+Failures that happen after the stick boots and logs are transaction problems - see [recovery](#recovery).
 
 <a id="reconnect"></a>
 

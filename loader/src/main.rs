@@ -311,9 +311,9 @@ fn tx_one_card(g: &pci::FoundGpu) -> bool {
     if matches!(booter_probe, Ok(None)) {
         info!(
             "TX: family '{family}' assets are NOT at this stick's volume root - this card \
-would be skipped. Rebuild with: .\\make-usbroot.ps1 -Family all, or copy the CONTENTS of \
-.\\usbroot (the maker's default -Out) to the stick root: a folder one level down is \
-invisible to the loader (issue #139)"
+would be skipped. Rebuild with: .\\make-usbroot.ps1 -Family all, then copy the CONTENTS of \
+.\\usbroot (the maker's default -Out) to the stick root and keep EFI/BOOT/BOOTX64.EFI: a \
+folder one level down is invisible to the loader (issues #139/#142)"
         );
         info!(
             "TX: card 10de:{dev:04x} NOT touched - asset set for family '{family}' absent, \
