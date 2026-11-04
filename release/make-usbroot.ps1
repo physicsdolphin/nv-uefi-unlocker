@@ -12,24 +12,31 @@
 #   ad102 | rtx40 | 40   RTX 40 series (Ada)          - no Windows prerequisites
 #   ga102 | rtx30 | 30   RTX 30 series (Ampere)       - kmod-verified upstream,
 #                                                     EFI path has no silicon evidence yet
-#   tu10x | rtx20 | 20   RTX 20 / 16 series (Turing)  - REQUIRES GSP firmware mode.
+#   tu10x | rtx20 | 20   RTX 20 series (Turing)       - REQUIRES GSP firmware mode.
 #                        The script refuses to build unless EnableGpuFirmware=1
 #                        and nvidia-smi shows a running GSP firmware; the legacy
 #                        driver path TDR-loops on the unlocked card. Building on a
 #                        DIFFERENT machine than the target? Pass -SkipGspCheck.
+#   tu11x | rtx16 | 16   GTX 16 series (TU116/117)    - EXPERIMENTAL, same GSP gate.
+#                        RE-derived route (issue #151): die-keyed TU116 booter
+#                        archive + the TU102 frame table with the park word
+#                        re-anchored (0x7EA4 -> 0x7E9A). NOT field-proven;
+#                        read-back is the only verdict. Not part of -Family all:
+#                        explicit opt-in only.
 #   localhost            enumerate the NVIDIA GPUs in THIS machine (display-class
 #                        registry, else nvidia-smi) and build exactly the families
 #                        found there; throws when no RTX 20/30/40 card is present.
-#   all                  build all three 20-40 series families on one stick. The
-#                        Turing GSP gate runs lenient: still refuses when a LOCAL
-#                        Turing card sits in legacy mode, but skips (no prompt)
-#                        when this host has no Turing adapter at all.
+#   all                  build all three proven 20-40 series families on one
+#                        stick (tu11x excluded - see above). The Turing GSP gate
+#                        runs lenient: still refuses when a LOCAL Turing card sits
+#                        in legacy mode, but skips (no prompt) when this host has
+#                        no Turing adapter at all.
 #
 # Requires: PowerShell 5+ and internet access to the pinned URLs.
 
 param(
-    [ValidateSet("ad102", "ga102", "tu10x", "all", "localhost",
-                 "rtx40", "rtx30", "rtx20", "40", "30", "20")]
+    [ValidateSet("ad102", "ga102", "tu10x", "tu11x", "all", "localhost",
+                 "rtx40", "rtx30", "rtx20", "rtx16", "40", "30", "20", "16")]
     [string]$Family = "localhost",
     # Default to the copies shipped next to this script.
     [string]$AssetsExe = "",
@@ -57,14 +64,16 @@ $normalized = switch ($familyArg) {
     { $_ -in "ad102", "rtx40", "40" } { "ad102" }
     { $_ -in "ga102", "rtx30", "30" } { "ga102" }
     { $_ -in "tu10x", "rtx20", "20" } { "tu10x" }
+    { $_ -in "tu11x", "rtx16", "16" } { "tu11x" }
     default { $familyArg }   # localhost | all pass through
 }
 
 # Device id -> build family (same ranges as loader/src/main.rs).
 function Get-UnlockFamily([string]$DevHex) {
     $dev = [Convert]::ToInt32($DevHex, 16)
-    if (($dev -ge 0x1E02 -and $dev -le 0x1FFF) -or
-        ($dev -ge 0x2182 -and $dev -le 0x21D1)) { return "tu10x" }
+    if ($dev -ge 0x1E02 -and $dev -le 0x1F80) { return "tu10x" }
+    if (($dev -ge 0x1F81 -and $dev -le 0x1FFF) -or
+        ($dev -ge 0x2182 -and $dev -le 0x21D1)) { return "tu11x" }
     if (($dev -ge 0x2200 -and $dev -le 0x22FF) -or
         ($dev -ge 0x2400 -and $dev -le 0x25FF)) { return "ga102" }
     if ($dev -ge 0x2600 -and $dev -le 0x28FF) { return "ad102" }
@@ -116,11 +125,12 @@ if ($normalized -eq "all") {
         if ($detected -notcontains $fam) { $detected += $fam }
     }
     if ($detected.Count -eq 0) {
-        throw "localhost: no supported NVIDIA adapter (RTX 20/30/40 series) found on
-this machine. Use an explicit -Family (ad102 | ga102 | tu10x) or -Family all."
+        throw "localhost: no supported NVIDIA adapter (RTX 20/30/40/16 series) found on
+this machine. Use an explicit -Family (ad102 | ga102 | tu10x | tu11x) or -Family all."
     }
-    # Canonical build order regardless of enumeration order.
-    $Families = @("tu10x", "ga102", "ad102") | Where-Object { $detected -contains $_ }
+    # Canonical build order regardless of enumeration order. tu11x rides
+    # along when a 16-series card is present, same as any detected family.
+    $Families = @("tu10x", "tu11x", "ga102", "ad102") | Where-Object { $detected -contains $_ }
     Write-Host ("[localhost] building for: {0}" -f ($Families -join ", "))
     if ($Families.Count -lt 3) {
         Write-Host ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($Families -join "/") +
@@ -214,7 +224,7 @@ function Get-GspRuntimeState {
 }
 
 $gateStatus = "n/a"
-if ($Families -contains "tu10x" -and -not $SkipGspCheck) {
+if (($Families -contains "tu10x" -or $Families -contains "tu11x") -and -not $SkipGspCheck) {
     Write-Host "[gate] Turing family selected - checking Windows GSP firmware mode"
     $gateStatus = "passed"
     $turing = @(Get-TuringAdapterState)
@@ -275,7 +285,7 @@ resume) and re-run. If it persists, the driver may be too old for GSP."
         }
         Write-Host "[ok] all Turing adapters in GSP firmware mode"
     }
-} elseif ($Families -contains "tu10x") {
+} elseif ($Families -contains "tu10x" -or $Families -contains "tu11x") {
     $gateStatus = "skipped"
     Write-Host "[gate] Turing GSP check skipped (-SkipGspCheck)"
 }
@@ -347,7 +357,7 @@ Write-Host "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
 & $AssetsExe fw $UtilsZst $Out
 if ($LASTEXITCODE) { throw "fw failed" }
 
-if (@($Families | Where-Object { $_ -ne "tu10x" }).Count -gt 0) {
+if (@($Families | Where-Object { $_ -ne "tu10x" -and $_ -ne "tu11x" }).Count -gt 0) {
     Write-Host "[extract] SEC2 scrubber (shared: ad102/ga102)"
     & $AssetsExe extract-scrub $SrcTar $Out
     if ($LASTEXITCODE) { throw "extract-scrub failed" }
@@ -357,6 +367,80 @@ if (@($Families | Where-Object { $_ -ne "tu10x" }).Count -gt 0) {
 $expected = @()
 $unlockFiles = @()
 $ga10xSectionsDone = $false
+$tuSectionsDone = $false
+
+# The proven GspRmBoot archive is Turing-shared (the driver generates only a
+# TU102 one), so tu10x and tu11x resolve and slice the same pinned bytes.
+# Order: explicit path, next to this script, reference checkout, work dir,
+# then the pinned URL.
+function Resolve-ProvenBlob {
+    if ($script:ProvenBlob -and -not (Test-Path $script:ProvenBlob)) {
+        throw "-ProvenBlob not found: $($script:ProvenBlob)"
+    }
+    $blob = @(
+        $script:ProvenBlob,
+        (Join-Path $PSScriptRoot $script:ProvenBlobName),
+        (Join-Path (Split-Path $PSScriptRoot -Parent) "reference\cmp50hx-unlock\efi-unlock\blobs\$($script:ProvenBlobName)"),
+        (Join-Path $script:Work $script:ProvenBlobName)
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    if (-not $blob) {
+        $blob = Join-Path $script:Work $script:ProvenBlobName
+        foreach ($u in $script:ProvenBlobUrls) {
+            Write-Host "[fetch] $($script:ProvenBlobName) <- $u"
+            try {
+                Invoke-WebRequest -Uri $u -OutFile $blob
+                break
+            } catch {
+                Remove-Item $blob -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    if (-not (Test-Path $blob)) {
+        throw "could not fetch $($script:ProvenBlobName) from any pinned transport; drop the exact file (sha256 $($script:ProvenBlobSrcSha256)) into $($script:Work) and re-run"
+    }
+    $blobHash = (Get-FileHash -Algorithm SHA256 $blob).Hash
+    if ($blobHash -ne $script:ProvenBlobSrcSha256) {
+        throw "proven GspRmBoot blob mismatch: got $blobHash want $($script:ProvenBlobSrcSha256) ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
+    }
+    Write-Host "[ok] proven GspRmBoot archive SHA-256 verified ($((Get-Item $blob).Length) bytes)"
+    return $blob
+}
+
+# Slice + byte-pin check for one Turing family's gsp_boot_<fam>.bin.
+function Copy-ProvenSlice {
+    param([string]$Family)
+    $blob = Resolve-ProvenBlob
+    Write-Host "[slice] first 0x6000 bytes -> gsp_boot_$Family.bin"
+    & $script:AssetsExe slice-proven-rm-boot $blob $script:Out $Family
+    if ($LASTEXITCODE) { throw "slice-proven-rm-boot failed" }
+    # The proven slice is byte-pinned: exactly 0x6000 bytes, de676bae...
+    # A 4 KiB v4 BINDATA image or the GSP ELF's first 0x6000 (c76c43b1...)
+    # must never ship.
+    $bootOut = Join-Path $script:Out "gsp_boot_$Family.bin"
+    $len = (Get-Item $bootOut).Length
+    if ($len -ne $script:ProvenSliceLen) {
+        throw "gsp_boot_$Family.bin is $len bytes, want $($script:ProvenSliceLen) (0x6000): trimmed proven GspRmBoot slice only"
+    }
+    $bootHash = (Get-FileHash -Algorithm SHA256 $bootOut).Hash.ToLowerInvariant()
+    if ($bootHash -ne $script:ProvenSliceSha256) {
+        throw "gsp_boot_$Family.bin hash $bootHash != pinned $($script:ProvenSliceSha256)"
+    }
+    Write-Host "[ok] gsp_boot_$Family.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
+}
+
+# Turing gsp-gate.txt record (one per stick; the family line lists who built it).
+function Write-GspGateRecord {
+    param([string[]]$TuringFamilies)
+    @(
+        "nv-uefi-unlocker Turing GSP gate"
+        "time: $(Get-Date -Format o)"
+        "host: $env:COMPUTERNAME"
+        "family: $($TuringFamilies -join ',')"
+        "gate: $gateStatus"
+        "adapters:"
+        Get-TuringAdapterState | ForEach-Object { "  $($_.Slot) $($_.Desc) EnableGpuFirmware=$($_.Gsp)" }
+    ) | Set-Content -Path (Join-Path $Out "gsp-gate.txt") -Encoding Ascii
+}
 foreach ($fam in $Families) {
     switch ($fam) {
         "ad102" {
@@ -409,77 +493,49 @@ foreach ($fam in $Families) {
             Write-Host "[extract] TU102 booter (BOOT_DIRECT) / generic BL"
             & $AssetsExe extract-tu10x $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract-tu10x failed" }
-            Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF)"
-            & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out
-            if ($LASTEXITCODE) { throw "gsp-sections failed" }
+            if (-not $tuSectionsDone) {
+                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF)"
+                & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out
+                if ($LASTEXITCODE) { throw "gsp-sections failed" }
+                $tuSectionsDone = $true
+            }
             Write-Host "[generate] V67 TU10x payload"
             & $AssetsExe generate-tu10x (Join-Path $Out "v67-tu10x-four-plm.bin")
             if ($LASTEXITCODE) { throw "generate-tu10x failed" }
-
-            # Resolve the proven GspRmBoot archive: explicit path, next to this
-            # script, reference checkout, work dir, then the pinned URL.
-            if ($ProvenBlob -and -not (Test-Path $ProvenBlob)) {
-                throw "-ProvenBlob not found: $ProvenBlob"
-            }
-            $blob = @(
-                $ProvenBlob,
-                (Join-Path $PSScriptRoot $ProvenBlobName),
-                (Join-Path (Split-Path $PSScriptRoot -Parent) "reference\cmp50hx-unlock\efi-unlock\blobs\$ProvenBlobName"),
-                (Join-Path $Work $ProvenBlobName)
-            ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-            if (-not $blob) {
-                $blob = Join-Path $Work $ProvenBlobName
-                foreach ($u in $ProvenBlobUrls) {
-                    Write-Host "[fetch] $ProvenBlobName <- $u"
-                    try {
-                        Invoke-WebRequest -Uri $u -OutFile $blob
-                        break
-                    } catch {
-                        Remove-Item $blob -Force -ErrorAction SilentlyContinue
-                    }
-                }
-            }
-            if (-not (Test-Path $blob)) {
-                throw "could not fetch $ProvenBlobName from any pinned transport; drop the exact file (sha256 $ProvenBlobSrcSha256) into $Work and re-run"
-            }
-            $blobHash = (Get-FileHash -Algorithm SHA256 $blob).Hash
-            if ($blobHash -ne $ProvenBlobSrcSha256) {
-                throw "proven GspRmBoot blob mismatch: got $blobHash want $ProvenBlobSrcSha256 ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
-            }
-            Write-Host "[ok] proven GspRmBoot archive SHA-256 verified ($((Get-Item $blob).Length) bytes)"
-            Write-Host "[slice] first 0x6000 bytes -> gsp_boot_tu10x.bin"
-            & $AssetsExe slice-proven-rm-boot $blob $Out
-            if ($LASTEXITCODE) { throw "slice-proven-rm-boot failed" }
-
-            # The proven slice is byte-pinned: exactly 0x6000 bytes, de676bae...
-            # A 4 KiB v4 BINDATA image or the GSP ELF's first 0x6000 (c76c43b1...)
-            # must never ship.
-            $bootOut = Join-Path $Out "gsp_boot_tu10x.bin"
-            $len = (Get-Item $bootOut).Length
-            if ($len -ne $ProvenSliceLen) {
-                throw "gsp_boot_tu10x.bin is $len bytes, want $ProvenSliceLen (0x6000): trimmed proven GspRmBoot slice only"
-            }
-            $bootHash = (Get-FileHash -Algorithm SHA256 $bootOut).Hash.ToLowerInvariant()
-            if ($bootHash -ne $ProvenSliceSha256) {
-                throw "gsp_boot_tu10x.bin hash $bootHash != pinned $ProvenSliceSha256"
-            }
-            Write-Host "[ok] gsp_boot_tu10x.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
-
+            Copy-ProvenSlice "tu10x"
             $expected += @(
                 "booter_load_tu10x.bin", "gsp_boot_desc_tu10x.bin", "gsp_boot_tu10x.bin",
                 "fwimage_tu10x.bin", "fwsignature_tu10x.bin", "sec2_bl_tu10x.bin",
                 "v67-tu10x-four-plm.bin"
             )
             $unlockFiles += "v67-tu10x-four-plm.bin"
-            @(
-                "nv-uefi-unlocker Turing GSP gate"
-                "time: $(Get-Date -Format o)"
-                "host: $env:COMPUTERNAME"
-                "family: tu10x"
-                "gate: $gateStatus"
-                "adapters:"
-                Get-TuringAdapterState | ForEach-Object { "  $($_.Slot) $($_.Desc) EnableGpuFirmware=$($_.Gsp)" }
-            ) | Set-Content -Path (Join-Path $Out "gsp-gate.txt") -Encoding Ascii
+            Write-GspGateRecord @("tu10x")
+        }
+        "tu11x" {
+            Write-Host "[warn] TU11x route (GTX 16 series / CMP 30HX) is RE-derived and NOT"
+            Write-Host "[warn] field-proven (issue #151): die-keyed TU116 booter archive + the"
+            Write-Host "[warn] TU102 frame table with the park word re-anchored (0x7EA4 -> 0x7E9A)."
+            Write-Host "[warn] Read-back is the only verdict; a clean failure is an expected outcome."
+            Write-Host "[extract] TU116/TU117 booter (BOOT_DIRECT, die-keyed) / shared Turing BL"
+            & $AssetsExe extract-tu11x $SrcTar $Out
+            if ($LASTEXITCODE) { throw "extract-tu11x failed" }
+            if (-not $tuSectionsDone) {
+                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF)"
+                & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out
+                if ($LASTEXITCODE) { throw "gsp-sections failed" }
+                $tuSectionsDone = $true
+            }
+            Write-Host "[generate] V67 TU11x payload (RE-derived, unproven)"
+            & $AssetsExe generate-tu11x (Join-Path $Out "v67-tu11x-four-plm.bin")
+            if ($LASTEXITCODE) { throw "generate-tu11x failed" }
+            Copy-ProvenSlice "tu11x"
+            $expected += @(
+                "booter_load_tu11x.bin", "gsp_boot_desc_tu11x.bin", "gsp_boot_tu11x.bin",
+                "fwimage_tu11x.bin", "fwsignature_tu11x.bin", "sec2_bl_tu11x.bin",
+                "v67-tu11x-four-plm.bin"
+            )
+            $unlockFiles += "v67-tu11x-four-plm.bin"
+            Write-GspGateRecord @("tu11x")
         }
     }
 }
@@ -512,7 +568,7 @@ Write-Host "The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, d
 Write-Host "Unlock mode requires the v67-*.bin payload for the target card's family"
 Write-Host "($($unlockFiles -join ', ')); removing it switches the EFI into"
 Write-Host "replay/diagnostic mode for that family."
-if ($Families -contains "tu10x") {
+if ($Families -contains "tu10x" -or $Families -contains "tu11x") {
     Write-Host ""
     Write-Host "Turing reminder: the target Windows must run EnableGpuFirmware=1 AND"
     Write-Host "the unlock session must follow a RESTART - a hibernate resume does not"
