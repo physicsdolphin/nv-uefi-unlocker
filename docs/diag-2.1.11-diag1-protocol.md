@@ -40,7 +40,7 @@
 
 写入方在 OS 内部。两轮，按序，**能只做一轮就做第 2 轮**（它更强）：
 
-1. **安全模式**：先 `bcdedit /set {current} safeboot minimal`，再照常插盘引导，进去后跑 `ssdiag`；事后 `bcdedit /deletevalue {current} safeboot`。安全模式不加载 `nvlddmkm`（基础显示驱动接手）：安全模式里也被抹 → 不是驱动包；安全模式完好、正常模式被抹 → `nvlddmkm` 的 init 就是写入方。注意 BitLocker 会要恢复密钥；安全模式在本仓库有黑屏先例（#82 X99），黑屏就转第 2 轮。**结构性限制（#37 Victus 实测）**：`ssdiag` 的 pmxdrv 载具在安全模式里 `StartService` 被 Windows 直接拒绝（win32 1084 = `ERROR_NOT_SAFEBOOT_SERVICE`——未列入 `SafeBoot\Minimal` 注册表白名单的内核驱动在安全模式一律不可启动）。该腿对 `ssdiag` 不可用（除非预置 SafeBoot 键，未实现），**切分请直接走第 2 轮**。
+1. **安全模式**：先在**正常模式**的提权会话里跑 `ssdiag --safeboot-arm`（把 pmxdrv 抽到 `%ProgramData%\nv-uefi-unlocker\`、装成常驻服务、并把 `SafeBoot\Minimal`+`Network` 两个白名单键写好——安全模式只启动白名单里的内核驱动，这是 win32 1084 = `ERROR_NOT_SAFEBOOT_SERVICE` 的闸；arm 自带一轮真实 start/stop 验证），然后 `bcdedit /set {current} safeboot minimal` 重启进安全模式，提权跑 `ssdiag`（借用已装服务，退出时**不**删除），回正常模式后 `ssdiag --safeboot-disarm` 清干净（零残留，有回读验证）。安全模式不加载 `nvlddmkm`（基础显示驱动接手）：安全模式里也被抹 → 不是驱动包；安全模式完好、正常模式被抹 → `nvlddmkm` 的 init 就是写入方。注意 BitLocker 会要恢复密钥；安全模式在本仓库有黑屏先例（#82 X99），黑屏就转第 2 轮。忘掉 arm 直接跑会撞 1084——0.6.11 会当场写白名单键自愈重试一次（若该 Windows 构建的白名单是逐次活查询则成功，工具会提示补跑 `--safeboot-disarm`），失败则打印上面三步。**两个残余未知**：①安全模式可能存在比正常模式更严的签名形状检查（社区观察：EV+微软联签可过、SHA-1 双签被拒）；②MUXless 机器 dGPU 停泊时 BAR0 读不到（#126）——这两者任一命中时该腿拿不到读数，转第 2 轮。
 2. **零驱动 Linux live USB**：用第二支盘装 live ISO，在解锁盘根写 `\chain-target.txt` 指向该发行版的二级加载器（如 `\EFI\BOOT\grubx64.efi`，避免 pass 0 落回我们自己的 `BOOTX64.EFI`），**经解锁盘链过去**（解锁是每引导易失的，直接从固件启 live 盘只会读到厂值）。桌面里 `curl -O …/tools/diag-unlock.py && sudo python3 diag-unlock.py`（mmap `resource0`，零模块零驱动），并把 `dmesg | grep -iE 'nouveau|nvidia|pci'` 一并附上。live 桌面下、无驱动绑定就已被抹 ⇒ OS 交棒/电源态，不是厂商驱动；完好 ⇒ Windows 驱动这一 pass。
 
 **English**

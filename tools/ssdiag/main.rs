@@ -1,4 +1,8 @@
-//! ssdiag v0.6.10 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.11 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.11 adds --safeboot-arm / --safeboot-disarm (issue #37): stage and
+//! remove the pmxdrv vehicle for Safe Mode - the SafeBoot\Minimal/Network
+//! whitelist that StartService checks (win32 1084), with an in-session
+//! self-heal attempt on 1084 and boot-frozen fallback instructions.
 //! v0.6.10 adds the read-only per-GPC TPC floorsweep block for Ampere/Ada
 //! (issue #169): STATUS/CTRL pair, GPC-level disable/defect masks, raw
 //! OPT/DEFECT banks, and a defect-vs-override-candidate verdict.
@@ -153,6 +157,7 @@ mod win {
 /// One HKEY_LOCAL_MACHINE DWORD, read for the platform pre-flight. Kept as a
 /// separate tiny module so the main `win` block stays kernel32-only.
 mod reg {
+    use std::ffi::c_void;
     #[link(name = "advapi32")]
     extern "system" {
         pub fn RegGetValueW(
@@ -164,6 +169,28 @@ mod reg {
             data: *mut core::ffi::c_void,
             cbdata: *mut u32,
         ) -> i32;
+        // SafeMode whitelist staging (--safeboot-arm / self-heal on 1084)
+        pub fn RegCreateKeyExW(
+            hkey: isize,
+            subkey: *const u16,
+            reserved: u32,
+            class: *const u16,
+            options: u32,
+            sam: u32,
+            sec: *const c_void,
+            out: *mut isize,
+            disp: *mut u32,
+        ) -> i32;
+        pub fn RegSetValueExW(
+            hkey: isize,
+            name: *const u16,
+            reserved: u32,
+            typ: u32,
+            data: *const u16,
+            cb: u32,
+        ) -> i32;
+        pub fn RegDeleteTreeW(hkey: isize, subkey: *const u16) -> i32;
+        pub fn RegCloseKey(hkey: isize) -> i32;
     }
 }
 
@@ -421,6 +448,14 @@ const SERVICE_DEMAND_START: u32 = 3;
 const SERVICE_ERROR_NORMAL: u32 = 0;
 const SERVICE_CONTROL_STOP: u32 = 1;
 const SERVICE_STOPPED: u32 = 1;
+const ERROR_NOT_SAFEBOOT_SERVICE: u32 = 1084;
+const ERROR_FILE_NOT_FOUND: u32 = 2;
+const ERROR_PATH_NOT_FOUND: u32 = 3;
+const KEY_WRITE: u32 = 0x0002_0006;
+const REG_SZ: u32 = 1;
+const REG_OPTION_NON_VOLATILE: u32 = 0;
+const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+const RRF_RT_REG_EXPAND_SZ: u32 = 0x0000_0004;
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -722,16 +757,22 @@ fn service_stop_and_wait(svc: win::Handle) -> Result<(), String> {
     Err("stop still pending after 5s".into())
 }
 
-/// Extract + service-create + start. Service name is OURS (SSDIAG_PMXDRV) so
-/// cleanup never touches a driver another tool deployed.
-fn deploy_driver() -> Result<(), String> {
-    // payload integrity, fail closed
+/// The embedded payload's pinned-hash gate, shared by the deploy path and the
+/// safe-mode staging (both refuse to touch anything on a mismatch).
+fn verify_embedded_hash() -> Result<(), String> {
     let mut h = Sha256::new();
     h.update(PMXDRV_SYS);
     let got = format!("{:x}", h.finalize());
     if got != PMXDRV_SYS_SHA256 {
         return Err(format!("embedded pmxdrv.sys hash mismatch ({got}) - refusing to load"));
     }
+    Ok(())
+}
+
+/// Extract + service-create + start. Service name is OURS (SSDIAG_PMXDRV) so
+/// cleanup never touches a driver another tool deployed.
+fn deploy_driver() -> Result<(), String> {
+    verify_embedded_hash()?;
 
     let sys_path = std::env::temp_dir().join(TEMP_SYS);
     std::fs::write(&sys_path, PMXDRV_SYS)
@@ -791,6 +832,37 @@ fn deploy_driver() -> Result<(), String> {
             let err = last_err();
             win::DeleteService(svc);
             win::CloseServiceHandle(svc);
+            if err == ERROR_NOT_SAFEBOOT_SERVICE {
+                // Safe mode: the whitelist gate (SCM layer; the kernel's own
+                // loader enforces the same list one floor down - ZwLoadDriver
+                // documented to silently fail, modern builds 0xC000035F).
+                // Opportunistic in-session self-heal: switch to the armed
+                // layout (persistent file + SafeBoot whitelist keys) and
+                // start again. If the gate is boot-snapshotted this stays
+                // refused and the message tells the user how to stage for
+                // real; nothing else in the session is affected either way.
+                println!("StartService refused: win32 1084 (ERROR_NOT_SAFEBOOT_SERVICE) - safe-mode whitelist gate");
+                println!("attempting in-session self-heal: staging the persistent copy + SafeBoot whitelist keys ...");
+                let healed = safeboot_stage(mgr).and_then(|_| safeboot_start(mgr));
+                win::CloseServiceHandle(mgr);
+                return match healed {
+                    Ok(()) => {
+                        ARMED_KEEP.store(true, std::sync::atomic::Ordering::Relaxed);
+                        println!("self-heal accepted - whitelist keys live, probe may proceed.");
+                        println!("these keys persist: run 'ssdiag --safeboot-disarm' from a NORMAL-mode");
+                        println!("elevated prompt when done (leaving them is a known EDR-flagged state).");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        println!("self-heal refused: {e}");
+                        println!("the whitelist is consumed at boot on this build - stage it for real:");
+                        println!("  1. boot NORMAL mode, elevated: ssdiag --safeboot-arm");
+                        println!("  2. reboot into Safe Mode, run ssdiag elevated");
+                        println!("  3. back in NORMAL mode: ssdiag --safeboot-disarm");
+                        Err("StartService failed: win32 1084 (safe-mode whitelist; see staging steps above)".into())
+                    }
+                };
+            }
             win::CloseServiceHandle(mgr);
             return Err(format!("StartService failed: win32 {err}"));
         }
@@ -811,6 +883,12 @@ fn deploy_driver() -> Result<(), String> {
 /// main() keys off it so a --dry-run does not claim to have removed something it
 /// never loaded.
 static DRIVER_TOUCHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// True when this session staged or used the ARMED layout (persistent file,
+/// persistent service, SafeBoot whitelist keys) - via `--safeboot-arm` or the
+/// 1084 self-heal. `cleanup_driver` must not tear that state down; only
+/// `--safeboot-disarm` may.
+static ARMED_KEEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn install_crash_cleanup() {
     let default_hook = std::panic::take_hook();
@@ -838,6 +916,12 @@ unsafe extern "system" fn console_ctrl(_event: u32) -> i32 {
 /// Own-the-service cleanup: stop + delete + remove the temp .sys (retry a
 /// short while - the kernel releases the image mapping with a small delay).
 fn cleanup_driver() {
+    if ARMED_KEEP.load(std::sync::atomic::Ordering::Relaxed) {
+        // armed layout is a deliberate, persistent staging state - only
+        // --safeboot-disarm may remove it
+        println!("armed SafeMode staging left in place - remove it with: ssdiag --safeboot-disarm");
+        return;
+    }
     unsafe {
         let mgr = win::OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CREATE_SERVICE);
         if mgr.is_null() {
@@ -882,6 +966,340 @@ fn ensure_driver() -> Result<PmxDrv, String> {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     PmxDrv::try_open().ok_or_else(|| "service started but \\\\.\\PMXDRV never appeared".into())
+}
+
+// ---------------------------------------------------------------- safe mode staging
+
+/// Safe mode starts only what is whitelisted under
+/// `HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\<Minimal|Network>` - the
+/// gate behind win32 1084 (ERROR_NOT_SAFEBOOT_SERVICE). Enforcement is
+/// layered: SMSS/kernel for boot drivers at boot, SCM at StartService, and
+/// the kernel's own loader for runtime loads (ZwLoadDriver documented to
+/// return STATUS_SUCCESS when it silently declines in safe mode; modern
+/// builds answer 0xC000035F STATUS_NOT_SAFE_MODE_DRIVER). All layers read
+/// the same registry data, so staging the two subkeys is the one fix that
+/// covers every door. See docs/diag-2.1.11-diag1-protocol.md §1b.
+const SAFEBOOT_BASE: &str = r"SYSTEM\CurrentControlSet\Control\SafeBoot";
+const SAFEBOOT_MODES: [&str; 2] = ["Minimal", "Network"];
+
+/// Persistent pmxdrv.sys home for the armed state - %ProgramData% survives
+/// reboots and temp-cleaners (unlike %TEMP%, where the normal deploy copy
+/// lives).
+fn armed_sys_path() -> std::path::PathBuf {
+    let base = std::env::var_os("ProgramData")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    base.join("nv-uefi-unlocker").join("pmxdrv.sys")
+}
+
+fn safeboot_key_path(mode: &str) -> String {
+    format!(r"{SAFEBOOT_BASE}\{mode}\{SERVICE_NAME}")
+}
+
+/// True when the Minimal whitelist entry reads back as "Service".
+fn safeboot_armed() -> bool {
+    reg_value_string(HKEY_LOCAL_MACHINE, &safeboot_key_path("Minimal"), ptr::null())
+        .map(|v| v == "Service")
+        .unwrap_or(false)
+}
+
+/// One string value via RegGetValueW; value name NULL reads the default.
+fn reg_value_string(hkey: isize, subkey: &str, value: *const u16) -> Option<String> {
+    let sub_w = wide(subkey);
+    let mut buf = [0u16; 512];
+    let mut cb = (buf.len() * 2) as u32;
+    let cr = unsafe {
+        reg::RegGetValueW(
+            hkey,
+            sub_w.as_ptr(),
+            value,
+            RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+            ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut cb,
+        )
+    };
+    if cr != 0 {
+        return None;
+    }
+    let chars = (cb as usize / 2).min(buf.len());
+    let s = String::from_utf16_lossy(&buf[..chars]);
+    let s = s.trim_end_matches('\0').to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Create `SafeBoot\<mode>\<SERVICE_NAME>` with default value "Service" and
+/// read it back - the read-back IS the verdict.
+fn stage_safeboot_key(mode: &str) -> Result<(), String> {
+    let path = safeboot_key_path(mode);
+    let sub_w = wide(&path);
+    let val_w = wide("Service");
+    unsafe {
+        let mut hk: isize = 0;
+        let cr = reg::RegCreateKeyExW(
+            HKEY_LOCAL_MACHINE,
+            sub_w.as_ptr(),
+            0,
+            ptr::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_WRITE,
+            ptr::null(),
+            &mut hk,
+            ptr::null_mut(),
+        );
+        if cr != 0 {
+            return Err(format!("RegCreateKey {path} failed: win32 {cr}"));
+        }
+        let cr = reg::RegSetValueExW(hk, ptr::null(), 0, REG_SZ, val_w.as_ptr(), (val_w.len() * 2) as u32);
+        reg::RegCloseKey(hk);
+        if cr != 0 {
+            return Err(format!("RegSetValue {path} failed: win32 {cr}"));
+        }
+    }
+    match reg_value_string(HKEY_LOCAL_MACHINE, &path, ptr::null()) {
+        Some(v) if v == "Service" => Ok(()),
+        other => Err(format!("{path} readback got {other:?}, want \"Service\"")),
+    }
+}
+
+fn remove_safeboot_keys() -> Result<(), String> {
+    for mode in SAFEBOOT_MODES {
+        let path = safeboot_key_path(mode);
+        let sub_w = wide(&path);
+        let cr = unsafe { reg::RegDeleteTreeW(HKEY_LOCAL_MACHINE, sub_w.as_ptr()) };
+        if cr != 0 && cr != ERROR_FILE_NOT_FOUND as i32 && cr != ERROR_PATH_NOT_FOUND as i32 {
+            return Err(format!("RegDeleteTree {path} failed: win32 {cr}"));
+        }
+        if reg_value_string(HKEY_LOCAL_MACHINE, &path, ptr::null()).is_some() {
+            return Err(format!("{path} still readable after delete"));
+        }
+    }
+    Ok(())
+}
+
+/// The armed layout core, shared by `--safeboot-arm` and the 1084 self-heal:
+/// extract the driver to the persistent path (hash-gated, read-back checked),
+/// recreate OUR service pointed there, write both whitelist keys. Does NOT
+/// start anything. `mgr` must be open with create access.
+fn safeboot_stage(mgr: win::Handle) -> Result<(), String> {
+    verify_embedded_hash()?;
+
+    let sys_path = armed_sys_path();
+    std::fs::create_dir_all(sys_path.parent().unwrap())
+        .map_err(|e| format!("create {} failed: {e}", sys_path.parent().unwrap().display()))?;
+    std::fs::write(&sys_path, PMXDRV_SYS)
+        .map_err(|e| format!("extract to {} failed: {e}", sys_path.display()))?;
+    let readback = std::fs::read(&sys_path).map_err(|e| format!("re-read failed: {e}"))?;
+    if readback != PMXDRV_SYS {
+        return Err("persistent extract re-read mismatch (partial write?)".into());
+    }
+
+    // ImagePath: \??\ + plain absolute path (nvoc lesson - no \\?\ stacking)
+    let abs = if sys_path.is_absolute() {
+        sys_path
+    } else {
+        std::env::current_dir().unwrap().join(&sys_path)
+    };
+    let path_w = wide(format!(r"\??\{}", abs.to_string_lossy()).as_str());
+    let name_w = wide(SERVICE_NAME);
+    unsafe {
+        // stop+delete a leftover of any previous layout before recreating
+        let existing = win::OpenServiceW(mgr, name_w.as_ptr(), SERVICE_ALL_ACCESS);
+        if !existing.is_null() {
+            let _ = service_stop_and_wait(existing);
+            win::DeleteService(existing);
+            win::CloseServiceHandle(existing);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        let svc = win::CreateServiceW(
+            mgr,
+            name_w.as_ptr(),
+            name_w.as_ptr(),
+            SERVICE_ALL_ACCESS,
+            SERVICE_KERNEL_DRIVER,
+            SERVICE_DEMAND_START,
+            SERVICE_ERROR_NORMAL,
+            path_w.as_ptr(),
+            ptr::null(),
+            ptr::null_mut(),
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+        );
+        if svc.is_null() {
+            return Err(format!("CreateService failed: win32 {}", last_err()));
+        }
+        win::CloseServiceHandle(svc);
+    }
+    // read the ImagePath back through the registry - CreateServiceW is only
+    // half the proof; the stored value carries the \??\ prefix we passed
+    let img = reg_value_string(
+        HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Services\SSDIAG_PMXDRV",
+        wide("ImagePath").as_ptr(),
+    );
+    let want = format!(r"\??\{}", abs.to_string_lossy());
+    if img.as_deref() != Some(want.as_str()) {
+        return Err(format!("ImagePath readback got {img:?}, want {want}"));
+    }
+    for mode in SAFEBOOT_MODES {
+        stage_safeboot_key(mode)?;
+    }
+    Ok(())
+}
+
+/// Start OUR service by handle-open (the self-heal path has no open handle).
+fn safeboot_start(mgr: win::Handle) -> Result<(), String> {
+    let name_w = wide(SERVICE_NAME);
+    unsafe {
+        let svc = win::OpenServiceW(mgr, name_w.as_ptr(), SERVICE_ALL_ACCESS);
+        if svc.is_null() {
+            return Err(format!("OpenService failed: win32 {}", last_err()));
+        }
+        let ok = win::StartServiceW(svc, 0, ptr::null());
+        win::CloseServiceHandle(svc);
+        if ok == 0 {
+            return Err(format!("StartService failed: win32 {}", last_err()));
+        }
+    }
+    Ok(())
+}
+
+/// `--safeboot-arm`: stage the persistent layout, then prove it by a real
+/// start/stop round in NORMAL mode. Read-back at every step.
+fn safeboot_arm() -> i32 {
+    println!("safeboot-arm: staging the probe driver for Safe Mode (v0.6.11)");
+    if safeboot_armed() {
+        println!("state: already armed - restaging (idempotent; verifies every piece)");
+    }
+    let mgr = unsafe { win::OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CREATE_SERVICE) };
+    if mgr.is_null() {
+        eprintln!("OpenSCManager failed (admin required): win32 {} - arm needs an elevated prompt", last_err());
+        return 2;
+    }
+    if let Err(e) = safeboot_stage(mgr) {
+        unsafe { win::CloseServiceHandle(mgr) };
+        eprintln!("arm failed: {e}");
+        return 1;
+    }
+    println!("staged: {} ({} bytes, hash-pinned)", armed_sys_path().display(), PMXDRV_SYS.len());
+    for mode in SAFEBOOT_MODES {
+        println!("whitelist: {} = \"Service\" (readback ok)", safeboot_key_path(mode));
+    }
+
+    // proof round: the service must actually start and open its device here,
+    // before the user spends a safe-mode boot on it
+    let already = PmxDrv::try_open();
+    let mut start_ok = false;
+    if already.is_some() {
+        println!("start test: skipped - a PMXDRV device is already served by another instance");
+        start_ok = true; // the vehicle demonstrably works on this machine
+    } else {
+        match safeboot_start(mgr) {
+            Ok(()) => {
+                for _ in 0..40 {
+                    if let Some(d) = PmxDrv::try_open() {
+                        drop(d);
+                        start_ok = true;
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                let svc = unsafe { win::OpenServiceW(mgr, wide(SERVICE_NAME).as_ptr(), SERVICE_ALL_ACCESS) };
+                if !svc.is_null() {
+                    let _ = service_stop_and_wait(svc);
+                    unsafe { win::CloseServiceHandle(svc) };
+                }
+                if start_ok {
+                    println!("start test: start -> \\\\.\\PMXDRV opened -> stopped (readback ok)");
+                } else {
+                    println!("start test: service started but the device never appeared - Safe Mode will not fare better");
+                }
+            }
+            Err(e) => println!("start test failed: {e} - staging kept, but investigate before relying on it"),
+        }
+    }
+    unsafe { win::CloseServiceHandle(mgr) };
+
+    println!();
+    println!("ARMED. Safe Mode procedure:");
+    println!("  1. reboot into Safe Mode (bcdedit /set {{current}} safeboot minimal; BitLocker may ask for the key)");
+    println!("  2. elevated: ssdiag (no flags) - discovery + CANARY/POWER readback, driver borrowed, nothing deleted");
+    println!("  3. back in NORMAL mode, elevated: ssdiag --safeboot-disarm");
+    println!("NOTE: SafeBoot whitelist entries are a known persistence technique (T1112); managed/EDR");
+    println!("      machines may alert on this registry write - same class as the event-7045 note.");
+    if !start_ok {
+        return 1;
+    }
+    0
+}
+
+/// `--safeboot-disarm`: remove everything the arm (or self-heal) staged, with
+/// a read-back proving each piece is gone.
+fn safeboot_disarm() -> i32 {
+    println!("safeboot-disarm: removing the Safe Mode staging");
+    if !safeboot_armed() {
+        println!("state: no Minimal whitelist entry found - nothing (or already) disarmed");
+    }
+    let mut rc = 0;
+    match remove_safeboot_keys() {
+        Ok(()) => println!("whitelist: SafeBoot\\Minimal+Network entries removed (readback: absent)"),
+        Err(e) => {
+            eprintln!("{e}");
+            rc = 1;
+        }
+    }
+    unsafe {
+        let mgr = win::OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CREATE_SERVICE);
+        if mgr.is_null() {
+            eprintln!("OpenSCManager failed (admin required): win32 {}", last_err());
+            return 2;
+        }
+        let name_w = wide(SERVICE_NAME);
+        let svc = win::OpenServiceW(mgr, name_w.as_ptr(), SERVICE_ALL_ACCESS);
+        if !svc.is_null() {
+            let _ = service_stop_and_wait(svc);
+            win::DeleteService(svc);
+            win::CloseServiceHandle(svc);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        win::CloseServiceHandle(mgr);
+        let gone = win::OpenServiceW(
+            win::OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CREATE_SERVICE),
+            name_w.as_ptr(),
+            SERVICE_ALL_ACCESS,
+        );
+        // read back through a fresh handle: the service must now not open
+        if !gone.is_null() {
+            eprintln!("service still opens after DeleteService - disarm incomplete");
+            win::CloseServiceHandle(gone);
+            rc = 1;
+        } else {
+            println!("service: SSDIAG_PMXDRV removed (readback: no longer opens)");
+        }
+    }
+    let sys_path = armed_sys_path();
+    match std::fs::remove_file(&sys_path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            eprintln!("remove {} failed: {e}", sys_path.display());
+            rc = 1;
+        }
+    }
+    if let Some(dir) = sys_path.parent() {
+        let _ = std::fs::remove_dir(dir); // best effort; only complains below if the file lingered
+    }
+    if sys_path.exists() {
+        eprintln!("{} still present - disarm incomplete", sys_path.display());
+        rc = 1;
+    } else {
+        println!("file: {} removed (readback: absent)", sys_path.display());
+    }
+    if rc == 0 {
+        println!("disarm complete - zero residue");
+    }
+    rc
 }
 
 
@@ -2131,6 +2549,8 @@ fn main() {
 fn run() -> i32 {
     let mut reapply = false;
     let mut dry = false;
+    let mut sb_arm = false;
+    let mut sb_disarm = false;
     let mut select: Option<String> = None;
     let mut args = std::env::args().skip(1);
     if std::env::var_os("SSDIAG_TIMING").is_some() {
@@ -2139,19 +2559,27 @@ fn run() -> i32 {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--reapply" => reapply = true,
+            "--safeboot-arm" => sb_arm = true,
+            "--safeboot-disarm" => sb_disarm = true,
             "--timing" => TIMING.store(true, std::sync::atomic::Ordering::Relaxed),
             "--help" | "-h" => {
                 println!(
                     "ssdiag {ver} - in-OS NVIDIA register diagnosis + separate-lock re-apply
 
 USAGE:
-  ssdiag [--reapply] [--select <substr>]
+  ssdiag [--reapply] [--select <substr>] [--safeboot-arm|--safeboot-disarm]
 
 OPTIONS:
   --reapply        per card with an OPEN FEAT gate: write SS0=0x88888888
                    SS1=0x8 and verify by read-back (separate-lock method -
                    restores an unlock the driver re-derived, no reboot)
   --select <s>     only cards whose DeviceID contains <s> (multi-GPU)
+  --safeboot-arm   stage the probe driver for Safe Mode: hash-checked copy
+                   to %ProgramData%, persistent service, and SafeBoot
+                   Minimal+Network whitelist entries (elevated, NORMAL mode;
+                   includes a start/stop proof round). Undo: --safeboot-disarm
+  --safeboot-disarm  remove that staging completely (SafeBoot keys, service,
+                   persistent copy) - run elevated in NORMAL mode
   --dry-run        print the platform gates + discovered cards, load nothing
   --help           this text
 
@@ -2217,6 +2645,15 @@ SSDIAG_COLOR=force pins on.",
                 return 2;
             }
         }
+    }
+
+    // safe-mode staging commands run before every other path - they touch
+    // only the SCM and the SafeBoot whitelist, never the probe itself
+    if sb_arm {
+        return safeboot_arm();
+    }
+    if sb_disarm {
+        return safeboot_disarm();
     }
 
     // Fast capability gate: deploying the driver needs SC_MANAGER_CREATE_SERVICE

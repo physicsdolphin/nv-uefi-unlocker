@@ -186,7 +186,7 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 
 两点方法学限制（都会导致假结论，先看再跑实验）：
 
-- **安全模式配对有两条失效路**：① MUXless 机器 dGPU 停泊时 BAR0 读不到，`ssdiag` 无从取数——安全模式只能证明"驱动没参与"，不能给出读回（Catnip 在 [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) 指出）；② 即使 BAR0 读得到，`ssdiag` 的 pmxdrv 载具在安全模式里 `StartService` 会撞 `win32 1084`（`ERROR_NOT_SAFEBOOT_SERVICE`）——未列入 `SafeBoot\Minimal` 白名单的内核驱动在安全模式一律不可启动（#37 Victus 实测）。安全模式切分对 `ssdiag` 结构性不可用，直接走 [Linux live 读回法](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)或看 ACPI。
+- **安全模式配对有两条失效路**：① MUXless 机器 dGPU 停泊时 BAR0 读不到，`ssdiag` 无从取数——安全模式只能证明"驱动没参与"，不能给出读回（Catnip 在 [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) 指出）；② 即使 BAR0 读得到，`ssdiag` 的 pmxdrv 载具在安全模式里 `StartService` 会撞 `win32 1084`（`ERROR_NOT_SAFEBOOT_SERVICE`）——未列入 `SafeBoot\Minimal` 白名单的内核驱动在安全模式一律不可启动（#37 Victus 实测；SCM 与内核加载器两层都查这道名单）。②有现成解法：正常模式提权跑 `ssdiag --safeboot-arm` 预置白名单（自带 start/stop 验证，事后 `--safeboot-disarm` 零残留清除）；①无解，该情形转 [Linux live 读回法](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)。
 - **`WPR2_HI` 单独不能用**：driver 自己的 FWSEC 会在下一个 boot 重新建窗，值本来就变，只有和 `wpr2_lo` 成对、且与本次交棒值逐位对照才有意义。
 
 ### 机制盘点：谁能让它回厂
