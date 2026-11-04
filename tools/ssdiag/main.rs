@@ -1,4 +1,7 @@
-//! ssdiag v0.6.4 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.8 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.8 adds the read-only POWER section: the card's and its upstream root
+//! port's PMCSR / D-state, the register-side witness of the platform's
+//! `_PR3`/`_OFF` rail path (issue #164/#165).
 //! v0.6.3 adds the HVCI runtime probe (SystemCodeIntegrityInformation) to the
 //! platform gates and a denied-map precondition breakdown (issue #118).
 //! v0.6.2 adds cumulative per-stage [+ms] timing lines (the loader's issue#38
@@ -275,6 +278,10 @@ mod cm {
         pub fn CM_Get_Device_ID_List_SizeW(len: *mut u32, filter: *const u16, flags: u32) -> ConfigRet;
         pub fn CM_Get_Device_ID_ListW(filter: *const u16, buf: *mut u16, buflen: u32, flags: u32) -> ConfigRet;
         pub fn CM_Locate_DevNodeW(devinst: *mut DevInst, id: *mut u16, flags: u32) -> ConfigRet;
+        // upstream bridge of a devnode - the _PR3/_OFF owner (POWER section)
+        pub fn CM_Get_Parent(parent: *mut DevInst, devinst: DevInst, flags: u32) -> ConfigRet;
+        pub fn CM_Get_Device_IDW(devinst: DevInst, buf: *mut u16, buflen: u32, flags: u32)
+            -> ConfigRet;
         // the log-conf family has no W export: the plain name IS the wide entry
         pub fn CM_Get_First_Log_Conf(logconf: *mut LogConf, devinst: DevInst, priority: u32) -> ConfigRet;
         pub fn CM_Get_Next_Res_Des(
@@ -878,6 +885,9 @@ struct Gpu {
     /// PCI (bus, device, function) from the PnP bus/address properties, with
     /// the LocationInfo string as fallback - None if neither parsed.
     bdf: Option<(u32, u32, u32)>,
+    /// devnode the discovery walk landed on; the POWER section walks up from
+    /// it to the root port (cfgmgr32 rather than an ECAM bridge scan).
+    devinst: u32,
 }
 
 impl Gpu {
@@ -1053,7 +1063,7 @@ fn discover_gpus() -> Result<(Vec<Gpu>, Vec<String>), String> {
                 _ => None,
             };
             let bdf = bdf.or_else(|| loc.as_deref().and_then(bdf_from_location));
-            gpus.push(Gpu { id, ranges, bdf });
+            gpus.push(Gpu { id, ranges, bdf, devinst });
         }
         // deterministic order (the old CIM join had no ordering guarantee)
         gpus.sort_by(|x, y| x.id.cmp(&y.id));
@@ -1363,6 +1373,126 @@ fn gen_name(g: u32) -> String {
         5 => "Gen5".into(),
         0 => "Gen1?0".into(),
         _ => format!("Gen?{g}"),
+    }
+}
+
+// ---------------------------------------------------------------- POWER (D-state witness)
+
+/// Device instance ID of a devnode (the POWER section prints the root port).
+fn cm_device_id(devinst: u32) -> Option<String> {
+    let mut buf = [0u16; 256];
+    let cr = unsafe { cm::CM_Get_Device_IDW(devinst, buf.as_mut_ptr(), buf.len() as u32, 0) };
+    if cr != cm::CR_SUCCESS {
+        return None;
+    }
+    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    let s = String::from_utf16_lossy(&buf[..n]);
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// PMCSR of one function as (raw, PowerState) - None when the config page is
+/// unreadable or the chain carries no PM capability. `did` of None skips the
+/// DeviceID check (bridges: the vendor ID alone identifies a real function).
+fn read_pmcsr(drv: &PmxDrv, (bus, dev, func): (u32, u32, u32), did: Option<u16>) -> Option<(u32, u32)> {
+    let mcfg = mcfg_base_for(bus)?;
+    let ecam = mcfg + ((bus as u64) << 20) + ((dev as u64) << 15) + ((func as u64) << 12);
+    let va = drv.map_physical(ecam, 1).ok()?;
+    let base = va as *const u8;
+    let rd = |off: u32| unsafe { (base.add(off as usize) as *const u32).read_volatile() };
+    let idw = rd(0);
+    let real = match did {
+        Some(d) => idw & 0xffff == 0x10de && (idw >> 16) as u16 == d,
+        None => (idw & 0xffff) != 0xffff && (idw & 0xffff) != 0,
+    };
+    if !real {
+        drv.unmap_physical(va);
+        return None;
+    }
+    let mut p = (rd(0x34) & 0xfc) as u32;
+    let mut out = None;
+    for _ in 0..24 {
+        if p == 0 || p > 0xfc || p + 0x10 > 0x100 {
+            break;
+        }
+        let hdr = rd(p);
+        if hdr & 0xff == 0x01 {
+            // PMCSR needs a version >= 2 capability (word PMCAP+2 bits [2:0]);
+            // a non-zero power state is only meaningful once PME-capable
+            let ver = rd(p + 2) & 0x7;
+            if ver >= 2 {
+                let raw = rd(p + 4);
+                out = Some((raw, raw & 0x3));
+            }
+            break;
+        }
+        p = (hdr >> 8) & 0xfc;
+    }
+    drv.unmap_physical(va);
+    out
+}
+
+fn dstate(s: u32) -> &'static str {
+    match s {
+        0 => "D0",
+        1 => "D1",
+        2 => "D2",
+        _ => "D3",
+    }
+}
+
+/// POWER section (v0.6.8, read-only): the card's PMCSR and the PMCSR of its
+/// upstream root port. The platform SSDT puts `_PR3` on the PEG ports and
+/// `_OFF` is PERST# + slot-rail-off (docs/evidence/tu106-1f07-acpi-dump/
+/// ANALYSIS-ssdt02-power.md), so a port parked in D3 names a mechanism that
+/// costs the unlock with no register write at all - and the same path is a
+/// candidate for a card "vanishing" (#165). The PowerState bits [1:0] are
+/// R/W, but nothing here writes them.
+fn print_power_state(drv: &PmxDrv, devinst: u32, instance: &str, bdf: Option<(u32, u32, u32)>) {
+    let card = match (dev_id_from(instance), bdf) {
+        (Some(did), Some(bdf)) => read_pmcsr(drv, bdf, Some(did)),
+        _ => None,
+    };
+    let card_msg = match card {
+        Some((raw, s)) if s == 3 => format!("POWER: card PMCSR = {} ({raw:#06x})", red(dstate(s))),
+        Some((raw, s)) => format!("POWER: card PMCSR = {} ({raw:#06x})", dstate(s)),
+        None => format!(
+            "POWER: card config space unreadable ({})",
+            if bdf.is_none() { "no bdf" } else { "no answer / no PM capability" }
+        ),
+    };
+    println!("{card_msg}");
+
+    let mut parent = 0u32;
+    if unsafe { cm::CM_Get_Parent(&mut parent, devinst, 0) } != cm::CR_SUCCESS {
+        println!("POWER: root port: devnode has no parent - skipped");
+        return;
+    }
+    let pid = cm_device_id(parent).unwrap_or_default();
+    let (pbus, paddr) = (
+        cm_dword(parent, cm::CM_DRP_BUSNUMBER),
+        cm_dword(parent, cm::CM_DRP_ADDRESS),
+    );
+    let Some((b, a)) = pbus.zip(paddr) else {
+        println!("POWER: root port {pid}: bus/address properties missing - skipped");
+        return;
+    };
+    let pbdf = (b, (a >> 16) & 0x1F, a & 0xF);
+    let tag = pid.strip_prefix("PCI\\").unwrap_or(&pid)
+        .split("&SUBSYS").next().unwrap_or("")
+        .to_string();
+    match read_pmcsr(drv, pbdf, None) {
+        Some((raw, 3)) => println!(
+            "POWER: root port {:02x}:{:02x}.{} {tag} PMCSR = {} ({raw:#06x}) -> the platform _PR3/_OFF path is ENGAGED: PERST# asserted, slot rail off - the unlock cannot survive this state",
+            pbdf.0, pbdf.1, pbdf.2, red(dstate(3))
+        ),
+        Some((raw, s)) => println!(
+            "POWER: root port {:02x}:{:02x}.{} {tag} PMCSR = {} ({raw:#06x}) -> rail intact (only D3cold of the port runs _OFF)",
+            pbdf.0, pbdf.1, pbdf.2, dstate(s)
+        ),
+        None => println!(
+            "POWER: root port {:02x}:{:02x}.{} {tag} PMCSR unreadable - skipped",
+            pbdf.0, pbdf.1, pbdf.2
+        ),
     }
 }
 
@@ -1887,6 +2017,8 @@ WHAT IT DOES:
          AD102 L2 mask layer - read-only existence evidence per die
        - config-space link caps: LnkCap/LnkSta/LnkCap2/LnkCtl2 decoded
          (LnkSta is the only trustworthy link-speed criterion)
+       - POWER: card and upstream root-port PMCSR / D-state - the
+         register-side witness of the platform _PR3/_OFF rail path
   4. unlock verdict: FEAT SS0/SS1 == 0x88888888/0x8 => UNLOCKED
      (field-proven to persist in Windows on the Turing relock chain)
 
@@ -2027,6 +2159,7 @@ SSDIAG_COLOR=force pins on.",
         // works even for a parked card (config space answers regardless of
         // D0/MEM decode) - hence before the BAR0 walk, not after
         print_config_rebar(&drv, &g.id, g.bdf);
+        print_power_state(&drv, g.devinst, &g.id, g.bdf);
         let mut picked = walk_candidates(&drv, g);
         // degenerate reads (GC6/GCOFF park, D3, MEM decode off) -> one NVAPI
         // driver-mediated wake, then a single re-walk

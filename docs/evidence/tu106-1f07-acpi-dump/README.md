@@ -26,6 +26,22 @@ found, so the magics are the only writers. And the same value pair survives
 the console rebuild, so the rebuild is not the writer on this machine — which
 keeps the Windows-side pass on the hook for #164.
 
+## In-OS readback (same boot, after run 2) — `in-os-ssdiag-power-0.6.8.log`
+
+`ssdiag` 0.6.8 from the running OS: `CANARY_A/B … -> intact`,
+`CANARY: intact + SS live - no reset, nothing rewrote the state after
+handoff`, `VERDICT [turing]: UNLOCKED`. Marks the driver rebuilt WPR2
+(`0x01fce000`/`0x01ffee00`) and left `SEC2_EXCI=0x00003911`, i.e. the normal
+started state.
+
+Its new `POWER:` lines are the baseline for the rail hypothesis: the card
+(`01:00.0`) and its root port (`00:01.0`, `VEN_8086&DEV_1901`) both read
+**D0** (`PMCSR=0x0008`, No_Soft_Reset), so at probe time the platform
+`_PR3`/`_OFF` path has not run and the unlock loss on this machine was a
+write, not a power event. Both endpoints in D0 is also what a healthy
+reference machine should show; a `D3` on the root port line is the state that
+runs PERST# + rail-off.
+
 ## What the dump produced
 
 `index.txt` indexes 8 SSDTs and the DSDT, all written. The DSDT's own root

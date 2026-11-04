@@ -203,7 +203,7 @@ This explains three things at once:
 
 Getting hit takes three things at once: the topology has the dGPU powered by ACPI/EC (or the whole link goes over USB4), nothing references it at handoff, and the machine's AML really cuts power or asserts PERST# - the third is vendor-specific, so the rate follows platform classes rather than chance. Why the desktop exceptions (Z390P, B450M-A, B350M) differ from B650 is unknown and nobody has reported CSM state. **Issues are a self-selected sample with no denominator**, so any percentage below is an order of magnitude, not a probability.
 
-To look yourself: pull the DSDT / SSDT of the parent root port, check whether `_PR3` exists, whether `_ON` / `_OFF` are idempotent, and which GPIO carries PERST#. Half of these arguments are settled at that step.
+To look yourself: pull the DSDT / SSDT of the parent root port, check whether `_PR3` exists, whether `_ON` / `_OFF` are idempotent, and which GPIO carries PERST#. Half of these arguments are settled at that step. The AML says what the platform **may** do; the `POWER:` lines in `ssdiag` 0.6.8+ say **how far it got**: the card's and its upstream root port's `PMCSR` / D-state, and a port reading `D3` means `_OFF` already ran. It is a snapshot - `D0` does not prove the port never went to `D3` this boot (the canary owns that).
 
 Still unsplit: **GC6 and GCOFF are different targets** (the former keeps self-refresh, the latter is a full power-off); the `_PR3` path and the GC6 wake path are currently discussed interchangeably and need one dedicated comparison.
 

@@ -2,13 +2,13 @@
 
 > 服务 issue [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)（GA104 2484，EFI 全绿但系统内 SS 对被抹）与 [#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165)（双 3060，交棒后一张卡在 Windows 侧消失）。
 >
-> **资产已于 2026-11-04 第四次替换（本轮修掉首次实机跑暴露的三个诊断缺陷；事务本体一字未动）**：事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x1480`/`0x1484`，即索引 `0x20`/`0x21`，FLR 验证之后写、立刻读回），其余全部是只读采样。**此前下过同名文件的请重新下载**——旧文件的金丝雀偏移写错（`0x140020/24`，恒读 `0xbadf5040`）、SSDT 全部写盘失败、索引行无换行，TU10x 的 `POST-GOP` 判定也会误报 `NOT intact`。
+> **资产已于 2026-11-04 第五次替换（新加 POWER 电源态读数，`ssdiag` 升 0.6.8；事务本体一字未动）**：事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x1480`/`0x1484`，即索引 `0x20`/`0x21`，FLR 验证之后写、立刻读回），其余全部是只读采样。**此前下过同名文件的请重新下载**——更早的文件金丝雀偏移写错、SSDT 全部写盘失败、索引行无换行，TU10x 的 `POST-GOP` 判定也会误报 `NOT intact`。
 >
-> 金丝雀的判读在 §3；开关是卷根 `\tx-no-canary.txt`（放上即整组跳过，用于 A/B）。可选 ACPI 转储见 §5。
+> 金丝雀的判读在 §3；开关是卷根 `\tx-no-canary.txt`（放上即整组跳过，用于 A/B）。可选 ACPI 转储见 §5，配套的 `POWER:` 系统内读数见 §5b。
 >
-> 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `8b8b97ff7f4e1f75b7e3fb8363cf6f9dd385458f8281fc056dea6f2bc2b3164d`。
+> 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `a85e282be230eb1413fe6718930a343103381b8858893d18f6b98777c738f107`。
 >
-> `ssdiag.exe.0.6.7` 同附在本 release（含 `CANARY:` 判定行、安全模式/未启动设备上的发现回退；金丝雀偏移同步修正为 `0x1480/0x1484`。管理员运行），自行编译亦可。
+> `ssdiag.exe.0.6.8` 同附在本 release（含 `CANARY:` 判定行、安全模式/未启动设备上的发现回退、`POWER:` 卡与根端口电源态；金丝雀偏移为 `0x1480/0x1484`。管理员运行），自行编译亦可。
 >
 > 构建入口：与 v2.1.10 相同（`make-usbroot.ps1`），把 `BOOTX64.EFI` 换成该文件即可；卷根 marker 按各 issue 下面的要求放。
 
@@ -100,9 +100,32 @@ M1 `SAMPLE` 对非 console 卡可能整行全 `0xffffffff`，连 `PMC_BOOT_0` �
 
 一个健康的 `index.txt` 是**一表一行**、以文件名接 `written` 结尾。首次实机跑暴露过三个只在这条路径上的缺陷，现已修：SSDT 落盘文件名误带 `\acpi\` 前缀（句柄本来就是 `\acpi`，于是每张 SSDT 都 `WRITE FAILED (create failed)`）、索引行之间没有换行、creator 偏移误读在 +36（正确 +28，表体也自 +36 起）。若 `index.txt` 又是连成一行，说明盘里的 `BOOTX64.EFI` 还是旧构建。
 
+## 5b. `POWER:`：卡与根端口的电源态（`ssdiag` 0.6.8 起，系统内只读）
+
+§5 带回来的是"平台**有权**怎么做"，`POWER:` 两行是"平台**此刻**做到了哪一步"：分别打印 GPU 本身与其上游根端口的 `PMCSR`（PCI PM 能力 +4）与解码后的 D 态。PMCSR 的 `PowerState` 位是 R/W，但本工具只读不写。
+
+判读：
+
+| `POWER:` 读数 | 判读 |
+|---|---|
+| 卡 `D0`、根端口 `D0` | 两端都在 D0，电源路径此刻未介入——丢锁是**写入型**，与金丝雀 `intact` 相互印证（本机 TU106 基线即此形态） |
+| 根端口 `D3` | 平台 `_PR3`/`_OFF` 路径**已介入**：PERST# 已拉低、槽位电源已切。此状态下解锁**不可能存活**（`0x1480/0x1484` 也被清），同时是"卡显示上消失"（#165）的直接候选 |
+| 卡 `D3`、根端口 `D0` | 仅卡片自身 D3hot/D3cold，链路复位级；根端口轨道仍在，`_OFF` 未跑 |
+| 卡 `config space unreadable` | 卡已被切电或函数未解码——先看根端口一行再下结论 |
+
+两行的根端口身份直接打印（`BB:DD.F` + `VEN_xxxx&DEV_xxxx`），可与 `\acpi\index.txt` 里的 `_PR3` 命中位置对上：被打印的端口正是那个拥有 `_OFF` 的对象。**局限**：只是探针时刻的快照，`D0` 不证明这一引导内没进过 `D3`（那由金丝雀回答），`D3` 也不区分是谁（驱动/系统电源策略/空闲计时器）造成的。
+
+**English**
+
+- `POWER:` prints the card's and its upstream root port's `PMCSR` (PCI PM capability +4) with the decoded D-state. Read-only; the `PowerState` bits are never written by `ssdiag`.
+- Both `D0` ⇒ the power path did not engage at probe time; a lost unlock is write-type (pairs with a canary `intact`).
+- Root port `D3` ⇒ the platform `_PR3`/`_OFF` path has run (PERST# asserted, slot rail cut); the unlock cannot survive that state, and it is the prime candidate for a card disappearing (#165).
+- Card `D3` with the port in `D0` ⇒ card-side D3hot only, rail intact, `_OFF` not run.
+- It is a snapshot: `D0` does not prove the port never went to `D3` this boot (the canary owns that), and `D3` does not say who drove it.
+
 ## 6. 回收清单
 
 1. 完整 `loader.log`；
 2. Windows 侧：`Get-PnpDevice -Class Display | fl FriendlyName,Status,Problem,ProblemDescription,InstanceId`（#165 在**解锁后未重启的病态状态里先取**，再谈重启）；
-3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.7 及以上**，含 `CANARY:` 判定行；发现阶段空结果时 0.6.7 会逐条打印跳过原因，连 `display-class devnodes carrying VEN_10DE: N` 一起贴回来；
+3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.8 及以上**，含 `CANARY:` 判定行与 `POWER:` 两行；发现阶段空结果时工具会逐条打印跳过原因，连 `display-class devnodes carrying VEN_10DE: N` 一起贴回来；
 4. BIOS 状态与电源瓦数（#165 必附）。
