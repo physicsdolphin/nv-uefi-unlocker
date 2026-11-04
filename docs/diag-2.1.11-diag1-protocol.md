@@ -28,6 +28,13 @@
 
 `POST-GOP` 与 `POST-FLR` 之间除重建外不改 FEAT；两行不一致即以 `POST-GOP` 为准。
 
+### 1b. 若两行都 `intact`、只有系统内被抹：在 OS 内继续切分
+
+写入方在 OS 内部。两轮，按序，**能只做一轮就做第 2 轮**（它更强）：
+
+1. **安全模式**：先 `bcdedit /set {current} safeboot minimal`，再照常插盘引导，进去后跑 `ssdiag`；事后 `bcdedit /deletevalue {current} safeboot`。安全模式不加载 `nvlddmkm`（基础显示驱动接手）：安全模式里也被抹 → 不是驱动包；安全模式完好、正常模式被抹 → `nvlddmkm` 的 init 就是写入方。注意 BitLocker 会要恢复密钥；安全模式在本仓库有黑屏先例（#82 X99），黑屏就转第 2 轮。
+2. **零驱动 Linux live USB**：用第二支盘装 live ISO，在解锁盘根写 `\chain-target.txt` 指向该发行版的二级加载器（如 `\EFI\BOOT\grubx64.efi`，避免 pass 0 落回我们自己的 `BOOTX64.EFI`），**经解锁盘链过去**（解锁是每引导易失的，直接从固件启 live 盘只会读到厂值）。桌面里 `curl -O …/tools/diag-unlock.py && sudo python3 diag-unlock.py`（mmap `resource0`，零模块零驱动），并把 `dmesg | grep -iE 'nouveau|nvidia|pci'` 一并附上。live 桌面下、无驱动绑定就已被抹 ⇒ OS 交棒/电源态，不是厂商驱动；完好 ⇒ Windows 驱动这一 pass。
+
 **English**
 
 - The `POST-GOP: FEAT_PLM=… SS0=… SS1=…` line is printed at the handoff tail, after the console rebuild and the VGA restore, right before `StartImage bootmgfw`. It is read-only.
