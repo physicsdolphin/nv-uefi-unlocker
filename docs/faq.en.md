@@ -60,6 +60,7 @@ Optional markers go in the stick root; normal use needs none:
 | `tx-native-gop.txt` (tx builds) | **Optional pin**: native-GOP is now the default, so this marker is no longer an enable switch; its first line may name a volume GOP module to use instead of the card's shadowed ROM (compatibility-package form); empty/absent = the shadowed ROM |
 | `i_know_what_i_am_doing.txt` | Auto-run after 5 seconds, any key aborts; existence enables it, contents ignored |
 | `tx-no-canary.txt` | Skip the whole reset canary group (A/B control; see [relock](#relock)) |
+| `tx-keep-assets.txt` | **Escape hatch**: do not hand the asset cache back before the chain (freed by default since v2.1.11, see [handoff memory](#handoff)). Only for A/B or for the "reads assets after the chain" shape; the older `tx-free-assets.txt` marker is still accepted and is now a no-op |
 | `tx-acpi-dump.txt` | Read-only: dump the firmware DSDT and every SSDT plus a keyword index to `\acpi\` on the stick (decompile offline with `iasl -d`; answers "who owns this card's power"). Runs before the confirm and works with no GPU present |
 
 Without the auto-run marker, only Space or Enter confirms; another key or a 30-second timeout aborts. Chainload order: Windows Boot Manager → supported Linux shim/grub/systemd-boot/Limine → generic `EFI/BOOT/BOOTX64.EFI`. The last tier offers a 5-second key-to-exit window. Slow-console speedup is the `tx-quiet.txt` console whitelist (issue #38), not async output - UEFI boot services are single-threaded and GOP text rendering is a synchronous call, so asynchrony cannot raise throughput; every log line carries a `[+ms]` stage-timing prefix so echo cost and transaction waits separate in `loader.log`.
@@ -413,6 +414,23 @@ CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI'
 ```
 
 `identity match` plus no `volume scan fallback` anywhere in the log means the resolver took the firmware's choice. Hand-editing the BCD is only needed on older builds; on v2.1.10+ a workaround can be reverted. The `CHAIN-BOOT:` dump prints the whole `BootOrder` with decoded device paths and an `hd(partN,<guid>)` tag per volume, so a wrong pick is visible in one boot.
+
+<a id="handoff"></a>
+
+## The unlock log is green but Windows will not start (`0xc000009a` / Recovery)?
+
+`0xc000009a` is `STATUS_INSUFFICIENT_RESOURCES` at the winload stage (the Recovery screen with "press F8 / F1 / Esc" means it got that far). **It is not a shortage of memory, it is a shortage of the largest usable run**: ExitBootServices converts nothing to conventional, so our own asset cache crosses over as a `LOADER_DATA` descriptor and splits the only large run below 4 GiB - and winload takes its boot reservation out of a single descriptor without stitching. A 32 GB machine with 2.4 GiB still free fails all the same ([#146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146), the only case so far).
+
+**Since v2.1.11 the asset pool is handed back to the firmware allocator before the chain, by default**, at zero cost (nothing reads an asset after the transaction). Read it off the log:
+
+```
+CHAIN-MEMMAP: ... largest block 2604 MiB (...)     <- after the fix; halved in the failing state
+TX-ASSET-CACHE: cleared 9 entries, 84388324 bytes handed back to the firmware allocator
+```
+
+- On an older build with this symptom: put an empty `tx-free-assets.txt` at the stick root and run again; on v2.1.11+ that marker is a no-op.
+- To get the "not freed" control back, use `tx-keep-assets.txt` (empty); the log then says `cache left resident across the chain`.
+- Mechanism, the three-run maps and the spec/EDK2 basis: [low memory at handoff](handoff-lowmem.en.md).
 
 <a id="reconnect"></a>
 

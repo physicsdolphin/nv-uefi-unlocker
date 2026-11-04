@@ -63,6 +63,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-native-gop.txt`（tx 构建） | **可选 pin**：native-GOP 已是默认行为，此 marker 不再是启用开关；首行写卷上 GOP 模块路径可指定用该模块替代本卡影子 ROM（兼容包形态），空/缺省=影子 ROM |
 | `i_know_what_i_am_doing.txt` | 5 秒倒计时后自动运行，任意键中止；文件存在即启用，内容忽略 |
 | `tx-no-canary.txt` | 整组跳过复位金丝雀的读写（A/B 对照；见[回锁章](#relock)） |
+| `tx-keep-assets.txt` | **退出阀**：交棒前不释放资产缓存（默认自 v2.1.11 起释放，见[交棒内存](#handoff)）。仅用于 A/B 或排查"链载后仍要读资产"的形态；`tx-free-assets.txt` 旧标记仍被接受，已是空操作 |
 | `tx-acpi-dump.txt` | 只读：把固件 DSDT 与全部 SSDT 连同关键词索引落到卷根 `\acpi\`（离线 `iasl -d` 反编译；回答"谁在管这张卡的电"）。确认键之前执行，没有 N 卡也生效 |
 
 无自动运行标记时，事务只接受空格或回车确认，其他键或 30 秒超时均中止。链回顺序为 Windows Boot Manager → 受支持的 Linux shim/grub/systemd-boot/Limine → 通用 `EFI/BOOT/BOOTX64.EFI`；最后一档提供 5 秒按键退出窗口。慢速 console 的提速走 `tx-quiet.txt` 的 console 白名单（issue #38），不做异步输出——UEFI 引导服务单线程，GOP 文本渲染本身是同步调用，异步提不了吞吐；每行日志带 `[+ms]` 阶段计时前缀，回显耗时与事务等待在 `loader.log` 里直接可分。
@@ -423,6 +424,23 @@ CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI'
 ```
 
 出现 `identity match` 且全程没有 `volume scan fallback`，即解析器采用了固件的选择。只有旧版构建才需要手改 BCD；v2.1.10+ 上的变通可以还原。`CHAIN-BOOT:` dump 会打印完整 `BootOrder`、逐项解码设备路径，并给每个卷打 `hd(partN,<guid>)` 标签，选错一次引导即可看见。
+
+<a id="handoff"></a>
+
+## 解锁日志全绿，但 Windows 起不来（`0xc000009a` / 恢复环境）？
+
+`0xc000009a` = `STATUS_INSUFFICIENT_RESOURCES`，发生在 winload 阶段（能看到 “按 F8 / F1 / Esc” 的恢复屏即已跑到这一步）。**不是内存不够，是最大可用块不够**：ExitBootServices 不把任何东西转成 conventional，我们自己的资产缓存会作为 `LOADER_DATA` 描述符劈开低 4 GiB 里唯一那段大块，而 winload 的启动预留只从单个描述符里取、不拼接——一台 32 GB 机器空闲 2.4 GiB 照样失败（[#146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146)，唯一一例）。
+
+**v2.1.11 起默认在交棒前把资产池还给固件分配器**，代价为零（过了事务就再没人读资产）。判据看日志：
+
+```
+CHAIN-MEMMAP: ... largest block 2604 MiB (...)     <- 修复后；失败态这个数被砍半
+TX-ASSET-CACHE: cleared 9 entries, 84388324 bytes handed back to the firmware allocator
+```
+
+- 老版本遇到本症状：确认盘根有 `tx-free-assets.txt`（零字节）再跑一次；v2.1.11+ 该标记已是空操作。
+- 需要看"不释放"的对照时放 `tx-keep-assets.txt`（零字节），日志会打 `cache left resident across the chain`。
+- 机制、三跑内存图与规范/EDK2 依据见 [交棒前的低位内存](handoff-lowmem.md)。
 
 <a id="reconnect"></a>
 

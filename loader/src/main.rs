@@ -177,7 +177,16 @@ fn main() -> Status {
 
     #[cfg(feature = "tx")]
     if let keywait::Confirm::Proceed = confirmed {
-        tx_phase(&gpus);
+        // \tx-dry-run.txt (issue #146): skip the transaction entirely. The OS
+        // loader is still preloaded, but this path never reaches an asset
+        // read, so the cache stays EMPTY - the control is "preload residency,
+        // zero GPU writes, no detach, no reconnect", not "full residency".
+        // (Measured: the dry-run log has no TX-ASSET-DIAG line at all.)
+        if chainload::boot_volume_has(cstr16!(r"\tx-dry-run.txt")) {
+            info!("TX-DRY-RUN: \\tx-dry-run.txt present - the GPU transaction is SKIPPED this boot (zero writes, no detach; preload residency control - assets are NOT read on this path, issue #146)");
+        } else {
+            tx_phase(&gpus);
+        }
     }
     #[cfg(not(feature = "tx"))]
     drop(confirmed);
@@ -277,6 +286,10 @@ fn tx_phase(gpus: &[pci::FoundGpu]) {
 nothing was written, nothing was detached"
         );
     }
+    // The asset cache is freed on the way into the chain, not here
+    // (chainload::chain_load_bootmgfw -> tx::handoff_free_assets, default
+    // since v2.1.11): the abort path and \tx-dry-run.txt need the same
+    // hygiene, and CHAIN-MEMMAP logs the map after the free.
 }
 
 /// One card's full transaction. Every outcome continues the multi-GPU

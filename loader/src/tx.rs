@@ -741,6 +741,64 @@ unsafe impl Send for AssetCacheCell {}
 
 static ASSET_CACHE: AssetCacheCell = AssetCacheCell(UnsafeCell::new(alloc::vec::Vec::new()));
 
+/// `\tx-no-asset-cache.txt` (issue #146): when present, the read-through
+/// cache is disabled - every asset read goes to the stick at use time and
+/// nothing asset-sized stays resident across the chain. Diagnostic knob:
+/// splits "resident asset bytes at handoff" from "the transaction itself".
+static ASSET_CACHE_OFF: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+static ASSET_CACHE_OFF_PROBED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// Probe the disable marker once (memoized): the stick cannot change
+/// mid-boot, so the result is sticky for the session.
+fn asset_cache_disabled() -> bool {
+    use core::sync::atomic::Ordering;
+    if ASSET_CACHE_OFF_PROBED.swap(true, Ordering::Relaxed) {
+        return ASSET_CACHE_OFF.load(Ordering::Relaxed);
+    }
+    let off = probe_file(r"\tx-no-asset-cache.txt");
+    ASSET_CACHE_OFF.store(off, Ordering::Relaxed);
+    if off {
+        info!("TX-ASSET-CACHE: \\tx-no-asset-cache.txt present - read-through cache disabled (nothing asset-sized stays resident)");
+    }
+    off
+}
+
+/// Hand the read-through cache back to the firmware allocator before the
+/// chain (issue #146). **Default since v2.1.11**: past this point nothing
+/// re-reads an asset, and the ~84 MiB pool allocation sits in the middle of
+/// the one large conventional run below 4 GiB that a Windows OS loader
+/// allocates its boot block from. winload does not stitch descriptors
+/// together, so the carve-out alone is enough to fail that reservation
+/// (0xc000009a) on a 32 GiB machine with 2.4 GiB still free - see
+/// docs/handoff-lowmem.en.md.
+///
+/// Runs on every path that reaches the chain (transaction, abort control and
+/// `\tx-dry-run.txt` alike); freeing is idempotent. `\tx-keep-assets.txt`
+/// opts out (A/B, and an escape hatch if a future machine ever wants the
+/// pre-warmed cache back); `\tx-free-assets.txt` is still accepted and is now
+/// a no-op. Pool backing pages are returned on drop, so this genuinely
+/// shrinks the handoff map; CHAIN-MEMMAP right after is the read-back
+/// (constitution §1.1).
+pub fn handoff_free_assets() {
+    if probe_file(r"\tx-keep-assets.txt") {
+        info!("TX-ASSET-CACHE: \\tx-keep-assets.txt present - cache left resident across the chain");
+        return;
+    }
+    clear_asset_cache();
+}
+
+fn clear_asset_cache() {
+    // Safety: single-threaded boot services; pointer use confined here.
+    let cache = unsafe { &mut *ASSET_CACHE.0.get() };
+    let (n, bytes) = cache.iter().fold((0usize, 0usize), |(n, b), (_, e)| {
+        (n + 1, b + match e { Inner::Content(v) => v.len(), _ => 0 })
+    });
+    cache.clear();
+    cache.shrink_to_fit();
+    info!("TX-ASSET-CACHE: cleared {n} entries, {bytes} bytes handed back to the firmware allocator");
+}
+
 /// Warm the read-through cache with one family's whole asset set, exactly
 /// the files tx_one_card will ask for next (each surfaces its own
 /// TX-ASSET-DIAG line; failures are cached too, so "present but unreadable"
@@ -768,6 +826,10 @@ pub fn read_boot_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_boot_file_inner(path: &str) -> Inner {
+    // Diagnostic bypass (issue #146): the knob is probed once, memoized.
+    if asset_cache_disabled() {
+        return read_boot_file_uncached(path);
+    }
     // Read-through cache first (armed prep warms it; see AssetCacheCell).
     // Safety: single-threaded boot services; pointer use confined here.
     let cache = unsafe { &mut *ASSET_CACHE.0.get() };
