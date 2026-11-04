@@ -149,7 +149,7 @@ sudo update-initramfs -u
 
 ## 为什么解锁过的卡一进系统又被锁回去？
 
-先说结论：**不是 NVIDIA 在检测我们**。解锁被抹掉是三条各自独立的机制叠加的结果——物理层的复位语义、固件的初始化契约、以及 FEAT 块本身的性质。绝大多数"进系统就丢"的报告属于**平台给了驱动一个复位或断电事件**，跟驱动版本几乎无关。
+先说结论：**不是 NVIDIA 在检测我们**。解锁被抹掉是三条各自独立的机制叠加的结果——物理层的复位语义、固件的初始化契约、以及 FEAT 块本身的性质。绝大多数"进系统就丢"的报告属于**平台给了驱动一个复位或断电事件**，跟驱动版本几乎无关。issue 是自选样本、没有分母，所以下文的比例只能当量级看，不能当概率。
 
 ### 先认识 FEAT 块是什么
 
@@ -175,17 +175,42 @@ sudo update-initramfs -u
 
 Turing 交棒本来就带 PLM 重锁，别把它的正常交棒值当丢失——判读见[雷电一节](#thunderbolt)与[冷态对照](cold-values.md)。
 
+**配对法：拿 WPR2 当"有没有复位"的见证。** WPR2 是本次引导里唯一由 booter 自己写过的寄存器（暂存窗口基址），和 FEAT 不同域。系统内最早一次读回时把 `wpr2_lo` 和 FEAT 一起抄：**WPR2 仍是 booter 写的值、FEAT 却回退了 = 芯片没复位，那是写入；两者一起没了 = 复位或掉电。** 从 v2.1.11 起 `HANDOFF-OUT` 与 `POST-GOP` 都带 `wpr2_lo`，就是为了这一对能在同一行里对齐。
+
+两点方法学限制（都会导致假结论，先看再跑实验）：
+
+- **MUXless 机器的安全模式配对会失效**：dGPU 停泊时 BAR0 读不到，`ssdiag` 无从取数——安全模式只能证明"驱动没参与"，不能给出读回（Catnip 在 [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) 指出）。这类机器要改用 [Linux live 读回法](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)或直接看 ACPI。
+- **`WPR2_HI` 单独不能用**：driver 自己的 FWSEC 会在下一个 boot 重新建窗，值本来就变，只有和 `wpr2_lo` 成对、且与本次交棒值逐位对照才有意义。
+
 ### 机制盘点：谁能让它回厂
 
 | # | 机制 | AON 域 | 典型场景 | 看到的形态 |
 | --- | --- | --- | --- | --- |
 | 1 | **真掉电**（rail 断） | 复位 | 笔记本 `_PR3` + RTD3/现代待机、EC 电源门控、外置坞断电、S4/快速启动 | 门锁 + 选择器回开机基线；`power_state` 曾为 D3cold |
 | 2 | **整域复位** | 复位 | 平台 SBR、链路热复位、全芯片 SW_RESET；多见于老固件/"奇怪"主板 | 同上，且 `POST-GOP` 就已经坏 |
-| 3 | **devinit 重放**（驱动 init 自己重算） | 存活 | 部分 GA10x 笔记本（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)） | 门锁 + `SS` 被写成推导值（≠开机基线、≠覆盖值） |
+| 3 | **devinit 重放**（驱动 init 自己重算） | 存活 | 部分 GA10x 笔记本（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)，Linux 实测；Windows 侧尚无同形态样本） | 门锁 + `SS` 被写成推导值（≠开机基线、≠覆盖值） |
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
 
 第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改的地方——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
+
+### 平台上到底是谁在断电
+
+dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 dGPU 集成在平台里，供电是一个由 ACPI `_PR3` 的 `_ON` / `_OFF` 方法切换的 GPIO（BOCO 形态）。**D3cold 的定义就是对这些电源资源执行 `_OFF`**，下电顺序是根口广播 PME_Turn_Off → 链路进 L2/3 → 拉 PERST# → 撤电。桌面独立卡没有这条路径，这解释了为什么"多见于笔记本"。
+
+更有解释力的一条（**假说，证据来自 Linux，Windows 侧未验证**）：OS 启动时会对**没人引用**的电源资源做状态同步，而 ACPI 允许对已处于关闭态的电源资源再执行一次 `_OFF`；固件 AML 若不幂等，多余的那次就是真断电（coreboot 的 Brya 板专门记录 dGPU 电源状态来躲开源内核的多余调用）。这条能同时解释三件事：
+
+- [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) 是**确定性**复现：dGPU 无显示、驱动未绑定、OS 内 `D3` 且 MEM decode 关闭——驱动全程没参与还是丢，写入方就不在驱动里；
+- 为什么 `D3Cold` 注册表开关无效：它拦的是 D3cold 请求，拦不住启动期对电源资源的状态同步；
+- 为什么"进入方式"能反转结果：从 Windows 高级启动进，dGPU 被上一轮驱动持有；从 BIOS 冷启进，它是被 loader 从停泊态拉起来的、在 OS 记账里无人引用。
+
+[#28](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/28) 给了一个旁证：混合模式下固件阶段只枚举到 dGPU 的音频功能，即整卡被停泊在未供电态。Modern Standby 还额外要求根口在 D0→D3 时对下游设备施加基础复位（微软固件要求文档），是第三条平台侧触发器。
+
+中招需要三件事同时成立：拓扑上 dGPU 由 ACPI/EC 管电（或整链路走 USB4）、交接时无人引用、且该机 AML 真的切了电或拉了 PERST#——第三件是厂商相关的，所以比例按平台类分布而不是随机。桌面那几个例外（Z390P、B450M-A、B350M）与 B650 的对照原因未知，CSM 状态也没人报过。**issue 是自选样本、没有分母**，所以"百分之几"只能是量级描述。
+
+自己看的话：取父根口的 DSDT / SSDT，查 `_PR3` 是否存在、`_ON` / `_OFF` 是否幂等、PERST# 挂在哪个 GPIO。一半的争论到这一步就有答案了。
+
+尚未切开：**GC6 与 GCOFF 是两个不同目标**（前者保自刷新，后者是完整断电），`_PR3` 路径与 GC6 唤醒路径目前被混着说，需要一次专门的对照。
 
 ### 为什么重算不会把卡弄坏
 
@@ -215,6 +240,7 @@ Turing 交棒本来就带 PLM 重锁，别把它的正常交棒值当丢失—�
 3. **事后修复**：门仍开时 `ssdiag --reapply` / `diag-unlock.py --reapply` 写回选择器；门已锁只能重放。
 4. **报告时带齐证据**：`loader.log` 的 `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` 三行、系统内读回值、`powercfg /a`、设备电源状态与事件日志。缺这些只能反复猜。
 5. **把平台属性化**：确认某平台有 `_PR3` 且 rail 真断，就按平台属性登记，而不是当驱动缺陷追。
+6. **给 dGPU 制造引用**：在 dGPU 直连的接口上接一台外接显示器再冷启。Linux 社区的经验说法是"接在 NVIDIA 一侧的显示器会挡住 D3cold"（轶事）；若丢锁随之消失，就支持"无人引用 → 被同步成关闭"这条假说。
 
 <a id="relock-148"></a>
 

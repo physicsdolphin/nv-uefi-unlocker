@@ -138,7 +138,7 @@ An unlock cleared by power loss needs USB replay; changing configuration alone d
 
 ## Why does an unlocked card get locked again once it reaches the OS?
 
-Short answer: **NVIDIA is not detecting us**. The unlock is erased by three independent mechanisms stacking up - the reset semantics of the physical layer, the firmware's initialization contract, and the nature of the FEAT block itself. Nearly every "lost on the way into the OS" report involves **the platform handing the driver a reset or a power-removal event**, and is largely independent of driver version.
+Short answer: **NVIDIA is not detecting us**. The unlock is erased by three independent mechanisms stacking up - the reset semantics of the physical layer, the firmware's initialization contract, and the nature of the FEAT block itself. Nearly every "lost on the way into the OS" report involves **the platform handing the driver a reset or a power-removal event**, and is largely independent of driver version. Issues are a self-selected sample with no denominator, so any share quoted below is an order of magnitude, not a probability.
 
 ### First, what the FEAT block actually is
 
@@ -164,17 +164,42 @@ So the unlock reverting is **factory restore**, not damage. **It also makes "ove
 
 Turing relocks PLM at handoff by design - do not read its normal handoff value as a loss; see the [Thunderbolt section](#thunderbolt) and [cold values](cold-values.md).
 
+**Pairing method: use WPR2 as the witness for "was there a reset".** WPR2 is the only register the booter itself wrote this boot (the staging window base) and it lives in a different domain from FEAT. Copy `wpr2_lo` together with FEAT at the earliest in-OS read: **WPR2 still holding the booter's value while FEAT reverted means the chip was never reset - that was a write; both gone means a reset or power removal.** Since v2.1.11 both `HANDOFF-OUT` and `POST-GOP` carry `wpr2_lo` so the pair can be lined up on the same line.
+
+Two methodological limits, both of which produce false verdicts - read them before running anything:
+
+- **Safe-mode pairing fails on MUXless machines**: while the dGPU is parked its BAR0 is unreadable, so `ssdiag` has nothing to read - safe mode can prove "the driver was not involved" but yields no sample (Catnip on [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)). Use the [Linux live read-back method](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) or read the ACPI tables instead.
+- **`WPR2_HI` alone does not work**: the driver's own FWSEC rebuilds the window on the next boot, so the value changes anyway; it is only meaningful paired with `wpr2_lo` and compared bit-for-bit against this boot's handoff value.
+
 ### The mechanisms that can send it back to factory
 
 | # | Mechanism | AON domain | Typical setting | Shape observed |
 | --- | --- | --- | --- | --- |
 | 1 | **Real power loss** (rail off) | reset | Laptop `_PR3` + RTD3/Modern Standby, EC power gating, enclosure power-off, S4/fast startup | Gate locked + selectors at the boot baseline; `power_state` was D3cold |
 | 2 | **Whole-domain reset** | reset | Platform SBR, link hot reset, full-chip SW_RESET; mostly old firmware / quirky boards | Same, and already broken at `POST-GOP` |
-| 3 | **devinit replay** (driver init recomputes) | survives | Some GA10x laptops ([#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)) | Gate locked + `SS` set to derived values (neither baseline nor override) |
+| 3 | **devinit replay** (driver init recomputes) | survives | Some GA10x laptops ([#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148); measured on Linux, no Windows sample of this shape yet) | Gate locked + `SS` set to derived values (neither baseline nor override) |
 | 4 | **Narrow write** (gate only) | survives | A few platforms | Gate locked + `SS` intact ([#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) class) |
 | 5 | **Our own tail**: the native-GOP rebuild `StartImage`s the card's ROM | - | Some platforms' ROM POST runs devinit | Broken at `POST-GOP` but fine at `POST-FLR` |
 
 Rows 1-2 are physical events, row 3 is the firmware contract (below), and row 5 is the only one still in our hands - `\tx-reconnect-legacy.txt` makes the handoff tail reconnect the vendor stack instead of `StartImage`.
+
+### Who actually cuts the power on the platform
+
+A dGPU has only two power sources: a desktop card is fed straight from the slot; a laptop / all-in-one dGPU is built into the platform and powered through a GPIO switched by the ACPI `_PR3` `_ON` / `_OFF` methods (the BOCO shape). **D3cold is defined as running `_OFF` on those power resources**, with the sequence: root port broadcasts PME_Turn_Off -> link drops to L2/3 -> PERST# asserted -> power removed. Desktop add-in cards have no such path, which is why this is mostly a laptop story.
+
+A sharper one (**hypothesis; the evidence is Linux, unverified on Windows**): at startup the OS synchronizes power resources nobody references, and ACPI permits `_OFF` on a resource that is already off; if the firmware AML is not idempotent, that redundant call really cuts power (coreboot's Brya board tracks dGPU power state specifically to dodge the open kernel's redundant calls). This explains three things at once:
+
+- [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) reproduces **deterministically**: dGPU has no display, no driver bound, `D3` in-OS with MEM decode off - the driver never participates and it still loses, so the writer is not in the driver;
+- why the `D3Cold` registry switch does nothing: it gates D3cold requests, not the startup synchronization of power resources;
+- why the "entry mode" flips the outcome: entering from Windows Advanced Startup leaves the dGPU held by the previous driver, while a BIOS cold start has it parked and pulled up by the loader - unreferenced in the OS's accounting.
+
+[#28](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/28) is a side observation: in hybrid mode the firmware enumerates only the dGPU's audio function, i.e. the whole card is parked unpowered. Modern Standby additionally requires the root port to apply a fundamental reset to downstream devices on D0->D3 (Microsoft firmware requirements), a third platform-side trigger.
+
+Getting hit takes three things at once: the topology has the dGPU powered by ACPI/EC (or the whole link goes over USB4), nothing references it at handoff, and the machine's AML really cuts power or asserts PERST# - the third is vendor-specific, so the rate follows platform classes rather than chance. Why the desktop exceptions (Z390P, B450M-A, B350M) differ from B650 is unknown and nobody has reported CSM state. **Issues are a self-selected sample with no denominator**, so any percentage below is an order of magnitude, not a probability.
+
+To look yourself: pull the DSDT / SSDT of the parent root port, check whether `_PR3` exists, whether `_ON` / `_OFF` are idempotent, and which GPIO carries PERST#. Half of these arguments are settled at that step.
+
+Still unsplit: **GC6 and GCOFF are different targets** (the former keeps self-refresh, the latter is a full power-off); the `_PR3` path and the GC6 wake path are currently discussed interchangeably and need one dedicated comparison.
 
 ### Why the recompute does not break the card
 
@@ -204,6 +229,7 @@ What we can:
 3. **Repair afterwards**: with the gate still open, `ssdiag --reapply` / `diag-unlock.py --reapply` writes the selectors back; a locked gate means replay.
 4. **Report with evidence**: the `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` lines from `loader.log`, the in-OS read-back values, `powercfg /a`, the device power state and the event log. Without these it is guesswork.
 5. **Turn it into a platform property**: if a platform is confirmed to have `_PR3` and to actually cut the rail, record it as a platform property rather than chasing it as a driver bug.
+6. **Give the dGPU a reference**: attach an external display to a dGPU-wired port and cold start. The Linux community saying is that a monitor on the NVIDIA side blocks D3cold (anecdote); if the loss disappears, that supports the "unreferenced -> synchronized off" hypothesis.
 
 <a id="relock-148"></a>
 

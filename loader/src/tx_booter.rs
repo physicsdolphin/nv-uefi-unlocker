@@ -1227,8 +1227,9 @@ pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
     let ss0 = gpu.pci.bar_read_u32(gpu.bar, ss0_at as u64);
     let ss1 = gpu.pci.bar_read_u32(gpu.bar, ss1_at as u64);
     let readout = gpu.pci.bar_read_u32(gpu.bar, readout_at as u64);
+    let wpr_lo = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a824);
     let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
-    info!("POST-GOP: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} READOUT_1={readout:#010x} WPR2_HI={wpr_hi:#x} (read-only, after the console rebuild)");
+    info!("POST-GOP: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} READOUT_1={readout:#010x} WPR2_LO={wpr_lo:#010x} WPR2_HI={wpr_hi:#x} (read-only, after the console rebuild)");
     if !payload_mode {
         info!("POST-GOP: replay mode - the stock booter never opens the gate, so the booter status stays the verdict");
         return;
