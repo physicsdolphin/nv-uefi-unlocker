@@ -2,11 +2,11 @@
 
 > 服务 issue [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)（GA104 2484，EFI 全绿但系统内 SS 对被抹）与 [#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165)（双 3060，交棒后一张卡在 Windows 侧消失）。
 >
-> **diag2 修订（2026-11-04，替换 diag1 资产）**：新增**复位金丝雀**。事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x140020`/`0x140024`，FLR 验证之后写、立刻读回），其余全部是只读采样。**已经下载 diag1 的请重新下载 diag2**——diag1 没有金丝雀。
+> **资产已于 2026-11-04 替换（加复位金丝雀）**：事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x140020`/`0x140024`，FLR 验证之后写、立刻读回），其余全部是只读采样。**此前下过同名文件的请重新下载**——旧文件没有金丝雀。
 >
 > 金丝雀的判读在 §3；开关是卷根 `\tx-no-canary.txt`（放上即整组跳过，用于 A/B）。
 >
-> 版本串 `2.1.11-diag2`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag2`，SHA-256 `6f6d0ba305ef515b2e8ba39e2ebb32771801be976480693edb6fe0f513d2d64c`。
+> 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `13c9cc6e60cae182d9ce193eaaf5b116cb20851358f457c0406084afddb9bc7d`。
 >
 > `ssdiag.exe.0.6.5` 同附在本 release（含 `CANARY:` 判定行，管理员运行），自行编译亦可。
 >
@@ -59,7 +59,7 @@
 
 配套 marker：卷根放 `\tx-select-bdf.txt`，先写 `03:00.0`（丢的那张，Gigabyte）单跑一轮、再写 `04:00.0`（可用那张，Asus）单跑一轮——**每轮单独附上 Devices 现场照**。两轮各自单跑都过 → 双卡资源仲裁；`03:00.0` 单跑也丢 → 该槽或该卡。
 
-## 3. 复位金丝雀（diag2 新增，两 issue 都适用）
+## 3. 复位金丝雀（两 issue 都适用）
 
 "还开着"不等于"没人碰过"：FEAT 值只说明写没被抹，说不清是**被写**、还是**整片被复位过**。金丝雀补这一维。
 
