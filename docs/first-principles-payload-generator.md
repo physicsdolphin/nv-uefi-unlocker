@@ -62,7 +62,7 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 1. **静态帧分析**：从"读 WprMeta+0x50 作长度"的 DMA 发起点出发，沿调用链上溯累计帧尺寸，重建 0xFF00–0x10000 的槽位图。工具需求：跨 `lcall` 的帧尺寸传播——本质是过程间分析。
 2. **仿真到断点**：fuc5 解释器跑到"签名拷贝完成"断点，直接读 $sp 与栈内容。工具需求：fuc5 CPU 仿真器（含 CRYPT 取指解密语义、DMA 模型）。
 
-**faucon 评估（纠正此前假设）**：`reference/faucon` 只有 assemble/disassemble/isa，**没有解释器/符号执行**。所以路线 2 的仿真器要自研（fuc5 指令集小，`sim/` 有行为级基建可复用；faucon 的 isa/ 目录可作语义参考）或用 envytools 补。工作量估计：静态帧分析 1–2 周、仿真器 2–4 周——这是整个项目从"脚本"变"工具"的分界。
+**faucon 评估（纠正此前假设）**：`reference/faucon` 只有 assemble/disassemble/isa，**没有解释器/符号执行**。本地检出仅一个 commit（汇编器 parser，README 仅一行标题），作者路线图中的模拟器未落地；公开生态检索（2026-11-05）也未找到现成的 fuc5 执行环境——envytools 同样只有反汇编。所以路线 2 的仿真器要自研（fuc5 指令集小，`sim/` 有行为级基建可复用；faucon 的 isa/ 目录可作语义参考）或用 envytools 补。工作量估计：静态帧分析 1–2 周、仿真器 2–4 周——这是整个项目从"脚本"变"工具"的分界。注意栈几何问题**不需要完整机器模拟**：debug 明文喂入（免 CRYPT 取指解密）、MMIO 写全 stub、DMA 模型只做"拷贝即完成"，收敛为"窄解释器 + 桩环境"；且栈顶初始化本身零推导——booter stub 第一条指令即 `mov $r9 0xfffc; mov $sp $r9`（main SP ≈ 0xFFF0 直接读出）。
 
 ## 5. 尾帧语义：两档目标
 
