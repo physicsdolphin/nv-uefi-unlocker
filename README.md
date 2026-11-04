@@ -4,7 +4,7 @@
 
 **你的 GeForce 正以半速跑 AI——这个工具在驱动加载前把它修复。**
 
-**“震惊！老黄刀法还能被回退？？？”**
+**[“震惊！老黄刀法还能被回退？？？”](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)**
 
 [![version](https://img.shields.io/badge/version-2.1.8-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
 [![GeForce](https://img.shields.io/badge/GeForce-GTX%2016%20%7C%20RTX%2020%2F30%2F40-green)](docs/compatibility.md)
