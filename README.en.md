@@ -1,8 +1,10 @@
-# nv-uefi-unlocker
+# nv-uefi-unlocker: Revert Gimpvidia's limit
 
 [中文](README.md) | [English](README.en.md)
 
 **Your GeForce runs AI at half speed — this fixes it before the driver even loads.**
+
+## **["Shocking — Gimpvidia's limit can be reverted???"](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)**
 
 [![version](https://img.shields.io/badge/version-2.1.8-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
 [![GeForce](https://img.shields.io/badge/GeForce-GTX%2016%20%7C%20RTX%2020%2F30%2F40-green)](docs/compatibility.en.md)
@@ -14,11 +16,11 @@
 
 [![Theoretical post-unlock ceiling chart](docs/tools/tflops-ceiling.en.svg)](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)
 
-*Theoretical post-unlock ceiling chart (FP16 · desktop) — [open the interactive version](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html): five precision tabs (FP32/TF32/FP16/BF16/FP8), the full RTX 20/30/40 desktop + laptop lineup, a toggle for as-shipped values; [`?k=fp8`](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html?k=fp8) deep-links a precision. This is a theoretical yardstick and differs from the measured figures above; see [the theoretical uplift analysis](docs/theoretical-uplift.md).*
+*Theoretical post-unlock ceiling chart (FP16 · desktop) — [open the interactive version](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html): five precision tabs (FP32/TF32/FP16/BF16/FP8), the full RTX 20/30/40 desktop + laptop lineup, a toggle for as-shipped values; [`?k=fp8`](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html?k=fp8) deep-links a precision. This is a theoretical yardstick and differs from the measured figures above; see [the theoretical uplift analysis](docs/theoretical-uplift.en.md).*
 
-A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 and RTX 20, 30, and 40 series.
+## A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 + RTX 20 + RTX 30 + RTX 40 series ##
 
-Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, unlock, and continue into Windows or Linux. No VBIOS flashing is needed; powering off clears the unlock.
+Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, unlock, and continue into Windows, Linux, or any other operating system. No VBIOS flashing is needed; powering off clears the unlock.
 
 [Watch the project trailer ↗](https://www.bilibili.com/video/BV1d6xN66ECM/) (Simplified Chinese)
 [Official videos: tool overview ↗](https://www.youtube.com/watch?v=y11Pluqoqhg) · [full unedited walkthrough ↗](https://www.youtube.com/watch?v=hrw1KBTM1EQ)
@@ -29,8 +31,8 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | --- | --- |
 | GTX 16 · Turing | Theoretically compatible; field tests welcome |
 | RTX 20 · Turing | Fully compatible; some models have known issues listed in the full matrix |
-| RTX 30 · Ampere GA10x | Fully compatible |
-| RTX 40 · Ada | Fully compatible on laptops and desktops |
+| RTX 30 · Ampere GA10x | Fully compatible, laptops and desktops |
+| RTX 40 · Ada | Fully compatible, laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
 
 ## Community success reports and reproductions
