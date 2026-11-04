@@ -1204,6 +1204,42 @@ pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u
     Ok(())
 }
 
+/// POST-GOP state readback (issue #164). Purely observational, default-on
+/// from v2.1.11: the console rebuild in tx hands the card's OWN GOP driver
+/// to StartImage AFTER the POST-FLR verification, so before this probe the
+/// last readback predates a driver load. A gate that is shut (or selectors
+/// that are gone) here means the loss happened BEFORE bootmgfw and the
+/// Windows driver path is excluded for that boot; an intact state here that
+/// is gone in Windows puts the driver pass back on the hook. Never fails the
+/// transaction - the reconnect itself is already delivered by this point.
+pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
+    let (plm_at, ss0_at, ss1_at, readout_at) = if family == "tu10x" {
+        (TU10X_FEAT_PLM, TU10X_FEAT_SS0, TU10X_FEAT_SS1, TU10X_FEAT_READOUT)
+    } else {
+        (
+            crate::tx::regs::FEAT_PLM,
+            crate::tx::regs::FEAT_SS0,
+            crate::tx::regs::FEAT_SS1,
+            crate::tx::regs::FEAT_READOUT_1,
+        )
+    };
+    let plm = gpu.pci.bar_read_u32(gpu.bar, plm_at as u64);
+    let ss0 = gpu.pci.bar_read_u32(gpu.bar, ss0_at as u64);
+    let ss1 = gpu.pci.bar_read_u32(gpu.bar, ss1_at as u64);
+    let readout = gpu.pci.bar_read_u32(gpu.bar, readout_at as u64);
+    let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
+    info!("POST-GOP: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} READOUT_1={readout:#010x} WPR2_HI={wpr_hi:#x} (read-only, after the console rebuild)");
+    if !payload_mode {
+        info!("POST-GOP: replay mode - the stock booter never opens the gate, so the booter status stays the verdict");
+        return;
+    }
+    if plm == 0xffff_ffff && ss0 == SS0_UNLOCK && ss1 == SS1_UNLOCK {
+        info!("POST-GOP: unlock intact after the console rebuild");
+    } else {
+        info!("POST-GOP: unlock NOT intact after the console rebuild - suspect the card's own GOP StartImage/devinit (or the firmware), not the Windows driver");
+    }
+}
+
 /// Turing execution verdict. Chain-replay (stock booter): mailbox0 == 0
 /// (kernel s_executeBooterUcode semantics) plus WPR2 still up - the stock
 /// booter never touches the FEAT PLM, so demanding unlock values here would

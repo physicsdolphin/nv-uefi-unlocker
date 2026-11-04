@@ -1372,6 +1372,13 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // handoff. Idempotent, read back, BME untouched.
     crate::tx_detach::restore_vga(gpu.pci, claim.initial_attrs);
 
+    // POST-GOP readback (issue #164): the reconnect/native-GOP rebuild above
+    // StartImage'd the card's own driver AFTER the POST-FLR verify, so the
+    // last state readback before this point predates a driver load. Cheap,
+    // read-only, and the only way to tell "the console rebuild re-derived
+    // the FEAT block" apart from "the Windows driver pass did".
+    tb::probe_post_console(gpu, &assets.family, payload_mode);
+
     // Unwind: release every DMA buffer.
     let _ = booter_dma.release(gpu.pci);
     let _ = sig_dma.release(gpu.pci);
