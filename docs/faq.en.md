@@ -251,6 +251,21 @@ Check in this order and stop at the first hit:
 
 Failures that happen after the stick boots and logs are transaction problems - see [recovery](#recovery).
 
+### Two ESPs, and the chain lands on the dead one (`0xc000000f` / `0xc0000225`)
+
+A machine that has been reinstalled can carry **two ESPs**: the live one, and an old partition whose ESP still holds a stale `bootmgfw` plus a BCD store pointing somewhere useless (`{default}`/`osdevice` on a data volume with no `\Windows`). A chain-started `bootmgfw` adopts the BCD store of the volume it was loaded from and Windows then holds that store open, so chaining the wrong ESP looks like a broken Windows install rather than a chain bug — two field machines, [#128](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/128) and [#142](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/142).
+
+**v2.1.10 and later resolve this by themselves**: the loader walks the firmware's own `BootOrder`, matches short-form HD options by partition identity (the shape real firmware writes), and chains the option Windows is actually booted from. The old enumeration-order scan remains only as the last fallback.
+
+How to tell it worked, from the log:
+
+```
+CHAIN-BOOT: firmware resolve: [0] Boot0001 short-form HD identity match on Handle(...) - not by path alignment
+CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI' on the firmware's volume - chaining its choice
+```
+
+`identity match` plus no `volume scan fallback` anywhere in the log means the resolver took the firmware's choice. Hand-editing the BCD is only needed on older builds; on v2.1.10+ a workaround can be reverted. The `CHAIN-BOOT:` dump prints the whole `BootOrder` with decoded device paths and an `hd(partN,<guid>)` tag per volume, so a wrong pick is visible in one boot.
+
 <a id="reconnect"></a>
 
 ## Why does the platform reset after a successful transaction?

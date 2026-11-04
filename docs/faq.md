@@ -260,6 +260,21 @@ SVM、VT-x 和 VT-d 在已验证平台上不需要关闭。任务管理器的“
 
 盘能起来、能出日志之后的失败才轮到事务排障，见[恢复说明](#recovery)。
 
+### 双 ESP，链到了死的那个（`0xc000000f` / `0xc0000225`）
+
+重装过的机器可能留着**两个 ESP**：一个在用，另一个的 ESP 里还躺着过期的 `bootmgfw` 和指向无效位置的 BCD 存储（`{default}`/`osdevice` 指到没有 `\Windows` 的数据卷）。链式启动的 `bootmgfw` 会采用**它所加载卷**的 BCD 存储，Windows 随后一直持有该存储——链错 ESP 的表现就像 Windows 装坏了，而不是链的 bug。已有两台实机：[#128](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/128)、[#142](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/142)。
+
+**v2.1.10 起自动解决**：loader 遍历固件自己的 `BootOrder`，HD 短格式选项按**分区身份**匹配（真实固件写的就是这个形状），链 Windows 实际被引导的那一项；旧的枚举序扫描只作最后回落。
+
+判据看日志：
+
+```
+CHAIN-BOOT: firmware resolve: [0] Boot0001 short-form HD identity match on Handle(...) - not by path alignment
+CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI' on the firmware's volume - chaining its choice
+```
+
+出现 `identity match` 且全程没有 `volume scan fallback`，即解析器采用了固件的选择。只有旧版构建才需要手改 BCD；v2.1.10+ 上的变通可以还原。`CHAIN-BOOT:` dump 会打印完整 `BootOrder`、逐项解码设备路径，并给每个卷打 `hd(partN,<guid>)` 标签，选错一次引导即可看见。
+
 <a id="reconnect"></a>
 
 ## 事务成功后为什么会复位或黑屏？
