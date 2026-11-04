@@ -3,4 +3,12 @@
 # Index lines: <SIG> len=.. checksum=ok|BAD <file> creator=.. then
 # NAME=hits@offset for every keyword found. _PR3 on the root port's
 # device means a power resource exists; check whether _ON/_OFF are idempotent.
-SSDT len=912 checksum=ok ssdt-00.aml _ADR=6@0x18b WRITE FAILED (create failed)SSDT len=12628 checksum=ok ssdt-01.aml _ADR=17@0x14f0 _HID=1@0x30f0 _CID=1@0x30fe _DSM=1@0x2c56 _STA=2@0x3109 _DOD=1@0x37d WRITE FAILED (create failed)SSDT len=9534 checksum=ok ssdt-02.aml _PR3=3@0x612 _ON_=3@0x5b9 _OFF=3@0x5da _DSM=3@0x421 _STA=9@0x5b2 WRITE FAILED (create failed)SSDT len=36 checksum=ok ssdt-03.aml WRITE FAILED (create failed)SSDT len=2835 checksum=ok ssdt-04.aml WRITE FAILED (create failed)SSDT len=6061 checksum=ok ssdt-05.aml WRITE FAILED (create failed)SSDT len=671 checksum=ok ssdt-06.aml _HID=1@0x86 _CID=1@0x90 _DSM=1@0xb9 _STA=1@0x9b WRITE FAILED (create failed)SSDT len=12290 checksum=ok ssdt-07.aml _HID=1@0x938 _CID=1@0x942 _STA=1@0x956 WRITE FAILED (create failed)DSDT len=173979 checksum=ok dsdt.aml _ON_=20@0x18289 _OFF=40@0x1829e _ADR=134@0x32a8 _HID=98@0x207d _CID=27@0x329e GPIO=2@0xff58 _DSM=96@0x41bf _STA=118@0x20c3 _PS0=28@0x5f1 _PS3=28@0x607 written
+SSDT len=912 checksum=ok ssdt-00.aml creator=INTL _ADR=6@0x18b written
+SSDT len=12628 checksum=ok ssdt-01.aml creator=INTL _ADR=17@0x14f0 _HID=1@0x30f0 _CID=1@0x30fe _DSM=1@0x2c56 _STA=2@0x3109 _DOD=1@0x37d written
+SSDT len=9534 checksum=ok ssdt-02.aml creator=INTL _PR3=3@0x612 _ON_=3@0x5b9 _OFF=3@0x5da _DSM=3@0x421 _STA=9@0x5b2 written
+SSDT len=36 checksum=ok ssdt-03.aml creator=INTL written
+SSDT len=2835 checksum=ok ssdt-04.aml creator=INTL written
+SSDT len=6061 checksum=ok ssdt-05.aml creator=INTL written
+SSDT len=671 checksum=ok ssdt-06.aml creator=INTL _HID=1@0x86 _CID=1@0x90 _DSM=1@0xb9 _STA=1@0x9b written
+SSDT len=12290 checksum=ok ssdt-07.aml creator=INTL _HID=1@0x938 _CID=1@0x942 _STA=1@0x956 written
+DSDT len=173979 checksum=ok dsdt.aml creator=INTL _ON_=20@0x18289 _OFF=40@0x1829e _ADR=134@0x32a8 _HID=98@0x207d _CID=27@0x329e GPIO=2@0xff58 _DSM=96@0x41bf _STA=118@0x20c3 _PS0=28@0x5f1 _PS3=28@0x607 written
