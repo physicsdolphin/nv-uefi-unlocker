@@ -22,6 +22,12 @@ For read-back verdicts, Turing behavior, Linux checks and handoff diagnosis, use
   issue #168). Also: the Ada four-write targets, the AD10x 64G-BAR1 line
   (CYA/CFG/XVE/BAR1 cap mirror), the cmp170hx 26-register PLM survey, and
   the Ampere/Ada FEAT sweep.
+- TPC floorsweep on Ampere/Ada (issue #169): per-GPC `STATUS_OPT_TPC_GPC`
+  (`0x820c38+4g`, bit n = TPC n, the *effective fused* mask) with CTRL
+  (`0x820838+4g`, the writable override nvgpu drives), the GPC-level
+  `OPT_GPC_DISABLE`/`OPT_GPC_DEFECTIVE` masks, and the raw OPT/DEFECT banks.
+  A verdict says whether the fused-off TPCs sit on GPCs without a defect bit
+  (override candidates; the write path itself is out of scope).
 
 Architecture identification covers Maxwell through Rubin; the FEAT unlock verdict is available for the mapped Turing/Ampere/Ada/Blackwell families (Blackwell read-only: `--reapply` correctly refuses because the PLM only opens from PL3 firmware). Output uses colored addresses and verdicts on a console; pipes or `NO_COLOR` select plain text. Parked GPUs can be woken through NVAPI GC6Control.
 

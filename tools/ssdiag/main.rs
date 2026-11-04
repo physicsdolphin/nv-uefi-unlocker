@@ -1,4 +1,7 @@
-//! ssdiag v0.6.9 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.10 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.10 adds the read-only per-GPC TPC floorsweep block for Ampere/Ada
+//! (issue #169): STATUS/CTRL pair, GPC-level disable/defect masks, raw
+//! OPT/DEFECT banks, and a defect-vs-override-candidate verdict.
 //! v0.6.9 maps the Blackwell (GB20x) families onto the FEAT bank and dumps
 //! their fuse/selector words read-only (issue #168): a gapped READOUT_1
 //! decoder, a PL3-only PLM verdict, and a family note saying the re-apply
@@ -1638,21 +1641,33 @@ const AD1X_ROWS: [(&str, u32); 4] = [
 /// probe for the soft-disable question: cut-down TPCs with DEFECT=0 are
 /// candidates for the _CP shadow path (GA100 precedent) — see
 /// docs/open-questions.md. badf on non-Ada dies is expected and is data.
-const ADA_FUSE_ROWS: [(&str, u32); 13] = [
+/// The per-GPC TPC words themselves are in the `tpc` section (dump_tpc).
+const ADA_FUSE_ROWS: [(&str, u32); 9] = [
     ("FUSE_CTRL", 0x0082_0000),
     ("FUSE_ADDR", 0x0082_0004),
     ("FUSE_REG_50", 0x0082_0050),
     ("FUSE_REG_54", 0x0082_0054),
     ("FUSE_DEBUGCTRL", 0x0082_0060),
     ("DISABLE_FUSE_PROG", 0x0082_007C),
-    ("TPC_DEFECT_G0T0A", 0x0082_03A4),
-    ("TPC_DEFECT_G0T0B", 0x0082_03AC),
-    ("TPC_DEFECT_G0T0C", 0x0082_05C4),
-    ("TPC_DEFECT_G0T0D", 0x0082_05C8),
-    ("TPC_OPT_G0T0", 0x0082_0C38),
-    ("TPC_OPT_G1T0", 0x0082_0C3C),
+    ("OPT_GPC_DISABLE", 0x0082_0350),
+    ("OPT_GPC_DEFECTIVE", 0x0082_05C4),
     ("CTRL_OPT_9C8", 0x0082_09C8),
 ];
+/// Per-GPC TPC floorsweep surface. STATUS at 0x820c38+4g is the effective
+/// fused mask (bit n = TPC n of GPC g), CTRL at 0x820838+4g the writable
+/// override — exactly the pair nvgpu drives in tpc_gv11b.c (write CTRL, poll
+/// STATUS until equal), so the semantics are driver-sourced, not inferred.
+/// The OPT/DEFECT banks are printed raw: 0x820350/0x8205c4 are documented
+/// GPC-level masks (gpcprobe/Consensus-Protocol, 15-card validation), while
+/// a per-GPC assignment inside the banks is still probe-derived
+/// (KohakUnlock#16) — see docs/open-questions.md #13.
+const TPC_CTRL_BASE: u32 = 0x0082_0838;
+const TPC_STATUS_BASE: u32 = 0x0082_0C38;
+const TPC_BANK_A: u32 = 0x0082_03A0;
+const TPC_BANK_B: u32 = 0x0082_05C0;
+const OPT_GPC_DISABLE: u32 = 0x0082_0350;
+const OPT_GPC_DEFECTIVE: u32 = 0x0082_05C4;
+const TPC_MAX_GPC: u32 = 8;
 /// cmp170hx 26-register PLM survey (union across references; GA100-era
 /// addresses - on other dies expect badf or benign values, that IS data).
 const PLM_SURVEY: [u32; 26] = [
@@ -1819,6 +1834,73 @@ fn decode_readout1(v: u32) -> String {
         .join(" ")
 }
 
+/// Bit names for a per-GPC TPC mask (bit n = TPC n).
+fn decode_tpc_bits(v: u32) -> String {
+    (0..8)
+        .filter(|b| v & (1 << b) != 0)
+        .map(|b| format!("TPC{b}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Read-only per-GPC TPC floorsweep survey (open question #13): which TPCs
+/// are fused off per GPC, and whether the affected GPC carries a defect bit.
+/// Nothing is written; the CTRL override path is out of scope.
+fn dump_tpc(rd: &dyn Fn(u32) -> u32) {
+    println!("--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---");
+    let mut off_total = 0u32;
+    let mut off_mask = 0u32;
+    for gpc in 0..TPC_MAX_GPC {
+        let ctrl = rd(TPC_CTRL_BASE + gpc * 4);
+        let status = rd(TPC_STATUS_BASE + gpc * 4);
+        let b = badf_bucket(status);
+        let (note, n) = match b {
+            Some(b) => (format!(" [{}]", red(b)), 0),
+            None => (format!(" [{}]", decode_tpc_bits(status)), status.count_ones()),
+        };
+        off_total += n;
+        if n > 0 {
+            off_mask |= 1 << gpc;
+        }
+        println!(
+            "  GPC{gpc} CTRL={} STATUS={}{}",
+            hx32(ctrl),
+            hx32(status),
+            note
+        );
+    }
+    let dis = rd(OPT_GPC_DISABLE);
+    let def = rd(OPT_GPC_DEFECTIVE);
+    println!(
+        "  OPT_GPC_DISABLE={} (bit per GPC)  OPT_GPC_DEFECTIVE={} (bit per GPC)",
+        hx32(dis),
+        hx32(def)
+    );
+    print!("  bank A {:#010x}..:", TPC_BANK_A);
+    for gpc in 0..TPC_MAX_GPC {
+        print!(" {}", hx32(rd(TPC_BANK_A + gpc * 4)));
+    }
+    println!();
+    print!("  bank B {:#010x}.. (+4 = OPT_GPC_DEFECTIVE above):", TPC_BANK_B);
+    for gpc in 0..TPC_MAX_GPC {
+        print!(" {}", hx32(rd(TPC_BANK_B + gpc * 4)));
+    }
+    println!();
+    if off_total == 0 {
+        println!("  verdict: no TPC fused off in the STATUS masks (full for this GPC count)");
+    } else if def & off_mask == 0 {
+        println!(
+            "  verdict: {off_total} TPC(s) fused off in {} GPC(s), no defect bit on them - override candidates (write path out of scope)",
+            off_mask.count_ones()
+        );
+    } else {
+        println!(
+            "  verdict: {off_total} TPC(s) fused off; affected GPCs also carry defect bits (mask {:#x})",
+            def & off_mask
+        );
+    }
+}
+
 fn decode_ss(v: u32, width: u32) -> String {
     let names = [".", "1/2", "1/4", "1/8"];
     (0..width)
@@ -1933,6 +2015,9 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             };
             println!("  {label:<15} {name:<22} = {}{note}", hx32(v));
         }
+    }
+    if fam == "ampere" || fam == "ada" {
+        dump_tpc(rd);
     }
     println!("--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---");
     for (name, off) in PCIE_LINK_ROWS
@@ -2471,6 +2556,26 @@ mod tests {
             _ => 0,
         };
         dump_debug(&rd, "blackwell-gb2");
+    }
+
+    #[test]
+    fn tpc_bits_decode() {
+        assert_eq!(decode_tpc_bits(0x30), "TPC4 TPC5");
+        assert_eq!(decode_tpc_bits(0), "");
+        assert_eq!(decode_tpc_bits(0x81), "TPC0 TPC7");
+    }
+
+    #[test]
+    fn tpc_dump_renders_without_panicking() {
+        // 4080-shaped: GPC0/GPC1 one TPC off, GPC3 two, no defect bits.
+        let rd = |off: u32| match off {
+            0x0082_0C38 => 1,
+            0x0082_0C3C => 1,
+            0x0082_0C44 => 0x30,
+            0x0082_0C54 => 0x3F,
+            _ => 0,
+        };
+        dump_tpc(&rd);
     }
 
     #[test]

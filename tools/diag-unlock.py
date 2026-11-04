@@ -16,6 +16,9 @@ Families (PMC_BOOT_0 bits [31:20]):
   (issue #168, docs/blackwell-gb20x-status.md). READOUT_1 is decoded with the
   real non-contiguous bit offsets as fields - Blackwell 3 is ~half rate, not
   the Ada 1/8.
+  Ampere/Ada also get a per-GPC TPC floorsweep block (STATUS bits = fused-off
+  TPCs, CTRL = the writable override, plus the GPC-level disable/defect
+  masks and the raw OPT/DEFECT banks) - read-only, issue #169.
 
 Why this exists (issue #6): the EFI unlock's volatile state is only useful if
 it survives into the OS. This tool answers, from inside the running system:
@@ -143,14 +146,23 @@ ADA_FUSE_ROWS = [
     ("FUSE_REG_54", 0x0082_0054),
     ("FUSE_DEBUGCTRL", 0x0082_0060),
     ("DISABLE_FUSE_PROG", 0x0082_007C),
-    ("TPC_DEFECT_G0T0A", 0x0082_03A4),
-    ("TPC_DEFECT_G0T0B", 0x0082_03AC),
-    ("TPC_DEFECT_G0T0C", 0x0082_05C4),
-    ("TPC_DEFECT_G0T0D", 0x0082_05C8),
-    ("TPC_OPT_G0T0", 0x0082_0C38),
-    ("TPC_OPT_G1T0", 0x0082_0C3C),
+    ("OPT_GPC_DISABLE", 0x0082_0350),
+    ("OPT_GPC_DEFECTIVE", 0x0082_05C4),
     ("CTRL_OPT_9C8", 0x0082_09C8),
 ]
+# Per-GPC TPC floorsweep (open question #13). STATUS 0x820c38+4g is the
+# effective fused mask (bit n = TPC n of GPC g), CTRL 0x820838+4g the
+# writable override - the pair nvgpu drives in tpc_gv11b.c (write, then poll
+# STATUS until equal), so the semantics are driver-sourced. The two banks are
+# printed raw: 0x820350/0x8205c4 are documented GPC-level masks, the per-GPC
+# assignment inside the banks is still probe-derived (KohakUnlock#16).
+TPC_CTRL_BASE = 0x0082_0838
+TPC_STATUS_BASE = 0x0082_0C38
+TPC_BANK_A = 0x0082_03A0
+TPC_BANK_B = 0x0082_05C0
+OPT_GPC_DISABLE = 0x0082_0350
+OPT_GPC_DEFECTIVE = 0x0082_05C4
+TPC_MAX_GPC = 8
 PLM_SURVEY = [
     0x0082_00D0, 0x0082_00D4, 0x0082_00D8, 0x0082_00DC, 0x0082_00E0, 0x0082_00E4,
     0x0082_00E8, 0x0082_00EC, 0x0082_00F0, 0x0082_00F4, 0x0082_00FC,
@@ -305,6 +317,47 @@ def decode_readout1(v):
     return " ".join(str((v >> s) & 7) for s in READOUT1_SHIFT)
 
 
+def decode_tpc_bits(v):
+    """Bit names for a per-GPC TPC mask (bit n = TPC n)."""
+    return " ".join(f"TPC{b}" for b in range(8) if v & (1 << b))
+
+
+def dump_tpc(bar):
+    """Read-only per-GPC TPC floorsweep survey (open question #13)."""
+    print("  --- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---")
+    off_total = 0
+    off_mask = 0
+    for gpc in range(TPC_MAX_GPC):
+        ctrl = bar.rd(TPC_CTRL_BASE + 4 * gpc)
+        status = bar.rd(TPC_STATUS_BASE + 4 * gpc)
+        b = badf_bucket(status)
+        if b:
+            note = f" [{b}]"
+            n = 0
+        else:
+            note = f" [{decode_tpc_bits(status)}]"
+            n = bin(status).count("1")
+        off_total += n
+        if n:
+            off_mask |= 1 << gpc
+        print(f"  GPC{gpc} CTRL={ctrl:#010x} STATUS={status:#010x}{note}")
+    dis = bar.rd(OPT_GPC_DISABLE)
+    defv = bar.rd(OPT_GPC_DEFECTIVE)
+    print(f"  OPT_GPC_DISABLE={dis:#010x} (bit per GPC)  OPT_GPC_DEFECTIVE={defv:#010x} (bit per GPC)")
+    a = " ".join(f"{bar.rd(TPC_BANK_A + 4 * g):#010x}" for g in range(TPC_MAX_GPC))
+    b = " ".join(f"{bar.rd(TPC_BANK_B + 4 * g):#010x}" for g in range(TPC_MAX_GPC))
+    print(f"  bank A {TPC_BANK_A:#010x}..: {a}")
+    print(f"  bank B {TPC_BANK_B:#010x}.. (+4 = OPT_GPC_DEFECTIVE above): {b}")
+    if off_total == 0:
+        print("  verdict: no TPC fused off in the STATUS masks (full for this GPC count)")
+    elif defv & off_mask == 0:
+        print(f"  verdict: {off_total} TPC(s) fused off in {bin(off_mask).count('1')} GPC(s),"
+              " no defect bit on them - override candidates (write path out of scope)")
+    else:
+        print(f"  verdict: {off_total} TPC(s) fused off; affected GPCs also carry defect bits"
+              f" (mask {defv & off_mask:#x})")
+
+
 def badf_bucket(v):
     """ssdiag 0.6.x classification: 0xBADF5040 privilege violation,
     0xBADF1100 undecoded, 0xBADF20xx floorswept, all-ones no decode."""
@@ -435,6 +488,7 @@ def report(bar, tag="", devpath=None):
               " override path open; FUSE_SS_PLM is NOT the effective gate")
     if fam in ("ampere", "ada"):
         rrow(bar, ADA_FUSE_ROWS)
+        dump_tpc(bar)
         rrow(bar, OPT_FUSE_ROWS)
         print("  --- GA100-style per-GPC SM banks (badf elsewhere = absent) ---")
         ovr = "  ".join(f"{bar.rd(GA100_SM_OVR_BASE + 4 * g):#010x}" for g in range(GA100_GPCS))
