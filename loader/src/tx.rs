@@ -1379,7 +1379,8 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     crate::pci::diag_bridge_routing("HANDOFF-VGA-FINAL");
 
     // POST-GOP readback (issue #164): the reconnect/native-GOP rebuild above
-    // StartImage'd the card's own driver AFTER the POST-FLR verify, so the
+    // StartImage'd the card's own driver AFTER the POST-FLR verify (the
+    // legacy path reconnects the vendor stack instead), so the
     // last state readback before this point predates a driver load. Cheap,
     // read-only, and the only way to tell "the console rebuild re-derived
     // the FEAT block" apart from "the Windows driver pass did".
