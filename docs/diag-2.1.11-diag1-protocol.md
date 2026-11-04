@@ -8,6 +8,8 @@
 >
 > 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `a85e282be230eb1413fe6718930a343103381b8858893d18f6b98777c738f107`。
 >
+> **2026-11-04 追加：`v2.1.11-diag2` 已发布**（`BOOTX64.EFI.2.1.11-diag2`，SHA-256 `1046c64a17817b78481a521d457919b0d4409a7556e75e5896ad90453d088c7a`）。与 diag1 的唯一行为差异 = **交棒前默认把资产池还给固件分配器**（issue #146 的修复，`\tx-keep-assets.txt` 可退回）＋ `CHAIN-MEMMAP` 摘要新增 `largest block` 与描述符总数。**两个 issue 的协议一字不变**，只换 `EFI\BOOT\BOOTX64.EFI` 即可；新构建跑出来的金丝雀与 `POST-GOP` 判读与 diag1 同源逐字节等价（事务链未动）。
+>
 > `ssdiag.exe.0.6.8` 同附在本 release（含 `CANARY:` 判定行、安全模式/未启动设备上的发现回退、`POWER:` 卡与根端口电源态；金丝雀偏移为 `0x1480/0x1484`。管理员运行），自行编译亦可。
 >
 > 构建入口：与 v2.1.10 相同（`make-usbroot.ps1`），把 `BOOTX64.EFI` 换成该文件即可；卷根 marker 按各 issue 下面的要求放。
