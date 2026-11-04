@@ -264,17 +264,10 @@ This project is a direct beneficiary and derivative of community work;
 full credits in [docs/credits.md](docs/credits.md) (verified against
 each item's actual role in the repo history).
 
-**One method contribution deserves its own line**: the native-GOP console
-rebuild that is the default display-recovery path since v2.1.10 (extract the
-card's own unmodified stock GOP from its shadowed Option ROM and start it
-explicitly) was proposed by [@seti9585](https://github.com/seti9585) in
-[#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107) — their own
-[RTX4080SUPER-Tensor-Core-Unlocker](https://github.com/seti9585/RTX4080SUPER-Tensor-Core-Unlocker)
-proved the mechanism first, and their source review of our initial implementation
-caught the misplaced field in the `EFI_DECOMPRESS` protocol struct (the root cause
-of the #128 freeze, `edecba5`). Recorded in [credits.md §6](docs/credits.md) and
-credited in the release notes. The implementation is behavior-borrowed and
-independently written (their repository carries no license header).
+**Two contributions get their own line** (the full list is [credits.md §6](docs/credits.md)):
+
+- **[8bit2qubit](https://github.com/8bit2qubit) (PR #5)**: diagnosed the true root cause of booter `0x89` — the GPU's upstream PCI bridge had Bus Master disabled, so device DMA got Master Aborts — and supplied the fix (`BridgeMaster`: enable before the transaction, restore on exit) plus a fourth verification card. The desktop-wide failure pattern closed there, and the guard is a mandatory precondition of every transaction to this day. The issue #98 record erratum is also theirs: they checked the source at every release tag and re-ran two builds on the same machine to pin the defect to `4b7e955` rather than the original implementation. See the [bridge-BME root-cause record](docs/bridge-bme-root-cause.md).
+- **[seti9585](https://github.com/seti9585) (#107)**: the native-GOP console rebuild that is the default display-recovery path since v2.1.10 (extract the card's own unmodified stock GOP from its shadowed Option ROM and start it explicitly) was their proposal — their own [RTX4080SUPER-Tensor-Core-Unlocker](https://github.com/seti9585/RTX4080SUPER-Tensor-Core-Unlocker) proved the mechanism first, and their source review of our initial implementation caught the misplaced field in the `EFI_DECOMPRESS` protocol struct (the root cause of the #128 freeze, `edecba5`). Credited in the release notes too; the implementation is behavior-borrowed and independently written (their repository carries no license header).
 
 The repositories actually studied and cited during development are cloned
 into a local, untracked `reference/` directory, grouped by role:
