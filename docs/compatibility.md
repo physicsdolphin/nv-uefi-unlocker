@@ -147,7 +147,7 @@
 
 ### GA104 · 3070 2484–248c / 3060 Ti 2489 等（0x24xx 全段放行）
 
-`2489` 在 AMD 平台通过全链及 Windows 验证，跨厂 VBIOS 环境也可用。`2484` 的雷电 eGPU 环境通过 EFI 事务，但 Windows 不保留解锁；雷电不作为保证生效的环境。**2026-11-04 增补一例非雷电形态（X570 AORUS ULTRA 桌面、独显单卡、驱动 617.42）：EFI 全链绿（PLM 翻转 ~148ms、选择器读回、post-FLR AON 存活、`plm_open=true`），进系统后 SS 对清零 `0x0`/`0x0` 且门回 `0xffffff8f`**——SS 对的"被抹"形态（非仅关门），与 #99/#109 同族；写入方未定（驱动 init 复位/重推导 vs 平台固件，另含本工具 native-GOP 重建尾这一未排除项），已发安全模式切分与事件日志取证步骤，归类后回填（[#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)）。其余同族设备全段放行。来源：[#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)、[雷电限制](faq.md#thunderbolt)。
+`2489` 在 AMD 平台通过全链及 Windows 验证，跨厂 VBIOS 环境也可用。`2484` 的雷电 eGPU 环境通过 EFI 事务，但 Windows 不保留解锁；雷电不作为保证生效的环境。**2026-11-04 增补一例非雷电形态（X570 AORUS ULTRA 桌面、独显单卡、驱动 617.42）：EFI 全链绿（PLM 翻转 ~148ms、选择器读回、post-FLR AON 存活、`plm_open=true`），进系统后 SS 对不再完好（`0x0`/`0x0`）且门回 `0xffffff8f`**——SS 对失守（非仅关门），与 #99/#109 同族；但 `0x0` 同时也是该卡驱动复位后的基线值（见冷态表），"清零"与"回厂"本机判不开（写入方未定：驱动 init 复位/重推导 vs 平台固件，另含本工具 native-GOP 重建尾这一未排除项），已发安全模式切分与事件日志取证步骤，归类后回填（[#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)）。其余同族设备全段放行。来源：[#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)、[雷电限制](faq.md#thunderbolt)。
 
 <a id="device-12"></a>
 
