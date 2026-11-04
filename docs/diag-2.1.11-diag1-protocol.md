@@ -12,7 +12,7 @@
 >
 > `ssdiag.exe.0.6.8` 同附在本 release（含 `CANARY:` 判定行、安全模式/未启动设备上的发现回退、`POWER:` 卡与根端口电源态；金丝雀偏移为 `0x1480/0x1484`。管理员运行），自行编译亦可。
 >
-> **2026-11-04 追加：`ssdiag.exe.0.6.9` 也已附上**（SHA-256 见 `SHA256SUMS.2.1.11-diag2`）：在 0.6.8 之上加 Blackwell（GB20x）只读面（#168 的 FEAT/熔丝行、`READOUT_1` 非连续位解码、PL3-only 判读，`--reapply` 在 50 系上明确拒绝）。`CANARY:`/`POWER:` 与上文协议完全不变，本协议仍钉 0.6.8 的行义（0.6.9 全含）；任选其一即可。
+> **2026-11-04 追加：`ssdiag.exe.0.6.9` / `0.6.10` 也都已附上**（SHA-256 见 `SHA256SUMS.2.1.11-diag2`）：0.6.9 加 Blackwell（GB20x）只读面（#168 的 FEAT/熔丝行、`READOUT_1` 非连续位解码、PL3-only 判读，`--reapply` 在 50 系上明确拒绝）；0.6.10 加 Ampere/Ada 的逐 GPC TPC floorsweep 只读块（#169 的 STATUS/CTRL、GPC disable/defect、缺陷 vs 覆盖候选判读）。`CANARY:`/`POWER:` 与上文协议完全不变，本协议仍钉 0.6.8 的行义（0.6.9/0.6.10 全含）；任选其一即可。
 >
 > 构建入口：与 v2.1.10 相同（`make-usbroot.ps1`），把 `BOOTX64.EFI` 换成该文件即可；卷根 marker 按各 issue 下面的要求放。
 
