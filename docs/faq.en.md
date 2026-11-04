@@ -59,6 +59,8 @@ Optional markers go in the stick root; normal use needs none:
 | `tx-reconnect-legacy.txt` (tx builds) | **Opt-out**: restores the old reconnect path (recursive ConnectController + PR#13 non-recursive logic). The default has moved to native-GOP console rebuild (the card's own shadowed-ROM GOP); use only if the new default misbehaves on your board |
 | `tx-native-gop.txt` (tx builds) | **Optional pin**: native-GOP is now the default, so this marker is no longer an enable switch; its first line may name a volume GOP module to use instead of the card's shadowed ROM (compatibility-package form); empty/absent = the shadowed ROM |
 | `i_know_what_i_am_doing.txt` | Auto-run after 5 seconds, any key aborts; existence enables it, contents ignored |
+| `tx-no-canary.txt` | Skip the whole reset canary group (A/B control; see [relock](#relock)) |
+| `tx-acpi-dump.txt` | Read-only: dump the firmware DSDT and every SSDT plus a keyword index to `\acpi\` on the stick (decompile offline with `iasl -d`; answers "who owns this card's power"). Runs before the confirm and works with no GPU present |
 
 Without the auto-run marker, only Space or Enter confirms; another key or a 30-second timeout aborts. Chainload order: Windows Boot Manager → supported Linux shim/grub/systemd-boot/Limine → generic `EFI/BOOT/BOOTX64.EFI`. The last tier offers a 5-second key-to-exit window. Slow-console speedup is the `tx-quiet.txt` console whitelist (issue #38), not async output - UEFI boot services are single-threaded and GOP text rendering is a synchronous call, so asynchrony cannot raise throughput; every log line carries a `[+ms]` stage-timing prefix so echo cost and transaction waits separate in `loader.log`.
 

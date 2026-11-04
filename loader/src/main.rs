@@ -11,6 +11,7 @@ use log::info;
 use uefi::prelude::*;
 use uefi::CStr16;
 
+mod acpi_dump;
 mod banner;
 mod chainload;
 mod gop;
@@ -78,6 +79,12 @@ fn main() -> Status {
         Err(e) => info!("WATCHDOG: disable failed: {:?}", e.status()),
     }
     banner::print(VERSION);
+
+    // Phase: ACPI-DUMP (\tx-acpi-dump.txt, read-only). Runs before the
+    // confirm so an aborted run still produces the tables; independent of
+    // any GPU. See acpi_dump.rs for why this exists (power-ownership
+    // questions end in the platform AML, FAQ #relock).
+    acpi_dump::run_if_marker();
 
     // Phase: FLUSH knob (issue #38 follow-up). Optional per-stick cadence
     // for the count-based log flushes; stage-marker flushes are unaffected.

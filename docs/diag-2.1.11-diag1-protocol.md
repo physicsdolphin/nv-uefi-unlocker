@@ -2,13 +2,13 @@
 
 > 服务 issue [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)（GA104 2484，EFI 全绿但系统内 SS 对被抹）与 [#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165)（双 3060，交棒后一张卡在 Windows 侧消失）。
 >
-> **资产已于 2026-11-04 替换（加复位金丝雀）**：事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x140020`/`0x140024`，FLR 验证之后写、立刻读回），其余全部是只读采样。**此前下过同名文件的请重新下载**——旧文件没有金丝雀。
+> **资产已于 2026-11-04 第二次替换（金丝雀 + ACPI 转储）**：事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x140020`/`0x140024`，FLR 验证之后写、立刻读回），其余全部是只读采样。**此前下过同名文件的请重新下载**——旧文件既没有金丝雀也没有 ACPI 旋钮。
 >
-> 金丝雀的判读在 §3；开关是卷根 `\tx-no-canary.txt`（放上即整组跳过，用于 A/B）。
+> 金丝雀的判读在 §3；开关是卷根 `\tx-no-canary.txt`（放上即整组跳过，用于 A/B）。可选 ACPI 转储见 §5。
 >
-> 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `13c9cc6e60cae182d9ce193eaaf5b116cb20851358f457c0406084afddb9bc7d`。
+> 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `09a6c7fe4497bd84b1b18c83b98854377f0486a1604f60f4de59c990b14d68db`。
 >
-> `ssdiag.exe.0.6.5` 同附在本 release（含 `CANARY:` 判定行，管理员运行），自行编译亦可。
+> `ssdiag.exe.0.6.6` 同附在本 release（含 `CANARY:` 判定行；并修掉了安全模式/未启动设备上发现不到卡的问题，管理员运行），自行编译亦可。
 >
 > 构建入口：与 v2.1.10 相同（`make-usbroot.ps1`），把 `BOOTX64.EFI` 换成该文件即可；卷根 marker 按各 issue 下面的要求放。
 
@@ -84,9 +84,23 @@
 
 M1 `SAMPLE` 对非 console 卡可能整行全 `0xffffffff`，连 `PMC_BOOT_0` 都是全 1——这是固件把该卡留在 `cmd=0x0000` 未解码的探针假阴性（#165 日志里 `03:00.0` 即如此），**不是坏卡**。判身份用枚举行的 `10de:2504` / `2484`，不要拿 SAMPLE 全 1 下结论。
 
-## 5. 回收清单
+## 5. `\tx-acpi-dump`：把平台 AML 带回来（可选，两 issue 都适用）
+
+回锁争论最后总会落到"谁拥有这张卡的电"上：根端口下的设备有没有 `_PR3` 电源资源、`_ON`/`_OFF` 是否幂等、PERST# 挂在哪个 GPIO。答案在平台 AML 里，而 AML 需要反编译器——EFI 侧不内置，只负责把原表搬出来。
+
+卷根放 `\tx-acpi-dump.txt`（内容随意）即生效：在确认按键**之前**执行，与有没有 N 卡无关，纯只读。产物落在卷根 `\acpi\`：
+
+- `dsdt.aml`（经 FACP 的 DSDT/X_DSDT 指针取得——DSDT 通常不在 XSDT 里）；
+- `ssdt-NN.aml`（XSDT 里每张 SSDT）；
+- `index.txt`：每张表的签名、长度、校验和状态（`ok`/`BAD`）、文件名、creator，以及 `_PR3`/`_ON_`/`_OFF`/`PRST`/`_ADR`/`_HID`/`_CID`/`GPIO`/`_DSM`/`_STA`/`_PS0`/`_PS3`/`_PXM`/`_DOD` 的出现次数与首个偏移。
+
+反编译在开发机上做（WSL：`apt install acpica-tools`，然后 `iasl -d dsdt.aml ssdt-*.aml`），把 `.dsl` 与 `index.txt` 一起附回即可。
+
+边界说明：这是**固件当时的视图**，OS 运行期动态生成的 SSDT 不在其中；表可能包含整机序列号类信息，回收时留意。dump 失败不影响事务，日志里有 `ACPI-DUMP:` 行记录每一步。
+
+## 6. 回收清单
 
 1. 完整 `loader.log`；
 2. Windows 侧：`Get-PnpDevice -Class Display | fl FriendlyName,Status,Problem,ProblemDescription,InstanceId`（#165 在**解锁后未重启的病态状态里先取**，再谈重启）；
-3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.5 及以上**，含 `CANARY:` 判定行；
+3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.6 及以上**，含 `CANARY:` 判定行；发现阶段空结果时 0.6.6 会逐条打印跳过原因，连 `display-class devnodes carrying VEN_10DE: N` 一起贴回来；
 4. BIOS 状态与电源瓦数（#165 必附）。

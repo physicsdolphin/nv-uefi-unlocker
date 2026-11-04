@@ -256,6 +256,14 @@ mod cm {
     pub const CR_SUCCESS: u32 = 0x0000_0000;
     pub const CM_GETIDLIST_FILTER_CLASS: u32 = 0x0000_0200;
     pub const ALLOC_LOG_CONF: u32 = 0x0000_0002; // the allocated (boot-assigned) config
+    // Remaining CM_Get_First_Log_Conf priorities. An unstarted device (safe
+    // mode blocks nvlddmkm, so PnP leaves it Stopped) can lack the ALLOC
+    // config while a lower priority still carries the firmware-assigned
+    // ranges - issue #37 field report.
+    pub const BOOT_LOG_CONF: u32 = 0x0000_0003;
+    pub const FORCED_LOG_CONF: u32 = 0x0000_0004;
+    pub const OVERRIDE_LOG_CONF: u32 = 0x0000_0005;
+    pub const BASIC_LOG_CONF: u32 = 0x0000_0006;
     pub const RES_TYPE_MEM: u32 = 0x0000_0001;
     pub const RES_TYPE_MEM_LARGE: u32 = 0x0000_0007; // >= 4 GiB descriptors
     pub const CM_DRP_LOCATION_INFORMATION: u32 = 0x0000_000E;
@@ -894,7 +902,7 @@ impl Gpu {
 /// re-assigns another) - a base remembered from any previous session is a
 /// hazard, not a shortcut (2026-10-28: a stale UEFI-era address mapped a
 /// foreign MMIO window and the first read hard-hung the machine).
-fn discover_gpus() -> Result<Vec<Gpu>, String> {
+fn discover_gpus() -> Result<(Vec<Gpu>, Vec<String>), String> {
     // Native CfgMgr32 walk (v0.6.1; was a powershell.exe spawn costing ~5 s
     // per run). Display-class filter keeps companion functions (audio/USB-C)
     // out; phantom (not-present) IDs fail CM_Locate_DevNodeW and drop out,
@@ -930,6 +938,10 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
         }
 
         let mut gpus: Vec<Gpu> = Vec::new();
+        // Every dropped candidate plus why: an empty result is otherwise
+        // indistinguishable between "no card", "not started" and "our query
+        // is wrong", which is exactly the ambiguity issue #37 hit.
+        let mut skipped: Vec<String> = Vec::new();
         // one NUL-terminated ID per entry, double NUL ends the list
         let mut rest: &[u16] = &buf;
         while let Some(nul) = rest.iter().position(|&c| c == 0) {
@@ -945,7 +957,9 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
             let mut id_mut = id_w.to_vec();
             id_mut.push(0);
             let mut devinst = 0u32;
-            if cm::CM_Locate_DevNodeW(&mut devinst, id_mut.as_mut_ptr(), 0) != cm::CR_SUCCESS {
+            let cr = cm::CM_Locate_DevNodeW(&mut devinst, id_mut.as_mut_ptr(), 0);
+            if cr != cm::CR_SUCCESS {
+                skipped.push(format!("{id}: CM_Locate_DevNode CR_{cr:04x}"));
                 continue;
             }
 
@@ -953,59 +967,79 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
             // descriptor, keep the memory ones. MEM_DES and MEM_LARGE_DES
             // share one layout {count u32, type u32, base u64, end u64, ...},
             // so a single parse covers 32-bit and >= 4 GiB descriptors alike.
-            let mut logconf = 0usize;
-            let cr = cm::CM_Get_First_Log_Conf(&mut logconf, devinst, cm::ALLOC_LOG_CONF);
-            if cr != cm::CR_SUCCESS {
-                continue; // no allocated config -> no ranges -> not a probe target
-            }
+            //
+            // Priorities are tried in order because an unstarted device can
+            // have no ALLOC config at all (safe mode); the first priority
+            // that yields ranges wins.
             let mut ranges: Vec<(u64, u64)> = Vec::new();
-            // one walk per memory descriptor type - CM_Get_Next_Res_Des takes
-            // a concrete type on the first call (ResType_All is not accepted
-            // there: CR_INVALID_RES_DES, field-verified) and the same type on
-            // continuation; cur is only borrowed, never the logconf handle
-            for want in [cm::RES_TYPE_MEM, cm::RES_TYPE_MEM_LARGE] {
-                let mut cur = logconf;
-                loop {
-                    let mut rd = 0usize;
-                    // the pResourceID out-param comes back 0 regardless of the
-                    // requested type - and is unneeded: the walk is type-scoped
-                    // by construction (first call + continuation both pass
-                    // `want`)
-                    let cr = cm::CM_Get_Next_Res_Des(
-                        &mut rd,
-                        cur,
-                        want,
-                        core::ptr::null_mut(),
-                        0,
-                    );
-                    if cur != logconf {
-                        cm::CM_Free_Res_Des_Handle(cur);
-                    }
-                    if cr != cm::CR_SUCCESS {
-                        break; // NO_MORE_RES_DES ends the walk; anything else ends it too
-                    }
-                    cur = rd;
-                    // one MEM_LARGE descriptor is 32 bytes; 256 is generous (the
-                    // buffer is zero-filled, and a successful Mem descriptor read
-                    // is >= 32 bytes by struct definition)
-                    let mut data = [0u8; 256];
-                    if cm::CM_Get_Res_Des_Data(rd, data.as_mut_ptr().cast(), 256, 0)
-                        != cm::CR_SUCCESS
-                    {
-                        continue;
-                    }
-                    let base = u64::from_le_bytes(data[8..16].try_into().unwrap());
-                    let end = u64::from_le_bytes(data[16..24].try_into().unwrap());
-                    if base != 0 && end >= base {
-                        ranges.push((base, end));
+            let mut conf_ret = cm::CR_SUCCESS;
+            for prio in [
+                cm::ALLOC_LOG_CONF,
+                cm::BOOT_LOG_CONF,
+                cm::FORCED_LOG_CONF,
+                cm::OVERRIDE_LOG_CONF,
+                cm::BASIC_LOG_CONF,
+            ] {
+                let mut logconf = 0usize;
+                let cr = cm::CM_Get_First_Log_Conf(&mut logconf, devinst, prio);
+                if cr != cm::CR_SUCCESS {
+                    conf_ret = cr;
+                    continue;
+                }
+                // one walk per memory descriptor type - CM_Get_Next_Res_Des takes
+                // a concrete type on the first call (ResType_All is not accepted
+                // there: CR_INVALID_RES_DES, field-verified) and the same type on
+                // continuation; cur is only borrowed, never the logconf handle
+                for want in [cm::RES_TYPE_MEM, cm::RES_TYPE_MEM_LARGE] {
+                    let mut cur = logconf;
+                    loop {
+                        let mut rd = 0usize;
+                        // the pResourceID out-param comes back 0 regardless of the
+                        // requested type - and is unneeded: the walk is type-scoped
+                        // by construction (first call + continuation both pass
+                        // `want`)
+                        let cr = cm::CM_Get_Next_Res_Des(
+                            &mut rd,
+                            cur,
+                            want,
+                            core::ptr::null_mut(),
+                            0,
+                        );
+                        if cur != logconf {
+                            cm::CM_Free_Res_Des_Handle(cur);
+                        }
+                        if cr != cm::CR_SUCCESS {
+                            break; // NO_MORE_RES_DES ends the walk; anything else ends it too
+                        }
+                        cur = rd;
+                        // one MEM_LARGE descriptor is 32 bytes; 256 is generous (the
+                        // buffer is zero-filled, and a successful Mem descriptor read
+                        // is >= 32 bytes by struct definition)
+                        let mut data = [0u8; 256];
+                        if cm::CM_Get_Res_Des_Data(rd, data.as_mut_ptr().cast(), 256, 0)
+                            != cm::CR_SUCCESS
+                        {
+                            continue;
+                        }
+                        let base = u64::from_le_bytes(data[8..16].try_into().unwrap());
+                        let end = u64::from_le_bytes(data[16..24].try_into().unwrap());
+                        if base != 0 && end >= base {
+                            ranges.push((base, end));
+                        }
                     }
                 }
+                cm::CM_Free_Log_Conf_Handle(logconf);
+                if !ranges.is_empty() {
+                    break;
+                }
             }
-            cm::CM_Free_Log_Conf_Handle(logconf);
+            // keep the node even without ranges: config-space recovery needs
+            // the bdf, and a stopped device still has one
             if ranges.is_empty() {
-                continue;
+                skipped.push(format!("{id}: no memory ranges (log conf CR_{conf_ret:04x})"));
             }
             ranges.sort();
+            ranges.dedup();
 
             let bus = cm_dword(devinst, cm::CM_DRP_BUSNUMBER);
             let addr = cm_dword(devinst, cm::CM_DRP_ADDRESS);
@@ -1023,7 +1057,7 @@ fn discover_gpus() -> Result<Vec<Gpu>, String> {
         }
         // deterministic order (the old CIM join had no ordering guarantee)
         gpus.sort_by(|x, y| x.id.cmp(&y.id));
-        Ok(gpus)
+        Ok((gpus, skipped))
     }
 }
 
@@ -1903,17 +1937,29 @@ SSDIAG_COLOR=force pins on.",
         }
     }
 
-    let mut gpus = match discover_gpus() {
-        Ok(g) if !g.is_empty() => g,
-        Ok(_) => {
-            eprintln!("no NVIDIA display adapter memory ranges found");
-            return 2;
-        }
+    let (mut gpus, skipped) = match discover_gpus() {
+        Ok(g) => g,
         Err(e) => {
             eprintln!("{e}");
             return 2;
         }
     };
+    if gpus.is_empty() {
+        eprintln!("no NVIDIA display adapter memory ranges found");
+        eprintln!(
+            "display-class devnodes carrying VEN_10DE: {}",
+            gpus.len() + skipped.len()
+        );
+        for line in &skipped {
+            eprintln!("  skipped {line}");
+        }
+        return 2;
+    }
+    if dry || std::env::var_os("SSDIAG_VERBOSE_DISCOVERY").is_some() {
+        for line in &skipped {
+            eprintln!("[discover] skipped {line}");
+        }
+    }
     if let Some(sel) = &select {
         gpus.retain(|g| g.id.to_uppercase().contains(&sel.to_uppercase()));
         if gpus.is_empty() {
@@ -1930,6 +1976,9 @@ SSDIAG_COLOR=force pins on.",
     stage(&format!("discovery: {} card(s)", gpus.len()));
 
     if dry {
+        for g in &gpus {
+            println!("DRY-RUN card: {} ({} range(s), bdf {:?})", g.id, g.ranges.len(), g.bdf);
+        }
         preflight();
         println!("DRY-RUN: {} NVIDIA range set(s) discovered, nothing was loaded or written", gpus.len());
         return 0;
@@ -1948,11 +1997,24 @@ SSDIAG_COLOR=force pins on.",
 
     println!("{ } NVIDIA GPU function(s) discovered", gpus.len());
     let mut rc = 0;
-    for (i, g) in gpus.iter().enumerate() {
+    let total = gpus.len();
+    for (i, g) in gpus.iter_mut().enumerate() {
         if i > 0 {
             println!();
         }
-        println!("===== GPU {}/{}: {} =====", i + 1, gpus.len(), g.id);
+        println!("===== GPU {}/{}: {} =====", i + 1, total, g.id);
+        // An unstarted device can have no PnP log config at all (safe mode,
+        // issue #37): the decode is still programmed, so read BAR0 straight
+        // from config space instead of giving up on the card.
+        if g.ranges.is_empty() {
+            match bar0_from_config(&drv, &g.id, g.bdf) {
+                Some(r) => {
+                    println!("ranges: none in PnP - BAR0 recovered from config space");
+                    g.ranges.push(r);
+                }
+                None => println!("ranges: none in PnP and config-space recovery failed"),
+            }
+        }
         println!("ranges:");
         for (a, b) in &g.ranges {
             println!("  {}-{} ({} MiB)", hxaddr(*a), hxaddr(*b), (b - a + 1) >> 20);
@@ -2061,6 +2123,47 @@ SSDIAG_COLOR=force pins on.",
 /// arbitrates. A non-degenerate BOOT_0 on an unknown die still wins as a
 /// fallback (diagnosis-only) - the die table must not veto a card. A
 /// degenerate pick (all-0/all-1) is remembered only as a last resort.
+/// BAR0 for a device PnP handed us no log config for: read it from config
+/// space via ECAM and size it with the standard all-ones probe (restored
+/// immediately). Only reached for a known bdf and never on the normal path.
+/// Capped at 16 MiB - that is all `walk_candidates` maps anyway.
+fn bar0_from_config(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>) -> Option<(u64, u64)> {
+    let did = dev_id_from(instance)?;
+    let (bus, dev, func) = bdf?;
+    let mcfg = mcfg_base_for(bus)?;
+    let ecam = mcfg + ((bus as u64) << 20) + ((dev as u64) << 15) + ((func as u64) << 12);
+    let va = drv.map_physical(ecam, 1).ok()?;
+    let p = va as *const u8;
+    let rd = |off: u32| unsafe { (p.add(off as usize) as *const u32).read_volatile() };
+    let wr = |off: u32, v: u32| unsafe { (p.add(off as usize) as *mut u32).write_volatile(v) };
+    let idw = rd(0);
+    if idw & 0xffff != 0x10de || (idw >> 16) as u16 != did {
+        drv.unmap_physical(va);
+        return None;
+    }
+    let lo = rd(0x10);
+    let is64 = (lo >> 1) & 0x3 == 0x2;
+    let hi = if is64 { rd(0x14) } else { 0 };
+    if lo == 0 || lo == 0xFFFF_FFFF || lo & 0x1 != 0 {
+        drv.unmap_physical(va);
+        return None; // unassigned or not a memory BAR
+    }
+    wr(0x10, 0xFFFF_FFFF);
+    let mask = rd(0x10);
+    wr(0x10, lo);
+    drv.unmap_physical(va);
+    if mask == 0 || mask == 0xFFFF_FFFF {
+        return None;
+    }
+    // size mask: the low 4 bits are flags and always read back 0
+    let size = ((!(mask & !0xf)).wrapping_add(1) as u64).clamp(0x1_0000, 0x100_0000);
+    let base = (lo & !0xf) as u64 | ((hi as u64) << 32);
+    if base == 0 {
+        return None;
+    }
+    Some((base, base + size - 1))
+}
+
 fn walk_candidates(drv: &PmxDrv, g: &Gpu) -> Option<(u64, u64, u32)> {
     let mut picked: Option<(u64, u64, u32)> = None; // (bar0, va, boot0)
     for bar0 in g.bar0_candidates() {
