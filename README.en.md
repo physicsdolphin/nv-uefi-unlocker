@@ -4,7 +4,7 @@
 
 **Your GeForce runs AI at half speed — this fixes it before the driver even loads.**
 
-## **["Shocking — Gimpvidia's limit can be reverted???"](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)**
+## **["U SAY WHAT? — Gimpvidia's limit can be reverted???"](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)**
 
 [![version](https://img.shields.io/badge/version-2.1.10-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
 [![GeForce](https://img.shields.io/badge/GeForce-GTX%2016%20%7C%20RTX%2020%2F30%2F40-green)](docs/compatibility.en.md)
