@@ -202,6 +202,8 @@ U 盘（FAT32）
 
 遇到 STOP、异常或黑屏卡死，**同会话不要重试**；完全断电后拔 U 盘，走原系统引导，再按 [恢复说明](docs/faq.md#recovery)检查。
 
+EFI 事务成功、进系统却没有解锁？**提 issue 前先看 [为什么解锁过的卡一进系统又被锁回去](docs/faq.md#relock)**——多数是平台侧的复位或掉电事件，不是驱动在反制；那一节有判据、该抄日志的哪几行、以及还能做什么。
+
 让 Agent 帮忙部署：[部署指南](AGENTS.deploy.md)。可以直接把下面这句话交给它：
 
 > 请根据 https://github.com/physicsdolphin/nv-uefi-unlocker/blob/main/AGENTS.deploy.md ，帮我安装 nv-uefi-unlocker，为我的显卡解锁。
