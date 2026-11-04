@@ -1,3 +1,8 @@
+# HISTORICAL PROTOTYPE (superseded by the Rust scanner in src/scan.rs).
+# Kept as the G0 feasibility evidence: 4/6 TU102 + 2/5 GA102 recovery with
+# a harvested length table; the misses (mid-entry opcode starts absent
+# from the canonical stream) are exactly the gap the Rust decoder closed.
+# Run: GADGET_LST=<sec.lst> python -I gadget_scan.py <sec_plain.bin> 0x100 [known VAs...]
 # First-principles gadget scanner prototype (research, issue-#151 follow-on).
 #
 # Question: can the payload's gadget set be DERIVED from the decrypted booter
