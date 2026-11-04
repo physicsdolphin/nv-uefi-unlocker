@@ -330,6 +330,14 @@ Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门�
 
 <a id="ssdiag"></a>
 
+## 50 系（RTX 50 / Blackwell）能解锁吗？
+
+**现在不能。** 钳制和门本身与 40 系同形且更硬：GB206 的熔丝 `FMLA32/IMLA1/2/4=3`、`FEAT_OVR_PLM=0xfffffb8f`（仅固件内部的 PL3 层可写），主机写 3/3 静默丢弃；同 die 的 RTX PRO 6000 满速，证明是产品分割。
+
+真正断在引导链：Blackwell **没有 SEC2 阶段**（FSP→GSP BootROM→加密 FMC→GSP-RM），也就没有 40 系那种"签名 booter 栈溢出 → ROP 写 PLM"的载体。公开世界没有 GB20x booter，debug FMC 与 prod 的密文逐字节相同、只有签名不同且无槽表。所以**换 U 盘跑也打不开门**，`ssdiag --reapply` 会正确拒绝。
+
+可以做的：ssdiag / diag-unlock / U 盘 SAMPLE 都会记录它的 FEAT 块和熔丝（只读）。读数纪律：`READOUT_1` 是熔丝镜像、字段位不连续，且 Blackwell 的 `3` 约等于半速而不是 Ada 的 1/8；SS0/SS1 非零只是影子态，nibble 的 bit3 全清才是"熔丝生效"。机理、探索现状与还开着的面见 [blackwell-gb20x-status](blackwell-gb20x-status.md)（[#168](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/168)）。
+
 ## 怎样在系统内检查或修复解锁？
 
 Windows 使用发布包中的 `ssdiag-x86_64-windows.exe`。以下简写为 `ssdiag`：

@@ -320,6 +320,14 @@ Turing intentionally relocks PLM at handoff; do not apply the Ampere/Ada closed-
 
 <a id="ssdiag"></a>
 
+## Can a 50-series (RTX 50 / Blackwell) card be unlocked?
+
+**Not today.** The cap and the gate are the same shape as on 40-series, and harder: GB206 fuses read `FMLA32/IMLA1/2/4 = 3` and `FEAT_OVR_PLM = 0xfffffb8f` admits only PL3, the level inside signed boot firmware. All three host writes are dropped silently. An RTX PRO 6000 on the same die runs full rate, so it is product segmentation, not silicon.
+
+The real break is the boot chain: Blackwell **has no SEC2 stage** (FSP → GSP BootROM → encrypted FMC → GSP-RM), so there is no signed-booter stack overflow to turn into a ROP write of the PLM. No GB20x booter is public; the debug FMC is byte-identical ciphertext to production with only a different signature and no slot table. Running the USB stick therefore cannot open the gate either, and `ssdiag --reapply` correctly refuses.
+
+What still works: ssdiag / diag-unlock / the USB SAMPLE record the FEAT block and fuses (read-only). Read them carefully — `READOUT_1` is a fuse mirror with non-contiguous fields, Blackwell `3` is ~half rate (not the Ada 1/8), and a nonzero SS0/SS1 is only shadow state: every nibble's bit 3 being clear is what says the fused selectors are in force. Mechanism, exploration status and the surfaces still open: [blackwell-gb20x-status](blackwell-gb20x-status.md) ([#168](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/168)).
+
 ## How do I check or repair the unlock in the OS?
 
 On Windows, use the release's `ssdiag-x86_64-windows.exe`, abbreviated below as `ssdiag`:

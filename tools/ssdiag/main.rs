@@ -1,4 +1,9 @@
-//! ssdiag v0.6.8 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.9 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.9 maps the Blackwell (GB20x) families onto the FEAT bank and dumps
+//! their fuse/selector words read-only (issue #168): a gapped READOUT_1
+//! decoder, a PL3-only PLM verdict, and a family note saying the re-apply
+//! cannot open the gate because no GB20x payload exists. Also prints the
+//! "closed (PL3-only writes)" PLM state.
 //! v0.6.8 adds the read-only POWER section: the card's and its upstream root
 //! port's PMCSR / D-state, the register-side witness of the platform's
 //! `_PR3`/`_OFF` rail path (issue #164/#165).
@@ -16,6 +21,9 @@
 //! Reads the registers the EFI unlock stage touches, from inside the running
 //! OS, and - where the EFI chain left the FEAT PLM gate open (Ampere/Ada AON
 //! behavior, issue #6) - re-applies the SS override values without a reboot.
+//! On Blackwell everything is read-only: the 0x823xxx FEAT words ARE readable
+//! there, but the gate admits only PL3 writes (signed firmware) and there is
+//! no booter to run, so --reapply refuses instead of pretending.
 //!
 //! Driver lifecycle (strict, cmp50hx "remove-when-done" model): the
 //! Intel-signed pmxdrv.sys is EMBEDDED, extracted to %TEMP% on demand,
@@ -1514,6 +1522,41 @@ const FEAT_AMPADA: [(&str, u32); 4] = [
     ("SS1", 0x0082_3820),
     ("READOUT_1", 0x0082_3818),
 ];
+/// Blackwell GB20x uses the *same* 0x823xxx bank as Ampere/Ada (issue #168,
+/// GB206 `10de:2d04`: PLM `0xfffffb8f`, SS0 `0x06277073`, SS1 `0x00025005`,
+/// READOUT_1 `0x00c36180`). Kept as its own table because the readout decode
+/// and the rate law differ (§1 of docs/blackwell-gb20x-status.md) and the
+/// transaction can never run on this die (no GB20x SEC2 booter).
+const FEAT_BLACKWELL: [(&str, u32); 4] = [
+    ("PLM", 0x0082_3804),
+    ("SS0", 0x0082_381C),
+    ("SS1", 0x0082_3820),
+    ("READOUT_1", 0x0082_3818),
+];
+/// Blackwell-only read-only surface: the fuse selectors behind the bank, the
+/// override master switch, the Quadro secure-write word, the inert issue-rate
+/// modifier and the empty SEC2 PLM. On Ampere/Ada these read different (or are
+/// absent) values, so they are printed only for a blackwell die.
+const BLACKWELL_ROWS: [(&str, u32); 12] = [
+    ("FUSE_EN_SW_OVERRIDE", 0x0082_0040),
+    ("FUSE_SS_PLM", 0x0082_00FC),
+    ("SECURE_FEAT_OVR_QUADRO_WR", 0x0082_038C),
+    ("FUSE_SS_DP", 0x0082_0224),
+    ("FUSE_SS_FFMA", 0x0082_059C),
+    ("FUSE_SS_FMLA16", 0x0082_07D4),
+    ("FUSE_SS_FMLA32", 0x0082_07D8),
+    ("FUSE_SS_IMLA0", 0x0082_07DC),
+    ("FUSE_SS_IMLA1", 0x0082_07E0),
+    ("FUSE_SS_IMLA2", 0x0082_07E4),
+    ("FUSE_SS_IMLA3", 0x0082_07E8),
+    ("FUSE_SS_IMLA4", 0x0082_07EC),
+];
+/// `FEAT_READOUT_1` is NOT nine contiguous 3-bit fields: the fields sit at
+/// these bit offsets, with gaps at bit 6 and bits 27:25 (measured on GB202,
+/// reproduced byte-identically on GB206/GB203M). The contiguous decode yields
+/// out-of-range 6s. Field order imla0 fmla16 fmla32 ffma imla1 imla2 imla3
+/// imla4 DP.
+const READOUT1_SHIFT: [u32; 9] = [0, 3, 7, 10, 13, 16, 19, 22, 28];
 /// Readable-at-PL0 core/debug block. Data-driven on purpose: add rows here
 /// as the debug surface grows. VGA/MMU_PLM/FUSE_VER_DECODE from the loader
 /// M1 sample table; the rest cross-checked against the reference unlockers.
@@ -1732,11 +1775,15 @@ fn family_of(boot0: u32) -> Option<(&'static str, &'static [(&'static str, u32)]
         // Ada is NV19x (AD106 field read 0x196000a1) - NOT 0x22x (device ids)
         Some(("ada", &FEAT_AMPADA))
     } else if (0x1A0..=0x1AF).contains(&die) {
-        // GB100=0x1A0 GB102=0x1A2
-        Some(("blackwell-gb1", &FEAT_NONE))
+        // GB100=0x1A0 GB102=0x1A2 - same FEAT bank as GB20x, untested sample
+        Some(("blackwell-gb1", &FEAT_BLACKWELL))
     } else if (0x1B0..=0x1BF).contains(&die) {
-        // GB202-class (50-series)
-        Some(("blackwell-gb2", &FEAT_NONE))
+        // GB202-class (50-series); GB206=0x1B6 field-read (issue #168)
+        Some(("blackwell-gb2", &FEAT_BLACKWELL))
+    } else if (0x210..=0x21F).contains(&die) {
+        // GB202 also surfaces as 0x21120000 in an RM debug dump (issue #12);
+        // the nv_arch.h scheme puts it at 0x1B2, so accept both forms
+        Some(("blackwell-gb2", &FEAT_BLACKWELL))
     } else if (0x1C0..=0x1CF).contains(&die) {
         Some(("rubin", &FEAT_NONE))
     } else if (0xB70..=0xB7F).contains(&die) {
@@ -1757,9 +1804,19 @@ fn decode_plm(v: u32) -> &'static str {
     match v {
         0xFFFF_FFFF => "OPEN",
         0xFFFF_FF8F => "closed (stock)",
+        0xFFFF_FB8F => "closed (PL3-only writes)",
         0xFFFF_FFEF => "closed (relock+drift)",
         _ => "closed (non-standard)",
     }
+}
+
+/// Readout fields (not rates) for a Blackwell `FEAT_READOUT_1` word.
+fn decode_readout1(v: u32) -> String {
+    READOUT1_SHIFT
+        .iter()
+        .map(|s| ((v >> s) & 7).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn decode_ss(v: u32, width: u32) -> String {
@@ -1785,7 +1842,7 @@ fn decode_ss(v: u32, width: u32) -> String {
         .join(" ")
 }
 
-fn dump_debug(rd: &dyn Fn(u32) -> u32) {
+fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     println!("--- core/debug block ---");
     for (name, off) in CORE_ROWS {
         let v = rd(off);
@@ -1816,10 +1873,11 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
         if s1 & 0x0080_0000 != 0 { 1 } else { 2 },
         s0 >> 31
     );
-    println!("--- FEAT cluster (both families, cross-visibility) ---");
+    println!("--- FEAT cluster (all mapped families, cross-visibility) ---");
+    let blackwell = fam.starts_with("blackwell");
     for (label, regs) in [
         ("turing 0x4096xx", &FEAT_TURING[..]),
-        ("ampere/ada 0x823xxx", &FEAT_AMPADA[..]),
+        ("0x823xxx amp/ada/gb", &FEAT_AMPADA[..]),
     ] {
         for (name, off) in regs {
             let v = rd(*off);
@@ -1834,12 +1892,29 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
                 "READOUT" | "READOUT_1" => match badf_bucket(v) {
                     Some(b) => format!(" [{}]", red(b)),
                     None if v == 0 => format!(" [{}]", green("full speed")),
+                    None if blackwell => {
+                        format!(" [fields {} - not rates]", decode_readout1(v))
+                    }
                     None => String::new(),
                 },
                 _ => String::new(),
             };
             println!("  {label:<20} {name:<9} = {}{note}", hx32(v));
         }
+    }
+    if blackwell {
+        println!("--- blackwell fuse/aux block (read-only; selectors are fuse mirrors) ---");
+        for (name, off) in BLACKWELL_ROWS {
+            let v = rd(off);
+            let note = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
+            println!("  {name:<26} = {}{note}", hx32(v));
+        }
+        println!(
+            "  READOUT_1 fields (imla0 fmla16 fmla32 ffma imla1 imla2 imla3 imla4 DP) = {}",
+            decode_readout1(rd(0x0082_3818))
+        );
+        println!("  note: on Blackwell selector 3 measures ~HALF rate, not the Ada 1/8 - trust the raw word, not the Ada rate law");
+        println!("  note: FUSE_EN_SW_OVERRIDE=0 gates CTRL_OPT floorsweep only; FUSE_FEAT_OVR_DIS=0 leaves the override path open; FUSE_SS_PLM is NOT the effective gate");
     }
     println!("--- family-specific lines (safe reads; badf on the wrong die is expected) ---");
     for (label, regs) in [
@@ -2005,8 +2080,11 @@ WHAT IT DOES:
          sizes), FB_SIZE_MIB, GFW PLM/scratch, BSI_SCRATCH15, VGA
          workspace, WPR2 lo/hi, MMU PLM + lock window, GSP/SEC2 CPUCTL +
          mailboxes + EXCI, fuse rows
-       - FEAT clusters of BOTH families (Turing 0x4096xx incl. READOUT,
-         Ampere/Ada 0x823xxx)
+       - FEAT clusters of all mapped families (Turing 0x4096xx incl.
+         READOUT, Ampere/Ada/Blackwell 0x823xxx). On Blackwell the block
+         reads fine but the transaction cannot run: the fuse selectors,
+         override master switch and the non-contiguous READOUT_1 fields
+         are printed with the Blackwell rate-law caveat (issue #168)
        - Ada four-write targets (WPR/WPR_CFG/FBPA PLMs), AD10x 64G-BAR1
          line (CYA/CFG/XVE/BAR1 cap), 26-register PLM survey, Ampere FEAT
          sweep
@@ -2023,7 +2101,9 @@ WHAT IT DOES:
      (field-proven to persist in Windows on the Turing relock chain)
 
 FAMILIES: maxwell..rubin recognized (incl. the GA10x 0xb7xx00a1 BOOT_0
-quirk); FEAT verdict only where the cluster is mapped (Turing/Ampere/Ada).
+quirk); FEAT verdict where the cluster is mapped (Turing/Ampere/Ada/
+Blackwell). Blackwell GB20x maps to the same 0x823xxx bank, but only for
+reads: there is no GB20x SEC2 booter, so no transaction runs on it.
 
 DRIVER: pmxdrv.sys embedded (Intel-signed, hash-pinned), deployed as its
 own service on demand and stopped+deleted on every exit path.
@@ -2194,12 +2274,12 @@ SSDIAG_COLOR=force pins on.",
 
         let Some((fam_name, regs)) = family_of(boot0) else {
             println!("PMC_BOOT_0={} - NVIDIA-class but unknown die; diagnosis-only pass (FEAT addresses unmapped for this family)", hx32(boot0));
-            dump_debug(&rd);
+            dump_debug(&rd, "unknown");
             drv.unmap_physical(va);
             rc = 1;
             continue;
         };
-        dump_debug(&rd);
+        dump_debug(&rd, fam_name);
 
         if regs.is_empty() {
             println!(
@@ -2219,6 +2299,13 @@ SSDIAG_COLOR=force pins on.",
             red("NOT_UNLOCKED")
         };
         println!("VERDICT [{fam_name}]: {verdict}");
+        if fam_name.starts_with("blackwell") {
+            println!(
+                "{}: Blackwell has no SEC2 stage and no GB20x booter - the transaction path cannot run on this die; the FEAT block is read-only here (docs/blackwell-gb20x-status.md)",
+                red("FAMILY NOTE")
+            );
+            println!("FAMILY NOTE: nonzero SS0/SS1 are pre-driver shadow state, not an unlock - enable bits clear means the fused selectors are in force");
+        }
         let can_msg = match (canary_state(&rd), unlocked) {
             ("intact", true) => "CANARY: intact + SS live - no reset, nothing rewrote the state after handoff",
             ("intact", false) => "CANARY: intact + SS gone - no reset; something WROTE the FEAT block (driver init / devinit replay, not a power event)",
@@ -2232,7 +2319,14 @@ SSDIAG_COLOR=force pins on.",
 
         if reapply {
             if plm != 0xFFFF_FFFF {
-                println!("{}: FEAT PLM gate is closed - re-run the USB unlock instead", red("reapply REFUSED"));
+                if fam_name.starts_with("blackwell") {
+                    println!(
+                        "{}: the PLM gate only opens from PL3 firmware and no GB20x payload exists - nothing to re-apply, the USB chain cannot open it either",
+                        red("reapply REFUSED")
+                    );
+                } else {
+                    println!("{}: FEAT PLM gate is closed - re-run the USB unlock instead", red("reapply REFUSED"));
+                }
                 rc = 1;
             } else {
                 wr(get("SS0"), SS0_UNLOCK);
@@ -2343,4 +2437,52 @@ fn walk_candidates(drv: &PmxDrv, g: &Gpu) -> Option<(u64, u64, u32)> {
         }
     }
     picked
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readout1_uses_the_gapped_offsets() {
+        // GB206/GB202/GB203M stock word: imla0 fmla16 fmla32 ffma imla1
+        // imla2 imla3 imla4 DP = 0 0 3 0 3 3 0 3 0. A contiguous 3-bit
+        // decode prints four out-of-range 6s here.
+        assert_eq!(decode_readout1(0x00C3_6180), "0 0 3 0 3 3 0 3 0");
+        assert!(decode_readout1(0x00C3_6180)
+            .split(' ')
+            .all(|f| f.parse::<u32>().unwrap() <= 7));
+    }
+
+    #[test]
+    fn blackwell_plm_is_recognised() {
+        assert_eq!(decode_plm(0xFFFF_FB8F), "closed (PL3-only writes)");
+        assert_eq!(decode_plm(0xFFFF_FF8F), "closed (stock)");
+        assert_eq!(decode_plm(0xFFFF_FFFF), "OPEN");
+    }
+
+    #[test]
+    fn blackwell_dump_renders_without_panicking() {
+        let rd = |off: u32| match off {
+            0x0082_3800 | 0x0082_3804 => 0xFFFF_FB8F,
+            0x0082_3818 => 0x00C3_6180,
+            0x0082_381C => 0x0627_7073,
+            0x0082_3820 => 0x0002_5005,
+            _ => 0,
+        };
+        dump_debug(&rd, "blackwell-gb2");
+    }
+
+    #[test]
+    fn blackwell_families_map_to_the_823_bank() {
+        for boot0 in [0x1B6_000A1u32, 0x1A0_000A1, 0x2112_0000, 0x1B2_000A1] {
+            let (_, regs) = family_of(boot0).unwrap();
+            assert_eq!(regs.len(), 4);
+            assert_eq!(regs[0].1, 0x0082_3804);
+        }
+        // Turing keeps its own block.
+        let (fam, regs) = family_of(0x166_000A1).unwrap();
+        assert_eq!(fam, "turing");
+        assert_eq!(regs[0].1, 0x0040_9650);
+    }
 }

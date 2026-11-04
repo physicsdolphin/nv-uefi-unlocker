@@ -9,6 +9,12 @@ Families (PMC_BOOT_0 bits [31:20]):
   Ampere/Ada (0x170..0x17F, 0x220..0x22F, 0x100)  0x00823804 / 0x0082381C / 0x00823820
   (+ READOUT_1 0x00823818 on the 0x823xxx block; 0x00409668 on Turing, per
   nlzy/turing-unlock - same constant ssdiag carries, issue #42)
+  Blackwell (0x1A0..0x1BF) shares the 0x823xxx block and additionally prints
+  its fuse selectors. Blackwell is READ-ONLY: no SEC2 stage, no GB20x booter,
+  so the PLM can only be opened by PL3 firmware and --reapply always refuses
+  (issue #168, docs/blackwell-gb20x-status.md). READOUT_1 is decoded with the
+  real non-contiguous bit offsets as fields - Blackwell 3 is ~half rate, not
+  the Ada 1/8.
 
 Why this exists (issue #6): the EFI unlock's volatile state is only useful if
 it survives into the OS. This tool answers, from inside the running system:
@@ -40,6 +46,31 @@ GAADA = {
     "ss1": 0x0082_3820,
     "readout": 0x0082_3818,
 }
+# Blackwell GB20x uses the same 0x823xxx bank (issue #168, GB206 10de:2d04:
+# PLM 0xfffffb8f, SS0 0x06277073, SS1 0x00025005, READOUT_1 0x00c36180).
+# Separate table because the readout decode and the rate law differ, and no
+# transaction can run on the die (no GB20x SEC2 booter).
+BLACKWELL = dict(GAADA)
+BLACKWELL_ROWS = [
+    ("FUSE_EN_SW_OVERRIDE", 0x0082_0040),
+    ("FUSE_SS_PLM", 0x0082_00FC),
+    ("FUSE_FEAT_OVR_DIS", 0x0082_03F0),
+    ("SECURE_FEAT_OVR_QUADRO_WR", 0x0082_038C),
+    ("FUSE_SS_DP", 0x0082_0224),
+    ("FUSE_SS_FFMA", 0x0082_059C),
+    ("FUSE_SS_FMLA16", 0x0082_07D4),
+    ("FUSE_SS_FMLA32", 0x0082_07D8),
+    ("FUSE_SS_IMLA0", 0x0082_07DC),
+    ("FUSE_SS_IMLA1", 0x0082_07E0),
+    ("FUSE_SS_IMLA2", 0x0082_07E4),
+    ("FUSE_SS_IMLA3", 0x0082_07E8),
+    ("FUSE_SS_IMLA4", 0x0082_07EC),
+]
+# FEAT_READOUT_1 is NOT nine contiguous 3-bit fields: offsets 0,3,7,10,13,
+# 16,19,22,28 (gaps at bit 6 and bits 27:25). Contiguous decode yields
+# out-of-range 6s. Field order imla0 fmla16 fmla32 ffma imla1 imla2 imla3
+# imla4 DP.
+READOUT1_SHIFT = [0, 3, 7, 10, 13, 16, 19, 22, 28]
 # Core/debug block, synced to ssdiag 0.6.4 (CORE_ROWS): the 2026-11-04 sync
 # brings the python twin to the ssdiag 0.5/0.6 probe surface - 26-register
 # PLM survey was already here; the PCIe/XP3G/OPT/Ada-fuse tables, the
@@ -244,10 +275,12 @@ def family_of(boot0):
         return "hopper", None
     if 0x190 <= die <= 0x19F:  # Ada is NV19x, NOT 0x22x (device ids)
         return "ada", GAADA
-    if 0x1A0 <= die <= 0x1AF:  # GB102=0x1A2
-        return "blackwell-gb1", None
-    if 0x1B0 <= die <= 0x1BF:  # GB202-class (50-series)
-        return "blackwell-gb2", None
+    if 0x1A0 <= die <= 0x1AF:  # GB100=0x1A0, GB102=0x1A2
+        return "blackwell-gb1", BLACKWELL
+    if 0x1B0 <= die <= 0x1BF:  # GB202/GB203M/GB206 class (50-series)
+        return "blackwell-gb2", BLACKWELL
+    if 0x210 <= die <= 0x21F:  # GB202 also reports 0x21120000 in an RM debug dump
+        return "blackwell-gb2", BLACKWELL
     if 0x1C0 <= die <= 0x1CF:
         return "rubin", None
     if 0xB70 <= die <= 0xB7F:  # GA10x quirk: 0xb7xx00a1 (GA102=b74, GA106=b76)
@@ -260,9 +293,16 @@ def decode_plm(v):
         return "OPEN"
     if v == 0xFFFF_FF8F:
         return "closed (stock)"
+    if v == 0xFFFF_FB8F:
+        return "closed (PL3-only writes)"
     if v == 0xFFFF_FFEF:
         return "closed (relock+drift)"
     return "closed (non-standard)"
+
+
+def decode_readout1(v):
+    """Fields, not rates. Blackwell 3 measures ~half rate, not the Ada 1/8."""
+    return " ".join(str((v >> s) & 7) for s in READOUT1_SHIFT)
 
 
 def badf_bucket(v):
@@ -360,12 +400,15 @@ def report(bar, tag="", devpath=None):
     ss0 = bar.rd(regs["ss0"])
     ss1 = bar.rd(regs["ss1"])
     print(f"  PMC_BOOT_0={boot0:#010x} family={fam} {tag}")
+    blackwell = fam.startswith("blackwell")
     print(f"  FEAT_PLM  = {plm:#010x} ({decode_plm(plm)})")
     print(f"  FEAT_SS0  = {ss0:#010x} [{decode_ss(ss0, 8)}]")
     print(f"  FEAT_SS1  = {ss1:#010x} [{decode_ss(ss1, 1)}]")
     if "readout" in regs:
         ro = bar.rd(regs["readout"])
         note = "PLM-blocked" if (ro & 0xFFFF0000) == 0xBADF0000 else ("full speed" if ro == 0 else "")
+        if blackwell and ro and note != "PLM-blocked":
+            note = f"fields {decode_readout1(ro)} - not rates"
         print(f"  READOUT_1 = {ro:#010x} {note}")
 
     def rd_tagged(name, off):
@@ -382,6 +425,14 @@ def report(bar, tag="", devpath=None):
     print("  --- family-specific / survey (badf on the wrong die is expected) ---")
     rrow(bar, ADA_ROWS)
     rrow(bar, AD1X_ROWS)
+    if blackwell:
+        print("  --- blackwell fuse/aux block (read-only; selectors are fuse mirrors) ---")
+        rrow(bar, BLACKWELL_ROWS)
+        print(f"  READOUT_1 fields (imla0 fmla16 fmla32 ffma imla1 imla2 imla3 imla4 DP) ="
+              f" {decode_readout1(bar.rd(0x0082_3818))}")
+        print("  note: on Blackwell selector 3 measures ~HALF rate, not the Ada 1/8 - trust the raw word")
+        print("  note: FUSE_EN_SW_OVERRIDE=0 gates CTRL_OPT floorsweep only; FUSE_FEAT_OVR_DIS=0 leaves the"
+              " override path open; FUSE_SS_PLM is NOT the effective gate")
     if fam in ("ampere", "ada"):
         rrow(bar, ADA_FUSE_ROWS)
         rrow(bar, OPT_FUSE_ROWS)
@@ -407,6 +458,11 @@ def report(bar, tag="", devpath=None):
 
     print(f"  VERDICT: {'UNLOCKED (override values live)' if unlocked else 'not unlocked'}"
           f"{' - reapply available (door open)' if not unlocked and plm == 0xFFFF_FFFF else ''}")
+    if blackwell:
+        print("  FAMILY NOTE: no SEC2 stage and no GB20x booter on Blackwell - the transaction cannot run"
+              " on this die; the FEAT block is read-only here (docs/blackwell-gb20x-status.md)")
+        print("  FAMILY NOTE: nonzero SS0/SS1 are pre-driver shadow state, not an unlock -"
+              " enable bits clear means the fused selectors are in force")
     return fam, regs, plm, unlocked
 
 
@@ -444,8 +500,12 @@ def main():
         fam, regs, plm, unlocked = st
         if args.reapply:
             if plm != 0xFFFF_FFFF:
-                print("  reapply REFUSED: FEAT PLM gate is closed - the EFI chain owns door-opening;"
-                      " re-run the USB unlock instead")
+                if fam.startswith("blackwell"):
+                    print("  reapply REFUSED: the PLM gate only opens from PL3 firmware and no GB20x payload"
+                          " exists - nothing to re-apply, the EFI chain cannot open it either")
+                else:
+                    print("  reapply REFUSED: FEAT PLM gate is closed - the EFI chain owns door-opening;"
+                          " re-run the USB unlock instead")
                 rc = 1
             else:
                 bar.wr(regs["ss0"], SS0_UNLOCK)

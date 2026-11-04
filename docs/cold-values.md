@@ -155,6 +155,42 @@ dGPU 冷、无 GOP、BAR0 全 0xffffffff（claim 前采样即此现象，claim �
 仅 VGA workspace 容毒并回退（log 打出原值与 MUX 提示）。教训沿用 §3.3：毒值先分桶再
 决定"可用/不可用"，全 BADF 一刀切成错误会丢掉可用信息。
 
+## GB206（RTX 5060 Ti，10de:2d04）——社区采样（issue #168，2026-11-04）
+
+非本机；Linux 6.12.113、驱动 615.71.10、`nvidia` 绑定态逐字 `ioread32`（**不是**
+pre-bind 冷采样；GB202 的熔丝镜像为 boot-static，故应等于 pre-bind，但这在 GB206
+上只是推论）。GB202/GB203M 两列来自同一探针的对照卡。50 系无事务路径，
+`asset_family()` 继续跳过；本节只作只读档案。机理见
+[blackwell-gb20x-status](blackwell-gb20x-status.md)。
+
+| 寄存器 | GB206 | GB202 | GB203M | 解读 |
+|---|---:|---:|---:|---|
+| PMC_BOOT_0 | 0x1b6000a1 | 0x21120000 | 0x1b3000a1 | GB206 ✓（die 0x1b6） |
+| FUSE_SS_FMLA16 0x8207d4 | 0 | 0 | 0 | 满速 |
+| **FUSE_SS_FMLA32 0x8207d8** | **3** | **3** | **3** | **钳制源** |
+| FUSE_SS_IMLA1/2/4 | 3/3/3 | 3/3/3 | 3/3/3 | 钳制源 |
+| FUSE_SS_DP/FFMA/IMLA0/IMLA3 | 0 | 0 | 0 | 满速 |
+| FUSE_FEAT_OVR_DIS 0x8203f0 | 0 | 0 | 0 | 覆盖通路存在 |
+| FUSE_EN_SW_OVERRIDE 0x820040 | 0 | 0 | 0 | 只管 floorsweep，不管速率 |
+| FUSE_SS_PLM 0x8200fc | 0xfffffbff | — | 0xfffffbff | **不是**有效门 |
+| **FEAT_OVR_PLM 0x823804** | **0xfffffb8f** | **0xfffffb8f** | **0xfffffb8f** | 读 0xf / 写 0x8：**仅 PL3 可写** |
+| **FEAT_READOUT_1 0x823818** | **0x00c36180** | **0x00c36180** | 0x00c36180 | 三卡逐字节相同；字段非速率 |
+| FEAT_READOUT_0 0x823814 | 0x00000233 | 0x00000233 | — | ECC 标志 |
+| FEAT_OVR_ECC 0x82380c | 0x00888888 | 0x00888888 | — | ECC |
+| FEAT_OVR_ECC_1 0x823810 | 0xaa2a2aaa | 0x002a2aaa | — | 逐卡方差 |
+| SECURE_FEAT_OVR_QUADRO_WR_SEC 0x82038c | 2 | 2 | — | 逐卡 |
+| SM_ISSUE_RATE_MODIFIER 0x504204 | 5 | 5 | — | 可写但 inert |
+| GFW falcon CPUCTL 0x110100 | 0xbadf5720 | 0xbadf4100 | — | 不可读/缺失（无 FWSEC 阶段） |
+| SS0 0x82381c | 0x06277073 | per-boot | per-boot | nibble `3 7 0 7 7 2 6 0`，enable 位全清 |
+| SS1 0x823820 | 0x00025005 | per-boot | per-boot | 同上 |
+
+写入梯（每次写后读回、随后恢复原值）：`SS0=0x88888888` / `SS1=0x8` /
+`PLM=0xffffffff` **0/3 接受，读回不变**——静默丢弃。
+
+`0x00c36180` 正确解码（位移表 `0,3,7,10,13,16,19,22,28`，字段序
+`imla0 fmla16 fmla32 ffma imla1 imla2 imla3 imla4 DP`）= `0 0 3 0 3 3 0 3 0`；
+连续 3-bit 解码会得到四个越界的 6。`fmla32=3` 实测约半速，不是 Ada 枚举的 1/8。
+
 ## 已知对照值（社区来源，供采样比对）
 
 | 寄存器 | GA100/GA102 锁定冷值 | 来源 |

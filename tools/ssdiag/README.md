@@ -12,13 +12,18 @@ For read-back verdicts, Turing behavior, Linux checks and handoff diagnosis, use
   FB_SIZE_MIB, GFW PLM/scratch, BSI_SCRATCH15, VGA_WORKSPACE, WPR2 lo/hi,
   MMU PLM + lock window, GSP/SEC2 CPUCTL + mailboxes + EXCI, fuse
   rows — with `badf` bucketing (PRIV_VIOLATION / UNDECODED / FLOORSWEPT).
-- FEAT clusters of BOTH families on every chip: Turing gains READOUT
-  (0x409668, per nlzy); plus the Ada four-write targets, the AD10x
-  64G-BAR1 line (CYA/CFG/XVE/BAR1 cap mirror), the cmp170hx 26-register
-  PLM survey, and the Ampere/Ada FEAT sweep — the union of the register
-  surfaces the reference unlockers touch.
+- FEAT clusters of every mapped family on every chip: Turing gains READOUT
+  (0x409668, per nlzy); Ampere/Ada/Blackwell share 0x823xxx. On Blackwell
+  (GB20x) the bank is readable but host writes are dropped and no
+  transaction exists, so the tool also prints the fuse selectors, the
+  override master switch, the empty SEC2 PLM, and `FEAT_READOUT_1` decoded
+  with the real non-contiguous bit offsets (fields, not rates — Blackwell 3
+  is ~half rate, not the Ada 1/8; [status doc](../../docs/blackwell-gb20x-status.md),
+  issue #168). Also: the Ada four-write targets, the AD10x 64G-BAR1 line
+  (CYA/CFG/XVE/BAR1 cap mirror), the cmp170hx 26-register PLM survey, and
+  the Ampere/Ada FEAT sweep.
 
-Architecture identification covers Maxwell through Rubin; the FEAT unlock verdict is available only for the mapped Turing/Ampere/Ada families. Output uses colored addresses and verdicts on a console; pipes or `NO_COLOR` select plain text. Parked GPUs can be woken through NVAPI GC6Control.
+Architecture identification covers Maxwell through Rubin; the FEAT unlock verdict is available for the mapped Turing/Ampere/Ada/Blackwell families (Blackwell read-only: `--reapply` correctly refuses because the PLM only opens from PL3 firmware). Output uses colored addresses and verdicts on a console; pipes or `NO_COLOR` select plain text. Parked GPUs can be woken through NVAPI GC6Control.
 
 ## Driver: embedded, strict remove-when-done
 

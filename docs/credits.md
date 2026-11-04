@@ -106,6 +106,24 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
   破解的源头线程）。引用落点：[theoretical-uplift](theoretical-uplift.md)
   §2 史前史注脚。
 
+## 4b. Blackwell（GB20x）只读面与负结果
+
+- **[gpu-unlock-gb206](https://github.com/steviecurrie/gpu-unlock-gb206)**
+  （steviecurrie，GPL-2.0）：首份 GB206 公开寄存器数据与三写梯、`FEAT_READOUT_1`
+  非连续位域的正确位移表（`0,3,7,10,13,16,19,22,28`）与 selftest。探针派生自
+  gpu-unlock-ada 的 `diagnostics/peek/gpu_peek.c`；数据以
+  [issue #168](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/168)
+  提交。落点：[blackwell-gb20x-status](blackwell-gb20x-status.md)、
+  [cold-values](cold-values.md) GB206 节、ssdiag/diag-unlock 的 Blackwell 行。
+- **[bf16-unlock-blackwell-research](https://github.com/shuttie/bf16-unlock-blackwell-research)**
+  （shuttie，文本 CC BY 4.0 / 工具 MIT+GPL-2.0）：87 次实验的负结果与引导链
+  （FSP→BootROM→FMC→GSP-RM，无 SEC2）、FMC 容器格式、`16!` 密钥全搜、
+  PRO 6000 满速对照。落点：同上文档的 §2/§3/§5。
+- **[gpu-unlock-blackwell](https://github.com/phiraml/gpu-unlock-blackwell)**
+  （phiraml，MIT）：`kgspGetBinArchiveBooterLoadUcode` 的变体清单与缺失的
+  GB20x booter（开放模块 NULL 桩）；`mma_rate.py` 测量工具（gb206 仓已 vendored）。
+  落点：同上文档 §3.1。
+
 ## 5. 逆向工具链
 
 - **[envytools](https://github.com/envytools/envytools)**：envydis（fuc5
