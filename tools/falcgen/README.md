@@ -49,14 +49,15 @@ Hard boundary: a die without a broken debug key has no generator input
 - `falcgen dis|scan|lst-compare` CLI; `cargo test -p falcgen` green;
   `cargo xt` green.
 
-**G0 finding worth recording**: the mid-entry gadget streams walk through
-bytes the 2012-era envydis tables cannot decode (`ab`-opcode family,
-fucold-excluded forms). The silicon decodes them; cmp50hx's docs already
-flagged that archive bytes at gadget PCs are not runtime gadget bytes.
-The scanner therefore tolerates unknown bytes on a walk (candidates are
-arbitrated by the golden payload tables), and G1/G2 must treat
-envydis-decodability as *neither necessary nor sufficient* for
-executability.
+**CORRECTED G0 finding (2026-11-05, crypt discovery)**: the "unknown
+bytes" were **crypt-gated instructions, not a table gap** — envydis's
+fuc5 table is complete once the CRYPT feature is enabled. With crypt on,
+all five decrypted booter segments decode with **zero unknown
+instructions** (the lst files were generated without it; the ??? clusters
+are `cxset`/`cocmd`/`csigclr`-family crypt ops — the SEC entry even opens
+with `csigclr` + a csecret/cxor key-zeroing sequence). The scanner and
+interpreter therefore run `FUC5_CRYPT`. cmp50hx's "archive bytes are not
+runtime gadget bytes" remains true independently (different keystream).
 
 ## Milestones
 
