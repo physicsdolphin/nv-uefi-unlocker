@@ -88,5 +88,5 @@ M1 `SAMPLE` 对非 console 卡可能整行全 `0xffffffff`，连 `PMC_BOOT_0` �
 
 1. 完整 `loader.log`；
 2. Windows 侧：`Get-PnpDevice -Class Display | fl FriendlyName,Status,Problem,ProblemDescription,InstanceId`（#165 在**解锁后未重启的病态状态里先取**，再谈重启）；
-3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag --select 04:00.0`）——需 **ssdiag v0.6.5 及以上**，含 `CANARY:` 判定行；
+3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.5 及以上**，含 `CANARY:` 判定行；
 4. BIOS 状态与电源瓦数（#165 必附）。
