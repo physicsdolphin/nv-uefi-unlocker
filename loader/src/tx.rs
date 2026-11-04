@@ -34,14 +34,17 @@ pub mod regs {
     pub const FEAT_SS1: u32 = 0x0082_3820;
     /// Effective-speed readout (nine 3-bit fields; all 0 = full rate).
     pub const FEAT_READOUT_1: u32 = 0x0082_3818;
-    /// PBUS software-scratch words. The open driver only ever writes index
-    /// 0x1E (`NV_PBUS_SW_RESET_BITS_SCRATCH_REG`, g_gpu_nvoc.h:914, in the
+    /// PBUS software-scratch words, indexed by `NV_PBUS_SW_SCRATCH(i) =
+    /// 0x1400 + i*4` (dev_bus.h, same formula on every family Turing..Ada).
+    /// The open driver only ever writes index 0x1E
+    /// (`NV_PBUS_SW_RESET_BITS_SCRATCH_REG`, g_gpu_nvoc.h:914, in the
     /// drain/reset-recommended path); every other `gpuWritePBusScratch`
-    /// caller is the VBIOS/devinit. Indices 0x20/0x24 sit clear of 0x1E and
-    /// of the Blackwell named 0x2D/0x37. Reset-domain registers: any FLR,
-    /// SBR or rail-off clears them, which is exactly the witness we want.
-    pub const CANARY_A: u32 = 0x0014_0020;
-    pub const CANARY_B: u32 = 0x0014_0024;
+    /// caller is the VBIOS/devinit. Indices 0x20/0x21 (= 0x1480/0x1484) sit
+    /// clear of 0x1E and of the Blackwell named 0x2D/0x37. Reset-domain
+    /// registers: any FLR, SBR or rail-off clears them, which is exactly the
+    /// witness we want.
+    pub const CANARY_A: u32 = 0x0000_1480;
+    pub const CANARY_B: u32 = 0x0000_1484;
     /// Arbitrary constants carrying the issue numbers, so a value found in a
     /// report is unmistakably ours and not a VBIOS leftover.
     pub const CANARY_MAGIC_A: u32 = 0x0164_c0de;

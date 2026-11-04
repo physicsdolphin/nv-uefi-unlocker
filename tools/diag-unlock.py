@@ -49,8 +49,8 @@ GAADA = {
 # driver pass writes this pair. Read with the FEAT values - canary intact +
 # SS gone = a plain write; cleared + SS live = FLR/SBR-class reset; both gone
 # = rail-off / full-chip reset.
-CANARY_A = 0x0014_0020
-CANARY_B = 0x0014_0024
+CANARY_A = 0x0000_1480
+CANARY_B = 0x0000_1484
 CANARY_MAGIC_A = 0x0164_C0DE
 CANARY_MAGIC_B = 0x0165_CAFE
 

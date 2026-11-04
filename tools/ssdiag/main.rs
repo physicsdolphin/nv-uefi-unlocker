@@ -1420,8 +1420,13 @@ const PRIV_ROWS: [(&str, u32); 2] =
 /// = a plain write with no reset; canary cleared + SS intact = a reset the
 /// AON island survived (FLR/SBR class); both gone = rail-off / full-chip
 /// reset, or a write that merely looks like one.
-const CANARY_A: u32 = 0x0014_0020;
-const CANARY_B: u32 = 0x0014_0024;
+///
+/// Offsets follow `NV_PBUS_SW_SCRATCH(i) = 0x1400 + i*4` (dev_bus.h; same
+/// formula on Turing/Ampere/Ada), i.e. 0x1480/0x1484 = indices 0x20/0x21.
+/// The first build used 0x140020/0x140024 - a mix-up with the register
+/// *block* base 0x140000 - and read 0xbadf5040 even from a healthy chip.
+const CANARY_A: u32 = 0x0000_1480;
+const CANARY_B: u32 = 0x0000_1484;
 const CANARY_MAGIC_A: u32 = 0x0164_C0DE;
 const CANARY_MAGIC_B: u32 = 0x0165_CAFE;
 

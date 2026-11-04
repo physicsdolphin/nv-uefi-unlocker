@@ -199,7 +199,7 @@ fn dump_table(dir: &mut Directory, t: *const u8, sig: [u8; 4], out: &mut Vec<u8>
     let mut l = line_head(&sig, len, ok);
     if !(36..=MAX_TABLE).contains(&len) {
         l.push_fmt(format_args!(" SKIPPED (length out of range)"));
-        out.extend_from_slice(l.as_bytes());
+        push_line(out, &l);
         return;
     }
     let (name, idx) = if &sig[..] == b"DSDT" {
@@ -212,14 +212,15 @@ fn dump_table(dir: &mut Directory, t: *const u8, sig: [u8; 4], out: &mut Vec<u8>
     } else {
         l.push_fmt(format_args!(" ssdt-{idx:02x}.aml"));
     }
-    // Creator id at +36 ("INTL" and friends) tells us whose AML this is.
-    let creator = read::<4>(unsafe { t.add(36) });
+    // Creator id at +28 ("INTL" and friends) tells us whose AML this is;
+    // the body starts at +36.
+    let creator = read::<4>(unsafe { t.add(28) });
     if creator.iter().all(|b| b.is_ascii_graphic()) {
         l.push_fmt(format_args!(" creator={}", core::str::from_utf8(&creator).unwrap_or("")));
     }
     if *total + len > MAX_TOTAL {
         l.push_fmt(format_args!(" SKIPPED (total cap reached)"));
-        out.extend_from_slice(l.as_bytes());
+        push_line(out, &l);
         return;
     }
     let hay = unsafe { core::slice::from_raw_parts(t, len) };
@@ -241,12 +242,21 @@ fn dump_table(dir: &mut Directory, t: *const u8, sig: [u8; 4], out: &mut Vec<u8>
         }
         Err(e) => l.push_fmt(format_args!(" WRITE FAILED ({e})")),
     }
-    out.extend_from_slice(l.as_bytes());
+    push_line(out, &l);
 }
 
-/// `\acpi\ssdt-NN.aml` built at compile time is not possible per index, so
-/// render into a static buffer per call. Also returns the index for the
-/// index line.
+/// Index lines are newline-terminated; without it every entry ran together
+/// on the first field run.
+fn push_line(out: &mut Vec<u8>, l: &Line) {
+    out.extend_from_slice(l.as_bytes());
+    out.push(b'\n');
+}
+
+/// `ssdt-NN.aml` built at compile time is not possible per index, so render
+/// into a static buffer per call. Also returns the index for the index line.
+/// The name is RELATIVE to the open `\acpi` directory handle (a full
+/// `\acpi\...` path does not resolve there) - that mistake made every SSDT
+/// write fail on the first field run.
 fn ssdt_name() -> (&'static CStr16, usize) {
     use core::sync::atomic::{AtomicU16, Ordering};
     static SLOT: AtomicU16 = AtomicU16::new(0);
@@ -257,17 +267,18 @@ fn ssdt_name() -> (&'static CStr16, usize) {
     // inside the same call chain before the next render.
     static mut BUF: [u16; 17] = [0; 17];
     let n = SLOT.fetch_add(1, Ordering::Relaxed) as usize;
-    let mut b = [0u16; 17];
-    let s = r"\acpi\ssdt-";
+    // 12 units = 11 chars + the NUL that `[0u16; 12]` leaves at the end.
+    let mut b = [0u16; 12];
+    let s = r"ssdt-";
     for (k, ch) in s.bytes().enumerate() {
         b[k] = ch as u16;
     }
-    b[11] = HEX[(n >> 4) & 0xf] as u16;
-    b[12] = HEX[n & 0xf] as u16;
-    b[13] = b'.' as u16;
-    b[14] = b'a' as u16;
-    b[15] = b'm' as u16;
-    b[16] = b'l' as u16;
+    b[5] = HEX[(n >> 4) & 0xf] as u16;
+    b[6] = HEX[n & 0xf] as u16;
+    b[7] = b'.' as u16;
+    b[8] = b'a' as u16;
+    b[9] = b'm' as u16;
+    b[10] = b'l' as u16;
     // Write through a raw pointer: no `static mut` reference is taken, so
     // the borrow cannot overlap with the next render.
     let sp = core::ptr::addr_of_mut!(BUF) as *mut u16;

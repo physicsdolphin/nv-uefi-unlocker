@@ -1241,10 +1241,22 @@ pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
         info!("POST-GOP: replay mode - the stock booter never opens the gate, so the booter status stays the verdict");
         return;
     }
-    if plm == 0xffff_ffff && ss0 == SS0_UNLOCK && ss1 == SS1_UNLOCK {
-        info!("POST-GOP: unlock intact after the console rebuild");
+    // The handoff end state is family-specific: on Turing the chain re-locks
+    // the FEAT PLM on purpose before handoff, and the proven end value there
+    // is 0xffffffef with the SS overrides still in place (see the relock
+    // block in tx.rs). Comparing Turing against 0xffffffff reports a false
+    // "NOT intact" on every healthy TU10x run.
+    let (want_plm, want_note) = if family == "tu10x" {
+        (0xffff_ffef, "tu10x handoff value: gate re-locked, SS values are the payload")
     } else {
-        info!("POST-GOP: unlock NOT intact after the console rebuild - suspect the card's own GOP StartImage/devinit (or the firmware), not the Windows driver");
+        (0xffff_ffff, "gate held open")
+    };
+    if plm == want_plm && ss0 == SS0_UNLOCK && ss1 == SS1_UNLOCK {
+        info!("POST-GOP: unlock intact after the console rebuild (FEAT_PLM={plm:#x} = {want_note})");
+    } else {
+        info!(
+            "POST-GOP: unlock NOT intact after the console rebuild (want plm={want_plm:#x} ss0={SS0_UNLOCK:#x} ss1={SS1_UNLOCK:#x}, got plm={plm:#x} ss0={ss0:#x} ss1={ss1:#x}) - suspect the card's own GOP StartImage/devinit (or the firmware), not the Windows driver"
+        );
     }
 }
 

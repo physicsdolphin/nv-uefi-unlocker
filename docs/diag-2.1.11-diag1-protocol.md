@@ -2,13 +2,13 @@
 
 > 服务 issue [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)（GA104 2484，EFI 全绿但系统内 SS 对被抹）与 [#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165)（双 3060，交棒后一张卡在 Windows 侧消失）。
 >
-> **资产已于 2026-11-04 第二次替换（金丝雀 + ACPI 转储）**：事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x140020`/`0x140024`，FLR 验证之后写、立刻读回），其余全部是只读采样。**此前下过同名文件的请重新下载**——旧文件既没有金丝雀也没有 ACPI 旋钮。
+> **资产已于 2026-11-04 第四次替换（本轮修掉首次实机跑暴露的三个诊断缺陷；事务本体一字未动）**：事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x1480`/`0x1484`，即索引 `0x20`/`0x21`，FLR 验证之后写、立刻读回），其余全部是只读采样。**此前下过同名文件的请重新下载**——旧文件的金丝雀偏移写错（`0x140020/24`，恒读 `0xbadf5040`）、SSDT 全部写盘失败、索引行无换行，TU10x 的 `POST-GOP` 判定也会误报 `NOT intact`。
 >
 > 金丝雀的判读在 §3；开关是卷根 `\tx-no-canary.txt`（放上即整组跳过，用于 A/B）。可选 ACPI 转储见 §5。
 >
-> 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `09a6c7fe4497bd84b1b18c83b98854377f0486a1604f60f4de59c990b14d68db`。
+> 版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `8b8b97ff7f4e1f75b7e3fb8363cf6f9dd385458f8281fc056dea6f2bc2b3164d`。
 >
-> `ssdiag.exe.0.6.6` 同附在本 release（含 `CANARY:` 判定行；并修掉了安全模式/未启动设备上发现不到卡的问题，管理员运行），自行编译亦可。
+> `ssdiag.exe.0.6.7` 同附在本 release（含 `CANARY:` 判定行、安全模式/未启动设备上的发现回退；金丝雀偏移同步修正为 `0x1480/0x1484`。管理员运行），自行编译亦可。
 >
 > 构建入口：与 v2.1.10 相同（`make-usbroot.ps1`），把 `BOOTX64.EFI` 换成该文件即可；卷根 marker 按各 issue 下面的要求放。
 
@@ -98,9 +98,11 @@ M1 `SAMPLE` 对非 console 卡可能整行全 `0xffffffff`，连 `PMC_BOOT_0` �
 
 边界说明：这是**固件当时的视图**，OS 运行期动态生成的 SSDT 不在其中；表可能包含整机序列号类信息，回收时留意。dump 失败不影响事务，日志里有 `ACPI-DUMP:` 行记录每一步。
 
+一个健康的 `index.txt` 是**一表一行**、以文件名接 `written` 结尾。首次实机跑暴露过三个只在这条路径上的缺陷，现已修：SSDT 落盘文件名误带 `\acpi\` 前缀（句柄本来就是 `\acpi`，于是每张 SSDT 都 `WRITE FAILED (create failed)`）、索引行之间没有换行、creator 偏移误读在 +36（正确 +28，表体也自 +36 起）。若 `index.txt` 又是连成一行，说明盘里的 `BOOTX64.EFI` 还是旧构建。
+
 ## 6. 回收清单
 
 1. 完整 `loader.log`；
 2. Windows 侧：`Get-PnpDevice -Class Display | fl FriendlyName,Status,Problem,ProblemDescription,InstanceId`（#165 在**解锁后未重启的病态状态里先取**，再谈重启）；
-3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.6 及以上**，含 `CANARY:` 判定行；发现阶段空结果时 0.6.6 会逐条打印跳过原因，连 `display-class devnodes carrying VEN_10DE: N` 一起贴回来；
+3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.7 及以上**，含 `CANARY:` 判定行；发现阶段空结果时 0.6.7 会逐条打印跳过原因，连 `display-class devnodes carrying VEN_10DE: N` 一起贴回来；
 4. BIOS 状态与电源瓦数（#165 必附）。
