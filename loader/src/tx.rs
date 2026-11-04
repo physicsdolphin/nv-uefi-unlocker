@@ -764,14 +764,31 @@ fn asset_cache_disabled() -> bool {
     off
 }
 
-/// Free the read-through cache back to the firmware allocator
-/// (`\tx-free-assets.txt`, issue #146). After the transaction the cache is
-/// dead weight - the chain never re-reads assets - so handing bootmgfw a
-/// map without the ~84 MiB resident asset image is the candidate fix shape
-/// for the winload-stage 0xc000009a. Pool backing pages are returned on
-/// drop, so this genuinely shrinks the handoff map; the CHAIN-MEMMAP dump
-/// right after is the read-back (constitution 1.1).
-pub fn clear_asset_cache() {
+/// Hand the read-through cache back to the firmware allocator before the
+/// chain (issue #146). **Default since v2.1.11**: past this point nothing
+/// re-reads an asset, and the ~84 MiB pool allocation sits in the middle of
+/// the one large conventional run below 4 GiB that a Windows OS loader
+/// allocates its boot block from. winload does not stitch descriptors
+/// together, so the carve-out alone is enough to fail that reservation
+/// (0xc000009a) on a 32 GiB machine with 2.4 GiB still free - see
+/// docs/handoff-lowmem.en.md.
+///
+/// Runs on every path that reaches the chain (transaction, abort control and
+/// `\tx-dry-run.txt` alike); freeing is idempotent. `\tx-keep-assets.txt`
+/// opts out (A/B, and an escape hatch if a future machine ever wants the
+/// pre-warmed cache back); `\tx-free-assets.txt` is still accepted and is now
+/// a no-op. Pool backing pages are returned on drop, so this genuinely
+/// shrinks the handoff map; CHAIN-MEMMAP right after is the read-back
+/// (constitution §1.1).
+pub fn handoff_free_assets() {
+    if probe_file(r"\tx-keep-assets.txt") {
+        info!("TX-ASSET-CACHE: \\tx-keep-assets.txt present - cache left resident across the chain");
+        return;
+    }
+    clear_asset_cache();
+}
+
+fn clear_asset_cache() {
     // Safety: single-threaded boot services; pointer use confined here.
     let cache = unsafe { &mut *ASSET_CACHE.0.get() };
     let (n, bytes) = cache.iter().fold((0usize, 0usize), |(n, b), (_, e)| {

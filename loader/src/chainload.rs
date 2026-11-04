@@ -76,6 +76,12 @@ fn is_nvidia_display(handle: uefi::Handle) -> bool {
 /// path below, unchanged.
 pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
     info!("PHASE: CHAIN");
+    // Residency hygiene before the record is taken (issue #146, default since
+    // v2.1.11): hand our own asset pool back so the map below is the one the
+    // OS loader will actually inherit. `\tx-keep-assets.txt` opts out. tx
+    // builds only - non-tx builds never fill the cache.
+    #[cfg(feature = "tx")]
+    crate::tx::handoff_free_assets();
     log_handoff_memmap();
     if let Some(pre) = pre.as_ref() {
         if start_preloaded(pre).is_ok() {
@@ -93,6 +99,11 @@ pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
 /// reconnect; this one runs immediately before StartImage, so the residency
 /// question (preload + asset cache + pool fragmentation tail below 4GiB)
 /// has its read-back on the record in the same log. Read-only; every build.
+///
+/// `largest` is the number that decides the boot: ExitBootServices does not
+/// convert anything to conventional (EDK2 `CoreTerminateMemoryMap` only
+/// checks the map key) and winload reserves its boot block out of a single
+/// descriptor, so contiguity - not the conventional total - is what matters.
 fn log_handoff_memmap() {
     use uefi::mem::memory_map::{MemoryMap as _, MemoryType};
     let Ok(mmap) = boot::memory_map(MemoryType::BOOT_SERVICES_DATA) else {
@@ -100,18 +111,22 @@ fn log_handoff_memmap() {
         return;
     };
     let mut lines = 0u32;
+    let mut total = 0u32;
     let mut conv_below4g_mib: u64 = 0;
     let mut resident_below4g_mib: u64 = 0;
+    let mut largest_below4g_mib: u64 = 0;
     for d in mmap.entries() {
         let end = d.phys_start.saturating_add((d.page_count as u64) * 4096);
         let mib = ((d.page_count as u64) * 4096) >> 20;
+        total += 1;
         if end <= 0x1_0000_0000 {
             if d.ty == MemoryType::CONVENTIONAL {
                 conv_below4g_mib += mib;
+                largest_below4g_mib = largest_below4g_mib.max(mib);
             }
-            // LOADER_DATA / BOOT_SERVICES_DATA: what our own path keeps
-            // resident (image, caches, pool buckets) - winload cannot
-            // allocate from these before ExitBootServices.
+            // LOADER_DATA / BOOT_SERVICES_DATA: what goes away at EBS (it
+            // returns to the OS as usable) but still occupies a descriptor
+            // when winload looks for one run big enough for its boot block.
             if matches!(d.ty, MemoryType::LOADER_DATA | MemoryType::BOOT_SERVICES_DATA) {
                 resident_below4g_mib += mib;
             }
@@ -122,7 +137,7 @@ fn log_handoff_memmap() {
         }
     }
     info!(
-        "CHAIN-MEMMAP: {conv_below4g_mib} MiB conventional / {resident_below4g_mib} MiB resident (LOADER+BS) below 4GiB ({lines} descriptors shown)"
+        "CHAIN-MEMMAP: {conv_below4g_mib} MiB conventional / {resident_below4g_mib} MiB resident (LOADER+BS) below 4GiB, largest block {largest_below4g_mib} MiB ({total} descriptors, {lines} shown)"
     );
 }
 

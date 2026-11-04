@@ -286,12 +286,10 @@ fn tx_phase(gpus: &[pci::FoundGpu]) {
 nothing was written, nothing was detached"
         );
     }
-    // \tx-free-assets.txt (issue #146): the cache is dead weight after the
-    // transaction - return it before the chain. Marker-gated for the A/B;
-    // the CHAIN-MEMMAP dump in chainload is the read-back.
-    if tx::probe_file(r"\tx-free-assets.txt") {
-        tx::clear_asset_cache();
-    }
+    // The asset cache is freed on the way into the chain, not here
+    // (chainload::chain_load_bootmgfw -> tx::handoff_free_assets, default
+    // since v2.1.11): the abort path and \tx-dry-run.txt need the same
+    // hygiene, and CHAIN-MEMMAP logs the map after the free.
 }
 
 /// One card's full transaction. Every outcome continues the multi-GPU
