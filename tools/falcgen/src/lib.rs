@@ -5,5 +5,6 @@
 //! payload synthesis (see docs/first-principles-payload-generator.md).
 
 pub mod decode;
+pub mod interp;
 pub mod isa;
 pub mod scan;

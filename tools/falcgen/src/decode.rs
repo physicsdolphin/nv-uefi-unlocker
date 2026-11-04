@@ -392,7 +392,6 @@ pub fn decode_one(buf: &[u8], off: usize, base: u64, var: Variant) -> Insn {
     let mut prefixes: Vec<Expr> = Vec::new();
     let mut operands: Vec<Operand> = Vec::new();
     let mut mods: Vec<(String, bool)> = Vec::new();
-    let mut cur: Option<Operand> = None;
     let mut seen_name = false;
     for item in st.items.drain(..) {
         match item {
@@ -402,9 +401,6 @@ pub fn decode_one(buf: &[u8], off: usize, base: u64, var: Variant) -> Insn {
                     name = s.to_string();
                     name_unk = isunk;
                 } else {
-                    if let Some(op) = cur.take() {
-                        operands.push(op);
-                    }
                     mods.push((s.to_string(), isunk));
                 }
             }
@@ -413,17 +409,15 @@ pub fn decode_one(buf: &[u8], off: usize, base: u64, var: Variant) -> Insn {
                     prefixes.push(e);
                     continue;
                 }
-                if cur.is_none() {
-                    cur = Some(Operand { mods: std::mem::take(&mut mods), exprs: Vec::new(), special });
-                }
-                cur.as_mut().unwrap().exprs.push(e);
+                // Each expression is its own operand carrying the mods
+                // accumulated since the previous operand (dis_parse_sinsn:
+                // every expr closes one operand; consecutive exprs never
+                // merge — the interpreter depends on this distinction).
+                let op = Operand { mods: std::mem::take(&mut mods), exprs: vec![e], special };
+                operands.push(op);
             }
         }
     }
-    if let Some(op) = cur.take() {
-        operands.push(op);
-    }
-
     let mut oplen = st.oplen;
     let mut unk_form = false;
     if oplen == 0 {

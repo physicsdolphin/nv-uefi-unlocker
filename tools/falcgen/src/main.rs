@@ -4,7 +4,8 @@ use std::process::ExitCode;
 
 fn usage() -> ! {
     eprintln!(
-        "usage: falcgen dis <file> [--base <va>] [--crypt] [--all-offsets]\n       falcgen scan <file> --base <va> [--crypt] [--check <va>,<va>,...]\n       falcgen lst-compare <file> <reference.lst> --base <va>"
+        "usage: falcgen dis <file> [--base <va>] [--crypt] [--all-offsets]\n       falcgen scan <file> --base <va> [--crypt] [--check <va>,<va>,...]\n       falcgen lst-compare <file> <reference.lst> --base <va>
+       falcgen run <file> --base <va> [--trace] [--steps N] [--sig-len N] [--sig-hex XX..]"
     );
     std::process::exit(2);
 }
@@ -31,6 +32,7 @@ fn main() -> ExitCode {
         Some("dis") => cmd_dis(&args[1..]),
         Some("scan") => cmd_scan(&args[1..]),
         Some("lst-compare") => cmd_lst_compare(&args[1..]),
+        Some("run") => cmd_run(&args[1..]),
         _ => usage(),
     }
     ExitCode::SUCCESS
@@ -163,5 +165,55 @@ fn cmd_lst_compare(args: &[String]) {
     println!("reference {} instructions, ours {}, mismatches {}", want.len(), got.len(), mismatches);
     if mismatches > 0 || want.len() != got.len() {
         std::process::exit(1);
+    }
+}
+
+fn cmd_run(args: &[String]) {
+    let mut file = None;
+    let mut base = 0u64;
+    let mut trace = false;
+    let mut steps = 20_000_000u64;
+    let mut sig_len = 0x10u32;
+    let mut sig_hex = String::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--base" => base = parse_num(it.next().expect("--base value")),
+            "--trace" => trace = true,
+            "--steps" => steps = parse_num(it.next().expect("--steps value")),
+            "--sig-len" => sig_len = parse_num(it.next().expect("--sig-len value")) as u32,
+            "--sig-hex" => sig_hex = it.next().expect("--sig-hex value").to_string(),
+            _ => file = Some(a.clone()),
+        }
+    }
+    let buf = read_file(file.expect("input file"));
+    let mut ip = falcgen::interp::Interp::new();
+    ip.max_steps = steps;
+    ip.trace = trace;
+    ip.seed_meta_sig_len(sig_len);
+    if !sig_hex.is_empty() {
+        let bytes: Vec<u8> = (0..sig_hex.len() / 2)
+            .map(|i| u8::from_str_radix(&sig_hex[i * 2..i * 2 + 2], 16).unwrap())
+            .collect();
+        ip.host_buffers.push(bytes);
+    } else {
+        ip.host_buffers.push(vec![0xaau8; 0x1000]);
+    }
+    ip.run(&buf, base);
+    println!("halted={} reason={} steps={} last_dma_sp={:?}", ip.halted, ip.exit_reason, ip.steps, ip.last_dma_sp);
+    println!("dma copies: {:?}", ip.dma_copies.iter().map(|d| (d.dst, d.len)).collect::<Vec<_>>());
+    if let Some(sp) = ip.last_dma_sp {
+        println!("stack dump (sp={sp:#x}):");
+        let top = (sp as usize).min(0x10000);
+        let lo = top.saturating_sub(0x100);
+        let mut a = lo;
+        while a + 4 <= 0x10000 {
+            let v = u32::from_le_bytes(ip.dmem[a..a + 4].try_into().unwrap());
+            let tag = if v == 0xd2408 { " <== canary" } else if (0x100..0x8500).contains(&v) { " <== imem-range (ret?)" } else { "" };
+            println!("  {a:#06x}: {v:#010x}{tag}");
+            a += 4;
+        }
+    } else {
+        println!("io writes (first 40): {:?}", ip.io_writes.iter().take(40).map(|(a, v)| (format!("{a:#x}"), format!("{v:#x}"))).collect::<Vec<_>>());
     }
 }

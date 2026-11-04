@@ -83,7 +83,7 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > **G0 已落地（2026-11-05，分支 falcon-booter-payload-gen，6d7a4dc/e75046d）**：
 > - 解码器：falcon.c 18 表 + core-dis.c 引擎语义全转写 Rust（tools/falcgen）；线性解码在**五份解密 booter 段上与 envydis lst 逐条零分歧**（TU102/TU116/GA102/AD102/GA100，54,670 条）+ 360 个非规范偏移逐点对拍（env-gated oracle 测试）。
 > - 扫描器：前向行走分类移植，**17/17 已知代码入口全中**——TU102 6/6（含 python 版 miss 的中项 0x10b9/0xc95）、GA102 5/5、AD102 6/6（0x31b5 status writer 形状正确：DmemStore+mailbox 立即数+LCall）。
-> - **G0 实证发现**：中项 gadget 流穿过 envydis 2012 年表无法解码的字节（`ab` 操作码族、fucold 排除形态）——硅片能解码；cmp50hx 文档独立记载"gadget PC 处的 archive 字节不是运行时 gadget 字节"。处置：扫描器容忍未知字节继续行走（候选由黄金表仲裁）；G1/G2 须把"envydis 可解码"视为**既不必要也不充分**的执行性判据。
+> - **G0 实证发现（2026-11-05 勘误）**：初判"envydis 表有编码空洞"**有误**——盲区是 **CRYPT 特性位未开启**（lst 生成时无 crypt）；开启 `F_CRYPT` 后五段 **零未知指令**，SEC 入口页解码为 `csigclr` + csecret/cxor 清密钥序列，全部 ??? 簇都是 cxset/cocmd 族密码指令。扫描器/解释器已改用 FUC5_CRYPT。cmp50hx 的"gadget PC 处 archive 字节≠运行时字节"独立成立（不同密钥流）。同日落地 **G1 Track B 窄解释器**（src/interp.rs）：明文喂入、MMIO 桩、DMA-as-copy；bring-up 至 41K 条真实指令，**main SP = 0xFFF0 已由解释器推导**（与 nlzy 表 golden 一致）+ SEC 入口 SP init 0xfffc / canary 0x6140 / park 0x7ea4 机械化推导。当前 frontier：mpush/mpopaddret 族 ABI 无公开文档（envytools branch.rst 自注 todo），booter 自身 canary 存储与返回槽关系的 bring-up 迭代进行中。
 > - 复评结论：G1 双轨并行（用户裁定）按原案启动；G2/G3 排程不变。
 
 | 里程碑 | 内容 | 验收 | 估时 |
