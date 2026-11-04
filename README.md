@@ -256,6 +256,16 @@ bash release/make-usbroot.sh --family 40 \
 
 本项目是社区工作的直接受益者与衍生者，完整致谢见
 [docs/credits.md](docs/credits.md)（按仓库历史中的实际作用核对归类）。
+
+**单独点名一处方法贡献**：v2.1.10 起成为默认显示恢复路径的 native-GOP
+console 重建（从本卡影子 Option ROM 提取未改原厂 GOP 并显式启动）由
+[@seti9585](https://github.com/seti9585) 在
+[#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107) 提出——其自有的
+[RTX4080SUPER-Tensor-Core-Unlocker](https://github.com/seti9585/RTX4080SUPER-Tensor-Core-Unlocker)
+先证了机制，其对首版实现的源码复审抓出了 `EFI_DECOMPRESS` 协议结构体的字段错位
+（#128 冻结点真因，`edecba5`）。贡献记录见
+[credits.md §6](docs/credits.md)，发布说明同列署名。该方法是行为借鉴、代码独立实现（其仓库无许可头）。
+
 开发期实际研读与引用的仓库已 clone 至本地 `reference/`（不入库），按作用分组：
 
 **事务链母本与一手权威**
