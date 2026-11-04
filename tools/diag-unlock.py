@@ -9,7 +9,8 @@ Families (PMC_BOOT_0 bits [31:20]):
   Ampere/Ada (0x170..0x17F, 0x220..0x22F, 0x100)  0x00823804 / 0x0082381C / 0x00823820
   (+ READOUT_1 0x00823818 on the 0x823xxx block; 0x00409668 on Turing, per
   nlzy/turing-unlock - same constant ssdiag carries, issue #42)
-  Blackwell (0x1A0..0x1BF) shares the 0x823xxx block and additionally prints
+  Blackwell (0x1A0..0x1BF, plus 0x210..0x21F for the GB202 RM-dump form)
+  shares the 0x823xxx block and additionally prints
   its fuse selectors. Blackwell is READ-ONLY: no SEC2 stage, no GB20x booter,
   so the PLM can only be opened by PL3 firmware and --reapply always refuses
   (issue #168, docs/blackwell-gb20x-status.md). READOUT_1 is decoded with the
@@ -54,7 +55,6 @@ BLACKWELL = dict(GAADA)
 BLACKWELL_ROWS = [
     ("FUSE_EN_SW_OVERRIDE", 0x0082_0040),
     ("FUSE_SS_PLM", 0x0082_00FC),
-    ("FUSE_FEAT_OVR_DIS", 0x0082_03F0),
     ("SECURE_FEAT_OVR_QUADRO_WR", 0x0082_038C),
     ("FUSE_SS_DP", 0x0082_0224),
     ("FUSE_SS_FFMA", 0x0082_059C),
