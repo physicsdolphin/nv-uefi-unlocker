@@ -18,7 +18,7 @@
 | 事务本体 | 全绿：PLM 翻转 ~149.7 ms、SS0/SS1 过 FLR、HANDOFF-OUT 三值对、FINAL 释放全部 DMA |
 | abort 负控（ESC，零 GPU 写/零 detach/零重连） | **通过**，干净进系统 → 链载与 BCD 无罪 |
 | `\no-reconnect.txt` / `\tx-reconnect-nonrecursive.txt` | 都盲崩（无 console）→ 重连双向排除 |
-| `\tx-dry-run.txt`（跳过事务，保留预载驻留） | **通过** → 只剩"事务叠加的驻留/副作用"一族 |
+| `\tx-dry-run.txt`（跳过事务；该路径不读资产，缓存不填写） | **通过** → 预载本身无害，且给出健康态的单块 2604 MiB |
 | 真事务 + `\tx-free-assets.txt` | **通过**，同机同盘同 BCD |
 
 三跑的内存图（`CHAIN-MEMMAP`，StartImage 前采）把变量钉死在一个数字上：
@@ -31,7 +31,7 @@ R4 真事务 ：0x10327000-0xa8eda000 (2443 MiB) CONVENTIONAL
 R3 真事务+free：0x10327000-0xb2f82000 (2604 MiB) CONVENTIONAL        -> 干净启动
 ```
 
-三跑的 conventional 总量分别是 2871 / 2790 / 2871 MiB（相差正好一个洞），resident 是 91 / 170 / 90 MiB。**R1 与 R4 的差别只有那块洞**，R3 把洞填回去就恢复——纯描述符层面的因果，不掺任何 GPU 状态。
+三跑的 conventional 总量分别是 2871 / 2790 / 2871 MiB（相差正好一个洞），resident 是 91 / 170 / 90 MiB。**R3 与 R4 只差"释放"这一个动作**（同事务、同盘、同 BCD），洞填回去就恢复——纯描述符层面的因果，不掺任何 GPU 状态。R1 的角色弱一些：dry-run 走不到资产读取，它的缓存根本没被填写（resident 91 MiB、无 `TX-ASSET-DIAG` 行），所以它证明的是"预载本身无害、且 2604 MiB 单块就是健康态"，不证明"GPU 副作用无罪"。
 
 ## 2. 规范怎么说
 

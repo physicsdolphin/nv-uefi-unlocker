@@ -42,4 +42,4 @@ CHAIN-MEMMAP: 2871 MiB conventional / 90 MiB resident (LOADER+BS) below 4GiB (64
 | resident (LOADER+BS) | 91 | 170 | 90 |
 | 结局 | 干净启动 | 0xc000009a | 干净启动 |
 
-R1 与 R4 的唯一差别是那块 80 MiB 的洞；R3 把洞填回去，块与总量同时回到 R1 的数值。resident 总量三跑相差 80 MiB，与洞等大——即变量是**位置**（劈开唯一大块）而不是"多占了 80 MiB"。
+R3 与 R4 只差释放这一个动作（同事务、同盘、同 BCD），把洞填回去，块与总量同时回到 R1 的数值。resident 总量三跑相差 80 MiB，与洞等大——即变量是**位置**（劈开唯一大块）而不是"多占了 80 MiB"。注意 R1 的缓存并未填写（dry-run 不读资产、无 `TX-ASSET-DIAG`），所以 R1 只作健康态基线，不作为 GPU 副作用的对照。

@@ -18,7 +18,7 @@
 | Transaction proper | Green: PLM flip ~149.7 ms, SS0/SS1 survive FLR, HANDOFF-OUT all three set, FINAL releases all DMA |
 | Abort control (ESC: zero GPU writes, no detach, no reconnect) | **Passes**, boots cleanly → chain and BCD exonerated |
 | `\no-reconnect.txt` / `\tx-reconnect-nonrecursive.txt` | Both blind-crash (no console) → reconnect exonerated in both directions |
-| `\tx-dry-run.txt` (skip the transaction, keep the preload residency) | **Passes** → only "residency/side effects the transaction adds" is left |
+| `\tx-dry-run.txt` (transaction skipped; this path reads no assets, so the cache stays empty) | **Passes** → the preload alone is harmless, and it gives the healthy single 2604 MiB run |
 | Real transaction + `\tx-free-assets.txt` | **Passes**, same machine, same stick, same BCD |
 
 The memory maps of the three runs (`CHAIN-MEMMAP`, captured immediately before StartImage) pin the variable to one number:
@@ -31,7 +31,7 @@ R4 real tx      : 0x10327000-0xa8eda000 (2443 MiB) CONVENTIONAL
 R3 real tx+free : 0x10327000-0xb2f82000 (2604 MiB) CONVENTIONAL       -> clean boot
 ```
 
-Total conventional below 4 GiB: 2871 / 2790 / 2871 MiB (the difference is exactly the hole); resident: 91 / 170 / 90 MiB. **Between R1 and R4 the hole is the only difference**, and filling it back in (R3) restores the boot - a cause at the descriptor level, with no GPU state in it.
+Total conventional below 4 GiB: 2871 / 2790 / 2871 MiB (the difference is exactly the hole); resident: 91 / 170 / 90 MiB. **R3 and R4 differ in one action only - the free** (same transaction, same stick, same BCD) - and filling the hole back in restores the boot: a cause at the descriptor level, with no GPU state in it. R1's role is weaker: the dry run never reaches asset reads, so its cache is never filled (91 MiB resident, no `TX-ASSET-DIAG` lines); it shows that the preload alone is harmless and that 2604 MiB in one descriptor is the healthy state, not that the GPU side effects are innocent.
 
 ## 2. What the specification says
 

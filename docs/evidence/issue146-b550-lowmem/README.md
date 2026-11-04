@@ -10,7 +10,7 @@
 
 | 文件 | 内容 |
 |---|---|
-| `loader_r1.log` | R1 `\tx-dry-run.txt`：跳过事务、保留预载，**通过** |
+| `loader_r1.log` | R1 `\tx-dry-run.txt`：跳过事务（该路径不读资产，缓存不填写），预载照旧，**通过** |
 | `loader_r4.log` | R4 真事务、无标记：**0xc000009a**，带失败态 `CHAIN-MEMMAP` |
 | `loader_r3.log` | R3 真事务 + `\tx-free-assets.txt`：**通过**，缓存 84,388,324 B 归还，2604 MiB 块复原 |
 | `memmap-diff.md` | 三跑内存图主干对照与差值表 |
@@ -21,7 +21,7 @@
 ## 判据链
 
 1. abort 负控通过 → 驱动链载/BCD 无罪；两个重连旋钮都盲崩 → 重连双向排除。
-2. R1（跳过事务、保留驻留）通过 → 事务的 GPU 副作用无罪；但注意 R1 的缓存进的是**预备阶段**，缓存本身在 R1 里并未填写（resident 91 MiB）。
+2. R1（跳过事务）通过，但该路径**不读资产**、缓存未填写（resident 91 MiB、无 `TX-ASSET-DIAG`）——它只证明预载无害并给出健康态基线，不隔离 GPU 副作用。
 3. R4 复现，且 `CHAIN-MEMMAP` 显示唯一的 2604 MiB 大块被 80 MiB `LOADER_DATA` 劈成 2443+80。
 4. R3 在 cache 被显式释放后通过，块恢复 2604 MiB、总量回到 2871 MiB——与 R1 完全同形。
 

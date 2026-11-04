@@ -177,13 +177,13 @@ fn main() -> Status {
 
     #[cfg(feature = "tx")]
     if let keywait::Confirm::Proceed = confirmed {
-        // \tx-dry-run.txt (issue #146): skip the transaction entirely - the
-        // armed prep still filled the asset cache and the OS loader is still
-        // preloaded, so the chain hands bootmgfw the FULL residency with zero
-        // GPU writes, no detach, no reconnect. The decisive control between
-        // "handoff residency" and "transaction side effects".
+        // \tx-dry-run.txt (issue #146): skip the transaction entirely. The OS
+        // loader is still preloaded, but this path never reaches an asset
+        // read, so the cache stays EMPTY - the control is "preload residency,
+        // zero GPU writes, no detach, no reconnect", not "full residency".
+        // (Measured: the dry-run log has no TX-ASSET-DIAG line at all.)
         if chainload::boot_volume_has(cstr16!(r"\tx-dry-run.txt")) {
-            info!("TX-DRY-RUN: \\tx-dry-run.txt present - the GPU transaction is SKIPPED this boot (zero writes, no detach; prep + preload residency control, issue #146)");
+            info!("TX-DRY-RUN: \\tx-dry-run.txt present - the GPU transaction is SKIPPED this boot (zero writes, no detach; preload residency control - assets are NOT read on this path, issue #146)");
         } else {
             tx_phase(&gpus);
         }
