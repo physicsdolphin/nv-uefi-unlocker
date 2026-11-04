@@ -175,7 +175,7 @@ WPR2 is the corroborating signal: the only register the booter itself wrote this
 
 Two methodological limits, both of which produce false verdicts - read them before running anything:
 
-- **Safe-mode pairing fails on MUXless machines**: while the dGPU is parked its BAR0 is unreadable, so `ssdiag` has nothing to read - safe mode can prove "the driver was not involved" but yields no sample (Catnip on [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)). Use the [Linux live read-back method](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) or read the ACPI tables instead.
+- **Safe-mode pairing fails two ways**: ① on MUXless machines the parked dGPU's BAR0 is unreadable, so `ssdiag` has nothing to read - safe mode can prove "the driver was not involved" but yields no sample (Catnip on [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)); ② even when BAR0 reads, the pmxdrv vehicle inside `ssdiag` hits `win32 1084` (`ERROR_NOT_SAFEBOOT_SERVICE`) on `StartService` - Windows refuses to start any kernel driver not listed under `SafeBoot\Minimal` (measured on #37, Victus). The safe-mode split is structurally unavailable for `ssdiag`; go straight to the [Linux live read-back method](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) or the ACPI tables.
 - **`WPR2_HI` alone does not work**: the driver's own FWSEC rebuilds the window on the next boot, so the value changes anyway; it is only meaningful paired with `wpr2_lo` and compared bit-for-bit against this boot's handoff value.
 
 ### The mechanisms that can send it back to factory
@@ -189,6 +189,8 @@ Two methodological limits, both of which produce false verdicts - read them befo
 | 5 | **Our own tail**: the native-GOP rebuild `StartImage`s the card's ROM | - | Some platforms' ROM POST runs devinit | Broken at `POST-GOP` but fine at `POST-FLR` |
 
 Rows 1-2 are physical events, row 3 is the firmware contract (below), and row 5 is the only one still in our hands - `\tx-reconnect-legacy.txt` makes the handoff tail reconnect the vendor stack instead of `StartImage`.
+
+**Row 1 has a full field pairing caught by both axes** (2026-11-04, [#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37), HP Victus 16 `25a2`, hybrid-only platform, `docs/evidence/issue37-hp-victus-25a2/`): on the EFI side the canary was set and read back intact with the card in D0 at handoff; in the OS the canary is cleared + FEAT re-derived to factory + the root port `00:01.0` reading `D3` in PMCSR. FLR is excluded by the same log (the chain's own `POST-FLR` proves GA10x selectors survive it), so an event that exceeds FLR is the conventional-reset family, and the port in D3 tips the form to row 1. Contrast: our TU106 desktop read canary intact with both endpoints D0 - that is what a write-type loss looks like; #148 (GA107M 25a0, Linux) was the reset-free devinit rewrite (its canary would have been intact). Same die, different platform, different row.
 
 ### Who actually cuts the power on the platform
 

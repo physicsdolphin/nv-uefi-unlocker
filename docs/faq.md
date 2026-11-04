@@ -186,7 +186,7 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 
 两点方法学限制（都会导致假结论，先看再跑实验）：
 
-- **MUXless 机器的安全模式配对会失效**：dGPU 停泊时 BAR0 读不到，`ssdiag` 无从取数——安全模式只能证明"驱动没参与"，不能给出读回（Catnip 在 [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) 指出）。这类机器要改用 [Linux live 读回法](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)或直接看 ACPI。
+- **安全模式配对有两条失效路**：① MUXless 机器 dGPU 停泊时 BAR0 读不到，`ssdiag` 无从取数——安全模式只能证明"驱动没参与"，不能给出读回（Catnip 在 [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) 指出）；② 即使 BAR0 读得到，`ssdiag` 的 pmxdrv 载具在安全模式里 `StartService` 会撞 `win32 1084`（`ERROR_NOT_SAFEBOOT_SERVICE`）——未列入 `SafeBoot\Minimal` 白名单的内核驱动在安全模式一律不可启动（#37 Victus 实测）。安全模式切分对 `ssdiag` 结构性不可用，直接走 [Linux live 读回法](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)或看 ACPI。
 - **`WPR2_HI` 单独不能用**：driver 自己的 FWSEC 会在下一个 boot 重新建窗，值本来就变，只有和 `wpr2_lo` 成对、且与本次交棒值逐位对照才有意义。
 
 ### 机制盘点：谁能让它回厂
@@ -200,6 +200,8 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
 
 第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改的地方——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
+
+**第 1 行已有两轴同抓的完整现场对**（2026-11-04，[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)，HP Victus 16 `25a2` 纯混合平台，`docs/evidence/issue37-hp-victus-25a2/`）：EFI 侧金丝雀设置并读回完好、交棒时卡 D0 → 系统内金丝雀清零 + FEAT 回厂推导值 + 根口 `00:01.0` PMCSR `D3`。FLR 被同日志排除（本链 `POST-FLR` 自证 GA10x 选择器活过 FLR），事件超出 FLR 即常规复位族，根口 D3 把形态压向第 1 行。对照组：TU106 桌面金丝雀 intact + 双端 D0（写入型才会长这样）；同为 GA107M 的 [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)（Linux）是无复位的 devinit 重写（金丝雀应完好）——同 die、不同平台、不同行。
 
 ### 平台上到底是谁在断电
 
