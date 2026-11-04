@@ -912,7 +912,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     let bl_vec = BL_START_TAG << 8;
     info!(
         "FWSEC-TU10X: BL at IMEM dst={bl_dst:#x} (hwcfg {imem_blocks} blocks), BOOTVEC={bl_vec:#x}{}",
-        if bl_dst == bl_vec { "" } else { "  <== dst != 0xfd00 (50HX saw 0xfd00 on TU102/TU106)" }
+        if bl_dst == bl_vec { "" } else { "  <== dst != 0xfd00 (BL link addr; a 256-block IMEM puts it at 0xfe00 - normal, seen on every TU106/TU102 success too)" }
     );
     crate::tx_portal::portal_load_imem(gpu, GSP, bl_dst, bl_vec, &bl[..BL_CODE_SIZE], false);
 
