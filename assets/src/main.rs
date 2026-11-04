@@ -140,8 +140,10 @@ fn vbios(rom: &Path) -> Result<(), String> {
 /// Proven BOOT_DIRECT bootloader slice: verify the cmp50hx GspRmBoot debug
 /// archive (pinned sha) and emit its first 0x6000 bytes as gsp_boot_tu10x.bin
 /// — the exact image our TU106 unlock fired with, and the same input the
-/// 50HX/40HX/chenxluo Windows runs fed the booter.
-fn slice_proven_rm_boot(blob: &Path, outdir: &Path) -> Result<(), String> {
+/// 50HX/40HX/chenxluo Windows runs fed the booter. The GspRmBoot archive is
+/// Turing-shared (the driver generates only a TU102 one), so tu11x sticks
+/// slice the same bytes under their own name.
+fn slice_proven_rm_boot(blob: &Path, outdir: &Path, family: &str) -> Result<(), String> {
     use assets::manifest::{sha256_hex, tu10x_610 as pins};
     let data = std::fs::read(blob).map_err(|e| format!("read: {e}"))?;
     let src_digest = sha256_hex(&data);
@@ -157,11 +159,72 @@ fn slice_proven_rm_boot(blob: &Path, outdir: &Path) -> Result<(), String> {
         return Err(format!("proven slice mismatch: {digest}"));
     }
     std::fs::create_dir_all(outdir).map_err(|e| e.to_string())?;
-    std::fs::write(outdir.join("gsp_boot_tu10x.bin"), slice).map_err(|e| e.to_string())?;
+    std::fs::write(outdir.join(format!("gsp_boot_{family}.bin")), slice).map_err(|e| e.to_string())?;
     println!(
-        "gsp_boot_tu10x.bin: {} bytes, SHA-256 verified (proven BL slice, fired on TU106 2026-10-27)",
+        "gsp_boot_{family}.bin: {} bytes, SHA-256 verified (proven BL slice, fired on TU106 2026-10-27; Turing-shared)",
         slice.len()
     );
+    Ok(())
+}
+
+/// TU116/TU117 (GTX 16 / CMP 30HX) booter route — issue #151. The die-keyed
+/// parts come from the pinned TU116 archive (image 58880B, patch slot
+/// 0x8600, own 16B prod signature); the GspRmBoot desc and the generic
+/// falcon BL are Turing-shared and rebuild from the same TU102 sources as
+/// extract-tu10x (the driver ships no _TU116 archives for them).
+fn extract_tu11x(source: &Path, outdir: &Path) -> Result<(), String> {
+    use assets::booter::{build_bundle_direct, build_gsp_boot_v4};
+    use assets::manifest::{sha256_hex, tu11x_610 as pins};
+    let root = "NVIDIA-kernel-module-source-610.43.03/src/nvidia/generated/";
+    let write_derived = |name: &str, data: &[u8], pinned: &str| -> Result<(), String> {
+        let digest = sha256_hex(data);
+        if pinned != "UNMEASURED" && digest != pinned {
+            return Err(format!("TU116 derived asset mismatch: {name} ({digest})"));
+        }
+        std::fs::write(outdir.join(name), data).map_err(|e| e.to_string())?;
+        if pinned == "UNMEASURED" {
+            println!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len());
+        } else {
+            println!("TU116 derived {name}: {} bytes, SHA-256 verified", data.len());
+        }
+        Ok(())
+    };
+    std::fs::create_dir_all(outdir).map_err(|e| e.to_string())?;
+    // Die-keyed booter: the TU116 archive.
+    let booter_src = assets::archive::extract_member_xz(source, &format!("{root}{}", pins::BINDATA_BOOTER_LOAD))
+        .map_err(|e| e.to_string())?;
+    if sha256_hex(&booter_src) != pins::BINDATA_BOOTER_LOAD_SHA256 {
+        return Err("pinned TU116 generated source mismatch (booter)".into());
+    }
+    // Turing-shared GspRmBoot: same TU102 source extract-tu10x pins.
+    let boot_src = assets::archive::extract_member_xz(source, &format!("{root}{}", pins::BINDATA_GSP_RM_BOOT))
+        .map_err(|e| e.to_string())?;
+    if sha256_hex(&boot_src) != pins::BINDATA_GSP_RM_BOOT_SHA256 {
+        return Err("pinned Turing generated source mismatch (gsp rm boot)".into());
+    }
+    let booter = build_bundle_direct(&String::from_utf8(booter_src.clone()).map_err(|_| "non-ascii")?)
+        .map_err(|e| e.to_string())?;
+    let (_image, desc) = build_gsp_boot_v4(&String::from_utf8(boot_src.clone()).map_err(|_| "non-ascii")?)
+        .map_err(|e| e.to_string())?;
+    // Turing-shared generic falcon BL for the FWSEC fire (TU102 source).
+    let bl_src = assets::archive::extract_member_xz(source, &format!("{root}{}", pins::BINDATA_SEC2_BL))
+        .map_err(|e| e.to_string())?;
+    if pins::BINDATA_SEC2_BL_SHA256 != "UNMEASURED" && sha256_hex(&bl_src) != pins::BINDATA_SEC2_BL_SHA256 {
+        return Err("pinned Turing generated source mismatch (sec2 bl)".into());
+    }
+    let bl = assets::bindata::array_bytes(
+        &String::from_utf8(bl_src.clone()).map_err(|_| "non-ascii")?,
+        "UCODE_IMAGE",
+    )
+    .map_err(|e| e.to_string())?
+    .data;
+    // Raw generated sources stay on disk for forensics (never enter git).
+    std::fs::write(outdir.join("booter_load_tu11x_raw.c"), &booter_src).map_err(|e| e.to_string())?;
+    std::fs::write(outdir.join("gsp_boot_tu11x_raw.c"), &boot_src).map_err(|e| e.to_string())?;
+    std::fs::write(outdir.join("sec2_bl_tu11x_raw.c"), &bl_src).map_err(|e| e.to_string())?;
+    write_derived("booter_load_tu11x.bin", &booter, pins::DERIVED_BOOTER_LOAD)?;
+    write_derived("gsp_boot_desc_tu11x.bin", &desc, pins::DERIVED_GSP_BOOT_DESC)?;
+    write_derived("sec2_bl_tu11x.bin", &bl, pins::DERIVED_SEC2_BL)?;
     Ok(())
 }
 
@@ -311,7 +374,7 @@ fn locate_rom_start(raw: &[u8]) -> usize {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> [all | family...] | vbios <rom>>";
+    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | generate-tu11x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-tu11x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> [tu10x|tu11x] | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> [all | family...] | vbios <rom>>";
     let result = match args.get(1).map(String::as_str) {
         Some("generate") => {
             let out: PathBuf = args
@@ -349,6 +412,18 @@ fn main() {
                 Ok(())
             })
         }
+        Some("generate-tu11x") => {
+            let out: PathBuf = args
+                .get(2)
+                .cloned()
+                .unwrap_or_else(|| "v67-tu11x-four-plm.bin".into())
+                .into();
+            assets::payload::build_pinned_tu116().and_then(|payload| {
+                std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
+                println!("wrote {} ({} bytes, SHA-256 verified; RE-derived, not field-proven - issue #151)", out.display(), payload.len());
+                Ok(())
+            })
+        }
         Some("extract") => match (args.get(2), args.get(3)) {
             (Some(s), Some(o)) => extract(Path::new(s), Path::new(o)),
             _ => Err(usage.to_string()),
@@ -361,11 +436,20 @@ fn main() {
             (Some(s), Some(o)) => extract_tu10x(Path::new(s), Path::new(o)),
             _ => Err(usage.to_string()),
         },
-        // slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir>
+        Some("extract-tu11x") => match (args.get(2), args.get(3)) {
+            (Some(s), Some(o)) => extract_tu11x(Path::new(s), Path::new(o)),
+            _ => Err(usage.to_string()),
+        },
+        // slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> [tu10x|tu11x]
         // Verifies the pinned cmp50hx GspRmBoot debug archive and writes the
-        // proven 24KiB bootloader slice as gsp_boot_tu10x.bin.
+        // proven 24KiB bootloader slice as gsp_boot_<family>.bin (the
+        // archive is Turing-shared; default family tu10x).
         Some("slice-proven-rm-boot") => match (args.get(2), args.get(3)) {
-            (Some(s), Some(o)) => slice_proven_rm_boot(Path::new(s), Path::new(o)),
+            (Some(s), Some(o)) => slice_proven_rm_boot(
+                Path::new(s),
+                Path::new(o),
+                args.get(4).map(|s| s.as_str()).unwrap_or("tu10x"),
+            ),
             _ => Err(usage.to_string()),
         },
         Some("extract-scrub") => match (args.get(2), args.get(3)) {

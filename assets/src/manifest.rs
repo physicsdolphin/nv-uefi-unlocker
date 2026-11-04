@@ -148,6 +148,41 @@ pub mod tu10x_610 {
         "b0ec90294d1de3c67e024631c0a11000f281470d76eed806fc24c66b7fd1ef41";
 }
 
+/// TU116/TU117 (GTX 16 series / CMP 30HX) route — issue #151. The die ships
+/// its own booter archive in 610.43.03: same engine id (1), ucode id (0xd)
+/// and patch meta as tu10x, but a die-keyed image (58880 bytes vs 59136)
+/// and its own 16-byte prod signature; the patch slot sits at 0x8600
+/// (tu10x: 0x8700). GspRmBoot and the generic falcon BL are Turing-shared —
+/// the driver generates only TU102 archives for them — so those pins are
+/// re-exported from tu10x_610 unchanged.
+pub mod tu11x_610 {
+    pub const BINDATA_BOOTER_LOAD: &str = "g_bindata_kgspGetBinArchiveBooterLoadUcode_TU116.c";
+    pub const BINDATA_BOOTER_LOAD_SHA256: &str =
+        "57e1a11e72647c511c43ea1d06da07ab1ad7e0a2099859d4e2088cd78f2a9496";
+
+    pub use super::tu10x_610::{
+        BINDATA_GSP_RM_BOOT, BINDATA_GSP_RM_BOOT_SHA256, BINDATA_SEC2_BL,
+        BINDATA_SEC2_BL_SHA256, DERIVED_GSP_BOOT, DERIVED_GSP_BOOT_DESC,
+        PROVEN_RM_BOOT_SLICE_LEN, PROVEN_RM_BOOT_SLICE_SHA256,
+        PROVEN_RM_BOOT_SLICE_SRC_SHA256,
+    };
+    /// Derived from the pinned TU116 archive (measured 2026-11-04: 58968B
+    /// bundle = 72 + 58880 image + 16B sig table).
+    pub const DERIVED_BOOTER_LOAD: &str =
+        "2e78e446825e344542f2286d571ef3e05d0cf5af22fa22facfac6a0220ccfdbc";
+    /// Derived from the Turing-shared TU102 BL source (768B; same bytes as
+    /// sec2_bl_tu10x.bin).
+    pub const DERIVED_SEC2_BL: &str =
+        "f21f1cfbb8fffa8067685314367fc4c50f3f84dd99eda7c19db4292d9269b9d9";
+
+    /// TU116 V67 signature image — the TU102 frame table with the park word
+    /// re-anchored to the decrypted TU116 debug segment (0x7EA4 -> 0x7E9A,
+    /// see payload.rs). RE-derived, NOT field-proven: issue #151 is the
+    /// verification path.
+    pub const V67_TU11X_PAYLOAD_SHA256: &str =
+        "c79208ac3b9e49cb590dadceb84e7032055fbdfad27788d8da7cb6964a005750";
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
