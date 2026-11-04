@@ -907,11 +907,13 @@ pub fn log_dma_path(tag: &str, gpu: &PciIo) {
 }
 
 /// Read-only handoff-time PCI snapshot (issue #61 ask #2): GPU config
-/// header, capability walk (PCIe DevCtl/LnkCtl + MSI enable), and every
-/// bridge's Command / Bridge Control (VGA routing bits). Runs after the
-/// FLR/verify phase and before the reconnect, so the log pairs directly
-/// with the Windows-side pnputil dump of the same boot: a resource-class
-/// delta between the two pinpoints which side changed what.
+/// header, capability walk (PCIe DevCtl/LnkCtl + MSI enable), and - via
+/// [`diag_bridge_routing`] - every bridge's Command / Bridge Control (VGA
+/// routing bits). Runs after the FLR/verify phase and before the reconnect,
+/// so the log pairs directly with the Windows-side pnputil dump of the same
+/// boot: a resource-class delta between the two pinpoints which side
+/// changed what. The bridge half is snapshotted again after the restore
+/// (`HANDOFF-VGA-FINAL`), because this point still precedes it.
 #[cfg(feature = "tx")]
 pub fn diag_handoff_pci(gpu: &PciIo) {
     info!(
@@ -964,8 +966,20 @@ pub fn diag_handoff_pci(gpu: &PciIo) {
         }
         ptr = next;
     }
+    diag_bridge_routing("HANDOFF-PCI");
+}
+
+/// Every bridge's Command / Bridge Control (VGA routing bits), under a
+/// caller-supplied tag. Read-only, no driver binding. Two call sites are
+/// wanted (issue #165): the snapshot above runs BEFORE the console
+/// rebuild, so on its own it can only show the detach-time intermediate
+/// routing (the claim's Set(0x0007) drops the VGA bits) - the FINAL
+/// snapshot after the handoff restore records the bits Windows actually
+/// inherits.
+#[cfg(feature = "tx")]
+pub fn diag_bridge_routing(tag: &str) {
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
-        info!("HANDOFF-PCI bridge scan: locate_handle_buffer failed");
+        info!("{tag} bridge scan: locate_handle_buffer failed");
         return;
     };
     for handle in handles.iter() {
@@ -983,7 +997,7 @@ pub fn diag_handoff_pci(gpu: &PciIo) {
         }
         let loc = pci.get_location();
         info!(
-            "HANDOFF-PCI bridge {loc:?} cmd={:#06x} bridgectl={:#06x}",
+            "{tag} bridge {loc:?} cmd={:#06x} bridgectl={:#06x}",
             pci.config_read_u16(0x04),
             pci.config_read_u16(0x3e)
         );

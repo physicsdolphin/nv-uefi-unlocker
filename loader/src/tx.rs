@@ -1371,6 +1371,12 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // reconnect decision was, the boot-VGA owner must hold legacy VGA at
     // handoff. Idempotent, read back, BME untouched.
     crate::tx_detach::restore_vga(gpu.pci, claim.initial_attrs);
+    // The HANDOFF-PCI snapshot above runs before this restore, so its
+    // bridge lines are the detach-time intermediate state, not the state
+    // Windows inherits (issue #165: the only recorded bridgectl for the
+    // VGA-owning root port was 0x0010 with no FINAL counterpart). Re-dump
+    // the routing bits now, after the console rebuild and the VGA restore.
+    crate::pci::diag_bridge_routing("HANDOFF-VGA-FINAL");
 
     // POST-GOP readback (issue #164): the reconnect/native-GOP rebuild above
     // StartImage'd the card's own driver AFTER the POST-FLR verify, so the
