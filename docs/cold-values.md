@@ -33,6 +33,40 @@
 原 M4 候选机。M4 实际在 AD107M 28e0 上闭环（见 `ada28e0-uefi-report.md`）；
 GA106 卡在库未采样，本节待实机后补。
 
+## GA104（RTX 3070，10de:2484）——社区采样（issue #164，2026-11-04）
+
+非本机；来源为报告者 U 盘 `\loader.log` 的 SAMPLE 段（X570 AORUS ULTRA 桌面、
+独显单卡、VBIOS 94.04.25.00.ed、驱动 617.42）。**条件限定**：该轮是 Windows
+重启（快速启动开），入口状态是上一轮驱动复位后留下的厂态，不是断电冷采样；
+即便如此仍是首张 GA10x 台式卡表。
+
+| 寄存器 | 值 | 解读 |
+|---|---|---|
+| PMC_BOOT_0 | 0xb74000a1 | GA104 ✓ |
+| FB_SIZE_MIB | 0x2000（8192MiB） | 8GB 布局 |
+| VGA_WORKSPACE | 0x00010e09 | 本卡为 console owner（bit3=1） |
+| GFW_PLM / SCRATCH | 0x00008b8f / 0x000003ff | GFW 已跑完 |
+| GSP_CPUCTL 0x110100 | 0x10（HALTED） | 驱动未点火 |
+| PGC6_BSI_SCRATCH15 | 0x201001bf | handoff=1, DONE=3（与 GA10x 同形态） |
+| MMU_PLM / LOCK | 0x0045cb8f / 0x00100000 / 0x01effff0 | 与 AD107 同族 |
+| WPR2_LO/HI | 0x1ffffe00 / 0x0 | 空窗口；hi=0 守卫放行 |
+| SEC2_CPUCTL | 0xbadf5620 | 与 AD107 同一 0x56xx 冷态变体 |
+| FUSE_OPT_FEAT_OVR_DISABLE | 0x0 | 解锁域存在 |
+| FUSE_VER / DECODE | 0x3 / 0x3 | v3 槽位（与 TU106 的 1 不同） |
+| AD1xx CYA / CFG | 0x28 / 0x80000007 | 与 AD107 同（≠4090 的 0x30/0x8000000a） |
+| AD1xx XVE_PLM | 0xffffff8f | 锁定基线 |
+| AD1xx BAR1_CAP_MIRROR | 0x0003fc00 | 与 AD107 同 |
+| Ada 链 WPR/WPRCFG/FBPA PLM | 0x4cb8f / 0x4cb8f / 0xffffff0f | 与 AD107 逐位一致 |
+| TU10x FEAT 0x409650/64/68 | 0xbadf5040 | GA10x 上为 PLM 挡（特权桶） |
+| XP3G PLM0 / PLMC | 0xffffff8f / 0xffffffcf | 与 AD107 同 |
+| FEAT 0x823800/04 | 0xffffff8f / 0xffffff8f | 锁定基线 |
+| FEAT 0x823808/80c/810/814 | 0x01000283 / 0x00888888 / 0x002aaaaa / 0x233 | 其他 feature 类簇 |
+| **FEAT_READOUT_1 0x823818** | **0x00400080** | 字段 2/7 = 2（约 1/4 速率）——本卡也有钳制；与 AD107 的 0x00410080 差字段 5 |
+| **FEAT SS0 / SS1** | **0x00000000 / 0x00000000** | **首张 SS 对为 0 的卡**（#109 的 1f06 是 0x42072154/0x6）——"SS=0 即被抹"的判据需按卡校准 |
+| FEAT 0x823824/82c | 0x1 / 0x5 | 记录 |
+| PSTRAPS SET0/SET1 | 0x00400080 / 0x02013000 | straps BAR1=64MiB；活窗 256MiB（枚举期 CTRL 写，见 #12） |
+| NV_PROM 64KiB | crc32 0x63d10fc1，magic 0xeb7faa55 | 本卡身份指纹 |
+
 ## AD107 台式（RTX 4050 LP，10de:28e1）——社区采样（issue #1，2026-10-26）
 
 非本机实测：报告者 U 盘 `\loader.log` 的 SAMPLE 段（AMD 台式机 + 15bf iGPU，
