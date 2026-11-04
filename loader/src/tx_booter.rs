@@ -1227,9 +1227,16 @@ pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
     let ss0 = gpu.pci.bar_read_u32(gpu.bar, ss0_at as u64);
     let ss1 = gpu.pci.bar_read_u32(gpu.bar, ss1_at as u64);
     let readout = gpu.pci.bar_read_u32(gpu.bar, readout_at as u64);
-    let wpr_lo = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a824);
-    let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
-    info!("POST-GOP: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} READOUT_1={readout:#010x} WPR2_LO={wpr_lo:#010x} WPR2_HI={wpr_hi:#x} (read-only, after the console rebuild)");
+    let wpr_lo = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::WPR2_LO as u64);
+    let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::WPR2_HI as u64);
+    // Reset canary (issues #164/#165): armed after the FLR, so "cleared"
+    // here means the card's own ROM devinit ran a reset during the rebuild.
+    let (can_a, can_b) = (
+        gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::CANARY_A as u64),
+        gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::CANARY_B as u64),
+    );
+    let can = crate::tx::canary_verdict(can_a, can_b);
+    info!("POST-GOP: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} READOUT_1={readout:#010x} WPR2_LO={wpr_lo:#010x} WPR2_HI={wpr_hi:#x} CANARY={can}({can_a:#010x}/{can_b:#010x}) (read-only, after the console rebuild)");
     if !payload_mode {
         info!("POST-GOP: replay mode - the stock booter never opens the gate, so the booter status stays the verdict");
         return;

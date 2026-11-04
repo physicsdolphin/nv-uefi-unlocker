@@ -1378,6 +1378,35 @@ const CORE_ROWS: [(&str, u32); 20] = [
 /// Privileged block - usually badf at PL0, still worth the record.
 const PRIV_ROWS: [(&str, u32); 2] =
     [("FUSE_OPT_FEATURE_OVR", 0x0082_03F0), ("FUSE_VER", 0x0082_4140)];
+
+/// Reset canary (issues #164/#165). The loader writes these two PBUS
+/// software-scratch words AFTER its FLR; any FLR, SBR or rail-off clears
+/// them, and the open driver never writes this pair (only index 0x1E, in the
+/// drain path). Read together with the FEAT values: canary intact + SS gone
+/// = a plain write with no reset; canary cleared + SS intact = a reset the
+/// AON island survived (FLR/SBR class); both gone = rail-off / full-chip
+/// reset, or a write that merely looks like one.
+const CANARY_A: u32 = 0x0014_0020;
+const CANARY_B: u32 = 0x0014_0024;
+const CANARY_MAGIC_A: u32 = 0x0164_C0DE;
+const CANARY_MAGIC_B: u32 = 0x0165_CAFE;
+
+/// `intact` / `cleared` / `partial` / `other` / `unreadable`. `partial` is a
+/// half-surviving pair - a narrow-domain reset, or a devinit that rewrote
+/// one of the two words.
+fn canary_state(rd: &dyn Fn(u32) -> u32) -> &'static str {
+    let (a, b) = (rd(CANARY_A), rd(CANARY_B));
+    let poison = |v: u32| v == 0xFFFF_FFFF || v >> 16 == 0xBADF;
+    if poison(a) && poison(b) {
+        return "unreadable";
+    }
+    match (a == CANARY_MAGIC_A, b == CANARY_MAGIC_B) {
+        (true, true) => "intact",
+        (false, false) if a == 0 && b == 0 => "cleared",
+        (false, false) => "other",
+        _ => "partial",
+    }
+}
 /// Ada four-write chain targets (WPR_CFG -> FBPA -> WPR -> FEAT).
 const ADA_ROWS: [(&str, u32); 3] = [
     ("WPR_PLM", 0x001F_A7C4),
@@ -1596,6 +1625,12 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32) {
             None => println!("{name:<22} = {}", hx32(v)),
         }
     }
+    println!(
+        "CANARY_A/B (loader-written)  = {}/{} -> {}",
+        hx32(rd(CANARY_A)),
+        hx32(rd(CANARY_B)),
+        canary_state(rd)
+    );
     // PSTRAPS decode (loader sample.rs fields, NvStrapsReBar-verified)
     let s0 = rd(0x0010_1000);
     let s1 = rd(0x0010_100C);
@@ -1984,6 +2019,16 @@ SSDIAG_COLOR=force pins on.",
             red("NOT_UNLOCKED")
         };
         println!("VERDICT [{fam_name}]: {verdict}");
+        let can_msg = match (canary_state(&rd), unlocked) {
+            ("intact", true) => "CANARY: intact + SS live - no reset, nothing rewrote the state after handoff",
+            ("intact", false) => "CANARY: intact + SS gone - no reset; something WROTE the FEAT block (driver init / devinit replay, not a power event)",
+            ("cleared", true) => "CANARY: cleared + SS live - a reset happened but the AON island survived it (FLR/SBR class, not a rail-off)",
+            ("cleared", false) => "CANARY: cleared + SS gone - a reset hit this boot after the EFI handoff (expected anonymous relock)",
+            ("partial", _) => "CANARY: partial - narrow-domain reset, or a devinit rewrote one of the two words",
+            ("other", _) => "CANARY: rewritten to third values - a devinit/BIOS pass ran over the pair",
+            _ => "CANARY: unreadable - BAR0 reads poisoned here (parked function / no MEM decode?)",
+        };
+        println!("{can_msg}");
 
         if reapply {
             if plm != 0xFFFF_FFFF {

@@ -44,6 +44,31 @@ GAADA = {
 # brings the python twin to the ssdiag 0.5/0.6 probe surface - 26-register
 # PLM survey was already here; the PCIe/XP3G/OPT/Ada-fuse tables, the
 # full core block and the badf classification are new.
+# Reset canary (issues #164/#165), twin of ssdiag v0.6.5: the loader writes
+# these two PBUS scratch words after its FLR; any reset clears them, and no
+# driver pass writes this pair. Read with the FEAT values - canary intact +
+# SS gone = a plain write; cleared + SS live = FLR/SBR-class reset; both gone
+# = rail-off / full-chip reset.
+CANARY_A = 0x0014_0020
+CANARY_B = 0x0014_0024
+CANARY_MAGIC_A = 0x0164_C0DE
+CANARY_MAGIC_B = 0x0165_CAFE
+
+
+def canary_state(bar):
+    a, b = bar.rd(CANARY_A), bar.rd(CANARY_B)
+    poison = lambda v: v == 0xFFFF_FFFF or v >> 16 == 0xBADF
+    if poison(a) and poison(b):
+        return "unreadable"
+    if a == CANARY_MAGIC_A and b == CANARY_MAGIC_B:
+        return "intact"
+    if a == 0 and b == 0:
+        return "cleared"
+    if (a == CANARY_MAGIC_A) != (b == CANARY_MAGIC_B):
+        return "partial"
+    return "other"
+
+
 CORE_ROWS = [
     ("PMC_BOOT_0", 0x0000_0000),
     ("PSTRAPS_SET0", 0x0010_1000),
@@ -376,7 +401,10 @@ def report(bar, tag="", devpath=None):
     for i in range(0, len(AMPADA_SWEEP), 5):
         row = AMPADA_SWEEP[i:i+5]
         print("  " + "  ".join(f"{o:#09x}={bar.rd(o):#010x}" for o in row))
+    can = canary_state(bar)
+    print(f"  CANARY_A/B = {bar.rd(CANARY_A):#010x}/{bar.rd(CANARY_B):#010x} -> {can}")
     unlocked = ss0 == SS0_UNLOCK and ss1 == SS1_UNLOCK
+
     print(f"  VERDICT: {'UNLOCKED (override values live)' if unlocked else 'not unlocked'}"
           f"{' - reapply available (door open)' if not unlocked and plm == 0xFFFF_FFFF else ''}")
     return fam, regs, plm, unlocked

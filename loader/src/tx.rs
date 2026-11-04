@@ -34,6 +34,20 @@ pub mod regs {
     pub const FEAT_SS1: u32 = 0x0082_3820;
     /// Effective-speed readout (nine 3-bit fields; all 0 = full rate).
     pub const FEAT_READOUT_1: u32 = 0x0082_3818;
+    /// PBUS software-scratch words. The open driver only ever writes index
+    /// 0x1E (`NV_PBUS_SW_RESET_BITS_SCRATCH_REG`, g_gpu_nvoc.h:914, in the
+    /// drain/reset-recommended path); every other `gpuWritePBusScratch`
+    /// caller is the VBIOS/devinit. Indices 0x20/0x24 sit clear of 0x1E and
+    /// of the Blackwell named 0x2D/0x37. Reset-domain registers: any FLR,
+    /// SBR or rail-off clears them, which is exactly the witness we want.
+    pub const CANARY_A: u32 = 0x0014_0020;
+    pub const CANARY_B: u32 = 0x0014_0024;
+    /// Arbitrary constants carrying the issue numbers, so a value found in a
+    /// report is unmistakably ours and not a VBIOS leftover.
+    pub const CANARY_MAGIC_A: u32 = 0x0164_c0de;
+    pub const CANARY_MAGIC_B: u32 = 0x0165_cafe;
+    /// Always-readable boot-strap word (chip id): control for the read path.
+    pub const PMC_BOOT_0: u32 = 0x0000_0000;
     // Ada four-write chain
     pub const WPR_PLM: u32 = 0x001f_a7c4;
     pub const WPRCFG_PLM: u32 = 0x001f_a7cc;
@@ -62,6 +76,55 @@ pub enum TxError {
 
 pub fn inaccessible(value: u32) -> bool {
     value == !0u32 || (value & 0xffff_0000) == 0xbadf_0000
+}
+
+/// Canary verdict from a pair of scratch reads: "intact", "cleared",
+/// "mixed" (one of the two survived - a narrow-domain reset), "unreadable"
+/// (both poison) or "other" (rewritten to a third value, e.g. devinit).
+pub fn canary_verdict(a: u32, b: u32) -> &'static str {
+    let ia = inaccessible(a);
+    let ib = inaccessible(b);
+    if ia && ib {
+        return "unreadable";
+    }
+    match (a == regs::CANARY_MAGIC_A, b == regs::CANARY_MAGIC_B) {
+        (true, true) => "intact",
+        (false, false) if a == 0 && b == 0 => "cleared",
+        (false, false) => "other",
+        _ => "mixed",
+    }
+}
+
+/// Arm the reset canary (issues #164/#165): write two magic words into the
+/// PBUS software-scratch block and read them straight back. Must run AFTER
+/// the last reset the chain performs on purpose (the FLR) and BEFORE the
+/// console rebuild, so the POST-GOP and in-OS readbacks measure the actors
+/// we did not perform ourselves. Read-only diagnostics never touch these.
+///
+/// Call direction: AON (FEAT) dying says "rail-off / full-chip reset",
+/// scratch dying while the AON values are intact says "FLR/SBR-class reset",
+/// both intact says "no reset - the writer was a plain register write".
+pub fn canary_arm(gpu: &TxGpu) {
+    let (pre_a, pre_b) = (gpu.read32_raw(regs::CANARY_A), gpu.read32_raw(regs::CANARY_B));
+    let ctrl = gpu.read32_raw(regs::PMC_BOOT_0);
+    info!(
+        "CANARY-PRE: a={pre_a:#010x} b={pre_b:#010x} ctrl_pmc_boot_0={ctrl:#010x} (as found before any write)"
+    );
+    if probe_file("\\tx-no-canary.txt") {
+        info!("CANARY: \\tx-no-canary.txt present - arm skipped");
+        return;
+    }
+    gpu.write32(regs::CANARY_A, regs::CANARY_MAGIC_A);
+    gpu.write32(regs::CANARY_B, regs::CANARY_MAGIC_B);
+    let (a, b) = (gpu.read32_raw(regs::CANARY_A), gpu.read32_raw(regs::CANARY_B));
+    if canary_verdict(a, b) == "intact" {
+        info!("CANARY-SET: a={a:#010x} b={b:#010x} readback ok (armed after the last reset in the chain)");
+    } else {
+        info!(
+            "CANARY-SET: a={a:#010x} b={b:#010x} readback FAILED (verdict {}) - treats the block as not writable on this chip",
+            canary_verdict(a, b)
+        );
+    }
 }
 
 /// BAR0-backed engine view.
@@ -1339,6 +1402,11 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         info!("POST-FLR: verified{}", if flr_expect_unlock { " (selectors survive AON)" } else { "" });
     }
 
+    // Arm the reset canary here: after the chain's own last reset (the FLR
+    // above, or its Turing skip) and before the console rebuild, so every
+    // later readback attributes a change to someone other than us.
+    canary_arm(gpu);
+
     // Read-only handoff PCI snapshot (issue #61 ask #2): the config state
     // Windows will inherit, logged before the reconnect touches anything.
     crate::pci::diag_handoff_pci(gpu.pci);
@@ -1511,6 +1579,11 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
     // gone, a reset/power-removal happened. Read-only, logged next to the
     // FEAT values so the two always travel together in the report.
     let wpr_lo = rd(regs::WPR2_LO);
+    // Reset canary: armed after the FLR, so a cleared scratch pair here (with
+    // the FEAT values still right) is a reset we did not perform - the case
+    // that points at the platform, not the Windows driver pass.
+    let (can_a, can_b) = (rd(regs::CANARY_A), rd(regs::CANARY_B));
+    let can = canary_verdict(can_a, can_b);
     let (pmcsr, dstate) = match pci.pm_cap() {
         Some(cap) => {
             let v = pci.pmcsr(cap);
@@ -1525,7 +1598,7 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
     // chased a nonexistent EFI-side failure on exactly this shape).
     let (ga_prefix, tu_prefix) = ("ga/ada:", "tu10x:");
     info!(
-        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_lo={wpr_lo:#010x} wpr2_hi={wpr_hi:#x} pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | {tu_prefix}unlock={} {ga_prefix}ss0_unlock={} ss1_unlock={} plm_open={}",
+        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_lo={wpr_lo:#010x} wpr2_hi={wpr_hi:#x} canary={can}({can_a:#010x}/{can_b:#010x}) pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | {tu_prefix}unlock={} {ga_prefix}ss0_unlock={} ss1_unlock={} plm_open={}",
         // Relock-aware (issues #12/#14): the shipped tu10x chain closes the
         // PLM gate after the SS writes (open -> write -> close), so the
         // success shape is the SS override persisted behind a closed gate -

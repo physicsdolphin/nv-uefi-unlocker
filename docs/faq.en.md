@@ -164,7 +164,9 @@ So the unlock reverting is **factory restore**, not damage. **It also makes "ove
 
 Turing relocks PLM at handoff by design - do not read its normal handoff value as a loss; see the [Thunderbolt section](#thunderbolt) and [cold values](cold-values.md).
 
-**Pairing method: use WPR2 as the witness for "was there a reset".** WPR2 is the only register the booter itself wrote this boot (the staging window base) and it lives in a different domain from FEAT. Copy `wpr2_lo` together with FEAT at the earliest in-OS read: **WPR2 still holding the booter's value while FEAT reverted means the chip was never reset - that was a write; both gone means a reset or power removal.** Since v2.1.11 both `HANDOFF-OUT` and `POST-GOP` carry `wpr2_lo` so the pair can be lined up on the same line.
+**Pairing method: use a reset canary as the witness.** FEAT alone only says the write is gone, not whether something **wrote** or the whole chip was **reset**. Since diag2 the loader writes a pair of magics into the PBUS software-scratch words (`0x140020`/`0x140024`; the old open driver only writes `0x1e`, these two are clear, and the BUS domain is cleared by FLR/SBR/rail-off) right after the FLR verify and reads them back; `POST-GOP`, `HANDOFF-OUT` and in-OS `ssdiag` (0.6.5+) each report the same state. Judge it only together with FEAT: **canary intact + FEAT gone = no reset, it was a write; canary cleared + FEAT intact = an FLR/SBR-class reset that the AON island survived; both gone = rail-off / full-chip reset.**
+
+WPR2 is the corroborating signal: the only register the booter itself wrote this boot (the staging window base). `wpr2_lo` has travelled next to FEAT since v2.1.11 and can still be cross-checked against the canary.
 
 Two methodological limits, both of which produce false verdicts - read them before running anything:
 
@@ -227,7 +229,7 @@ What we can:
 1. **Block the reset sources**: turn off RTD3 ([Linux](#linux) / the equivalent Windows power setting on the driver), Fast Startup and Modern Standby, and PCIe idle power gating in the BIOS; never use "shutdown" as a restart.
 2. **Change the entry state**: dGPU-direct first; in hybrid mode the MUX/panel ownership decides whether the device enumerates at all ([#148 record](#relock-148)).
 3. **Repair afterwards**: with the gate still open, `ssdiag --reapply` / `diag-unlock.py --reapply` writes the selectors back; a locked gate means replay.
-4. **Report with evidence**: the `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` lines from `loader.log`, the in-OS read-back values, `powercfg /a`, the device power state and the event log. Without these it is guesswork.
+4. **Report with evidence**: the `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` lines from `loader.log` (including `CANARY` and `wpr2_lo`), the in-OS read-back values (from `ssdiag` 0.6.5+, which prints a `CANARY:` verdict), `powercfg /a`, the device power state and the event log. Without these it is guesswork.
 5. **Turn it into a platform property**: if a platform is confirmed to have `_PR3` and to actually cut the rail, record it as a platform property rather than chasing it as a driver bug.
 6. **Give the dGPU a reference**: attach an external display to a dGPU-wired port and cold start. The Linux community saying is that a monitor on the NVIDIA side blocks D3cold (anecdote); if the loss disappears, that supports the "unreferenced -> synchronized off" hypothesis.
 

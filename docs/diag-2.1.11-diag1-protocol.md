@@ -1,10 +1,14 @@
-# 诊断构建 2.1.11-diag1 取证协议（2026-11-04）
+# 诊断构建 2.1.11-diag 取证协议（2026-11-04）
 
 > 服务 issue [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)（GA104 2484，EFI 全绿但系统内 SS 对被抹）与 [#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165)（双 3060，交棒后一张卡在 Windows 侧消失）。
 >
-> **本构建不改变事务本体**：解锁链、payload、FLR 顺序、native-GOP 重建与 v2.1.10 逐字节同源，只多两处**只读**采样。版本串 `2.1.11-diag1`，banner 带 `TX BUILD`。
+> **diag2 修订（2026-11-04，替换 diag1 资产）**：新增**复位金丝雀**。事务链、payload、FLR 顺序、native-GOP 重建仍与 v2.1.10 逐字节同源；新加的写只有两个 PBUS 软件 scratch 字（`0x140020`/`0x140024`，FLR 验证之后写、立刻读回），其余全部是只读采样。**已经下载 diag1 的请重新下载 diag2**——diag1 没有金丝雀。
 >
-> 资产：`BOOTX64.EFI.2.1.11-diag1`，SHA-256 `8e04988c171e814b069c3981ec322e7b0eb7f9ae8009793d06293d388a65b45b`。
+> 金丝雀的判读在 §3；开关是卷根 `\tx-no-canary.txt`（放上即整组跳过，用于 A/B）。
+>
+> 版本串 `2.1.11-diag2`，banner 带 `TX BUILD`。资产：`BOOTX64.EFI.2.1.11-diag2`，SHA-256 `6f6d0ba305ef515b2e8ba39e2ebb32771801be976480693edb6fe0f513d2d64c`。
+>
+> `ssdiag.exe.0.6.5` 同附在本 release（含 `CANARY:` 判定行，管理员运行），自行编译亦可。
 >
 > 构建入口：与 v2.1.10 相同（`make-usbroot.ps1`），把 `BOOTX64.EFI` 换成该文件即可；卷根 marker 按各 issue 下面的要求放。
 
@@ -55,13 +59,34 @@
 
 配套 marker：卷根放 `\tx-select-bdf.txt`，先写 `03:00.0`（丢的那张，Gigabyte）单跑一轮、再写 `04:00.0`（可用那张，Asus）单跑一轮——**每轮单独附上 Devices 现场照**。两轮各自单跑都过 → 双卡资源仲裁；`03:00.0` 单跑也丢 → 该槽或该卡。
 
-## 3. 采样面的一条警告（两 issue 都适用）
+## 3. 复位金丝雀（diag2 新增，两 issue 都适用）
+
+"还开着"不等于"没人碰过"：FEAT 值只说明写没被抹，说不清是**被写**、还是**整片被复位过**。金丝雀补这一维。
+
+做法：`CANARY-PRE` 先抄一行现有值，然后在 FLR 验证之后往 PBUS 软件 scratch 写两个魔数（`a=0x0164c0de`、`b=0x0165cafe`），立刻读回验证（`CANARY-SET`）；此后 `POST-GOP`、`HANDOFF-OUT` 各带一次 `CANARY=<状态>(值/值)`，系统内由 `ssdiag` 的 `CANARY_A/B` 与 `CANARY:` 行给出同一状态。
+
+为什么是这两个寄存器：open RM 的老驱动只写 `0x1e`（drain 路径），其余 scratch 都是 VBIOS/devinit 的地盘，`0x20/0x24` 两格干净；BUS 域随 FLR/SBR/撤电清零，正是要的见证。**链上唯一的写就是这两笔**，不参与任何判定。
+
+判读（与 FEAT 值配对，单看无效）：
+
+| 金丝雀 | FEAT | 判读 |
+|---|---|---|
+| `intact` | 完好 | 交棒到读回之间**没有任何复位**，也没人重写 |
+| `intact` | 被抹 | 无复位 → **写入型**（驱动 init / devinit 重推导），不是电源事件 |
+| `cleared` | 完好 | 有复位，但 AON 岛活下来 → **FLR/SBR 级**；恰好也解释"还能用" |
+| `cleared` | 被抹 | 有复位且 AON 也死 → **撤电 / 全片复位**（平台侧），匿名回锁成立 |
+| `partial` / `other` | — | 窄域复位或 devinit 重写过；按行内值个案分析 |
+| `unreadable` | — | BAR0 读回毒值（停泊/未解码），本行不判 |
+
+`CANARY-PRE` 里如果已经是旧魔数：说明上一轮实验的写入还活着——**上一次引导至今没复位过**，本身就是一个强数据点。
+
+## 4. 采样面的一条警告（两 issue 都适用）
 
 M1 `SAMPLE` 对非 console 卡可能整行全 `0xffffffff`，连 `PMC_BOOT_0` 都是全 1——这是固件把该卡留在 `cmd=0x0000` 未解码的探针假阴性（#165 日志里 `03:00.0` 即如此），**不是坏卡**。判身份用枚举行的 `10de:2504` / `2484`，不要拿 SAMPLE 全 1 下结论。
 
-## 4. 回收清单
+## 5. 回收清单
 
 1. 完整 `loader.log`；
 2. Windows 侧：`Get-PnpDevice -Class Display | fl FriendlyName,Status,Problem,ProblemDescription,InstanceId`（#165 在**解锁后未重启的病态状态里先取**，再谈重启）；
-3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag --select 04:00.0`）；
+3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag --select 04:00.0`）——需 **ssdiag v0.6.5 及以上**，含 `CANARY:` 判定行；
 4. BIOS 状态与电源瓦数（#165 必附）。
