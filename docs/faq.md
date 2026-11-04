@@ -6,6 +6,7 @@
 - [Turing 为什么要先启用 GSP？](#turing)
 - [混合输出、重启和休眠有什么区别？](#display)
 - [Linux 日志全绿，为什么没有提升？](#linux)
+- [为什么解锁过的卡一进系统又被锁回去？](#relock)
 - [Windows 睡眠后解锁还在吗？（S3 / S0ix 现代待机）](#sleep)
 - [雷电 eGPU 能保留解锁吗？](#thunderbolt)
 - [怎样在系统内检查或修复解锁？](#ssdiag)
@@ -136,13 +137,125 @@ sudo update-initramfs -u
 | GPU 电源 | `cat /sys/bus/pci/devices/<bdf>/power_state` | 实际目标 BDF 为 `D0` |
 | 解锁状态 | `sudo python3 tools/diag-unlock.py`（源码树） | SS 覆盖值有效 |
 
-掉电清除的状态需要重跑 U 盘事务；只重写配置不会恢复它。来源：[RTD3 平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/9)。
+掉电清除的状态需要重跑 U 盘事务；只重写配置不会恢复它。来源：[RTD3 平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/9)。完整机制盘点、判据与可做的事见 [为什么解锁过的卡一进系统又被锁回去](#relock)。
 
 **RTD3 关了还是没提升？（驱动 init 重推导，[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)）**：GA10x 笔记本上存在第三种丢失机制——专有驱动在 `modprobe` 初始化时**主动重推导 FEAT 块**，与空闲掉电无关。实测（GA107M `25a0`，Linux Mint / 595.71.05）：RTD3 已设 `0x00`、GSP-RM 与 legacy 两种 init 模式**都**重推导且写入不同的位（SS0 相对出厂 delta 分别 `0x00400100` / `0x00400000`）——是主动编程，不是"没保留"；事务内 FLR 后 AON 存活也排除了 FLR 冲掉。这意味着在重推导型机器上，EFI 读回绿 ≠ 系统内有收益：**EFI 读回证明的是写入发生，不是它活过 `modprobe nvidia`**。Linux 侧现状：持久存活有实证的只有 TU102 桌面（[#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103)）；GA10x 笔记本方面，目前仅 `25a0` 一例 Linux 观测到 init 重推导——同族 `25ad` 在 Windows 持久存活，OS/驱动版本/MUX-EC 平台态三个变量尚未切开（详见 [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)），不宜外推为 GA10x 笔记本普遍结论；门关后 OS 内重写主机侧无法补救（SEC2 内全链属上游 kmod 谱系，超出本工具范围）。Windows 侧同族机制见 [拓扑维度](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82)（[#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) GA106M 同形态）。
 
 读回工具细节：Linux 下 `resource0` **只支持 mmap**，不支持 `read()`/`dd`——`dd` 会静默返回空，看起来像"PLM 已关"的假阴性；`tools/diag-unlock.py` 走的就是 mmap 路径。
 
 **先看日志的 `POST-GOP` 行，别急着怪驱动**：从 v2.1.11 起交棒尾部会再读一次 FEAT 三连（`POST-GOP: FEAT_PLM=… SS0=… SS1=…`）。位置在**控制台重建之后**——默认的 native-GOP 重建会 `StartImage` 卡自己的 GOP 驱动（`\tx-reconnect-legacy.txt` 路径改为重连原厂栈、不自己 StartImage），而此前的 `POST-FLR` 验证在它之前，所以两行合起来才能切分写入方：`POST-GOP` 已锁/已丢 = 丢在 bootmgfw 之前（卡自己的 GOP/devinit 或平台固件，Windows 驱动出局）；`POST-GOP` 完好、系统内被抹 = 驱动这一 pass 负责。这也是 [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164) 的取证入口。
+
+<a id="relock"></a>
+
+## 为什么解锁过的卡一进系统又被锁回去？
+
+先说结论：**不是 NVIDIA 在检测我们**。解锁被抹掉是三条各自独立的机制叠加的结果——物理层的复位语义、固件的初始化契约、以及 FEAT 块本身的性质。绝大多数"进系统就丢"的报告属于**平台给了驱动一个复位或断电事件**，跟驱动版本几乎无关。
+
+### 先认识 FEAT 块是什么
+
+`FEAT_PLM`（`0x823804`）和 `SS0/SS1`（`0x82381c` / `0x823820`）在 NVIDIA 自己的寄存器头里叫 **fuse feature readout**——即**熔丝/strap 的软件投影层**。它们不是可持久配置：
+
+- `0xffffff8f` 不是"某个值"，是 PLM 的**上电复位值**；
+- `SS0/SS1` 的**覆盖字段归零**才是复位态；其余位由 strap 决定，整寄存器是否读 0 因卡而异（`#148` 是 `0x57340065` / `0x7`）。`#164` 现场读到 `0x0`，但那是在丢失之后采的样，该卡基线无法与"被零化"区分；
+- 我们写的 `0xffffffff` / `0x88888888` 是在投影层上**加覆盖位**，既没动熔丝也没动 PLL。
+
+所以解锁被还原是**恢复出厂**，不是损坏。**这也意味着"覆盖字段归零 + 门关"本身就是一条证据**：只写门的写者不会顺手把选择器写成基线，把两者一起还原的只能是完整重算或整域复位。
+
+`FEAT_PLM` 还活在 AON（常开岛）里——这是它能活过事务内 FLR 的原因（`POST-FLR` 验证的就是这一点），也是全部麻烦的根：**AON 只在掉电时复位，其它复位源够不着它**。
+
+### 判据：先分类，再找原因
+
+| 现场 | 含义 | 下一步 |
+| --- | --- | --- |
+| `POST-FLR` 已丢 | 事务内就被抹 | 先当作事务问题查 |
+| `POST-GOP` 已丢、`POST-FLR` 完好 | 丢在 bootmgfw 之前 | 卡自己的 GOP/devinit 或平台固件；Windows 驱动出局 |
+| `POST-GOP` 完好，系统内门关、`SS` 仍是覆盖值 | 窄写入，只碰门 | 见机制表第 4 行 |
+| `POST-GOP` 完好，系统内门关、`SS` 变成既非基线也非覆盖值 | 重推导（驱动 init 主动编程） | 机制表第 3 行；见 [#148 记录](#relock-148) |
+| `POST-GOP` 完好，系统内门关、`SS` 回到该卡开机基线（覆盖字段归零） | 整域复位（掉电 / SBR / 全芯片复位） | 机制表第 1、2 行 |
+
+Turing 交棒本来就带 PLM 重锁，别把它的正常交棒值当丢失——判读见[雷电一节](#thunderbolt)与[冷态对照](cold-values.md)。
+
+### 机制盘点：谁能让它回厂
+
+| # | 机制 | AON 域 | 典型场景 | 看到的形态 |
+| --- | --- | --- | --- | --- |
+| 1 | **真掉电**（rail 断） | 复位 | 笔记本 `_PR3` + RTD3/现代待机、EC 电源门控、外置坞断电、S4/快速启动 | 门锁 + 选择器回开机基线；`power_state` 曾为 D3cold |
+| 2 | **整域复位** | 复位 | 平台 SBR、链路热复位、全芯片 SW_RESET；多见于老固件/"奇怪"主板 | 同上，且 `POST-GOP` 就已经坏 |
+| 3 | **devinit 重放**（驱动 init 自己重算） | 存活 | 部分 GA10x 笔记本（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)） | 门锁 + `SS` 被写成推导值（≠开机基线、≠覆盖值） |
+| 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
+| 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
+
+第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改的地方——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
+
+### 为什么重算不会把卡弄坏
+
+- **devinit 是幂等的**：它就是把芯片从"刚上电"带到"可用"的那一段，冷启时天天跑一遍。重算一次的结果是一张正常工作的卡。
+- **我们的覆盖不在功能契约里**：PLM 只改"谁有权写"，SS 只改覆盖分频，底下的 PLL、几何、链路训练全按 devinit 的账走。
+- 反过来说：**卡还能正常用，本身就是"完整重算已经发生"的证据**——重算不完整才会坏。
+- 代价是失效必然**静默**：没有错误码、没有 WHEA、没有降级，只有收益归零。这就是[系统内验证](#ssdiag)不可省的原因。
+
+### 是驱动的蓄意行为吗
+
+分三层，答案不同：
+
+- **没有针对解锁的检测。** `0x823804` / `0x82381c` / `0x823820` 在 NVIDIA 开源内核模块的全部寄存器头里**一条定义都没有**（唯一沾边的是 `NV_FUSE_FEATURE_READOUT 0x00823814`）。驱动连这些符号都不存在，不可能读它、比较它、决定要不要保留。
+- **"复位后必须重算"是蓄意的。** 这是 ASIC 正确性契约：`kbifPrepareForFullChipReset` 的注释原文就是"确保复位后 devinit 脚本能正常执行"，FLR 之后驱动会阻塞等待 devinit 完成（超时打印 "VBIOS boot failed!!"），还有专门的超时缩放键 `RMPcieFlrDevinitTimeout`。它不可跳过，因为它建立的东西比 FEAT 底层得多。
+- **"不保留外部覆盖"是结构性疏漏，不是取舍。** 对 NVIDIA 而言 FEAT 覆盖本来是给内部调试用的，出厂全锁，从没人需要"跨复位保留一次外部写入"；再叠上 AON 复位这条物理路径，**根本没有地方存放"有人开过门"这个事实**。
+
+**所以：不是反制，但反制成本低到接近于零**——devinit 已经基本在这么干了。最坏形态永远是"失效而非关锁"，这是这套设计给我们的下限保障。
+
+### 能做什么
+
+做不到的：**门已经关上之后，在系统内重新开门**。开门要靠 SEC2 内跑签名 booter，属上游 kmod 谱系，超出本工具范围；重跑 U 盘事务是唯一恢复。
+
+做得到的：
+
+1. **阻断复位源**：关 RTD3（[Linux](#linux) / Windows 对应驱动电源设置）、关快速启动与现代待机、BIOS 里关 PCIe 空闲电源门控；不要用"关机"当重启。
+2. **改变入口态**：独显直连优先；混合输出下 MUX/面板归属决定设备是否被枚举（[#148 记录](#relock-148)）。
+3. **事后修复**：门仍开时 `ssdiag --reapply` / `diag-unlock.py --reapply` 写回选择器；门已锁只能重放。
+4. **报告时带齐证据**：`loader.log` 的 `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` 三行、系统内读回值、`powercfg /a`、设备电源状态与事件日志。缺这些只能反复猜。
+5. **把平台属性化**：确认某平台有 `_PR3` 且 rail 真断，就按平台属性登记，而不是当驱动缺陷追。
+
+<a id="relock-148"></a>
+
+### 实例记录：GA107M 笔记本在 Linux 上被驱动 init 重推导（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)）
+
+这是目前唯一一份把 RTD3、GSP-RM、FLR 三个嫌疑一次切干净的记录，值得留档。
+
+配置：RTX 3050 Ti Laptop（GA107M `10de:25a0`）、Linux Mint 22.3 / 595.71.05、RTD3 按 FAQ 关到 `0x00` 并核对 `/proc/driver/nvidia/params`、`supergfxctl -m AsusMuxDgpu`。事务全绿（含 `POST-FLR: verified`），系统内 BAR0 只读 mmap 读回：
+
+| 寄存器 | 开机 | 载荷写入 | 系统内（GSP 开） | 系统内（GSP 关） |
+| --- | --- | --- | --- | --- |
+| `FEAT_PLM 0x823804` | `0xffffff8f` | `0xffffffff` | `0xffffff8f` | `0xffffff8f` |
+| `FEAT_SS0 0x82381c` | `0x57340065` | `0x88888888` | `0x57740165` | `0x57740065` |
+| `FEAT_SS1 0x823820` | `0x00000007` | `0x00000008` | `0x00000007` | `0x00000007` |
+| `FEAT+0x08 0x823808` | `0x00000082` | — | `0x00000082` | `0x00000083` |
+
+三条推论：
+
+- **不是 RTD3**：RTD3 已关，状态在 `modprobe nvidia` 时丢，不在空闲掉电时丢。
+- **不是 FLR**：事务内 `POST-FLR` 验证存活。
+- **是 init 路径主动编程**：`SS0` 相对开机值的 delta 在 GSP 下为 `0x00400100`、关掉 GSP 后为 `0x00400000`——两条 init 路径写**不同的位**，`FEAT+0x08` 也随之在 `0x82` / `0x83` 之间变。这是写入，不是"没保留"。
+
+两个操作细节：`resource0` **只支持 mmap**，`dd` 会静默返回空、看起来像"门已关"的假阴性；另一台机器上同一张盘在 Hybrid 模式下枚举不到卡（`vendor 0xffff`），切成 dGPU 独占面板后才可跑——**面板归属是入口轴，不是冷/热**。
+
+性能上没有收益且略降：`80 W` TGP 被内屏共享，FP16/BF16 约 `0.92–0.93×`，连不用 tensor 路径的 FP32 也是 `0.92×`——说明不是张量速率效应，是供电预算。**不外推**：`25a0` 是唯一一例 Linux 重推导，同族 `25ad` 在 Windows 持久存活，OS / 驱动版本 / MUX-EC 平台态三个变量尚未切开。
+
+### Linux 上关掉 GSP 有什么用、代价是什么
+
+关掉 GSP 是**诊断杆**，不是修复手段：它能把"GSP-RM 晚期的 devinit"从内核 init 路径里切出去。`#148` 的结论是**关掉也照样重推导**，所以它治不了丢锁；但正因为两种模式的写入位不同，它仍是分辨写入方的有效工具。
+
+关法（仅 Linux，临时用）：
+
+```bash
+echo 'options nvidia NVreg_EnableGpuFirmware=0' | \
+    sudo tee /etc/modprobe.d/nvidia-no-gsp.conf
+sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
+```
+
+重启后核对 `nvidia-smi -q` 的 `GSP Firmware Version: N/A` 与 `/proc/driver/nvidia/params` 的 `EnableGpuFirmware: 0`，否则测试无效。
+
+**副作用（实测，[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)）**：动态电源管理失效——空闲停在 P0 / 1927 MHz / **26.9 W**，而不是 P5 / 约 8 W。算力不变，但待机功耗与温度明显上升，**不适合日常常开，用完即撤**。另外这是 Linux 专有驱动的旋钮：**Windows 的 Turing 反过来需要 `EnableGpuFirmware=1`**（[Turing 一节](#turing)），别混着抄。
 
 <a id="sleep"></a>
 
@@ -210,7 +323,7 @@ ssdiag --reapply
 | 系统侧现象 | 排查方向 |
 | --- | --- |
 | Ampere/Ada 门和选择器均回到锁定基线 | 断电或完整复位 |
-| 门仍开，选择器恢复出厂值 | devinit 重写覆盖值 |
+| 门仍开，选择器恢复出厂值 | devinit 重写覆盖值（见 [回锁机制](#relock)） |
 | 选择器被重写，同时出现 Code 43 或驱动复位 | 驱动初始化失败及恢复路径 |
 | 选择器仍有效但性能低 | 频率、功耗墙与工作负载 |
 

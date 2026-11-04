@@ -6,6 +6,7 @@
 - [Why does Turing need GSP firmware mode?](#turing)
 - [Which display and boot-entry modes work?](#display)
 - [Why is there no gain on Linux despite a green log?](#linux)
+- [Why does an unlocked card get locked again once it reaches the OS?](#relock)
 - [Does the unlock survive Windows sleep? (S3 / Modern Standby)](#sleep)
 - [Does the unlock survive a Thunderbolt handoff?](#thunderbolt)
 - [How do I check or repair the unlock in the OS?](#ssdiag)
@@ -131,7 +132,119 @@ Restart and check effective values rather than the saved file alone:
 | GPU power | `cat /sys/bus/pci/devices/<bdf>/power_state` | `D0` for the actual target BDF |
 | Unlock state | `sudo python3 tools/diag-unlock.py` (checkout) | Effective SS overrides |
 
-An unlock cleared by power loss needs USB replay; changing configuration alone does not restore it. Source: [RTD3 platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/9).
+An unlock cleared by power loss needs USB replay; changing configuration alone does not restore it. Source: [RTD3 platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/9). For the full mechanism inventory, triage and remedies see [Why does an unlocked card get locked again once it reaches the OS?](#relock).
+
+<a id="relock"></a>
+
+## Why does an unlocked card get locked again once it reaches the OS?
+
+Short answer: **NVIDIA is not detecting us**. The unlock is erased by three independent mechanisms stacking up - the reset semantics of the physical layer, the firmware's initialization contract, and the nature of the FEAT block itself. Nearly every "lost on the way into the OS" report involves **the platform handing the driver a reset or a power-removal event**, and is largely independent of driver version.
+
+### First, what the FEAT block actually is
+
+`FEAT_PLM` (`0x823804`) and `SS0/SS1` (`0x82381c` / `0x823820`) are named **fuse feature readout** in NVIDIA's own register headers - they are a **software shadow of fuses/straps**, not persistent configuration:
+
+- `0xffffff8f` is not "some value", it is the PLM **power-on reset value**;
+- for `SS0/SS1` it is the **override field returning to zero** that is the reset state; the other bits are strap-derived, so whether the whole register reads 0 varies per card (`#148` reads `0x57340065` / `0x7`). `#164` read `0x0`, but that sample was taken after the loss, so its baseline cannot be told apart from zeroing;
+- what we write, `0xffffffff` / `0x88888888`, adds override bits to the shadow - neither fuses nor PLLs are touched.
+
+So the unlock reverting is **factory restore**, not damage. **It also makes "override field back to zero with the gate closed" itself evidence**: a writer that only touches the gate would not bother rewriting the selectors to their baseline; only a full recompute or a whole-domain reset reverts both.
+
+`FEAT_PLM` also lives on the AON (always-on) island - that is why it survives the in-transaction FLR (which the `POST-FLR` check verifies) and also the root of every problem here: **AON is reset only by power loss; no other reset source can reach it**.
+
+### Triage: classify first, then look for a cause
+
+| Observation | Meaning | Next step |
+| --- | --- | --- |
+| Already lost at `POST-FLR` | Erased inside the transaction | Treat as a transaction problem first |
+| Lost at `POST-GOP`, intact at `POST-FLR` | Lost before bootmgfw | The card's own GOP/devinit or the platform firmware; the Windows driver is excluded |
+| Intact at `POST-GOP`, gate closed in the OS with `SS` still at override values | Narrow write, gate only | Row 4 of the mechanism table |
+| Intact at `POST-GOP`, gate closed and `SS` at neither baseline nor override values | Re-derivation (driver init programming actively) | Row 3; see the [#148 record](#relock-148) |
+| Intact at `POST-GOP`, gate closed and `SS` back at the card's boot baseline (override field zero) | Whole-domain reset (power loss / SBR / full-chip reset) | Rows 1 and 2 |
+
+Turing relocks PLM at handoff by design - do not read its normal handoff value as a loss; see the [Thunderbolt section](#thunderbolt) and [cold values](cold-values.md).
+
+### The mechanisms that can send it back to factory
+
+| # | Mechanism | AON domain | Typical setting | Shape observed |
+| --- | --- | --- | --- | --- |
+| 1 | **Real power loss** (rail off) | reset | Laptop `_PR3` + RTD3/Modern Standby, EC power gating, enclosure power-off, S4/fast startup | Gate locked + selectors at the boot baseline; `power_state` was D3cold |
+| 2 | **Whole-domain reset** | reset | Platform SBR, link hot reset, full-chip SW_RESET; mostly old firmware / quirky boards | Same, and already broken at `POST-GOP` |
+| 3 | **devinit replay** (driver init recomputes) | survives | Some GA10x laptops ([#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)) | Gate locked + `SS` set to derived values (neither baseline nor override) |
+| 4 | **Narrow write** (gate only) | survives | A few platforms | Gate locked + `SS` intact ([#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) class) |
+| 5 | **Our own tail**: the native-GOP rebuild `StartImage`s the card's ROM | - | Some platforms' ROM POST runs devinit | Broken at `POST-GOP` but fine at `POST-FLR` |
+
+Rows 1-2 are physical events, row 3 is the firmware contract (below), and row 5 is the only one still in our hands - `\tx-reconnect-legacy.txt` makes the handoff tail reconnect the vendor stack instead of `StartImage`.
+
+### Why the recompute does not break the card
+
+- **devinit is idempotent**: it is the sequence that takes a chip from "just powered" to "usable", run on every cold boot. Running it once more yields a working card.
+- **Our overrides are not part of the functional contract**: PLM only changes who may write, SS only overrides a rate divisor; PLLs, geometry and link training all follow devinit.
+- Conversely: **a card that still works is itself proof the full recompute ran** - an incomplete one is what breaks a card.
+- The price is that failure is always **silent**: no error code, no WHEA, no degradation, only zero benefit. That is why [in-OS verification](#ssdiag) is not optional.
+
+### Is this deliberate driver behaviour?
+
+Three layers, three answers:
+
+- **There is no detection.** `0x823804` / `0x82381c` / `0x823820` have **not a single definition** in any register header of NVIDIA's open kernel modules (the only relative is `NV_FUSE_FEATURE_READOUT 0x00823814`). The driver does not even have the symbols, so it cannot read, compare or decide to preserve them.
+- **"Recompute after every reset" is deliberate.** It is an ASIC correctness contract: the `kbifPrepareForFullChipReset` comment reads "make sure the devinit scripts can be executed properly after the reset", the driver blocks after an FLR waiting for devinit to finish (timing out with "VBIOS boot failed!!"), and there is a dedicated timeout scale key `RMPcieFlrDevinitTimeout`. It cannot be skipped, because it establishes things far more fundamental than FEAT.
+- **"No preservation of foreign overrides" is a structural omission, not a trade-off.** FEAT overrides were an internal debug facility, locked down from the factory; nobody ever needed to keep one external write across a reset. Add the AON power-loss path and **there is simply nowhere to store the fact that someone opened the gate**.
+
+**So: not counter-measurement, but cheap to turn into one** - devinit already almost does it. The worst case always remains "the unlock silently stops working, never a dead card", which is the floor this design gives us.
+
+### What we can do
+
+What we cannot: **reopen the gate from inside the OS once it is closed**. Opening it requires running the signed booter inside SEC2, which belongs to the upstream kmod lineage and is out of scope here; replaying the USB transaction is the only recovery.
+
+What we can:
+
+1. **Block the reset sources**: turn off RTD3 ([Linux](#linux) / the equivalent Windows power setting on the driver), Fast Startup and Modern Standby, and PCIe idle power gating in the BIOS; never use "shutdown" as a restart.
+2. **Change the entry state**: dGPU-direct first; in hybrid mode the MUX/panel ownership decides whether the device enumerates at all ([#148 record](#relock-148)).
+3. **Repair afterwards**: with the gate still open, `ssdiag --reapply` / `diag-unlock.py --reapply` writes the selectors back; a locked gate means replay.
+4. **Report with evidence**: the `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` lines from `loader.log`, the in-OS read-back values, `powercfg /a`, the device power state and the event log. Without these it is guesswork.
+5. **Turn it into a platform property**: if a platform is confirmed to have `_PR3` and to actually cut the rail, record it as a platform property rather than chasing it as a driver bug.
+
+<a id="relock-148"></a>
+
+### Field record: a GA107M laptop re-derived by driver init on Linux ([#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148))
+
+This is the only record so far that separates all three suspects - RTD3, GSP-RM and FLR - in one pass, and it is worth keeping.
+
+Setup: RTX 3050 Ti Laptop (GA107M `10de:25a0`), Linux Mint 22.3 / 595.71.05, RTD3 off per the FAQ down to `0x00` verified in `/proc/driver/nvidia/params`, `supergfxctl -m AsusMuxDgpu`. The transaction was green (including `POST-FLR: verified`); in-OS read-only BAR0 mmap:
+
+| Register | Boot | Written by payload | In-OS, GSP on | In-OS, GSP off |
+| --- | --- | --- | --- | --- |
+| `FEAT_PLM 0x823804` | `0xffffff8f` | `0xffffffff` | `0xffffff8f` | `0xffffff8f` |
+| `FEAT_SS0 0x82381c` | `0x57340065` | `0x88888888` | `0x57740165` | `0x57740065` |
+| `FEAT_SS1 0x823820` | `0x00000007` | `0x00000008` | `0x00000007` | `0x00000007` |
+| `FEAT+0x08 0x823808` | `0x00000082` | - | `0x00000082` | `0x00000083` |
+
+Three inferences:
+
+- **Not RTD3**: RTD3 was off and the state is lost at `modprobe nvidia`, not at idle power-down.
+- **Not the FLR**: the in-transaction `POST-FLR` check passed.
+- **The init path programs it actively**: `SS0`'s delta from its boot value is `0x00400100` with GSP and `0x00400000` without - the two init paths write **different bits**, and `FEAT+0x08` moves between `0x82` and `0x83`. That is a write, not a failure to preserve.
+
+Two operational details: `resource0` **only supports mmap**, and `dd` silently returns nothing, which looks like a false "gate already closed"; on another machine the same stick found no device at all in Hybrid mode (`vendor 0xffff`) and only ran once the panel was handed to the dGPU - **panel ownership is an entry axis, not cold/warm**.
+
+There was no gain and a slight drop: the internal panel shares the `80 W` TGP, so FP16/BF16 land at ~`0.92-0.93x`, and even FP32, which never uses the tensor path, is `0.92x` - a power-budget effect, not a tensor-rate one. **Not generalized**: `25a0` is the only Linux re-derivation case, the same family's `25ad` persists on Windows, and the OS / driver-version / MUX-EC platform-state variables are still unsplit.
+
+### What disabling GSP on Linux buys, and what it costs
+
+Disabling GSP is a **diagnostic lever**, not a fix: it removes GSP-RM's late devinit from the kernel init path. [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148) concluded that re-derivation happens anyway, so it will not stop the loss - but precisely because the two modes write different bits, it is still a useful tool for identifying the writer.
+
+How (Linux only, temporarily):
+
+```bash
+echo 'options nvidia NVreg_EnableGpuFirmware=0' | \
+    sudo tee /etc/modprobe.d/nvidia-no-gsp.conf
+sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
+```
+
+After the restart verify `GSP Firmware Version: N/A` in `nvidia-smi -q` and `EnableGpuFirmware: 0` in `/proc/driver/nvidia/params`, otherwise the test is void.
+
+**Side effect (measured, [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148))**: dynamic power management is lost - the card idles at P0 / 1927 MHz / **26.9 W** instead of P5 / about 8 W. Throughput is unchanged, idle power and temperature are not, so keep it for a controlled A/B only. It is also a proprietary Linux-driver knob: **Windows Turing needs `EnableGpuFirmware=1`** ([Turing section](#turing)) - do not mix the two up.
 
 <a id="sleep"></a>
 
@@ -200,7 +313,7 @@ For no gain after handoff, use these read-back patterns to guide diagnosis. Conf
 | In-OS observation | Investigate |
 | --- | --- |
 | Ampere/Ada gate and selectors return to locked defaults | Power loss or full reset |
-| Gate remains open, selectors return to stock | devinit rewriting overrides |
+| Gate remains open, selectors return to stock | devinit rewriting overrides (see [relock mechanisms](#relock)) |
 | Rewritten selectors with Code 43 or driver resets | Failed driver initialization and recovery |
 | Effective selectors but low performance | Clocks, power wall and workload |
 
