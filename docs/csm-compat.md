@@ -1,5 +1,7 @@
 # CSM 兼容：reconnect 卡死类与两条解法路径（issue [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107) 谱系）
 
+[中文](csm-compat.md) | [English](csm-compat.en.md) · [致谢](credits.md) · [README](../README.md)
+
 > 2026-11-02，branch `issue107-csm-compat`。起因：[#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)（AD103 4080S / ASUS B550-F）实证 CSM on → `RECONNECT: ConnectController (recursive=true) begin` 卡死、CSM off → 全链绿（+82~88%）；解锁写入与 FLR 存活两种模式完全一致——病灶纯在 reconnect。本文是 CSM 类的签名表、已实现的 native-GOP 显式恢复路径、实验矩阵与证据索引。（曾评估的 Driver####/bcfg 预注册形态已裁撤：动态加载已覆盖需求，无需常驻 NVRAM 项。）
 
 ## 0. 谁需要 CSM——这个兼容补丁的受众（先读这个）
