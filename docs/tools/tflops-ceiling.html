@@ -9,6 +9,8 @@
 body{margin:0;background:var(--background);color:var(--foreground);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
 main{max-width:960px;margin:0 auto}
 footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-foreground);line-height:1.6}
+#gc-lang{appearance:none;background:none;border:1px solid var(--border);border-radius:3px;color:var(--muted-foreground);font:inherit;font-size:11px;line-height:1;padding:5px 7px;cursor:pointer;white-space:nowrap}
+#gc-lang:hover{color:var(--foreground);border-color:currentColor}
 </style>
 <main>
 <div id="gpu-ceiling">
@@ -63,11 +65,14 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
 </style>
 
 <div class="hd">
-  <div class="tl">理论解锁上限 · RTX 20 / 30 / 40 桌面 + 笔记本</div>
-  <div class="sub">dense TFLOPS · FP32 累加 · 不含稀疏 · 笔记本取最高 boost，未按 OEM TGP 折算</div>
+  <div>
+    <div class="tl" id="gc-h1">理论解锁上限 · RTX 20 / 30 / 40 桌面 + 笔记本</div>
+    <div class="sub" id="gc-sub">dense TFLOPS · FP32 累加 · 不含稀疏 · 笔记本取最高 boost，未按 OEM TGP 折算</div>
+  </div>
+  <button id="gc-lang" type="button" title="Switch language">EN</button>
 </div>
 
-<div class="tabs" role="tablist" aria-label="精度">
+<div class="tabs" role="tablist" id="gc-tabs" aria-label="精度">
   <button class="tab" role="tab" type="button" data-k="f" aria-selected="true">FP32</button>
   <button class="tab" role="tab" type="button" data-k="t" aria-selected="false">TF32</button>
   <button class="tab" role="tab" type="button" data-k="h" aria-selected="false">FP16</button>
@@ -77,20 +82,20 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
 
 <div class="ctl">
   <span class="sws">
-    <label class="sw"><input type="checkbox" id="gc-stock" checked> 显示出厂现值</label>
-    <label class="sw"><input type="checkbox" id="gc-mob" checked> 含笔记本</label>
-    <label class="sw"><input type="checkbox" id="gc-cmp"> 比较模式</label>
-    <label class="sw"><input type="checkbox" id="gc-r50" checked> 50 系对照</label>
+    <label class="sw"><input type="checkbox" id="gc-stock" checked> <span id="l-stock">显示出厂现值</span></label>
+    <label class="sw"><input type="checkbox" id="gc-mob" checked> <span id="l-mob">含笔记本</span></label>
+    <label class="sw"><input type="checkbox" id="gc-cmp"> <span id="l-cmp">比较模式</span></label>
+    <label class="sw"><input type="checkbox" id="gc-r50" checked> <span id="l-r50">50 系对照</span></label>
   </span>
   <span id="gc-peak" class="peak"></span>
 </div>
 
 <div class="lg" id="gc-lg" aria-hidden="true">
-  <span><i style="background:var(--muted);background-color:var(--gc-lock)"></i>出厂（钳制）</span>
-  <span><i style="background:var(--gc-20)"></i>20 系</span>
-  <span><i style="background:var(--gc-30)"></i>30 系</span>
-  <span><i style="background:var(--gc-40)"></i>解锁后上限</span>
-  <span><i style="background:var(--muted-foreground)"></i>50 系对照（不支持解锁）</span>
+  <span><i style="background:var(--muted);background-color:var(--gc-lock)"></i><span id="l-lg0">出厂（钳制）</span></span>
+  <span><i style="background:var(--gc-20)"></i><span id="l-lg1">20 系</span></span>
+  <span><i style="background:var(--gc-30)"></i><span id="l-lg2">30 系</span></span>
+  <span><i style="background:var(--gc-40)"></i><span id="l-lg3">解锁后上限</span></span>
+  <span><i style="background:var(--muted-foreground)"></i><span id="l-lg4">50 系对照（不支持解锁）</span></span>
 </div>
 
 <ul class="rows" id="gc-rows" role="list"></ul>
@@ -98,18 +103,75 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
 <div class="ft" id="gc-ft"></div>
 </div>
 
+<footer id="gc-foot">数据来源：Wikipedia 各代桌面规格表 × <code>docs/theoretical-uplift.md</code> 的逐 SM 速率模型；解锁值 = 白皮书全速，被钳制路径 ×2，不含稀疏。实际到手受功耗墙、带宽与库路由削减。</footer>
+
 <script>
 (function(){
   var D=[{"n":"GeForce RTX 2060","g":"20","c":"TU106","s":30,"f":6.5,"t":null,"h":[25.8,51.6],"b":null,"e":null},{"n":"GeForce RTX 2060 TU104","g":"20","c":"TU104（TU106 标准版换芯）","s":30,"f":12.9,"t":null,"h":[25.8,51.6],"b":null,"e":null},{"n":"GeForce RTX 2060 SUPER","g":"20","c":"TU106","s":34,"f":7.2,"t":null,"h":[28.7,57.4],"b":null,"e":null},{"n":"GeForce RTX 2070","g":"20","c":"TU106","s":36,"f":7.5,"t":null,"h":[29.9,59.7],"b":null,"e":null},{"n":"GeForce RTX 2070 SUPER","g":"20","c":"TU104","s":40,"f":9.1,"t":null,"h":[36.2,72.5],"b":null,"e":null},{"n":"GeForce RTX 2080","g":"20","c":"TU104","s":46,"f":10.1,"t":null,"h":[40.3,80.5],"b":null,"e":null},{"n":"GeForce RTX 2080 SUPER","g":"20","c":"TU104","s":48,"f":11.2,"t":null,"h":[44.6,89.2],"b":null,"e":null},{"n":"GeForce RTX 2080 Ti","g":"20","c":"TU102","s":68,"f":13.4,"t":null,"h":[53.8,107.6],"b":null,"e":null},{"n":"Titan RTX","g":"20","c":"TU102","s":72,"f":16.3,"t":null,"h":[65.2,130.5],"b":null,"e":null},{"n":"GeForce RTX 3050 6 GB","g":"30","c":"GA107","s":18,"f":6.8,"t":[6.8,6.8],"h":[6.8,13.5],"b":[6.8,13.5],"e":null},{"n":"GeForce RTX 3050","g":"30","c":"GA107/GA106 双芯","s":20,"f":9.1,"t":[9.1,9.1],"h":[9.1,18.2],"b":[9.1,18.2],"e":null},{"n":"GeForce RTX 3060 8 GB","g":"30","c":"GA106 · 亦有 GA104 变体","s":28,"f":12.7,"t":[12.7,12.7],"h":[12.7,25.5],"b":[12.7,25.5],"e":null},{"n":"GeForce RTX 3060 8 GB GA104","g":"30","c":"GA104（GA106 标准版换芯）","s":28,"f":12.7,"t":[12.7,12.7],"h":[25.4,50.8],"b":[25.4,50.8],"e":null},{"n":"GeForce RTX 3060 12 GB","g":"30","c":"GA106","s":28,"f":12.7,"t":[12.7,12.7],"h":[12.7,25.5],"b":[12.7,25.5],"e":null},{"n":"GeForce RTX 3060 Ti","g":"30","c":"GA104","s":38,"f":16.2,"t":[16.2,16.2],"h":[16.2,32.4],"b":[16.2,32.4],"e":null},{"n":"GeForce RTX 3070","g":"30","c":"GA104","s":46,"f":20.3,"t":[20.3,20.3],"h":[20.3,40.6],"b":[20.3,40.6],"e":null},{"n":"GeForce RTX 3070 Ti","g":"30","c":"GA104","s":48,"f":21.8,"t":[21.8,21.8],"h":[21.8,43.5],"b":[21.8,43.5],"e":null},{"n":"GeForce RTX 3080","g":"30","c":"GA102","s":68,"f":29.8,"t":[29.8,29.8],"h":[29.8,59.5],"b":[29.8,59.5],"e":null},{"n":"GeForce RTX 3080 12 GB","g":"30","c":"GA102","s":70,"f":30.6,"t":[30.6,30.6],"h":[30.6,61.3],"b":[30.6,61.3],"e":null},{"n":"GeForce RTX 3080 Ti","g":"30","c":"GA102","s":80,"f":34.1,"t":[34.1,34.1],"h":[34.1,68.2],"b":[34.1,68.2],"e":null},{"n":"GeForce RTX 3090","g":"30","c":"GA102","s":82,"f":35.6,"t":[35.6,35.6],"h":[35.6,71.2],"b":[35.6,71.2],"e":null},{"n":"GeForce RTX 3090 Ti","g":"30","c":"GA102","s":84,"f":40.0,"t":[40.0,40.0],"h":[40.0,80.0],"b":[40.0,80.0],"e":null},{"n":"GeForce RTX 4060","g":"40","c":"AD107","s":24,"f":15.1,"t":[15.1,30.2],"h":[30.2,60.5],"b":[30.2,60.5],"e":[60.5,120.9]},{"n":"GeForce RTX 4060 Ti 8 GB","g":"40","c":"AD106","s":34,"f":22.1,"t":[22.1,44.1],"h":[44.1,88.3],"b":[44.1,88.3],"e":[88.3,176.5]},{"n":"GeForce RTX 4060 Ti 16 GB","g":"40","c":"AD106","s":34,"f":22.1,"t":[22.1,44.1],"h":[44.1,88.3],"b":[44.1,88.3],"e":[88.3,176.5]},{"n":"GeForce RTX 4070","g":"40","c":"AD104","s":46,"f":29.1,"t":[29.1,58.3],"h":[58.3,116.6],"b":[58.3,116.6],"e":[116.6,233.2]},{"n":"GeForce RTX 4070 SUPER","g":"40","c":"AD104","s":56,"f":35.5,"t":[35.5,71.0],"h":[71.0,141.9],"b":[71.0,141.9],"e":[141.9,283.9]},{"n":"GeForce RTX 4070 Ti","g":"40","c":"AD104","s":60,"f":40.1,"t":[40.1,80.2],"h":[80.2,160.4],"b":[80.2,160.4],"e":[160.4,320.7]},{"n":"GeForce RTX 4070 Ti SUPER","g":"40","c":"AD103 · 亦有 AD102 变体（同规格）","s":66,"f":44.1,"t":[44.1,88.2],"h":[88.2,176.4],"b":[88.2,176.4],"e":[176.4,352.8]},{"n":"GeForce RTX 4080","g":"40","c":"AD103","s":76,"f":48.7,"t":[48.7,97.5],"h":[97.5,194.9],"b":[97.5,194.9],"e":[194.9,389.9]},{"n":"GeForce RTX 4080 SUPER","g":"40","c":"AD103","s":80,"f":52.2,"t":[52.2,104.4],"h":[104.4,208.9],"b":[104.4,208.9],"e":[208.9,417.8]},{"n":"GeForce RTX 4090 D","g":"40","c":"AD102","s":114,"f":73.5,"t":[73.5,147.1],"h":[147.1,294.2],"b":[147.1,294.2],"e":[294.2,588.4]},{"n":"GeForce RTX 4090","g":"40","c":"AD102","s":128,"f":82.6,"t":[82.6,165.2],"h":[165.2,330.3],"b":[165.2,330.3],"e":[330.3,660.6]},{"n":"RTX 2050","g":"20","c":"GA107（Ampere 硅片）","s":16,"f":6.0,"t":[6.0,6.0],"h":[12.0,24.0],"b":[12.0,24.0],"e":null,"m":1},{"n":"RTX 2060","g":"20","c":"TU106 · 亦有 TU104 变体","s":30,"f":4.6,"t":null,"h":[18.4,36.8],"b":null,"e":null,"m":1},{"n":"RTX 2070","g":"20","c":"TU106 · 亦有 TU104 变体","s":36,"f":6.6,"t":null,"h":[26.6,53.2],"b":null,"e":null,"m":1},{"n":"RTX 2070 SUPER","g":"20","c":"TU104","s":40,"f":7.1,"t":null,"h":[28.2,56.4],"b":null,"e":null,"m":1},{"n":"RTX 2080","g":"20","c":"TU104","s":46,"f":9.4,"t":null,"h":[37.4,74.8],"b":null,"e":null,"m":1},{"n":"RTX 2080 SUPER","g":"20","c":"TU104","s":48,"f":9.6,"t":null,"h":[38.4,76.8],"b":null,"e":null,"m":1},{"n":"RTX 3050","g":"30","c":"GA107","s":16,"f":6.1,"t":[6.1,6.1],"h":[12.2,24.4],"b":[12.2,24.4],"e":null,"m":1},{"n":"RTX 3050 Ti","g":"30","c":"GA107","s":20,"f":8.7,"t":[8.7,8.7],"h":[17.4,34.8],"b":[17.4,34.8],"e":null,"m":1},{"n":"RTX 3060","g":"30","c":"GA106","s":30,"f":13.1,"t":[13.1,13.1],"h":[26.2,52.4],"b":[26.2,52.4],"e":null,"m":1},{"n":"RTX 3070","g":"30","c":"GA104","s":40,"f":17.6,"t":[17.6,17.6],"h":[35.2,70.4],"b":[35.2,70.4],"e":null,"m":1},{"n":"RTX 3070 Ti","g":"30","c":"GA104","s":46,"f":17.5,"t":[17.5,17.5],"h":[35.0,70.0],"b":[35.0,70.0],"e":null,"m":1},{"n":"RTX 3080","g":"30","c":"GA104","s":48,"f":22.2,"t":[22.2,22.2],"h":[44.4,88.8],"b":[44.4,88.8],"e":null,"m":1},{"n":"RTX 3080 Ti","g":"30","c":"GA103","s":58,"f":23.6,"t":[23.6,23.6],"h":[47.2,94.4],"b":[47.2,94.4],"e":null,"m":1},{"n":"RTX 4050","g":"40","c":"AD107","s":20,"f":12.1,"t":[12.1,24.2],"h":[24.2,48.4],"b":[24.2,48.4],"e":[48.4,96.8],"m":1},{"n":"RTX 4060","g":"40","c":"AD107","s":24,"f":14.6,"t":[14.6,29.2],"h":[29.2,58.4],"b":[29.2,58.4],"e":[58.4,116.8],"m":1},{"n":"RTX 4070","g":"40","c":"AD106","s":36,"f":20.0,"t":[20.0,40.0],"h":[40.0,80.0],"b":[40.0,80.0],"e":[80.0,160.0],"m":1},{"n":"RTX 4080","g":"40","c":"AD104","s":58,"f":33.9,"t":[33.9,67.8],"h":[67.8,135.6],"b":[67.8,135.6],"e":[135.6,271.2],"m":1},{"n":"RTX 4090","g":"40","c":"AD103","s":76,"f":50.2,"t":[50.2,100.4],"h":[100.4,200.8],"b":[100.4,200.8],"e":[200.8,401.6],"m":1},{"n":"CMP 40HX","g":"20","c":"TU106-100 · 2176 核","s":34,"f":[0.2,7.2],"t":null,"h":[1.8,57.4],"b":null,"e":null,"k":1},{"n":"CMP 50HX","g":"20","c":"TU102-100 · 3584 核","s":56,"f":[0.3,11.1],"t":null,"h":[2.8,88.6],"b":null,"e":null,"k":1},{"n":"CMP 70HX","g":"30","c":"GA104-100 · 3840 核","s":30,"f":[0.33,10.7],"t":[0.33,10.7],"h":[0.67,21.4],"b":[0.67,21.4],"e":null,"k":1},{"n":"CMP 90HX","g":"30","c":"GA102-100","s":50,"f":[0.7,21.9],"t":[0.7,21.9],"h":[1.4,43.8],"b":[1.4,43.8],"e":null,"k":1},{"n":"CMP 170HX","g":"30","c":"GA100-105F · 4480 核","s":70,"f":[0.4,12.6],"t":[3.2,101.1],"h":[6.3,202.1],"b":[6.3,202.1],"e":null,"k":1},{"n":"GeForce RTX 5060","g":"50","c":"GB206-250","s":30,"f":19.2,"t":[19.2,19.2],"h":[38.4,38.4],"b":[38.4,38.4],"e":[76.7,76.7],"ref":1},{"n":"GeForce RTX 5060 Ti 8 GB","g":"50","c":"GB206-300","s":36,"f":23.7,"t":[23.7,23.7],"h":[47.4,47.4],"b":[47.4,47.4],"e":[94.8,94.8],"ref":1},{"n":"GeForce RTX 5060 Ti 16 GB","g":"50","c":"GB206-300","s":36,"f":23.7,"t":[23.7,23.7],"h":[47.4,47.4],"b":[47.4,47.4],"e":[94.8,94.8],"ref":1},{"n":"GeForce RTX 5070","g":"50","c":"GB205-300","s":48,"f":30.9,"t":[30.9,30.9],"h":[61.7,61.7],"b":[61.7,61.7],"e":[123.5,123.5],"ref":1},{"n":"GeForce RTX 5070 Ti","g":"50","c":"GB203-300","s":70,"f":43.9,"t":[43.9,43.9],"h":[87.9,87.9],"b":[87.9,87.9],"e":[175.8,175.8],"ref":1},{"n":"GeForce RTX 5080","g":"50","c":"GB203-400","s":84,"f":56.3,"t":[56.3,56.3],"h":[112.6,112.6],"b":[112.6,112.6],"e":[225.1,225.1],"ref":1},{"n":"GeForce RTX 5090 D","g":"50","c":"GB202-250","s":170,"f":104.8,"t":[104.8,104.8],"h":[209.5,209.5],"b":[209.5,209.5],"e":[419.0,419.0],"ref":1},{"n":"GeForce RTX 5090","g":"50","c":"GB202-300","s":170,"f":104.8,"t":[104.8,104.8],"h":[209.5,209.5],"b":[209.5,209.5],"e":[419.0,419.0],"ref":1}];
 
   var TABS=[{k:"f",l:"FP32",t:false},{k:"t",l:"TF32",t:true},{k:"h",l:"FP16",t:true},{k:"b",l:"BF16",t:true},{k:"e",l:"FP8",t:true}];
-  var NOTES={f:"FP32 走 CUDA 核，出厂即全速，解锁不改变它。",
-    t:"TF32 仅 30/40 系具备。30 系出厂即全速（† 不翻倍）；40 系架构速率本就是 FP32 的两倍、出厂砍半，所以出厂 TF32 恰好等于 FP32（GeForce 的著名怪象），解锁才回到 2× FP32。",
-    h:"FP16 为张量核 · FP32 累加路径，即被钳制的那条；FP16 累加更宽，独立于本表。",
-    b:"BF16 仅 30/40 系具备，出厂半速。",
-    e:"FP8 仅 40 系具备（四代张量核），出厂钳制在半速。"};
+  var S={
+    zh:{
+      docTitle:"理论解锁上限 · RTX 20 / 30 / 40 桌面与笔记本",
+      h1:"理论解锁上限 · RTX 20 / 30 / 40 桌面 + 笔记本",
+      sub:"dense TFLOPS · FP32 累加 · 不含稀疏 · 笔记本取最高 boost，未按 OEM TGP 折算",
+      tabsLabel:"精度",lang:"EN",langTitle:"Switch to English",
+      stock:"显示出厂现值",mob:"含笔记本",cmp:"比较模式",r50:"50 系对照",
+      lg:["出厂（钳制）","20 系","30 系","解锁后上限","50 系对照（不支持解锁）"],
+      na:"不支持",lap:"笔记本",kBadge:"矿卡",gen:"系",naPath:"：该代无此精度路径",
+      same:"：解锁前后同为 ",sameEnd:" TFLOPS",selPrefix:"：已选中，按解锁后 ",selMid:" TFLOPS 排位（出厂第",selEnd:"）",
+      unselPrefix:"：未选中，按出厂 ",unselEnd:" TFLOPS 排位",stockPrefix:"：出厂 ",unlockCap:", 解锁后理论上限 ",tfEnd:" TFLOPS",
+      jrA:"出厂第",jrB:" → 现第",peak:"该精度最高 ",peakNone:"该精度无可用型号",
+      notes:{f:"FP32 走 CUDA 核，出厂即全速，解锁不改变它。",
+        t:"TF32 仅 30/40 系具备。30 系出厂即全速（† 不翻倍）；40 系架构速率本就是 FP32 的两倍、出厂砍半，所以出厂 TF32 恰好等于 FP32（GeForce 的著名怪象），解锁才回到 2× FP32。",
+        h:"FP16 为张量核 · FP32 累加路径，即被钳制的那条；FP16 累加更宽，独立于本表。",
+        b:"BF16 仅 30/40 系具备，出厂半速。",
+        e:"FP8 仅 40 系具备（四代张量核），出厂钳制在半速。"},
+      ft:["数值 = SM × 每 SM 每时钟 FMA × 2 × 加速频率。解锁 = 恢复白皮书全速，钳制路径 ×2；不含稀疏。",
+        "实际到手通常低于此值：功耗墙、显存带宽、库路由各自打折（见 <code>docs/theoretical-uplift.md</code>）。",
+        "† 该卡 TF32 出厂未被钳制（30 系与 GA107 的 2050），解锁不带来增益，故 ×2 不适用。",
+        "核心列注记：同名卡存在多种硅片时逐条注明（如 RTX 3050 8 GB 有 GA107/GA106 双芯批次、RTX 4070 Ti SUPER 有 AD102 变体、RTX 2060 有 TU104 变体、RTX 2050 实为 GA107）；独立成行的变体按其实际芯片与频率单列。",
+        "矿卡（CMP）：全路出厂 ÷32（与 GeForce 写同一组 SS0/SS1 速率寄存器，解锁原理相同），故解锁增益 32×；170HX 实测 FP32 0.395→12.7 TFLOPS 印证该模型。40/50HX=Turing 硅片，70/90/170HX=Ampere 硅片；30HX（TU116，无张量核）未列。",
+        "50 系为出厂对照行（本工具不支持 RTX 50）：取 TPU/规格表出货列——TF32=1×FP32、FP16/BF16=2×FP32、FP8=4×FP32（TPU 5090 页锚定），与 40 系出厂钳制比例相同但无从解锁；FP4/FP6 不进图（40 系及以前没有）。5090 D V2 资料不全未列。",
+        "笔记本行取该型号最高 boost，未按 OEM TGP 折算——解锁后受功耗墙压制更狠；Max-Q 变体未单列。RTX 2050 实为 GA107（Ampere）硅片，故有 TF32/BF16。",
+        "比较模式：点击卡片行选中你的卡（可多选，再点取消）——选中卡按解锁后数值排位并高亮，其余卡按出厂值排位；行内徽标显示排位变化，切到其他精度页签可带着同一组选择继续比较。"],
+      foot:"数据来源：Wikipedia 各代桌面规格表 × <code>docs/theoretical-uplift.md</code> 的逐 SM 速率模型；解锁值 = 白皮书全速，被钳制路径 ×2，不含稀疏。实际到手受功耗墙、带宽与库路由削减。"
+    },
+    en:{
+      docTitle:"Theoretical post-unlock ceiling · RTX 20 / 30 / 40 desktop and laptop",
+      h1:"Theoretical post-unlock ceiling · RTX 20 / 30 / 40 desktop + laptop",
+      sub:"dense TFLOPS · FP32 accumulate · no sparsity · laptops take the highest boost clock, not derated per OEM TGP",
+      tabsLabel:"Precision",lang:"中文",langTitle:"切换到中文",
+      stock:"Show as-shipped",mob:"Include laptops",cmp:"Comparison mode",r50:"RTX 50 reference",
+      lg:["As-shipped (clamped)","RTX 20","RTX 30","Post-unlock ceiling","RTX 50 reference (no unlock)"],
+      na:"n/a",lap:"laptop",kBadge:"mining card",gen:"xx",naPath:": no such path on this generation",
+      same:": "+"same before and after unlock, ",sameEnd:" TFLOPS",selPrefix:": selected, ranked by post-unlock ",selMid:" TFLOPS (as-shipped rank ",selEnd:")",
+      unselPrefix:": not selected, ranked by as-shipped ",unselEnd:" TFLOPS",stockPrefix:": as-shipped ",unlockCap:", theoretical post-unlock ceiling ",tfEnd:" TFLOPS",
+      jrA:"as-shipped #",jrB:" → now #",peak:"fastest for this precision: ",peakNone:"no model offers this precision",
+      notes:{f:"FP32 runs on the CUDA cores; it is full speed as shipped and unlock does not change it.",
+        t:"TF32 exists on RTX 30/40 only. RTX 30 is full speed as shipped († no doubling); on RTX 40 the architectural rate is already twice FP32 and is halved at the factory, so stock TF32 equals FP32 (the well-known GeForce oddity) and only unlock returns 2× FP32.",
+        h:"FP16 here is the tensor-core · FP32-accumulate path, i.e. the clamped one; FP16-accumulate is wider and outside this table.",
+        b:"BF16 exists on RTX 30/40 only, at half speed as shipped.",
+        e:"FP8 exists on RTX 40 only (fourth-gen tensor cores), clamped to half speed as shipped."},
+      ft:["Value = SM × FMA per SM per clock × 2 × boost clock. Unlock = restore the whitepaper full rate, ×2 on the clamped path; no sparsity.",
+        "Real-world results usually land below these figures: power wall, memory bandwidth and library routing each take their cut (see <code>docs/theoretical-uplift.en.md</code>).",
+        "† TF32 is not clamped on this card as shipped (RTX 30 and the GA107-based 2050), so unlock gains nothing and ×2 does not apply.",
+        "Chip column notes: cards that shipped on more than one die are annotated per row (e.g. RTX 3050 8 GB comes in GA107 and GA106 batches, RTX 4070 Ti SUPER has an AD102 variant, RTX 2060 has a TU104 variant, RTX 2050 is really GA107); split-out variants are listed by their actual die and clock.",
+        "Mining cards (CMP): every path is ÷32 as shipped (they write the same SS0/SS1 rate registers as GeForce, so the mechanism is identical), hence a 32× unlock gain; the measured 170HX FP32 0.395→12.7 TFLOPS confirms the model. 40/50HX are Turing dies, 70/90/170HX are Ampere dies; 30HX (TU116, no tensor cores) is omitted.",
+        "RTX 50 rows are as-shipped reference only (this tool does not support RTX 50): TPU/spec-sheet shipping columns — TF32=1×FP32, FP16/BF16=2×FP32, FP8=4×FP32 (anchored on the TPU 5090 page), the same factory ratios as RTX 40 but not unlockable; FP4/FP6 are not charted (no pre-40 generation has them). The 5090 D V2 is omitted for lack of data.",
+        "Laptop rows take the model's highest boost clock, not derated per OEM TGP — after unlock they hit the power wall harder; Max-Q variants are not split out. The RTX 2050 is really a GA107 (Ampere) die, hence TF32/BF16.",
+        "Comparison mode: click a card row to select it (multi-select, click again to clear) — selected cards rank and highlight by post-unlock figures, the rest by as-shipped values; the inline badge shows the rank change, and switching precision tabs carries the same selection."],
+      foot:"Sources: Wikipedia per-generation desktop spec tables × the per-SM rate model in <code>docs/theoretical-uplift.en.md</code>; unlock values are the whitepaper full rate, ×2 on clamped paths, no sparsity. Real results are cut by the power wall, bandwidth and library routing."
+    }
+  };
+  var CHIP_EN={"TU106（TU106 标准版换芯）":"TU106 (standard TU106 re-die)","GA107/GA106 双芯":"GA107/GA106 dual die","GA106 · 亦有 GA104 变体":"GA106 · also a GA104 variant","GA104（GA106 标准版换芯）":"GA104 (standard GA106 re-die)","GA107（Ampere 硅片）":"GA107 (Ampere die)","TU106 · 亦有 TU104 变体":"TU106 · also a TU104 variant","AD103 · 亦有 AD102 变体（同规格）":"AD103 · also an AD102 variant (same specs)","TU106-100 · 2176 核":"TU106-100 · 2176 cores","TU102-100 · 3584 核":"TU102-100 · 3584 cores","GA104-100 · 3840 核":"GA104-100 · 3840 cores","GA100-105F · 4480 核":"GA100-105F · 4480 cores"};
+  var lang="zh";
+  function t(){return S[lang];}
+  function chip(c){return lang==="en"?(CHIP_EN[c]||c):c;}
   var root=document.getElementById("gpu-ceiling"),rowsEl=document.getElementById("gc-rows"),
-      peakEl=document.getElementById("gc-peak"),ftEl=document.getElementById("gc-ft"),
+      peakEl=document.getElementById("gc-peak"),ftEl=document.getElementById("gc-ft"),footEl=document.getElementById("gc-foot"),
+      h1El=document.getElementById("gc-h1"),subEl=document.getElementById("gc-sub"),tabsEl=document.getElementById("gc-tabs"),
+      langEl=document.getElementById("gc-lang"),
       stockEl=document.getElementById("gc-stock"),mobEl=document.getElementById("gc-mob"),cmpEl=document.getElementById("gc-cmp"),r50El=document.getElementById("gc-r50");
   var KMAP={fp32:"f",tf32:"t",fp16:"h",bf16:"b",fp8:"e"};
   var qk=new URLSearchParams(location.search).get("k");qk=KMAP[qk]||qk;
@@ -125,6 +187,9 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
   var sel={};
   (pc0.l||[]).forEach(function(n){sel[n]=true;});
   cmpEl.checked=cmp;r50El.checked=show50;
+  var ql=new URLSearchParams(location.search).get("lang");
+  if(ql==="en"||ql==="zh")lang=ql;
+  else if(pc0.lang==="en"||pc0.lang==="zh")lang=pc0.lang;
 
   function val(c,k){ return k==="f"?(Array.isArray(c.f)?c.f:[c.f,c.f]):c[k]; }
   function full(c){ return Array.isArray(c.f)?c.f[1]:c.f; }
@@ -160,17 +225,17 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
       li.setAttribute("data-n",c.n);
       var jr="";
       if(isSel&&it.max!==null&&stockRank[c.n]&&stockRank[c.n]!==n+1)
-        jr='<span class="jr">出厂第'+stockRank[c.n]+' → 现第'+(n+1)+'</span>';
+        jr='<span class="jr">'+t().jrA+stockRank[c.n]+t().jrB+(n+1)+'</span>';
       var desc;
       if(it.max===null){
-        desc=c.n+"：该代无此精度路径";
+        desc=c.n+t().naPath;
       }else if(!tab.t){
-        desc=c.n+"：解锁前后同为 "+full(c)+" TFLOPS";
+        desc=c.n+t().same+full(c)+t().sameEnd;
       }else if(cmp){
-        desc=c.n+(isSel?("：已选中，按解锁后 "+fmt(it.max)+" TFLOPS 排位（出厂第"+stockRank[c.n]+"）")
-                        :("：未选中，按出厂 "+fmt(it.lo)+" TFLOPS 排位"));
+        desc=c.n+(isSel?(t().selPrefix+fmt(it.max)+t().selMid+stockRank[c.n]+t().selEnd)
+                        :(t().unselPrefix+fmt(it.lo)+t().unselEnd));
       }else{
-        desc=c.n+"：出厂 "+fmt(it.lo)+"，解锁后理论上限 "+fmt(it.max)+" TFLOPS";
+        desc=c.n+t().stockPrefix+fmt(it.lo)+t().unlockCap+fmt(it.max)+t().tfEnd;
       }
       li.setAttribute("aria-label",desc);
       if(cmp&&it.max!==null){li.setAttribute("role","button");li.setAttribute("tabindex","0");}
@@ -178,37 +243,51 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
       var pctFull=it.max===null?0:((cmp&&!isSel)?it.lo:it.max)/maxV*100;
       var pctLo=ov?it.lo/maxV*100:0;
       li.innerHTML='<div class="rk">'+(it.max===null?"—":n+1)+'</div>'+
-        '<div class="nm">'+c.n+(c.m?'<span class="bd mb">笔记本</span>':'')+(c.k?'<span class="bd mb">矿卡</span>':'')+'<span class="bd">'+c.g+'系</span><span class="mt">'+c.c+' · '+c.s+' SM</span>'+jr+
+        '<div class="nm">'+c.n+(c.m?'<span class="bd mb">'+t().lap+'</span>':'')+(c.k?'<span class="bd mb">'+t().kBadge+'</span>':'')+'<span class="bd">'+c.g+t().gen+'</span><span class="mt">'+chip(c.c)+' · '+c.s+' SM</span>'+jr+
         (cur==="t"&&c.t&&c.t[0]===c.t[1]?'<span class="up">†</span>':'')+'</div>'+
         '<div class="trk">'+(it.max===null?'':('<div class="bar" style="width:'+pctFull+'%"></div>'+
           (ov?'<div class="bar lock" style="width:'+pctLo+'%"></div>':'')+'</div>'))+
-        '<div class="vl">'+(it.max===null?'<span class="nw">不支持</span>':
+        '<div class="vl">'+(it.max===null?'<span class="nw">'+t().na+'</span>':
           (ov?fmt(it.lo)+' <span class="ar">→</span> ':'')+fmt(ov?it.max:(cmp&&!isSel?it.lo:it.max)))+'</div>';
       rowsEl.appendChild(li);
     });
 
-    peakEl.textContent=sup.length?("该精度最高 "+sup[0].c.n.replace("GeForce RTX ","RTX ")+" · "+(cmp?fmt(eff(sup[0])):(sup[0].lo===sup[0].max?fmt(sup[0].max):fmt(sup[0].lo)+" → "+fmt(sup[0].max)))):"该精度无可用型号";
+    peakEl.textContent=sup.length?(t().peak+sup[0].c.n.replace("GeForce RTX ","RTX ")+" · "+(cmp?fmt(eff(sup[0])):(sup[0].lo===sup[0].max?fmt(sup[0].max):fmt(sup[0].lo)+" → "+fmt(sup[0].max)))):t().peakNone;
     document.querySelectorAll("#gpu-ceiling .tab").forEach(function(b){
       var k=b.getAttribute("data-k");
       var n=D.filter(function(c){return (showMob||!c.m)&&(k==="f"?c.f:c[k])!==null;}).length;
       if(!b.querySelector(".ct")){var s=document.createElement("span");s.className="ct";b.appendChild(s);}
       b.querySelector(".ct").textContent=" "+n;
     });
-    ftEl.innerHTML='<p>'+NOTES[cur]+'</p>'+
-      '<p>数值 = SM × 每 SM 每时钟 FMA × 2 × 加速频率。解锁 = 恢复白皮书全速，钳制路径 ×2；不含稀疏。</p>'+
-      '<p>实际到手通常低于此值：功耗墙、显存带宽、库路由各自打折（见 <code>docs/theoretical-uplift.md</code>）。</p>'+
-      (cur==="t"?'<p>† 该卡 TF32 出厂未被钳制（30 系与 GA107 的 2050），解锁不带来增益，故 ×2 不适用。</p>':'')+
-      '<p>核心列注记：同名卡存在多种硅片时逐条注明（如 RTX 3050 8 GB 有 GA107/GA106 双芯批次、RTX 4070 Ti SUPER 有 AD102 变体、RTX 2060 有 TU104 变体、RTX 2050 实为 GA107）；独立成行的变体按其实际芯片与频率单列。</p>'+
-      '<p>矿卡（CMP）：全路出厂 ÷32（与 GeForce 写同一组 SS0/SS1 速率寄存器，解锁原理相同），故解锁增益 32×；170HX 实测 FP32 0.395→12.7 TFLOPS 印证该模型。40/50HX=Turing 硅片，70/90/170HX=Ampere 硅片；30HX（TU116，无张量核）未列。</p>'+
-      '<p>50 系为出厂对照行（本工具不支持 RTX 50）：取 TPU/规格表出货列——TF32=1×FP32、FP16/BF16=2×FP32、FP8=4×FP32（TPU 5090 页锚定），与 40 系出厂钳制比例相同但无从解锁；FP4/FP6 不进图（40 系及以前没有）。5090 D V2 资料不全未列。</p>';
-    ftEl.innerHTML+=(showMob?'<p>笔记本行取该型号最高 boost，未按 OEM TGP 折算——解锁后受功耗墙压制更狠；Max-Q 变体未单列。RTX 2050 实为 GA107（Ampere）硅片，故有 TF32/BF16。</p>':'');
-    ftEl.innerHTML+=(cmp?'<p>比较模式：点击卡片行选中你的卡（可多选，再点取消）——选中卡按解锁后数值排位并高亮，其余卡按出厂值排位；行内徽标显示排位变化，切到其他精度页签可带着同一组选择继续比较。</p>':'');
+    var st=t(),f=st.ft;
+    ftEl.innerHTML='<p>'+st.notes[cur]+'</p>'+
+      '<p>'+f[0]+'</p>'+
+      '<p>'+f[1]+'</p>'+
+      (cur==="t"?'<p>'+f[2]+'</p>':'')+
+      '<p>'+f[3]+'</p>'+
+      '<p>'+f[4]+'</p>'+
+      '<p>'+f[5]+'</p>'+
+      (showMob?'<p>'+f[6]+'</p>':'')+
+      (cmp?'<p>'+f[7]+'</p>':'');
     save();
+  }
+
+  function applyLang(){
+    var st=t();
+    document.documentElement.lang=(lang==="en"?"en":"zh-CN");
+    document.title=st.docTitle;
+    h1El.textContent=st.h1;subEl.textContent=st.sub;
+    tabsEl.setAttribute("aria-label",st.tabsLabel);
+    langEl.textContent=st.lang;langEl.title=st.langTitle;
+    ["stock","mob","cmp","r50"].forEach(function(k){var el=document.getElementById("l-"+k);if(el)el.textContent=st[k];});
+    for(var i=0;i<5;i++){var el=document.getElementById("l-lg"+i);if(el)el.textContent=st.lg[i];}
+    footEl.innerHTML=st.foot;
+    draw();
   }
 
   function save(){
     if(!window.zcode||!window.zcode.setWidgetState)return;
-    try{window.zcode.setWidgetState({modelContent:{p:cur},privateContent:{s:show,mo:showMob,c:cmp,r50:show50,l:Object.keys(sel).filter(function(n){return sel[n];})}}).catch(function(){});}catch(e){}
+    try{window.zcode.setWidgetState({modelContent:{p:cur},privateContent:{s:show,mo:showMob,c:cmp,r50:show50,lang:lang,l:Object.keys(sel).filter(function(n){return sel[n];})}}).catch(function(){});}catch(e){}
   }
 
   document.querySelectorAll("#gpu-ceiling .tab").forEach(function(b){
@@ -218,6 +297,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
   mobEl.addEventListener("change",function(){showMob=mobEl.checked;draw();});
   cmpEl.addEventListener("change",function(){cmp=cmpEl.checked;draw();});
   r50El.addEventListener("change",function(){show50=r50El.checked;draw();});
+  langEl.addEventListener("click",function(){lang=(lang==="en"?"zh":"en");applyLang();});
   function toggleRow(li){
     var nm=li.getAttribute("data-n");
     if(!nm)return;
@@ -246,11 +326,12 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
     if(g.privateContent&&typeof g.privateContent.c==="boolean"){cmp=g.privateContent.c;cmpEl.checked=cmp;}
     if(g.privateContent&&typeof g.privateContent.r50==="boolean"){show50=g.privateContent.r50;r50El.checked=show50;}
     if(g.privateContent&&g.privateContent.l&&g.privateContent.l.forEach){sel={};g.privateContent.l.forEach(function(n){sel[n]=true;});}
-    draw();
+    if(g.privateContent&&(g.privateContent.lang==="en"||g.privateContent.lang==="zh"))lang=g.privateContent.lang;
+    applyLang();
   });
-  draw();
+  applyLang();
 })();
 </script>
 </main>
-<footer>数据来源：Wikipedia 各代桌面规格表 × <code>docs/theoretical-uplift.md</code> 的逐 SM 速率模型；解锁值 = 白皮书全速，被钳制路径 ×2，不含稀疏。实际到手受功耗墙、带宽与库路由削减。</footer>
+
 </html>
