@@ -33,37 +33,59 @@ PRI writes from the SEC2 heavy-secure context) is addressable today.
 Hard boundary: a die without a broken debug key has no generator input
 (TU = key family #6, GA = #37 are broken; AD/GA100 plaintexts on file).
 
+## G0 — LANDED (2026-11-05)
+
+- **Position-independent fuc5 decoder** (`src/isa.rs` + `src/decode.rs`):
+  full Rust transcription of envydis/falcon.c (18 tables, ~380 entries) +
+  core-dis.c engine semantics. Validation: linear decode reproduces the
+  envydis lst **exactly on all five decrypted booter segments**
+  (TU102/TU116/GA102/AD102/GA100, 54,670 instructions, zero mismatches)
+  and 360 sampled non-canonical offsets agree per-offset (env-gated
+  oracle tests, silent skip without the RE workspace).
+- **Scanner** (`src/scan.rs`): forward-walk classification on decoded
+  operand kinds, unknown-tolerant. Acceptance **17/17** known code-entry
+  sites — TU102 6/6 (incl. the mid-entry `0x10b9`/`0xc95` the python
+  prototype missed), GA102 5/5, AD102 6/6.
+- `falcgen dis|scan|lst-compare` CLI; `cargo test -p falcgen` green;
+  `cargo xt` green.
+
+**G0 finding worth recording**: the mid-entry gadget streams walk through
+bytes the 2012-era envydis tables cannot decode (`ab`-opcode family,
+fucold-excluded forms). The silicon decodes them; cmp50hx's docs already
+flagged that archive bytes at gadget PCs are not runtime gadget bytes.
+The scanner therefore tolerates unknown bytes on a walk (candidates are
+arbitrated by the golden payload tables), and G1/G2 must treat
+envydis-decodability as *neither necessary nor sufficient* for
+executability.
+
 ## Milestones
 
-- **G0** position-independent fuc5 decoder (opcode authority:
-  `reference/envytools/envydis/falcon.c`, one-shot transcription to Rust;
-  envydis stays as the cross-check oracle) + scanner completion. Accept:
-  6/6 on the TU102 sites, all known GA102/AD102 code entries, zero
-  divergence vs envydis.
-- **G1** stack-geometry derivation (static interprocedural frame analysis;
-  emulator is the fallback — note faucon has NO interpreter, public
-  tooling has none either). Accept: 0xFF38/40/44/4C, stride 0x18,
-  0x600/0xFFF0 derived from the plaintext alone.
+- **G1** stack-geometry derivation — dual track (user decision):
+  Track A static interprocedural frame analysis over the decoded stream;
+  Track B a narrow fuc5 interpreter (plaintext-fed, MMIO-stubbed,
+  DMA-as-copy) whose reuse value extends into `sim/` semantic
+  validation. Accept either way: derived geometry == golden values
+  (TU102: 0xFF38/40/44/4C, stride 0x18, copy base 0x600, main SP 0xFFF0).
 - **G2** minimal-chain synthesis + golden-table reproduction (byte-exact
-  or per-word justified).
+  or per-word justified; fill-word derivation mechanical via the
+  decoder).
 - **G3** full-parity tail frames + first fresh-die use (TU116 cross-check
   against the hand-anchored table).
 
 G0–G2 are fully offline, zero GPU contact (constitution §1.8: sim first).
 
-## In this directory (bootstrap stage)
+## In this directory
 
-- `gadget_scan.py` — the 150-line prototype (moved from scratch). Harvests
-  an instruction-length table from the envydis lst, decodes both parities
-  from every byte offset, classifies ROP-terminated slices. Prototype
-  result: auto-recovers 4/6 TU102 + 2/5 GA102 known sites without being
-  told them; misses = mid-entry opcode starts absent from the canonical
-  stream (exactly the gap G0's real decoder closes).
+- `src/` — the decoder, scanner and CLI (`cargo run -p falcgen -- dis
+  <file> --base 0x100 [--all-offsets] | scan <file> --base <va>
+  --check <va>,... | lst-compare <plain> <lst> --base 0x100`).
+- `tests/oracle.rs` — envydis ground-truth tests (env-gated):
+  `FALCGEN_SEC_DIR=D:/git-repo/nv-uefi-re` and
+  `FALCGEN_ENVYDIS=/mnt/d/.../envydis` (a WSL path; the test runs envydis
+  inside WSL because wsl.exe stdin piping from Windows is not
+  binary-safe). Silent skip when unset.
+- `gadget_scan.py` — HISTORICAL python prototype (superseded by
+  `src/scan.rs`), kept as the feasibility evidence.
 
-```text
-GADGET_LST=<sec.lst> python -I gadget_scan.py <sec_plain.bin> 0x100 [known VAs...]
-```
-
-Next step (G0): port the decoder to Rust under this directory as a crate,
-harvest the fuc5 opcode/encoding tables from `falcon.c`, wire the
-length-table bootstrap as the test oracle.
+Next step (G1): dual-track stack-geometry derivation per the milestone
+note above; the checkpoint after G0 re-plans the details.
