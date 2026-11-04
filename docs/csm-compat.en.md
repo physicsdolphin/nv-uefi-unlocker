@@ -42,11 +42,13 @@ These users **need the unlock just as much** (mining and old cards are exactly w
 
 Failure policy: any step failing → log it and hand the console to bootmgfw to self-establish (the proven safe landing point), **never falling back to the hanging ConnectController**.
 
-## 3. Experiment matrix (in order, all marker-gated, default off)
+## 3. Historical experiment matrix (before native-GOP became the default)
+
+The table below records the diagnostic sequence used before native-GOP recovery became the default. It is not a setup guide for v2.1.10 or later: those versions use native-GOP recovery without a marker. `\tx-native-gop.txt` is optional for selecting a GOP module; `\tx-reconnect-legacy.txt` opts into the old reconnect path. Marker behavior and precedence should be checked against the version being tested.
 
 | # | Configuration | What it validates |
 |---|---|---|
-| 1 | CSM on + no marker (status quo) | Baseline (expected [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)-shaped hang) |
+| 1 | CSM on + no recovery marker (historical default) | Baseline (expected [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107)-shaped hang) |
 | 2 | CSM on + `\no-reconnect.txt` | Whether bootmgfw can rebuild the console under CSM — closes the CSM boundary of the Code 12 law (whether the no-reconnect experience of [#106](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/106)/[#83](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/83) holds across CSM) |
 | 3 | CSM on + `\tx-reconnect-nonrecursive.txt` | Behavior of a non-recursive vendor-GOP-only bind under CSM |
 | 4 | CSM on + `\tx-native-gop.txt` | **Main body of this plan**: explicit stock-GOP recovery (the [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107) reporter already validated the approach on their own implementation) |
@@ -86,3 +88,4 @@ The transaction was fully green (unlock_persist, FLR skipped as designed), the H
 - [#107](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/107) reporter's implementation (behavior reference, no license header → behavior only): `RTX4080SUPER-Tensor-Core-Unlocker`'s extract_gop / native_gop / ownership / pci_snapshot / vga_restore.
 - Community tool reference (likewise behavior-level): Wudimobile GOP Updater (Turing/Ampere extraction-normalization script pairs; its `55 aa ?? 00 f1 0e` header pattern matches this document's romcore parsing).
 - License: unlock side is GPL-2.0-only compatible; the project is an independent GPL-2.0-only implementation throughout (constitution §1.10).
+
