@@ -12,6 +12,7 @@ nv-uefi-unlocker is a UEFI pre-driver unlocker for GTX 16 and RTX 20/30/40 serie
 | Turing GSP prerequisites | [Turing](docs/faq.en.md#turing) |
 | Linux RTD3 / hybrid display / eGPU | [RTD3](docs/faq.en.md#linux), [display](docs/faq.en.md#display), [Thunderbolt](docs/faq.en.md#thunderbolt) |
 | In-OS read-back and recovery | [ssdiag](docs/faq.en.md#ssdiag), [recovery](docs/faq.en.md#recovery) |
+| Green log but Windows will not start (`0xc000009a`) | [Handoff memory](docs/handoff-lowmem.en.md), [FAQ](docs/faq.en.md#handoff) |
 
 1. Discover the **target** GPU model, PCI vendor:device, BDF, OS, driver, display mode, Secure Boot state and intended USB volume. On Windows use `nvidia-smi -q` and device/volume inventory; on Linux also use `lspci -nn` and `lsblk -f`. Distinguish the build host from the target. Ask only for facts you cannot discover. Never infer a USB drive letter/device or overwrite an unidentified volume.
 2. Map the target using the compatibility document, not the model number alone. GTX 16/RTX 20 → `tu10x`; RTX 30 GA10x → `ga102`; RTX 40 → `ad102`. GA100, pre-Turing and Blackwell are unsupported. Record unresolved model/platform issues, particularly TU10x 0x91, before proposing a hardware attempt; do not claim an unverified card was tested.

@@ -201,6 +201,8 @@ If picking the stick flashes and bounces back to the boot menu (or straight into
 
 On STOP, a fault or a stuck black screen, **do not retry in the same session**. Fully power off, remove the stick and boot normally; follow the [recovery instructions](docs/faq.en.md#recovery).
 
+Unlock log green but Windows will not start (`0xc000009a` Recovery screen)? The mechanism and the now-default fix are in [low memory at handoff](docs/handoff-lowmem.en.md).
+
 EFI transaction green but no unlock once the OS is up? **Read [why an unlocked card gets locked again once it reaches the OS](docs/faq.en.md#relock) before opening an issue** - most cases are a platform-side reset or power-removal event, not the driver countering us; that section has the triage, which log lines to copy, and what still helps.
 
 For agent-assisted setup, use the [deployment guide](AGENTS.deploy.md). Copy this request:
