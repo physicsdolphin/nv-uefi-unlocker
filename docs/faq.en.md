@@ -179,7 +179,7 @@ Two methodological limits, both of which produce false verdicts - read them befo
 
 | # | Mechanism | AON domain | Typical setting | Shape observed |
 | --- | --- | --- | --- | --- |
-| 1 | **Real power loss** (rail off) | reset | Laptop `_PR3` + RTD3/Modern Standby, EC power gating, enclosure power-off, S4/fast startup | Gate locked + selectors at the boot baseline; `power_state` was D3cold |
+| 1 | **Real power loss** (rail off) | reset | A root port with `_PR3` + D3cold/RTD3/Modern Standby (common on laptops, possible on desktops - all three PEG ports here), EC power gating, enclosure power-off, S4/fast startup | Gate locked + selectors at the boot baseline; `power_state` was D3cold |
 | 2 | **Whole-domain reset** | reset | Platform SBR, link hot reset, full-chip SW_RESET; mostly old firmware / quirky boards | Same, and already broken at `POST-GOP` |
 | 3 | **devinit replay** (driver init recomputes) | survives | Some GA10x laptops ([#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148); measured on Linux, no Windows sample of this shape yet) | Gate locked + `SS` set to derived values (neither baseline nor override) |
 | 4 | **Narrow write** (gate only) | survives | A few platforms | Gate locked + `SS` intact ([#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) class) |
@@ -189,9 +189,11 @@ Rows 1-2 are physical events, row 3 is the firmware contract (below), and row 5 
 
 ### Who actually cuts the power on the platform
 
-A dGPU has only two power sources: a desktop card is fed straight from the slot; a laptop / all-in-one dGPU is built into the platform and powered through a GPIO switched by the ACPI `_PR3` `_ON` / `_OFF` methods (the BOCO shape). **D3cold is defined as running `_OFF` on those power resources**, with the sequence: root port broadcasts PME_Turn_Off -> link drops to L2/3 -> PERST# asserted -> power removed. Desktop add-in cards have no such path, which is why this is mostly a laptop story.
+A dGPU has only two power sources: a desktop card is fed straight from the slot; a laptop / all-in-one dGPU is built into the platform and powered through a GPIO switched by the ACPI `_PR3` `_ON` / `_OFF` methods (the BOCO shape). **D3cold is defined as running `_OFF` on those power resources**, with the sequence: root port broadcasts PME_Turn_Off -> link drops to L2/3 -> PERST# asserted -> power removed. **"Desktop cards have no such path" is wrong**: measured on a Z170 desktop board (2026-11-04, `docs/evidence/tu106-1f07-acpi-dump/`) each of the three PEG root ports has a `_PR3` pointing at its own `PG0x`, reset and rail-enable are real GPIO pairs, and `_OFF` asserts PERST# and then cuts the slot rail - slot power does not mean the root port cannot cut it.
 
-A sharper one (**hypothesis; the evidence is Linux, unverified on Windows**): at startup the OS synchronizes power resources nobody references, and ACPI permits `_OFF` on a resource that is already off; if the firmware AML is not idempotent, that redundant call really cuts power (coreboot's Brya board tracks dGPU power state specifically to dodge the open kernel's redundant calls). This explains three things at once:
+A sharper one (**hypothesis; the evidence is Linux, unverified on Windows**): at startup the OS synchronizes power resources nobody references, and ACPI permits `_OFF` on a resource that is already off; if the firmware AML is not idempotent, that redundant call really cuts power (coreboot's Brya board tracks dGPU power state specifically to dodge the open kernel's redundant calls). On this board `_ON` / `_OFF` **are** idempotent, but through hardware readback rather than `_STA`: both entry points run `CCHK` and return when the port already answers a vendor ID or the rail GPIO already sits in the target state. Repeats are therefore harmless - as long as the GPIO state is trustworthy. The hypothesis needs a board with non-idempotent AML; here the likelier path is Windows itself issuing D3cold.
+
+This explains three things at once:
 
 - [#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126) reproduces **deterministically**: dGPU has no display, no driver bound, `D3` in-OS with MEM decode off - the driver never participates and it still loses, so the writer is not in the driver;
 - why the `D3Cold` registry switch does nothing: it gates D3cold requests, not the startup synchronization of power resources;
