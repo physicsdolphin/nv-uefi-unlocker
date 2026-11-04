@@ -410,6 +410,15 @@ pub fn falcon_authority_probe(gpu: &TxGpu, base: u32, name: &str) -> u32 {
 /// accept on any handoff value would mis-refuse legitimate entries.
 pub const ACCEPT_WARM_WPR2_MARKER: &str = "\tx-accept-warm-wpr2.txt";
 
+/// Turing transaction families (issue #151 route split): "tu10x" =
+/// TU102/104/106, "tu11x" = TU116/117. Same FEAT block (0x4096xx —
+/// verified on TU102/TU106, same-family block assumed for TU116/117),
+/// same sequencing and no-FLR semantics; only the booter archive, patch
+/// signature and payload park word are die-specific.
+pub(crate) fn family_is_turing(family: &str) -> bool {
+    family == "tu10x" || family == "tu11x"
+}
+
 pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxError> {
     // Preflight: is BAR0 decoding at all? Right after the MEM enable a powered
     // dGPU answers; one parked by the EC in D3cold (iGPU-only boot: no GOP on
@@ -424,7 +433,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     // unlock survives FLR there). Turing: 0x409650, and the unlock does NOT
     // survive FLR (13th fire) - so a live Turing unlock must be detected and
     // SKIPPED, never reset over.
-    let feat_plm_addr = if family == "tu10x" { 0x0040_9650 } else { regs::FEAT_PLM };
+    let feat_plm_addr = if family_is_turing(family) { 0x0040_9650 } else { regs::FEAT_PLM };
     // Same-block corroboration BEFORE the PLM is consulted (Catnip review,
     // PR #65): a dead block answers all-ones for every address, so PLM=
     // all-ones alone cannot distinguish "open" from "not answering". The
@@ -436,7 +445,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     // EClaimUnreadable (the PLM is never consulted); ANY other value,
     // INCLUDING BADF, is an answered transaction and proves the block alive
     // (the Turing locked cluster answers badf5040 on every register at PL0).
-    let corroborator_addr = if family == "tu10x" { 0x0040_9664 } else { regs::FEAT_SS0 };
+    let corroborator_addr = if family_is_turing(family) { 0x0040_9664 } else { regs::FEAT_SS0 };
     match gpu.pci.bar_try_read_u32(gpu.bar, corroborator_addr as u64) {
         None => {}
         Some(v) if v == !0u32 => {
@@ -462,7 +471,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     }
     let hi = gpu.read32(regs::WPR2_HI)?;
     if hi != 0 && !post_flr {
-        if family != "tu10x" {
+        if !family_is_turing(family) {
             info!("claim: EBUSY (WPR2 hi={hi:#x})");
             return Err(TxError::EBusy);
         }
@@ -490,7 +499,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
             return Err(TxError::EBusy);
         }
     } else if hi != 0 {
-        if family == "tu10x" {
+        if family_is_turing(family) {
             info!("claim: WPR2 hi={hi:#x} up at entry (self-FLR re-provisioned - accepted)");
         } else {
             info!("claim: post-FLR WPR2 hi={hi:#x} (self-induced, accepted)");
@@ -812,8 +821,8 @@ pub fn prefetch_family_assets(family: &str) {
     let _ = read_asset_fmt("\\fwsignature_{}.bin", family);
     let _ = read_asset("\\v67-direct-ss.bin");
     let _ = read_asset_fmt("\\v67-{}-four-plm.bin", family);
-    if family == "tu10x" {
-        let _ = read_asset("\\sec2_bl_tu10x.bin");
+    if family_is_turing(family) {
+        let _ = read_asset_fmt("\\sec2_bl_{}.bin", family);
     }
 }
 
@@ -995,7 +1004,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // driver-exact configuration. Gated to 'tu10x' so GA10x/Ada keep the
     // allocation path they were field-verified with. \tx-low-staging.txt
     // reverts even tu10x to the legacy path (A/B testing).
-    let high_staging = assets.family == "tu10x" && !probe_file("\\tx-low-staging.txt");
+    let high_staging = family_is_turing(assets.family) && !probe_file("\\tx-low-staging.txt");
     crate::pci::set_high_staging(high_staging);
     info!("TX: >4GB staging gate: {high_staging} (family {})", assets.family);
 
@@ -1055,7 +1064,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // diagnostic); \tx-ptimer-seed.txt seeds PTIMER from the RTC (PLM
     // anti-replay validation needs sane GPU time; the reference omits the
     // day-of-month field - preserved verbatim, not a precise wall clock).
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // probe_file, not read_boot_file: these are UI switches (zero-byte
         // files by design); read_boot_file refuses size==0, so a dropped
         // EMPTY marker was silently ignored (issue #106).
@@ -1075,8 +1084,8 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // gated state decides the next fix round. Turing: the proven cmp50hx
     // chain has NO scrubber step and the AD10x ucode EIO'd on TU106
     // (first fire 2026-10-27) - don't fire a foreign binary at it.
-    if assets.family == "tu10x" {
-        info!("TX-tu10x: scrubber step skipped (not part of the proven Turing chain; BSI handoff state logged above)");
+    if family_is_turing(assets.family) {
+        info!("TX-{}: scrubber step skipped (not part of the proven Turing chain; BSI handoff state logged above)", assets.family);
     } else if let Err(e) = crate::tx_fwsec::scrubber_if_needed(gpu) {
         info!(
             "TX: scrubber did not complete ({e:?}) - proceeding without it (community chain shape)"
@@ -1092,7 +1101,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let layout = crate::tx_fwsec::layout_from_registers(gpu, assets.family, gsp_image_size, boot_size)?;
     info!("TX: layout ok (frts={:#x})", layout.frts_offset);
 
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // Turing has no AD10x scrubber step in the proven chain (cmp50hx
         // runs FWSEC/booter without one), and the AD10x scrubber ucode is a
         // different binary that EIO'd on TU106 (first fire, 2026-10-27).
@@ -1105,11 +1114,11 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         let wpr_lo = gpu.read32(regs::WPR2_LO)?;
         if wpr_hi >> 4 != 0 {
             info!(
-                "TX-tu10x: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (already up, POST/FLR provisioned) - FWSEC fire SKIPPED (cmp50hx mainline path) [fwsec=skipped]"
+                "TX-{}: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (already up, POST/FLR provisioned) - FWSEC fire SKIPPED (cmp50hx mainline path) [fwsec=skipped]", assets.family
             );
         } else {
             info!(
-                "TX-tu10x: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (cold) - FWSEC will be fired by the loader [fwsec=ran]"
+                "TX-{}: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (cold) - FWSEC will be fired by the loader [fwsec=ran]", assets.family
             );
             let bl = match &assets.bl {
                 Some(b) => b,
@@ -1132,7 +1141,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let boot_image_len = assets.gsp_boot.len() as u32;
     let desc = assets.boot_desc.as_ref().ok_or(TxError::EInval)?;
     let mut boot = tb::boot_desc_parse(desc, boot_image_len)?;
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // cmp50hx-proven BL topology (live-driver WPR meta dump 2026-08-21 +
         // their proven runs): first 0x6000 bytes of the GspRmBoot image with
         // code@0x1800 / data@0x800 / manifest@0x0. Our v4-desc 4KB image has
@@ -1300,7 +1309,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // Turing boots the booter DIRECT (BOOT_DIRECT, bBootFromHs=FALSE): the
     // whole image is port-loaded NS+SEC+DMEM with BOOTVEC=0; the GA10x/Ada
     // BootFromHs path loads only the secure segment through BROM params.
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // probe_file, not read_boot_file: zero-byte UI switch (issue #106 -
         // read_boot_file refuses size==0 and the empty marker never fired).
         if probe_file("\\tx-sec2-c-load.txt") {
@@ -1334,7 +1343,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     info!("TX: booter fired");
 
     let meta_view = unsafe { core::slice::from_raw_parts(meta_dma.host, tb::WPR_META_SIZE) };
-    let booter_ok = if assets.family == "tu10x" {
+    let booter_ok = if family_is_turing(assets.family) {
         tb::verify_execution_tu10x(gpu, payload_mode, meta_view).is_ok()
     } else {
         tb::verify_execution(gpu, assets.family, payload_mode, meta_view).is_ok()
@@ -1369,9 +1378,9 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // writes - separates "PLM open" from "the 0x88888888/0x8 values"
             // as the Code-43 variable. Turing SS0/SS1 live at 0x409664/6c,
             // NOT the GA10x/Ada 0x82381c/820 (cmp50hx lines 294-296).
-            let no_ss = assets.family == "tu10x"
+            let no_ss = family_is_turing(assets.family)
                 && crate::tx::probe_file("\\tu10x-no-ss.txt");
-            let (ss0_at, ss1_at) = if assets.family == "tu10x" {
+            let (ss0_at, ss1_at) = if family_is_turing(assets.family) {
                 (tb::TU10X_FEAT_SS0, tb::TU10X_FEAT_SS1)
             } else {
                 (0x0082_381c, 0x0082_3820)
@@ -1387,7 +1396,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // Turing: with the payload's PLM open, sweep the real FEAT block
             // - the factory clamp state (open question #10) is readable here
             // for the first time, BEFORE the FLR wipes the override inputs.
-            if assets.family == "tu10x" {
+            if family_is_turing(assets.family) {
                 for off in (0x0040_9600..0x0040_9700).step_by(4) {
                     let v = gpu.pci.bar_read_u32(gpu.bar, off as u64);
                     if v != 0 {
@@ -1418,7 +1427,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // override is gate-bound and the Turing unlock needs the open state
     // (which the driver rejects - the CMP references are headless cards
     // where no display driver ever re-validates this block).
-    if assets.family == "tu10x" && booter_ok {
+    if family_is_turing(assets.family) && booter_ok {
         gpu.pci.bar_write_u32(0, 0x0040_9650 as u64, 0xffff_ff8f);
         let plm_rb = gpu.pci.bar_read_u32(0, 0x0040_9650 as u64);
         let ss0_rb = gpu.pci.bar_read_u32(0, 0x0040_9664 as u64);
@@ -1442,7 +1451,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // EXPECTED verdict under a locked PLM and must not abort the
             // unwind. No signature restore - the booter never consumed the
             // meta page.
-            let (ss0_at, ss1_at) = if assets.family == "tu10x" {
+            let (ss0_at, ss1_at) = if family_is_turing(assets.family) {
                 (tb::TU10X_FEAT_SS0, tb::TU10X_FEAT_SS1)
             } else {
                 (0x0082_381c, 0x0082_3820)
@@ -1453,7 +1462,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         }
     }
 
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // NO FLR on Turing: the FEAT PLM does NOT survive FLR there (13th
         // fire 2026-10-27: post-FLR plm relocked to 0xffffff8f, unlike Ada
         // where the AON island holds the unlock across FLR). The booter's
@@ -1492,7 +1501,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // `\tx-reconnect-legacy.txt` restores the old reconnect_all path
     // (recursive + PR#13 non-recursive logic) as an escape hatch;
     // `\tu10x-no-reconnect.txt` keeps its experimental skip for Turing.
-    if assets.family == "tu10x" && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
+    if family_is_turing(assets.family) && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
         info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
     } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
         info!("TX: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");

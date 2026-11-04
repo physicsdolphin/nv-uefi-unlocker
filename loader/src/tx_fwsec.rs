@@ -386,7 +386,7 @@ pub fn layout_from_registers(
     // mailbox status (meta/staging rejection), misattributed here before.
     // Decode, log, and never guess.
     let fb_mib = if inaccessible(fb_raw) {
-        if family == "tu10x" {
+        if family == "tu10x" || family == "tu11x" {
             const FB_MIB_TU106_1F07: u32 = 8192;
             const LOCAL_MEMORY_RANGE: u32 = 0x0010_0ce0;
             let lmr = gpu.read32_raw(LOCAL_MEMORY_RANGE);
@@ -448,7 +448,7 @@ pub fn layout_from_registers(
     // and is bit-identical to the AD107M values the M4 chain verified
     // end-to-end. Skip the check where the register is hidden.
     let (plm, plm_check) = if inaccessible(plm_raw) {
-        if family == "tu10x" {
+        if family == "tu10x" || family == "tu11x" {
             info!(
                 "layout: MMU_PLM PLM-locked on Turing ({plm_raw:#010x}) - skipping the lock-bit sanity check (lo/hi window remains the layout input)"
             );

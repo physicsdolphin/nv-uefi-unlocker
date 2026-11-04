@@ -181,6 +181,10 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
     let (img, patch, ucode, engine, nsigs, per_sig) = match family {
         "ga102" => (60416, 35344, 3, 1, 2, 384),
         "ad102" => (56832, 32272, 3, 1, 2, 384),
+        // tu11x measured from the pinned TU116 bundle (2026-11-04, issue
+        // #151): image 256B smaller than TU102's, patch slot 0x8600 (not
+        // 0x8700), same engine/ucode/sig-table shape.
+        "tu11x" => (58880, 34304, 0xd, 1, 1, 16),
         "tu10x" => (59136, 34560, 0xd, 1, 1, 16),
         "scrub" => (7424, 0x1a00, 0xd, 1, 2, 384),
         _ => {
@@ -348,7 +352,7 @@ pub fn wpr_meta_pack(
     // heap-end and gspFwOffset; recomputing inflated the heap and broke the
     // layout). With our gspFwOffset this formula reproduces the driver dump
     // bit-for-bit: heapOffset = 0x1f7900000.
-    let (nonwpr_off, nonwpr_size, wpr_start, heap_off, heap_size, flags) = if family == "tu10x" {
+    let (nonwpr_off, nonwpr_size, wpr_start, heap_off, heap_size, flags) = if crate::tx::family_is_turing(family) {
         const MB: u64 = 1024 * 1024;
         // TU10x driver formula (RM 615.71.09 source, issue #57): heap =
         // 8 MiB (BASE_RM) + align_1MiB(96 KiB x GiB) + 96 MiB (CLIENT),
@@ -1213,7 +1217,7 @@ pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u
 /// is gone in Windows puts the driver pass back on the hook. Never fails the
 /// transaction - the reconnect itself is already delivered by this point.
 pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
-    let (plm_at, ss0_at, ss1_at, readout_at) = if family == "tu10x" {
+    let (plm_at, ss0_at, ss1_at, readout_at) = if crate::tx::family_is_turing(family) {
         (TU10X_FEAT_PLM, TU10X_FEAT_SS0, TU10X_FEAT_SS1, TU10X_FEAT_READOUT)
     } else {
         (
@@ -1246,7 +1250,7 @@ pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
     // is 0xffffffef with the SS overrides still in place (see the relock
     // block in tx.rs). Comparing Turing against 0xffffffff reports a false
     // "NOT intact" on every healthy TU10x run.
-    let (want_plm, want_note) = if family == "tu10x" {
+    let (want_plm, want_note) = if crate::tx::family_is_turing(family) {
         (0xffff_ffef, "tu10x handoff value: gate re-locked, SS values are the payload")
     } else {
         (0xffff_ffff, "gate held open")
@@ -1335,7 +1339,7 @@ pub fn flr_phase(gpu: &TxGpu, family: &str, payload_mode: bool) -> Result<(), Tx
     // FEAT SS0/SS1 addresses are family-specific (Turing 0x409664/6c vs
     // GA10x/Ada 0x82381c/20) and PLM-locked at PL0 until a payload opens
     // the FEAT PLM - in replay the read failing is expected, not an error.
-    let (ss0_at, ss1_at) = if family == "tu10x" {
+    let (ss0_at, ss1_at) = if crate::tx::family_is_turing(family) {
         (TU10X_FEAT_SS0, TU10X_FEAT_SS1)
     } else {
         (crate::tx::regs::FEAT_SS0, crate::tx::regs::FEAT_SS1)

@@ -213,10 +213,10 @@ fn main() -> Status {
 /// of the three transaction families (pinned open-gpu-kernel-modules
 /// README "Compatible GPUs" table, 217 IDs, cross-checked against
 /// upstream's supported_ids[]). The blocks are die-family-pure:
-///   0x1e02..0x1fff, 0x2182..0x21d1 = Turing
-///     TU102/104/106/116/117 (20/16-series, TITAN/Quadro RTX,
-///     CMP 30/40/50HX; the 21xx span covers every TU116 SKU incl.
-///     1650 SUPER 2187 and the odd 21c2 variant);
+///   0x1e02..0x1f80 = Turing tu10x (TU102/104/106: 20-series, TITAN/
+///     Quadro RTX, CMP 40/50HX), 0x1f81..0x1fff + 0x2182..0x21d1 = Turing
+///     tu11x (TU116/117: GTX 16 series + CMP 30HX — die-keyed booter
+///     archive, issue #151 route);
 ///   0x2200..=0x223f, 0x2400..=0x25ff = Ampere GA10x (GA102 3090/3080/
 ///     CMP 90HX/A6000-class, GA103 2414, GA104 3070s/3070Ti/CMP 70HX/A4500,
 ///     GA106/107 3060/3050 lines + mobile; 0x23xx = Hopper, absent
@@ -244,7 +244,12 @@ fn asset_family(dev: u16) -> Option<&'static str> {
     match dev {
         0x2600..=0x28ff => Some("ad102"),
         0x2200..=0x223f | 0x2400..=0x25ff => Some("ga102"),
-        0x1e02..=0x1fff | 0x2182..=0x21d1 => Some("tu10x"),
+        // Turing splits per die-keyed booter archive (issue #151): the
+        // driver ships TU102 (tu10x: TU102/104/106) and TU116 (tu11x:
+        // TU116/117, GTX 16 series + CMP 30HX) BooterLoadUcode archives;
+        // 1f81 is the first TU117 ID, so the 1exx span splits there.
+        0x1e02..=0x1f80 => Some("tu10x"),
+        0x1f81..=0x1fff | 0x2182..=0x21d1 => Some("tu11x"),
         _ => None,
     }
 }
@@ -377,15 +382,25 @@ so no transaction was attempted and nothing was written"
     // semantics as every other asset: present-but-unreadable aborts, it
     // never degrades to the family-pinned payload.
     let v67 = match tx::read_asset("\\v67-direct-ss.bin") {
-        Ok(Some(v)) => Some(v),
+        Ok(Some(v)) => {
+            // The direct-SS payload is the TU10x-lineage word table (xrip
+            // cmp50hx-unlock). On any other family it is material
+            // mismatch by construction - issue #151's lesson: refusing is
+            // the only safe behavior, never feed it across die lines.
+            if family != "tu10x" {
+                info!("TX: \\v67-direct-ss.bin is TU10x-only (family {family}) - refusing to mix die-keyed material, remove the marker");
+                return false;
+            }
+            Some(v)
+        }
         Ok(None) => must_asset!("v67 payload", tx::read_asset_fmt("\\v67-{}-four-plm.bin", family)),
         Err(()) => {
             info!("TX: \\v67-direct-ss.bin is present but unreadable (damaged stick or pulled media) - aborting before any GPU interaction");
             return false;
         }
     };
-    let bl = if family == "tu10x" {
-        must_asset!("sec2_bl", tx::read_asset("\\sec2_bl_tu10x.bin"))
+    let bl = if tx::family_is_turing(family) {
+        must_asset!("sec2_bl", tx::read_asset_fmt("\\sec2_bl_{}.bin", family))
     } else {
         None
     };
@@ -399,8 +414,8 @@ so no transaction was attempted and nothing was written"
     } else {
         info!("TX: V67 present - unlock mode (family-specific write chain)");
     }
-    if family == "tu10x" && bl.is_none() {
-        info!("TX: tu10x missing \\sec2_bl_tu10x.bin (WITH_LOADER FWSEC needs the generic falcon BL) - skipping");
+    if tx::family_is_turing(family) && bl.is_none() {
+        info!("TX: {} missing \\sec2_bl_{}.bin (WITH_LOADER FWSEC needs the generic falcon BL) - skipping", family, family);
         return false;
     }
     // Turing track enabled 2026-10-27 (user M3 go): the chain is the
