@@ -130,6 +130,13 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
 - **[Catnip202X](https://github.com/Catnip202X)**：ROM 解析器越界修复
   （PR #44）、工具间寄存器表漂移（issue #42）、免 U 盘分区提案与裁决
   记录（issue #73）。
+- **[seti9585](https://github.com/seti9585)**（issue #107）：native-GOP
+  console 重建方法的贡献者——在其自有实现中先证"从目标卡自身影子 Option
+  ROM 提取未改原厂 GOP 并显式启动"可行（这一路径正是从[其 4080S 项目](https://github.com/seti9585/RTX4080SUPER-Tensor-Core-Unlocker)的行为借鉴而来），
+  并对本仓库首版实现做源码复审、抓出 `EFI_DECOMPRESS` 协议结构体
+  `EFI_DECOMPRESS_PROTOCOL` 的 `Revision` 字段错位（#128 第 12 轮冻结点
+  的真因，`edecba5` 修复并把布局钉进编译期断言）。164608 字节已知答案
+  成为提取链的跨机验证锚点；方法是 v2.1.10 默认行为的直接来源。
 
 硬件实测与报告（详表见[社区硬件记录](community-reports.md)与
 [兼容性矩阵](compatibility.md#reports)，按 issue 号引用；下表列出可具名的）：
