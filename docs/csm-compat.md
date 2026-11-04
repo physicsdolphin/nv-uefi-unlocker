@@ -29,6 +29,8 @@
 
 **v2.1.9 起的盲区修复**：`DIAG *-OPENERS` 行现在携带驱动镜像 base+size 指纹（`tx_detach.rs::log_openers`），detach 前/重连后都能看出是 BiosVideo 还是 vendor GOP 在管 GPU。
 
+**同一次重建送走的另外两种失败形态**（现场记录，不在本文矩阵内）。两者同一机制：强制的 `DisconnectController`/`ConnectController` 返回时把显示引擎留在 FLR 后的状态、没有重跑链路训练与模式设置，系统接过一条半死的管线。(a) **多屏 / 特定输出口**：解锁后在本卡的特定接口或多于一个显示器上引导黑屏、其后的 Windows 会话也是坏的——[#105](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/105)，重建在同一批布局上（三屏、非主口单屏、热插拔）全部消除。(b) **笔记本内屏亮度（DDC-CI）**：解锁后内屏背光黑掉、亮度控制失灵，见于部分拯救者 SKU（一台 R7000 2024 实证，v2.1.10 修复；背光/DDC-CI 通道正走在被重连留在未训练态的这条内屏链路上）。本卡自己的 GOP 驱动做完整初始化（含链路训练），所以一次重建把三样都消掉。范围照此限定：退回 `\tx-reconnect-legacy.txt` 应预期这两种形态复现。
+
 ## 2. 路径一：native-GOP 显式恢复（`\tx-native-gop.txt`，tx 构建）
 
 reconnect 之前**显式选择**原厂 GOP 驱动，不调用会卡死的通用 ConnectController（"ConnectController priority is not an exclusion filter"——给了偏好列表也排不掉别的候选，必须显式 Start）：

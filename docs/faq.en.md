@@ -107,6 +107,8 @@ Prefer dGPU-direct mode and enter USB boot through **Restart**. Disable Fast Sta
 
 Firmware may initialize only the display-owning GPU. This tool cannot execute ACPI `_PS0` / PR3 to power an offline dGPU. PM preflight requests D0 and verifies it on a non-D0 entry; `tx-require-d0.txt` selects immediate abort instead.
 
+**Laptop internal panel and brightness (DDC-CI)**: on some laptops the old firmware reconnect left the internal link untrained after an unlock — the backlight dropped out and DDC-CI brightness control stopped responding (one confirmed case on a Legion R7000 2024; the legacy path reproduced it on the first attempt and v2.1.10 fixed the same machine). Since v2.1.10 the default native-GOP rebuild re-`StartImage`s the card's own stock GOP driver, which re-runs link training before Windows and clears the fault. On such a machine the legacy opt-out `tx-reconnect-legacy.txt` brings it back.
+
 TU106 with GSP mode has verified successful hibernate-resume handoff, but that does not replace in-OS checks on other machines. See [OS verification](#ssdiag).
 
 <a id="linux"></a>
