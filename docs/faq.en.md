@@ -442,6 +442,18 @@ If the log stops at `RECONNECT: ConnectController ... begin`, or the platform re
 
 For Turing `0x91` or a GSP-handoff bug-check after EFI success, see the [compatibility matrix](compatibility.en.md#device-16). Not every black screen is a GOP problem. Evidence: [AMI report](ad106-asus-z790-windows-unlock.md), [X470 record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70).
 
+### Unlocked, then a CUDA error as soon as load hits? Drop the overclock and the undervolt first
+
+The unlock doubles the Tensor issue rate, so current spikes, VRM load and thermal stress inside the **same power envelope** go up. An overclock or undervolt that used to be just stable stops being stable under the new current profile. Hotter silicon leaks more and needs *more* voltage for the same clock - "it was always fine before" is not evidence.
+
+**Real case** ([#147](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/147), 3060 12 GB): pointer casting for NVFP4/AWQ weights threw `CUDA error: an illegal memory access` and `HostBuffer.truncate failed`; `--disable-cuda-malloc --disable-pinned-memory --lowvram` changed nothing. Removing a 0.875 V UV curve and returning the core to stock fixed all of it. **The tool is not at fault** - the unlock only reaches the existing margin sooner.
+
+Order of work: (1) turn the unlock off and stress-test at stock clock and stock voltage - a card that fails *there* needs a downclock of its own; (2) still unstable while unlocked: drop core **and** memory by 200 MHz and re-run; (3) add margin back step by step. Post-unlock gains are settled by the power wall: a core undervolt usually costs more stability than the clock it buys.
+
+### Compute load pinned at P8? Check for a modded VBIOS first
+
+**Confirmed precedent** ([#90](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/90), 2080 Ti): the EFI transaction was confirmed at source level (booter exit code 0x0, PLM open, selector read-back), yet in Windows graphics ran at P0 while **creating a CUDA context pinned the card to P8 645 MHz** - utilization 70-100 % while power *fell* from 71 W to 44 W. Cause: the card had been flashed with a leaked kingpin-class extreme-test VBIOS (the EVGA 3090/4090 1000 W, XOC 890 W family that NVIDIA hands to OEM overclocking labs for extreme-cooling runs; it carries a separate P-state policy for compute loads - the tell is a `nvidia-smi` power reading far above the retail design, e.g. 565 W against a 300 W wall). **A retail VBIOS recovered it immediately.** The mechanism is filed under [open question #14](open-questions.md); for modded or overclocked cards, parse the current VBIOS power table with `nvoc-cli get-vbios --verbose` before unlocking.
+
 <a id="recovery"></a>
 
 ## How do I recover from a black screen, STOP or driver failure?
