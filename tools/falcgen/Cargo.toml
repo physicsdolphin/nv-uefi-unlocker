@@ -1,0 +1,8 @@
+[package]
+name = "falcgen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Position-independent fuc5 disassembler and first-principles V67 ROP payload generator"
+
+[dependencies]
