@@ -6,7 +6,7 @@
 
 ## **[“震惊！老黄刀法还能被回退？？？”](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)**
 
-[![version](https://img.shields.io/badge/version-2.1.8-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
+[![version](https://img.shields.io/badge/version-2.1.10-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
 [![GeForce](https://img.shields.io/badge/GeForce-GTX%2016%20%7C%20RTX%2020%2F30%2F40-green)](docs/compatibility.md)
 [![platform](https://img.shields.io/badge/platform-UEFI%20%E9%A2%84%E9%A9%B1%E5%8A%A8%20%7C%20Win%20%2F%20Linux%20%2F%20Hackintosh-blue)](docs/faq.md)
 [![license](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
