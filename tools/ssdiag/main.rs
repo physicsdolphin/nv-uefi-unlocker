@@ -1,4 +1,8 @@
-//! ssdiag v0.6.12 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.13 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.13 adds the read-only `USB4:` block (issue #54): both Microsoft
+//! connection-manager service start types plus the USB4 devnode IDs, and a
+//! verdict on whether the device-router takeover reset is suppressed. The
+//! per-GPC TPC block, the POWER block and every probe value are unchanged.
 //! v0.6.12 redesigns the 0.6.11 arm to a REGISTRY-ONLY lifecycle: --safeboot-arm
 //! writes just the two SafeBoot whitelist subkeys (the check is name-based);
 //! no binary and no service are staged, and the safe-mode run extracts to
@@ -303,6 +307,7 @@ mod cm {
 
     pub const CR_SUCCESS: u32 = 0x0000_0000;
     pub const CM_GETIDLIST_FILTER_CLASS: u32 = 0x0000_0200;
+    pub const CM_GETIDLIST_FILTER_ENUMERATOR: u32 = 0x0000_0001;
     pub const ALLOC_LOG_CONF: u32 = 0x0000_0002; // the allocated (boot-assigned) config
     // Remaining CM_Get_First_Log_Conf priorities. An unstarted device (safe
     // mode blocks nvlddmkm, so PnP leaves it Stopped) can lack the ALLOC
@@ -444,6 +449,97 @@ fn preflight() {
     }
     println!("NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs");
     println!("      a driver install (event 7045) and managed/EDR machines may alert on it.");
+    usb4_config();
+}
+
+/// Issue #54: the USB4/Thunderbolt connection manager resets the tunnel domain
+/// when its device-router driver binds, which closes the FEAT gate; disabling
+/// only `Usb4DeviceRouter` (the tunnel side) while leaving `Usb4HostRouter`
+/// running suppresses that reset and was reported working on two hosts. This
+/// block is read-only and exists so every report carries its own configuration
+/// instead of the reporter having to describe it - `Start` 4/3 is the working
+/// shape, and the two words are also the first thing to blame when a TB report
+/// shows a cleared canary.
+fn usb4_config() {
+    const SVC: &str = "SYSTEM\\CurrentControlSet\\Services\\";
+    let host = hklm_dword(&format!("{SVC}Usb4HostRouter"), "Start");
+    let dev = hklm_dword(&format!("{SVC}Usb4DeviceRouter"), "Start");
+    // a service that never existed (pure TB3 controller, non-Microsoft CM)
+    if host.is_none() && dev.is_none() {
+        println!("USB4: neither Usb4HostRouter nor Usb4DeviceRouter is installed here");
+        return;
+    }
+    let word = |v: Option<u32>| match v {
+        Some(0) => "0 (Boot)".to_string(),
+        Some(1) => "1 (System)".to_string(),
+        Some(2) => "2 (Automatic)".to_string(),
+        Some(3) => "3 (Manual)".to_string(),
+        Some(4) => red("4 (Disabled)").to_string(),
+        Some(n) => format!("{n} (unknown)"),
+        None => "absent".to_string(),
+    };
+    println!("USB4: Usb4HostRouter Start = {}", word(host));
+    println!("USB4: Usb4DeviceRouter Start = {}", word(dev));
+    // instance IDs make the router silicon visible (ASMedia/Intel; #54 had both)
+    if let Ok(ids) = enum_filtered("USB4") {
+        if ids.is_empty() {
+            println!("USB4: no USB4 devnodes enumerated");
+        }
+        for id in ids.iter().take(6) {
+            println!("USB4: node {id}");
+        }
+    }
+    match (host, dev) {
+        (_, Some(4)) if host != Some(4) => println!(
+            "USB4: device-router driver DISABLED - the tunnel takeover reset is suppressed; expect the unlock to survive the handoff"
+        ),
+        (Some(4), Some(4)) => println!(
+            "USB4: both routers disabled - the takeover is suppressed, but the tunnel may not come up at all"
+        ),
+        (Some(4), _) => println!(
+            "USB4: host router disabled only - the device router cannot bind; the tunnel may not come up"
+        ),
+        (_, Some(2) | Some(3) | Some(0) | Some(1)) => println!(
+            "USB4: device-router driver ENABLED - the takeover will reset the tunnel at bind; a cleared canary is expected"
+        ),
+        _ => println!("USB4: device-router Start unreadable - treat as unknown"),
+    }
+}
+
+/// NUL-separated device instance IDs for one enumerator (`CM_Get_Device_ID_ListW`).
+fn enum_filtered(enumerator: &str) -> Result<Vec<String>, String> {
+    let filter = wide(enumerator);
+    unsafe {
+        let mut len = 0u32;
+        let cr = cm::CM_Get_Device_ID_List_SizeW(
+            &mut len,
+            filter.as_ptr(),
+            cm::CM_GETIDLIST_FILTER_ENUMERATOR,
+        );
+        if cr != cm::CR_SUCCESS || len == 0 {
+            return Err(format!("list size CR_{cr:04x}"));
+        }
+        let mut buf = vec![0u16; len as usize];
+        let cr = cm::CM_Get_Device_ID_ListW(
+            filter.as_ptr(),
+            buf.as_mut_ptr(),
+            len,
+            cm::CM_GETIDLIST_FILTER_ENUMERATOR,
+        );
+        if cr != cm::CR_SUCCESS {
+            return Err(format!("list CR_{cr:04x}"));
+        }
+        let mut out = Vec::new();
+        let mut rest: &[u16] = &buf;
+        while let Some(nul) = rest.iter().position(|&c| c == 0) {
+            if nul == 0 {
+                break;
+            }
+            out.push(String::from_utf16_lossy(&rest[..nul]));
+            rest = &rest[nul + 1..];
+        }
+        Ok(out)
+    }
 }
 
 const GENERIC_RW: u32 = 0xC000_0000;

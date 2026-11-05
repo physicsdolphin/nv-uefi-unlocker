@@ -7,6 +7,9 @@ the OS-side USB4/Thunderbolt connection manager the **only** surviving writer �
 the sixth arm of the canary table in the FAQ, and the only one where the reset
 is performed by the OS rather than by a rail, a firmware reset or a driver.
 
+The directory is named for the Linux arm that produced the proof; it also holds
+the Windows suppression rounds (two hosts) and the clock/power sweep.
+
 Earlier rounds on the same issue had already:
 
 - disproven `DevPnPCapabilities=0x100` (Windows side, no effect);
@@ -59,11 +62,10 @@ not by `nvlddmkm` — it happens before any driver binds. Hence:
 - the hot-add `REFUSED` and the service-disabled boot are one cause, not two;
 - **there is no host-write path after takeover**: `--reapply` is structurally
   dead, and an in-OS readback only ever shows a closed gate;
-- the only lever is to stop the takeover from performing the reset. Linux has
-  `thunderbolt.host_reset=0` for exactly that host-router init reset (next
-  round, unverified). Windows has no known equivalent; worth one cheap round
-  only on the `Usb4HostRouter` node's own `Device Parameters` subkey, and on
-  disabling HostRouter and DeviceRouter **separately**.
+- the only lever is to stop the takeover from performing the reset. Both OSes
+  have a measured suppression: Linux `thunderbolt.host_reset=0`, Windows
+  `Usb4DeviceRouter` `Start=4` with the host router left running. Disabling both
+  routers together (the first Windows attempt) leaves no tunnel at all.
 
 ## Separation from #164
 
@@ -96,12 +98,67 @@ resources has no window to map.
 
 ## Open
 
-`thunderbolt.host_reset=0` with the `thunderbolt` blacklist removed. Live →
-the mechanism is pinned to the driver's reset call and the host gains its first
-unlocked-and-usable Linux shape. Lost → the reset is not on the `host_reset`
-path and enumeration/tunnel rebuild becomes the target. Also proposed: a 100 ms
-poll of `0x1480`/`0x1484` plus the FEAT quad with change-only timestamps,
-aligned against Kernel-PnP / `Usb4HostRouter` event IDs, to turn "inside the
-takeover window" into "which call".
+Answered below: the reset was suppressed on both OSes. Residual unknowns are
+listed at the end.
 
 [#164]: https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164
+
+## Run C — `thunderbolt.host_reset=0` suppresses it (Linux, same host)
+
+`modprobe.blacklist=nouveau thunderbolt.host_reset=0`, `thunderbolt` loaded
+(`lsmod`: `thunderbolt 581632 0`), nouveau still blacklisted. The manager still
+re-discovers the enclosure at +3.0 s (`new device found … Razer Core X V2`) but
+`pci_bus 0000:18: busn_res: [bus 18] is released` **never appears**; at read
+time `0000:18:00.0` is present with `driver=NONE power_state=D0` and the block
+reads `PLM=0xffffffff`, `SS0=0x88888888`, `SS1=0x8`, `READOUT_1=0`, canary
+intact, `UNLOCKED`.
+
+So on this host the reset is the host-router init reset call, and it is a call
+that can be skipped. This is the first state where the manager is loaded *and*
+the unlock is live.
+
+## Windows split-disable — the same result on two hosts
+
+Two reporters independently set only `Usb4DeviceRouter`'s service `Start` to
+`4` (Disabled) and left `Usb4HostRouter` at `3` (Manual); disabling both had
+earlier been shown to leave no tunnel at all.
+
+| host | router silicon | card | result |
+|---|---|---|---|
+| desktop TB4, Razer Core X V2 | ASMedia `1B21:2425` | AD102 `2684` | card enumerated, bound `nvlddmkm`, `nvidia-smi` OK, canary intact, `UNLOCKED` |
+| Lenovo 83D4 laptop, Nano X dock (TB3) | Intel `8086:7EC2/7EC3`, `USB4_MS_CM` | GA104 `2484` | card enumerated, bound `nvlddmkm`, canary intact, `UNLOCKED`, 87.92 TF/s FP16 = 95% of the full-rate tensor figure, plus a locked-clock sweep |
+
+Collateral on both: the enclosure's device-router services are gone (the
+laptop's dock USB ports die, two `USB4\ROOT_DEVICE_ROUTER` nodes at `Problem
+32` = service disabled, benign). GPU, card audio and `nvidia-smi` unaffected.
+`ssdiag` 0.6.13 prints a `USB4:` block with both `Start` values so reports
+carry their own configuration.
+
+One confound to keep visible: the laptop arm also moved the Linux boot entry
+behind Windows and cold-booted in the same run, so "`Usb4DeviceRouter` disabled
+is the necessary item" is not yet single-variable. The natural control is
+`Start=3` with everything else unchanged, expected to clear the canary.
+
+## Power gating (AD102, locked clocks)
+
+The 2x is real but power-gated, and shows it cleanly: with `nvidia-smi -lgc`,
+the unlocked gain over locked falls monotonically with clock - +55% at 1005 MHz
+(60 W -> 160 W), +23% at 1800 MHz, +18% at 2100 MHz, +15% at free boost (450 W
+ceiling). Cheaper formats move the wall: FP8 (`torch._scaled_mm`) 532.1 TF/s =
+~160% of the 4090's official FP8 figure, INT8 593.2 TOP/s = ~180% of spec.
+Everyday inference on the host is not tensor-bound at all (identical wall clock
+at 2100 and 2595 MHz). This belongs with the power-wall section of
+`docs/theoretical-uplift.md`.
+
+## Residual unknowns
+
+- Replug/sleep under suppression: the card may not come back without the
+  device-router driver; conservative usage is plug-in-before-boot.
+- Which host-router init call issues the reset (a 100 ms canary/FEAT poller
+  aligned with Kernel-PnP event IDs would name it).
+- Windows has no narrower knob than service disable: the `Usb4HostRouter` node's
+  `Device Parameters` holds only WDF/DMA/interrupt keys.
+- Linux driver-loaded end to end (bind `nvidia` with the manager loaded and
+  `host_reset=0`): not yet run; would be the first "unlocked and usable" Linux
+  state on this host.
+

@@ -129,9 +129,24 @@ M1 `SAMPLE` 对非 console 卡可能整行全 `0xffffffff`，连 `PMC_BOOT_0` �
 - Card `D3` with the port in `D0` ⇒ card-side D3hot only, rail intact, `_OFF` not run.
 - It is a snapshot: `D0` does not prove the port never went to `D3` this boot (the canary owns that), and `D3` does not say who drove it.
 
+## 5c. 雷电/USB4 预设与 `USB4:` 行（#54 类，`ssdiag` 0.6.13 起）
+
+雷电形态的丢失来自 OS 连接管理器在**设备路由器侧**接管隧道时的那次总线复位（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)，两台主机栈实测）。跑之前先把抑制打开，否则金丝雀必然 `cleared`、结果没有信息量：
+
+```bat
+reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_DWORD /d 4 /f
+:: 复原
+reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_DWORD /d 3 /f
+```
+
+- 只禁 `Usb4DeviceRouter`，`Usb4HostRouter` 保持 `3`；两个都禁 = 隧道不存在。
+- 代价：坞的设备路由器服务失效、坞上 USB 口死、`USB4\ROOT_DEVICE_ROUTER` 节点 `Problem 32`（Code 32=服务被禁用，非故障）；GPU 与卡载音频不受影响。
+- `ssdiag` 0.6.13 起 `PLATFORM:` 段后打印 `USB4:`：两个服务的 `Start`、USB4 节点 ID、以及"抑制是否生效"的判读行。报告必附这四行。
+- 未测：抑制状态下重插坞/睡眠唤醒后卡是否回来（保守=开机前插好）。Linux 侧对应项是内核命令行 `thunderbolt.host_reset=0`（已实测可行）。
+
 ## 6. 回收清单
 
 1. 完整 `loader.log`；
 2. Windows 侧：`Get-PnpDevice -Class Display | fl FriendlyName,Status,Problem,ProblemDescription,InstanceId`（#165 在**解锁后未重启的病态状态里先取**，再谈重启）；
-3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.8 及以上**，含 `CANARY:` 判定行与 `POWER:` 两行；发现阶段空结果时工具会逐条打印跳过原因，连 `display-class devnodes carrying VEN_10DE: N` 一起贴回来；
+3. `ssdiag` 输出（#164 必附；#165 附可用卡的读数即可，`ssdiag` 不加 `--select`，读 Asus 卡那一块——`--select` 只匹配 DeviceID 子串，BDF 不在其中）——需 **ssdiag v0.6.8 及以上**，含 `CANARY:` 判定行与 `POWER:` 两行；雷电场景用 0.6.13 及以上并附 `USB4:` 四行；发现阶段空结果时工具会逐条打印跳过原因，连 `display-class devnodes carrying VEN_10DE: N` 一起贴回来；
 4. BIOS 状态与电源瓦数（#165 必附）。

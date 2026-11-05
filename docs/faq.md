@@ -198,9 +198,9 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 3 | **devinit 重放**（驱动 init 自己重算） | 存活 | 部分 GA10x 笔记本（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)，Linux 实测；Windows 侧尚无同形态样本） | 门锁 + `SS` 被写成推导值（≠开机基线、≠覆盖值） |
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
-| 6 | **OS 的连接管理器接管 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102 实测）：Windows `Usb4HostRouter`、Linux `thunderbolt` 模块在初始化时拆掉并重建整棵下游总线 | 金丝雀 `cleared`；**matter 只在 OS 里丢**，交棒后、POST 交 OS 后、已启动的 Linux 里都完好（`modprobe.blacklist=thunderbolt` 下 `UNLOCKED`） |
+| 6 | **OS 的连接管理器接管 USB4/雷电隧道**（设备路由器侧驱动绑定） | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块的同一半在绑定时拆掉并重建整棵下游总线 | 金丝雀 `cleared`；**matter 只在 OS 里丢**，交棒后、POST 交 OS 后、已启动的 Linux 里都完好。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
 
-第 6 行的特殊性：复位由 **OS 的连接管理器**执行，不是平台断电、不是固件 SBR、不是驱动重推导；门是被那次复位关掉的，**发生在驱动绑定之前**，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）。Linux 侧可试 `thunderbolt.host_reset=0` 抑制初始化复位；Windows 侧无已知对应项。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
+第 6 行的特殊性：复位由 **OS 的连接管理器**执行，不是平台断电、不是固件 SBR、不是驱动重推导；门是被那次复位关掉的，**发生在驱动绑定之前**，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）。唯一出路是抑制那次接管，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
 第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改自己代码的地方，第 6 行是 OS 侧旋钮（不在本工具内）——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
 
@@ -323,12 +323,21 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 
 ## 雷电 eGPU 能保留解锁吗？
 
-**不能——只要 OS 的连接管理器完成接管。** 判据从"可能被复位"改成"接管即复位"：雷电/USB4 主机路由器初始化时，Windows（`Usb4HostRouter`）与 Linux（`thunderbolt` 模块）都会拆掉并重建整棵下游总线，那一次总线复位把 AON 里的门与选择器一并清掉。不是卡、不是坞、不是固件：桌面 TB4 + AD102 实测，交棒后、POST 交 OS 后、乃至已经跑在一个启动完成的 Linux 里，金丝雀都还 `intact`、门仍 `0xffffffff`、`READOUT_1=0`；坏只坏在模块接管的那几秒（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)）。纯链路重训本身不复位端点，这是它与上面各行的区别。
+**不能——只要 OS 的连接管理器完成接管。** 判据从"可能被复位"改成"接管即复位"：USB4/雷电的**设备路由器侧**驱动一绑定（Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块的同一半），就会拆掉并重建整棵下游总线，那一次总线复位把 AON 里的门与选择器一并清掉。不是卡、不是坞、不是固件：桌面 TB4 + AD102 实测，交棒后、POST 交 OS 后、乃至已经跑在一个启动完成的 Linux 里，金丝雀都还 `intact`、门仍 `0xffffffff`、`READOUT_1=0`；坏只坏在接管的那几秒（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)）。纯链路重训本身不复位端点，这是它与上面各行的区别。
 
-**`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动绑定之前；接管之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让接管做那次复位"：
+**`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动绑定之前；接管之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让接管做那次复位"，而两个 OS 都已有实测可行的抑制：
 
-- Linux：`thunderbolt.host_reset=0` 是现成旋钮，管的就是主机路由器初始化那次复位（待验证，未定论）。
-- Windows：无已知对应项。`DevPnPCapabilities=0x100` 已证伪；只值得在 `Usb4HostRouter` 自己的 `Device Parameters` 子键、以及 HostRouter / DeviceRouter 分开禁用上廉价试一轮（合禁只会让隧道不存在）。
+- **Linux**：内核命令行 `thunderbolt.host_reset=0`。已实测（#54 Run C）：模块照常加载、坞在雷电侧照常被发现，但不再出现 `pci_bus … is released`，层级不拆，金丝雀 `intact`、门 `0xffffffff`、`UNLOCKED`。
+- **Windows**：把 `Usb4DeviceRouter` 服务的 `Start` 设为 `4`（Disabled），`Usb4HostRouter` 保持 `3`（Manual）。**只禁设备侧、留主机侧**——两个都禁会让隧道根本不存在。两台不同主机栈（ASMedia TB4 + AD102 桌面 / Intel 原生 USB4 + GA104 笔记本）实测：卡正常枚举并绑定 `nvlddmkm`、金丝雀 `intact`、`ssdiag` 判 `UNLOCKED`，AD102 那台 8192³ FP16 达满血张量速率的 95% 并叠加 `nvidia-smi -lgc` 做了逐时钟扫描。代价如实说：坞的设备路由器服务没了，坞上 USB 口失效、两个 `USB4\ROOT_DEVICE_ROUTER` 节点 `Problem 32`（Code 32 = 服务被禁用，不是故障）；GPU、卡载音频、`nvidia-smi` 均正常。`DevPnPCapabilities=0x100` 已证伪；`Usb4HostRouter` 的 `Device Parameters` 子键只有 WDF/DMA/中断三类，无复位策略面。
+
+```bat
+:: Windows：抑制（管理员）——改完重启生效，只影响本机
+reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_DWORD /d 4 /f
+:: 恢复默认
+reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_DWORD /d 3 /f
+```
+
+**未测清楚的两点，报告时请标注**：抑制状态下重插坞/睡眠唤醒后卡还回不回得来（没有设备路由器，重插后可能不再枚举，保守用法是开机前插好、不当热插拔用）；以及 Windows 那组实测里启动顺序与冷启动是两个同轮引入的变量，`Usb4DeviceRouter` 是必要项尚未单变量闭合。`ssdiag` 0.6.13 起会打印 `USB4:` 行（两个服务的 `Start` 与 USB4 节点），报告自带配置，不必口述。
 
 进入系统后仍可先做 [只读检查](#ssdiag)，解读随之变化：
 
