@@ -181,7 +181,7 @@ Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门�
 三条边界，不看清就会对后面的步骤产生错误预期：
 
 - **自签不解决 `ssdiag`**。`pmxdrv.sys` 是 Intel/COMODO 2018 交叉签名、没有微软根，`tools/ssdiag/README.md` 的原话是 load is **expected** to be refused；它列的三个豁免（≤1607 升级来的系统 / Secure Boot 关闭 / 签名证书早于 2015-07-29）在这张 2018-10-24 签发的叶证书上都不成立。所以 SB 常开时，系统内读回走 `loader.log` 的 `HANDOFF-OUT`。Linux 侧 `tools/diag-unlock.py` 是零驱动路径，但**没有人在 Secure Boot 开启状态下验证过它**。要 `ssdiag --reapply` 修回锁，仍需临时关一次 SB。
-- **反作弊不保证**。自签不改 Secure Boot 的状态位；据维护者陈述 Vanguard（LoL）看的就是这个状态位，而**反作弊本身没有任何一方实测过**（本条目所依据的报告者也明确写了未测）。ACE 系校验 TPM/PCR[7] 链式记录，自签链的度量与原厂引导不同，不保证通过。
+- **反作弊不保证**。自签不改 Secure Boot 的状态位；据维护者陈述 Vanguard（LoL）看的就是这个状态位，而**反作弊本身没有任何一方实测过**（本条目所依据的报告者也明确写了未测）。ACE 系校验 TPM/PCR[7] 链式记录，自签链的度量与原厂引导不同，不保证通过（机制与「刷进固件」的对比见下文[两条路的度量代价](#secureboot-vs-ffs)）。
 - **换版本必须重签**：签名后改一个字节即失效；`*.bin` 资产不参与 PE 校验，不需要签。
 
 ### 动手之前：BitLocker
@@ -303,6 +303,33 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
 
 内置 ESP 变体（**本项目未验证，也不推荐**）：把上面四个文件放进内置 ESP 的 `\EFI\BOOT\`。报告者观察到 loader 在 CHAIN-BOOT 里会跳过自己的 `Boot####` 与同一 ESP 上的 Windows 项，因此可以排在 BootOrder 首位而不循环。代价有两个：README 的明确建议是「[不要复制到系统 ESP](../README.md)，也不需要调整永久启动顺序」，以及那 85 MB 资产要放在 Windows ESP 的根目录——动手前先看剩余空间。
 
+<a id="secureboot-vs-ffs"></a>
+
+### 和「把 loader 刷进固件」有什么区别？
+
+先回答更容易被误解的那半：**自签为什么仍然不保证过 ACE**。
+
+ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看这几类输入，而公开资料里没有完整判定清单：
+
+1. **Secure Boot 状态位**——Vanguard 类据报告只看这个，自签不改它，所以「可能有效」。
+2. **引导链的 TPM 度量与事件日志**：被加载的引导程序进入 PCR[4]，而在把 Secure Boot 策略一并度量的 profile 里，PK/KEK/db/dbx 进入 PCR[7]。自签链下这两者都与出厂链不同——**连路线 A 那种「只往 db 追加一张证书」也不是「什么都没变」**。
+3. **内核态驱动策略**：驱动签名者、脆弱驱动 blocklist、VBS/HVCI 运行态。
+
+所以「SB 开着」既不是充分条件，也不是 ACE 的唯一输入；而且**两条路都没有人做过 ACE 实测**。下面的对比说明它们的代价落在不同的度量上，而不是「有一条能稳过」。
+
+| | 自签（路线 A / B） | 固件内置 FFS |
+| --- | --- | --- |
+| 改的是 | OS 引导链（`\EFI\BOOT\` 下的 PE） | 固件卷里的 DXE 驱动 |
+| Secure Boot | 必须把证书加入信任根（A：`db`；B：MOK） | 不参与 OS 引导链验签（FV 属于受信镜像），SB 可保持开启【设计推论，未实机验证】 |
+| 刷写 | 不需要 | **需要**：UEFITool/FPT 插入 + 完整镜像备份 + 手边外部编程器（CH341A）；刷写中断电或镜像有误 → 变砖；Boot Guard 机器改 IBB 区域可能直接拒启（因板而异） |
+| 适用人群 | 能进固件设置即可 | 仅高级用户、自担风险；本项目不提供安装器、不代刷（[#73](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/73) 先例） |
+| 生效时窗 | 用户手动从 U 盘进 → 跑事务 | `ReadyToBoot` 回调，与 U 盘同窗口（`bootmgfw` 之前），每次引导自动重放 |
+| TPM / BitLocker | `db` 改动影响 PCR[7]（若 profile 含 [7]）；自签链改变被加载镜像的度量 | 改固件 → **PCR[1] 变**；BitLocker profile 含 [1] 时无法解封，会要求恢复密钥；刷前必须先挂起 |
+| 不刷写的验证捷径 | — | UEFI Shell 里 `load fs0:\NvUnlockDxe.efi`，可先验形态再决定是否刷写 |
+| 证据 | 路线 B 一台机报告；路线 A 二手 | 仅[可行性文档](dxe-driver-ffs-feasibility.md)，**未实机验证** |
+
+一句话：**两条路都改变了某个度量**——自签动的是引导链（PCR[4]/[7] 侧），FFS 动的是固件（PCR[1] 侧）。对「只查 SB 状态位」的客户端，两条都可能有效；对「要求出厂引导链或出厂固件度量」的客户端，两条都不保证。反作弊的判定规则是厂商侧策略，会随时调整，本文不做任何「能过/不能过」的承诺。
+
 ### 证据状态
 
 | 项目 | 证据 | 状态 |
@@ -314,6 +341,7 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
 | Secure Boot 开启 + `ssdiag` | `tools/ssdiag/README.md`：expected to be refused | 未实测 |
 | Secure Boot 开启 + `diag-unlock.py` | 无 | 未验证 |
 | 反作弊（Vanguard / ACE） | 维护者陈述 | 未测量 |
+| 固件内置 FFS 路线 | `docs/dxe-driver-ffs-feasibility.md`（设计、风险、PCR[1]/BitLocker 影响） | 未实机验证 |
 
 跑了任一条路，欢迎回报**主板型号**、**`ssdiag` 是否被拒**、**BitLocker 是否弹过恢复密钥**、**`diag-unlock.py` 在 SB 开启下是否可读**——这四项各自能把上面的行往前推一格。
 

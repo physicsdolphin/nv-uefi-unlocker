@@ -176,7 +176,7 @@ First, what this is not: it is not a way around Secure Boot. The boot chain is s
 Three limits; without them the steps below set the wrong expectation:
 
 - **Self-signing does not fix `ssdiag`.** `pmxdrv.sys` is an Intel/COMODO cross-signed driver from 2018 with no Microsoft root; `tools/ssdiag/README.md` says the load is **expected** to be refused, and its three carve-outs (OS upgraded from Windows <= 1607, Secure Boot off, signing certificate issued before 2015-07-29) cannot apply to a leaf certificate issued 2018-10-24. So with Secure Boot on, in-OS read-back comes from `HANDOFF-OUT` in `loader.log`. `tools/diag-unlock.py` on Linux is a zero-driver path, but **nobody has verified it with Secure Boot on**. `ssdiag --reapply` still needs Secure Boot off for one boot.
-- **Anti-cheat is not guaranteed.** Self-signing leaves the Secure Boot state bit on; the maintainer states that Vanguard (LoL) checks that bit, and **anti-cheat itself was not tested by anyone** (the reporter this section leans on says so explicitly). ACE-family clients validate the TPM/PCR[7] chain, and a self-signed chain measures differently from the stock boot.
+- **Anti-cheat is not guaranteed.** Self-signing leaves the Secure Boot state bit on; the maintainer states that Vanguard (LoL) checks that bit, and **anti-cheat itself was not tested by anyone** (the reporter this section leans on says so explicitly). ACE-family clients validate the TPM/PCR[7] chain, and a self-signed chain measures differently from the stock boot (see [what each route costs in measurements](#secureboot-vs-ffs) below).
 - **Re-sign every build**: a signature dies if one byte changes afterwards; the `*.bin` assets are not PE images and need no signing.
 
 ### Before you touch anything: BitLocker
@@ -298,6 +298,33 @@ The firmware verifies only the Microsoft-signed shim; your key takes effect afte
 
 Internal-ESP variant (**not tested by this project, and not recommended**): put those four files in the internal ESP's `\EFI\BOOT\`. The reporter observed that CHAIN-BOOT skips its own `Boot####` and the Windows entry on the same ESP, so it can sit first in BootOrder without looping. Two costs: the README advice is explicit - "[do not copy it to the system ESP](../README.md), and the permanent boot order does not need changing" - and those 85 MB of assets then sit at the root of the Windows ESP; check free space before trying it.
 
+<a id="secureboot-vs-ffs"></a>
+
+### How is that different from flashing the loader into the firmware?
+
+Start with the half that is easier to misread: **why self-signing still does not guarantee passing ACE**.
+
+ACE-family clients (Tencent) run a kernel driver plus server-side policy, and they can look at several inputs at once; there is no public, complete list of what they check:
+
+1. **The Secure Boot state bit** - reportedly the only thing Vanguard-class clients read; self-signing does not change it, which is why this route can work at all.
+2. **TPM measurements and the event log of the boot chain**: the loaded boot application lands in PCR[4], and in profiles that also measure the Secure Boot policy, PK/KEK/db/dbx land in PCR[7]. A self-signed chain changes both - **even route A's "just append one certificate to `db`" is not a no-op from the attestation side**.
+3. **Kernel driver policy**: who signed the driver, the vulnerable-driver blocklist, VBS/HVCI state.
+
+So "Secure Boot is on" is neither sufficient nor the only input, and **nobody has measured ACE on either route**. The table below shows that the two routes differ in *which* measurement they disturb, not that one of them passes reliably.
+
+| | Self-signed (route A / B) | Firmware-resident FFS |
+| --- | --- | --- |
+| What changes | the OS boot chain (the PE under `\EFI\BOOT\`) | a DXE driver inside a firmware volume |
+| Secure Boot | the certificate must be added to the trust root (A: `db`; B: MOK) | not part of OS boot-chain verification (an FV is part of the trusted image); Secure Boot can stay on [design inference, not verified on hardware] |
+| Flashing | not needed | **required**: insert with UEFITool/FPT, back up the full image first, keep an external programmer (CH341A) at hand; power loss or a bad image bricks the board; Boot Guard platforms may refuse to boot an IBB modification (board-dependent) |
+| Who should do it | anyone who can enter firmware setup | advanced users only, at their own risk; the project ships no installer and does not flash for you (the [#73](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/73) precedent) |
+| When it runs | the user boots the stick and runs the transaction | a `ReadyToBoot` callback, same window (before `bootmgfw`), replayed on every boot |
+| TPM / BitLocker | a `db` change moves PCR[7] (if the profile measures it); a self-signed chain changes the measurement of the loaded image | changing the firmware moves **PCR[1]**; with a BitLocker profile that includes [1] the volume cannot unseal and the recovery key is demanded; suspend before flashing |
+| Verification without flashing | - | `load fs0:\NvUnlockDxe.efi` from a UEFI Shell proves the form before you flash anything |
+| Evidence | route B: one machine reported; route A: second-hand | [feasibility document](dxe-driver-ffs-feasibility.md) only, **not verified on hardware** |
+
+In one line: **both routes disturb a measurement** - self-signing moves the boot chain (PCR[4]/[7] side), FFS moves the firmware (PCR[1] side). Against a client that only reads the Secure Boot state bit, either can work; against a client that requires the stock boot chain or the stock firmware measurements, neither is guaranteed. Anti-cheat rules are vendor policy and change without notice; this document promises nothing either way.
+
 ### Evidence status
 
 | Item | Evidence | Status |
@@ -309,6 +336,7 @@ Internal-ESP variant (**not tested by this project, and not recommended**): put 
 | Secure Boot on + `ssdiag` | `tools/ssdiag/README.md`: expected to be refused | not measured |
 | Secure Boot on + `diag-unlock.py` | none | not verified |
 | Anti-cheat (Vanguard / ACE) | maintainer statement | not measured |
+| Firmware-resident FFS route | `docs/dxe-driver-ffs-feasibility.md` (design, risk, PCR[1]/BitLocker effects) | not verified on hardware |
 
 If you run either route, reporting the **board model**, whether `ssdiag` was refused, whether BitLocker asked for the recovery key, and whether `diag-unlock.py` can read the block with Secure Boot on moves one row forward each.
 
