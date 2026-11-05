@@ -102,3 +102,25 @@
 - `no PCI node` / `no PciIo handle` = 固件没给设备路径或不是 PCI 设备（如内置 VGA 的 legacy 句柄），如实记录即可。
 
 `DIAG-BOOTVOL ... anchor=`：看 `:14.0`（xHCI）/`:1d.0`/`:1a.0`（EHCI #1/#2）。若两块问题板都落在 EHCI 而 #121 落在 xHCI，强制 EHCI/xHCI 的 A/B 才有意义；反之就可以先把 USB 控制器变量放下。
+
+## 5. diag5（2026-11-05）：FWSEC 点火段逐行解析（#170）
+
+**背景**：报告者从 U 盘 FAT 簇链还原出两份完整的 v2.1.10 日志（各 261 行），证明事务在 5.6s 完成 detach、跑过 AUTH-SCAN、SEC2 scrubber（ETimeout，按 community 形态容忍）与 WPR2 layout，证据停在 ~10.9s 的 `TX: layout ok`。两个修正随之成立：①"挂在 DETACH"作废（屏幕末行只是控制台拆除后的定格帧，不是执行终点）；②但"停在 layout ok"**同样未证实**——`layout ok` 与下一条日志调用之间是相邻语句，中间没有任何可挂的东西，所以在 v2.1.10 的取证管线（Flush 不提交目录项）下，"后面没有行"是弱证据。
+
+**diag5 的改动**：FWSEC 点火段每一步都发 `FWSEC:` 前缀的提交点行；1MiB PROM 批量读改为 16 块分读 + 每 25% 一条进度行（行为等价：同一窗口、同一访问器、同序）；`TX:` 与 `layout` 加入落盘标记集。**寄存器操作与顺序零改动**。
+
+判读表（**读最后一行**；若目录项又没提交，簇链还原法照用——本报告者已实证可行）：
+
+| 日志末行 | 停点 | 判读 |
+|---|---|---|
+| `TX: layout ok` 之后无 `FWSEC: reading PROM` | 相邻语句之间 | 几乎不可能；若出现，先怀疑目录项未提交，做簇链还原 |
+| `FWSEC: PROM read NN%` | 1MiB PROM 批量读中途 | BAR0 PROM 窗口在读取中段挂——MMIO 层，新失败形态 |
+| `FWSEC: image staged` / `fuse` / `GSP falcon reset begin` / `reset+unblock ok` | staging/复位段 | 复位传播或 FBIF 解锁挂；附 `Falcon reset begin` 内部行 |
+| `FWSEC: IMEM portal begin (N blocks)` | IMEM 逐块寄存器写中途 | GSP 寄存器门户写在第 N 块附近挂 |
+| `FWSEC: DMEM portal done` / `PKC+BOOTVEC writes begin` | 点火参数段 | 点火前最后一步 |
+| `FWSEC: HALT wait begin (5s cap)` | 5 秒有界等待内 | 若后续断电前再无任何行：CPU 死在等待内的某次 MMIO 读；若 `portal forensic` 出现则等待已正常结束 |
+| `FWSEC: portal forensic ...` 之后 | 等待结束后的读回/校验 | 看 CPUCTL/MAILBOX0/EXCI 三值定 FWSEC 自身结果 |
+
+A/B 开关（每次冷启动只动一个，本地化之后再动）：GA10x 的 FWSEC staging 没有专用 marker（`\tx-fwsec-vram-staging.txt` 是 Turing 路径的），所以第一变量不是 staging；判读落在哪一段，再按该段开新变量。`scrubber did not complete (ETimeout)` 对 30 系**不是**判据（GA106 2504 全链成功轮同形态），不用为它做任何事。
+
+资产：`BOOTX64.EFI.2.1.14-diag5`（tx）。回收清单照 §1，另加：**请把两份还原日志、目录项原始 32 字节、78 个孤立簇清单与 diag4 轮的屏幕照片（banner 是否出现过）随下一轮一起附上**。
