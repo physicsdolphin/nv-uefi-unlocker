@@ -58,6 +58,9 @@ const CONFIRM_WAIT: u64 = 30;
 fn main() -> Status {
     timing::init();
     logging::init(VERSION);
+    // Durable (marker) line: separates a completed logger init from the
+    // quiet-probe/watchdog strip that follows (#122).
+    info!("BOOT: logger init returned, main continuing");
     // Phase: QUIET gate (issue #38). The stick opts in via the marker;
     // refused when the log file could not be opened (console = only
     // record, it must stay complete).

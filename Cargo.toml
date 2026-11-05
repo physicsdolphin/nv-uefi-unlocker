@@ -7,7 +7,7 @@ members = ["loader", "assets", "sim", "romcore"]
 default-members = ["assets", "sim", "romcore"]
 
 [workspace.package]
-version = "2.1.12-diag3"
+version = "2.1.13-diag4"
 edition = "2021"
 license = "GPL-2.0-only"
 

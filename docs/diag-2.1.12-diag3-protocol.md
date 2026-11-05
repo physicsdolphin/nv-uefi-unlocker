@@ -1,15 +1,23 @@
-# 诊断构建 2.1.12-diag3 取证协议（2026-11-05）
+# 诊断构建协议：2.1.12-diag3 / 2.1.13-diag4（2026-11-05）
+
+> **2026-11-05 更新：`2.1.13-diag4` 已发布，请用 diag4。** #122 报告者自建 A/B 后，挂死窗口收窄到"日志文件已创建、首行落盘之前"一条约三条语句的窄带；diag4 把这条窄带本身变成可读记录：
+>
+> - `\loader.log` 的**创建本身现在立即提交**（空目录项先落盘）：出现 0 字节文件即证明已进入 `logging::init` 的创建路径，死于其后三条调用（set_logger / 首次 format / 首次写）之内；
+> - `"log file"`、`"nv-uefi-unlocker"`、`"BOOT"`、`"DIAG"`、`"EARLY"`、`"PREP"`、`"CONFIRM"` 全部成为落盘标记——从第 1 行起逐行提交，挂死点落到哪一行停在哪个词；
+> - 其余（A/D、两 dump、EARLY 前移）与 diag3 完全一致，事务链未动。
+>
+> 资产与 SHA-256（**旧 diag3 资产仍可用，但诊断分辨率低一档**）：
 
 服务两个"怪死"平台：
 
 - issue [#170](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/170)（MSI B85M，`DETACH` 阶段确定性挂死，Xeon E3-1231 v3 无核显）——用 **tx 构建**；
-- issue [#122](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/122)（ASUS Z97-K，约 14% 概率的极早期挂死，同款无核显）——用 **只读构建**，连跑 20 次冷启动。
+- issue [#122](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/122)（ASUS Z97-K，约 14% 概率的极早期挂死，同款无核显）——用 **只读构建**（20 连跑改判读见 §3 增补）。
 
 两块板 + 讨论 [#121](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/121)（H61，正常）的共同点与差异（iGPU 有无、Aptio 代次、显卡）都已入档；本构建只回答一个问题：**挂死发生在"控制台被拆掉"之前还是之后**，并把枚举/控制台/宿主控制器一次钉死。
 
 ## 0. 本构建是什么 / 改了什么
 
-**没有任何新增硬件写**。事务链、payload、FLR 顺序与 `2.1.11-diag2` 逐字节同源（`2.1.12-diag3` 只在日志与枚举外围加东西）：
+**没有任何新增硬件写**。事务链、payload、FLR 顺序与 `2.1.11-diag2` 逐字节同源（构建只在日志与枚举外围加东西）：
 
 1. **A：标记行落盘改为"写 → 关文件 → 重开"**。此前 0 字节日志的根因已查明：`FatIFileAccess` 成功路径不刷缓存，`Flush()` 在这些固件上等于空操作，只有 `Close` 才提交目录项（大小）。现在每个 `DETACH`/`POST-`/`FINAL` 等标记行后都关闭并重开 `\loader.log`（写入位置在末尾，文件内容不丢）。**挂死点现在会留在 U 盘上，一个字符不少**。
 2. **D：拆挂前静音控制台镜像**。`DETACH: console mirror MUTED until reconnect` 之后所有日志只进文件，直到重连/交棒前再解除（`CONSOLE: mirror re-enabled ...`）。这一刀把两种死法分开：**过得了静音点 = 死在 `DisconnectController` 的 `Stop()` 链里；过不了 = 死在"对已被拆掉的控制台写屏"上**。
@@ -18,16 +26,18 @@
    - `DIAG-BOOTVOL`：本 U 盘所在的宿主控制器。8 系 PCH 的 EHCI #1=`:1d.0`、EHCI #2=`:1a.0`、xHCI=`:14.0`（USB2 口的实际路由由 `xUSB2PR` 决定，光看插哪个口不算证据）。
 4. **枚举前移**：chain 阶段那次递归 `ConnectController`（跳过 NVIDIA 显示句柄）提前到 banner 之后、一切枚举之前再跑一遍（`EARLY:` 前缀）。Fast Boot 的懒连接策略若让 SFS 面不完整，#122 的"无日志早挂"会长得一模一样；这一步同时是它的排除实验。
 
-版本串 `2.1.12-diag3`，tx 构建 banner 带 `TX BUILD`。
+版本串 `2.1.13-diag4`（diag3 同源），tx 构建 banner 带 `TX BUILD`。
 
 资产（放 U 盘 `EFI\BOOT\BOOTX64.EFI`）：
 
 | 文件 | 用途 | SHA-256 |
 |---|---|---|
-| `BOOTX64.EFI.2.1.12-diag3` | #170（tx，完整事务） | `7ebe9c4cc33457f4f45e99a807334f5276cda4b3a3ccb122d2cd946b24d6d033` |
-| `BOOTX64.EFI.readonly-diag.2.1.12-diag3` | #122（只读，20 连跑） | `38881809164eb2e0f361cc98c03baacb856ea3220bb746b9087d3a736e6c65af` |
+| `BOOTX64.EFI.2.1.13-diag4` | #170（tx，完整事务） | 见 `SHA256SUMS.2.1.13-diag4` |
+| `BOOTX64.EFI.readonly-diag.2.1.13-diag4` | #122（只读） | 见 `SHA256SUMS.2.1.13-diag4` |
+| ~~`BOOTX64.EFI.2.1.12-diag3`~~ | 旧 tx（分辨率低一档） | `7ebe9c4cc33457f4f45e99a807334f5276cda4b3a3ccb122d2cd946b24d6d033` |
+| ~~`BOOTX64.EFI.readonly-diag.2.1.12-diag3`~~ | 旧只读 | `38881809164eb2e0f361cc98c03baacb856ea3220bb746b9087d3a736e6c65af` |
 
-两文件勿混用：#122 的 20 连跑若用 tx 构建，第一轮就会带写，14% 基线不再是"只读基线"。
+两文件勿混用：#122 的只读基线与 #170 的事务复现各用各的资产。
 
 ## 1. 通用纪律（两 issue 相同）
 
@@ -74,6 +84,14 @@
 - 20 轮全绿也要交：全绿本身即"只读基线干净"，下一轮再谈是否换 tx 复现。
 
 只读构建的确认段与旧版相同（任意键/30 s 继续），**不会**有 `DETACH`/`FLR` 行，这是正常的。
+
+### 3b. 增补（2026-11-05，报告者已带回自建 A/B）
+
+报告者用自编构建跑出 **只读 2/2 全绿、tx 0/4 全挂**（同盘同码），并把挂死窗口推断为"`logging::init` 创建文件后、首行落盘前"。两点修正与一条补测：
+
+1. **0 字节不能证明"没到首行落盘"**。这些 AMI 固件上 `Flush()` 是空操作（#170 实测：40+ 行含 `DETACH` 仍 0 字节，而优雅轮在 Close 时写了 13 KB），只有 Close 提交目录项——所以旧构建里**任何**挂死（含确认屏、含准备段）都表现为 0 字节。窗口要靠 diag4 的逐行提交来测，不靠字节数倒推。
+2. **自建 A/B 有 profile 混淆**：只读用 `cargo build`（dev），tx 用 `--release`。缺的两格必须补：`cargo build --release` 的只读、与 `cargo build` 的 tx（命令见 issue 回帖）。若 release 只读也挂 → 是镜像尺寸/profile，不是 `tx` feature；若 dev tx 也挂 → feature 引入的代码。
+3. diag4 下**每一行都是提交点**，文件创建本身也先提交。判读直接读最后一行：`log file` → 死在 logger 之后；`nv-uefi-unlocker` → 死在版本行之后；`BOOT: logger init returned` → 死在 quiet 探测/watchdog 段；`PREP:` → 死在武装准备段（枚举/GOP/采样/资产读）；`DIAG-`/`EARLY` 段同理。只有"文件已创建且 0 字节"才代表死在 init 的三条调用内。
 
 ## 4. 两个 dump 怎么读
 

@@ -78,6 +78,15 @@ const FLUSH_MARKERS: &[&str] = &[
     // lines, so per-line flush costs ~0.1-0.25 s worst case on USB BOT
     // and turns any future hang into a between-two-lines answer.
     "NATIVE-GOP", "VGA-RESTORE",
+    // Issue #122 (2026-11-05): the reporter's self-built TX binaries hang
+    // with a created-but-0-byte log and a screen that never lights up, in
+    // the thin strip between the file existing and the first marker line.
+    // These entries make the strip itself readable: "log file" is line 1,
+    // the version banner line 2, BOOT/DIAG/EARLY cover the probes behind
+    // them, and PREP/CONFIRM cover the armed countdown where the first
+    // TX-only runtime work (enumeration/GOP probe/sample/asset reads)
+    // actually runs.
+    "log file", "nv-uefi-unlocker", "BOOT", "DIAG", "EARLY", "PREP", "CONFIRM",
 ];
 
 /// Console whitelist for quiet mode (issue #38): with `\tx-quiet.txt` on
@@ -335,5 +344,14 @@ fn open_fresh_log() -> Option<RegularFile> {
     let handle: FileHandle = root
         .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
         .ok()?;
-    handle.into_regular_file()
+    let file = handle.into_regular_file()?;
+    // Commit the fresh (0-byte) dirent right away by closing and reopening
+    // (issue #122): the reporter's hangs leave a created-but-empty file, and
+    // on firmware where Flush is a no-op the creation itself is otherwise
+    // uncommitted. With the empty dirent on disk, "file created, still 0
+    // bytes" now means the run died between this point and the first log
+    // line - a three-call strip (set_logger, first format, first write)
+    // instead of an unknown one.
+    drop(file);
+    reopen_log()
 }
