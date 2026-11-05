@@ -455,7 +455,14 @@ pub const VGA_ATTR_MASK: u64 = 0x001C;
 pub fn restore_vga(gpu: &PciIo, initial_attrs: Option<u64>) {
     let vga = initial_attrs.unwrap_or(0) & VGA_ATTR_MASK;
     if vga == 0 {
-        info!("VGA-RESTORE: no VGA attributes captured pre-claim - nothing to restore");
+        // A fact, not a shrug: an empty subset means the firmware granted no
+        // VGA bit at all, so chain-2 cannot engage on this board by
+        // construction (#128, #109). It is NOT evidence that no legacy-VGA
+        // conflict exists - the common raw form is 0x300 (IO|MEMORY only).
+        info!(
+            "VGA-RESTORE: pre-claim VGA subset empty (raw={:#x}) - chain-2 cannot engage on this board; IO|MEMORY-only (0x300) is the usual shape, not proof of no legacy-VGA conflict",
+            initial_attrs.unwrap_or(0)
+        );
         return;
     }
     let st = gpu.attributes_enable_op(vga);

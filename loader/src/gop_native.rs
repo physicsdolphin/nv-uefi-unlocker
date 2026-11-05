@@ -504,7 +504,12 @@ fn restore_vga(gpu: &PciIo, initial_attrs: Option<u64>) {
         let st = gpu.attributes_enable_op(vga);
         info!("NATIVE-GOP: VGA attributes {vga:#x} Enable={st:?}");
     } else {
-        info!("NATIVE-GOP: no VGA attributes captured pre-claim - nothing to restore");
+        // Same distinction as the tx_detach twin: empty capture = the
+        // firmware granted no VGA bit, chain-2 structurally dead here.
+        info!(
+            "NATIVE-GOP: pre-claim VGA subset empty (raw={:#x}) - chain-2 cannot engage on this board; IO|MEMORY-only (0x300) is the usual shape, not proof of no legacy-VGA conflict",
+            initial_attrs.unwrap_or(0)
+        );
     }
     let st = gpu.attributes_enable_op(DECODE_MASK);
     info!("NATIVE-GOP: IO|MEM decode Enable={st:?}");
