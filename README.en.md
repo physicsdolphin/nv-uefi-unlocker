@@ -23,7 +23,7 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 
 [![Theoretical post-unlock ceiling chart](docs/tools/tflops-ceiling.en.svg)](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)
 
-*Theoretical post-unlock ceiling chart (FP16 · desktop) — [open the interactive version](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html): five precision tabs (FP32/TF32/FP16/BF16/FP8), the full GTX 10 – RTX 50 desktop / laptop / pro / datacenter lineup, a toggle for as-shipped values; [`?k=fp8`](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html?k=fp8) deep-links a precision. This is a theoretical yardstick and differs from the measured figures above; see [the theoretical uplift analysis](docs/theoretical-uplift.en.md).*
+*Theoretical post-unlock ceiling chart (FP16 · desktop) — [open the interactive version](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html): five precision tabs (FP32/TF32/FP16/BF16/FP8), the full GTX 10 – RTX 50 desktop / laptop / pro / mining / datacenter lineup, a toggle for as-shipped values; [`?k=fp8`](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html?k=fp8) deep-links a precision. This is a theoretical yardstick and differs from the measured figures above; see [the theoretical uplift analysis](docs/theoretical-uplift.en.md).*
 
 ## Compatibility at a glance
 
