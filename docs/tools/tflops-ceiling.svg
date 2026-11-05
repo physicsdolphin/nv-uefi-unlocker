@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="720" height="604" viewBox="0 0 720 604" role="img" aria-label="理论解锁上限天梯图 · FP16">
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="620" viewBox="0 0 720 620" role="img" aria-label="理论解锁上限天梯图 · FP16">
 <style>
-.bg{fill:#fff}.fg{fill:#111}.mut{fill:#666}.brd{fill:none;stroke:#ddd}.trk{fill:#eceef0}.g20{fill:#4d7c0f}.g30{fill:#0e7490}.g40{fill:#c2410c}.lock{fill:#b9bec4}text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif}@media (prefers-color-scheme:dark){.bg{fill:#111417}.fg{fill:#e6e8ea}.mut{fill:#9aa3ad}.brd{stroke:#333a42}.trk{fill:#232a31}.lock{fill:#5b636c}.g20{fill:#a3e635}.g30{fill:#22d3ee}.g40{fill:#fb923c}}
+.bg{fill:#fff}.fg{fill:#111}.mut{fill:#666}.brd{fill:none;stroke:#ddd}.trk{fill:#eceef0}.g20{fill:#4d7c0f}.g30{fill:#0e7490}.g40{fill:#c2410c}.g10{fill:#92400e}.g16{fill:#d97706}.lock{fill:#b9bec4}text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif}@media (prefers-color-scheme:dark){.bg{fill:#111417}.fg{fill:#e6e8ea}.mut{fill:#9aa3ad}.brd{stroke:#333a42}.trk{fill:#232a31}.lock{fill:#5b636c}.g20{fill:#a3e635}.g30{fill:#22d3ee}.g40{fill:#fb923c}.g10{fill:#92400e}.g16{fill:#d97706}}
 </style>
-<rect class="bg" width="720" height="604" rx="10"/>
+<rect class="bg" width="720" height="620" rx="10"/>
 <text class="fg" x="20" y="36" font-size="16" font-weight="600">理论解锁上限 · FP16</text>
 <text class="mut" x="20" y="57" font-size="12">张量核 · FP32 累加 · 出厂被砍半 · dense TFLOPS · 不含稀疏</text>
 <text class="mut" x="20" y="78" font-size="12">灰 = 出厂（钳制） · 彩 = 解锁后理论上限 · 峰值 330.3 TFLOPS</text>
@@ -36,8 +36,7 @@
 <rect class="lock" x="252.0" y="175.0" width="97.4" height="9" rx="2"/>
 <text class="fg" x="700" y="182" font-size="11" text-anchor="end">97.5 → 194.9</text>
 <text class="mut" x="34" y="204" font-size="11" text-anchor="end">5</text>
-<text class="fg" x="44" y="204" font-size="12">RTX 4070 Ti SUPER</text>
-<text class="mut" x="44" y="204" font-size="11"><tspan x="172.4">AD103 · 亦有 AD102 变体（同规格） · 66 SM</tspan></text>
+<text class="fg" x="44" y="204" font-size="12">RTX 4070 Ti SUPER<tspan class="mut" font-size="11"> · 66 SM</tspan></text>
 <rect class="trk" x="252" y="197" width="330" height="9" rx="2"/>
 <rect class="g40" x="252.0" y="197.0" width="176.2" height="9" rx="2"/>
 <rect class="lock" x="252.0" y="197.0" width="88.1" height="9" rx="2"/>
@@ -85,15 +84,13 @@
 <rect class="lock" x="252.0" y="329.0" width="44.6" height="9" rx="2"/>
 <text class="fg" x="700" y="336" font-size="11" text-anchor="end">44.6 → 89.2</text>
 <text class="mut" x="34" y="358" font-size="11" text-anchor="end">12</text>
-<text class="fg" x="44" y="358" font-size="12">RTX 4060 Ti 8 GB</text>
-<text class="mut" x="44" y="358" font-size="11"><tspan x="165.2">AD106 · 34 SM</tspan></text>
+<text class="fg" x="44" y="358" font-size="12">RTX 4060 Ti 8 GB<tspan class="mut" font-size="11"> · 34 SM</tspan></text>
 <rect class="trk" x="252" y="351" width="330" height="9" rx="2"/>
 <rect class="g40" x="252.0" y="351.0" width="88.2" height="9" rx="2"/>
 <rect class="lock" x="252.0" y="351.0" width="44.1" height="9" rx="2"/>
 <text class="fg" x="700" y="358" font-size="11" text-anchor="end">44.1 → 88.3</text>
 <text class="mut" x="34" y="380" font-size="11" text-anchor="end">13</text>
-<text class="fg" x="44" y="380" font-size="12">RTX 4060 Ti 16 GB</text>
-<text class="mut" x="44" y="380" font-size="11"><tspan x="172.4">AD106 · 34 SM</tspan></text>
+<text class="fg" x="44" y="380" font-size="12">RTX 4060 Ti 16 GB<tspan class="mut" font-size="11"> · 34 SM</tspan></text>
 <rect class="trk" x="252" y="373" width="330" height="9" rx="2"/>
 <rect class="g40" x="252.0" y="373.0" width="88.2" height="9" rx="2"/>
 <rect class="lock" x="252.0" y="373.0" width="44.1" height="9" rx="2"/>
@@ -133,8 +130,9 @@
 <rect class="g30" x="252.0" y="483.0" width="68.1" height="9" rx="2"/>
 <rect class="lock" x="252.0" y="483.0" width="34.1" height="9" rx="2"/>
 <text class="fg" x="700" y="490" font-size="11" text-anchor="end">34.1 → 68.2</text>
-<text class="mut" x="20" y="514" font-size="11">……另有 15 款未画出，完整可交互版见 docs/tools/tflops-ceiling.html</text>
+<text class="mut" x="20" y="514" font-size="11">……另有 21 款未画出，完整可交互版见 docs/tools/tflops-ceiling.html</text>
 <line class="brd" x1="20" y1="560" x2="700" y2="560"/>
 <text class="mut" x="20" y="574" font-size="11">值为 SM × 每 SM 每时钟 FMA × 2 × 加速频率；解锁 = 恢复白皮书全速，钳制路径 ×2</text>
-<text class="mut" x="20" y="590" font-size="11">实际到手低于此值：功耗墙、显存带宽、库路由各自打折 · † 30 系 TF32 出厂未被钳制 · 仅桌面卡，笔记本见交互版</text>
+<text class="mut" x="20" y="590" font-size="11">实际到手低于此值：功耗墙、显存带宽、库路由各自打折 · † 30 系 TF32 出厂未被钳制</text>
+<text class="mut" x="20" y="606" font-size="11">仅列桌面消费卡；笔记本、10/16 系、专业卡、数据中心与 50 系对照行见交互版</text>
 </svg>

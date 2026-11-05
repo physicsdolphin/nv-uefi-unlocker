@@ -35,9 +35,9 @@ TEXT = {
         "sub": "{blurb} · dense TFLOPS · no sparsity",
         "legend": "grey = as shipped (clamped) · colour = theoretical post-unlock ceiling · peak {peak:.1f} TFLOPS",
         "hidden": "……{n} more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html",
-        "f1": "value = SM × FMA per SM per clock × 2 × boost clock; unlock restores the whitepaper rate, ×2 on clamped paths",
-        "f2": "real-world results land below this: power limits, memory bandwidth and library routing each take a cut · "
-              "† 30-series TF32 ships unclamped · desktop only, laptops are in the interactive version",
+        "f1": "value = SM × FMA/SM/clk × 2 × boost clock; unlock restores the whitepaper rate (×2 on clamped paths)",
+        "f2": "real results land lower: power limits, memory bandwidth and library routing each take a cut",
+        "f3": "† 30-series TF32 ships unclamped · desktop consumer only; laptops, pro, datacenter and RTX 50 rows are interactive-only",
         "aria": "Theoretical post-unlock ceiling chart · {label}",
     },
     "zh": {
@@ -46,13 +46,14 @@ TEXT = {
         "legend": "灰 = 出厂（钳制） · 彩 = 解锁后理论上限 · 峰值 {peak:.1f} TFLOPS",
         "hidden": "……另有 {n} 款未画出，完整可交互版见 docs/tools/tflops-ceiling.html",
         "f1": "值为 SM × 每 SM 每时钟 FMA × 2 × 加速频率；解锁 = 恢复白皮书全速，钳制路径 ×2",
-        "f2": "实际到手低于此值：功耗墙、显存带宽、库路由各自打折 · † 30 系 TF32 出厂未被钳制 · 仅桌面卡，笔记本见交互版",
+        "f2": "实际到手低于此值：功耗墙、显存带宽、库路由各自打折 · † 30 系 TF32 出厂未被钳制",
+        "f3": "仅列桌面消费卡；笔记本、10/16 系、专业卡、数据中心与 50 系对照行见交互版",
         "aria": "理论解锁上限天梯图 · {label}",
     },
 }
 
-GEN_COLOR = {"20": "#4d7c0f", "30": "#0e7490", "40": "#c2410c"}
-GEN_COLOR_DARK = {"20": "#a3e635", "30": "#22d3ee", "40": "#fb923c"}
+GEN_COLOR = {"10": "#92400e", "16": "#d97706", "20": "#4d7c0f", "30": "#0e7490", "40": "#c2410c"}
+GEN_COLOR_DARK = {"10": "#92400e", "16": "#d97706", "20": "#a3e635", "30": "#22d3ee", "40": "#fb923c"}
 
 
 def load_rows() -> list[dict]:
@@ -67,11 +68,17 @@ def bar(x0: float, y: float, w: float, h: float, cls: str) -> str:
     return f'<rect class="{cls}" x="{x0:.1f}" y="{y:.1f}" width="{max(w, 0):.1f}" height="{h}" rx="2"/>'
 
 
+def text_width(text: str) -> float:
+    """Rough advance estimate at font-size 11; only used to clip chip notes."""
+    return sum(11.5 if ord(ch) > 0x2E7F else 6.2 for ch in text)
+
+
 def render(precision: str, top: int, lang: str) -> str:
     key, label, (blurb_en, blurb_zh) = PRECISIONS[precision]
     T = TEXT[lang]
     blurb = blurb_en if lang == "en" else blurb_zh
-    rows = [r for r in load_rows() if r.get(key) and not r.get("m") and not r.get("k") and r.get("g") != "50"]
+    rows = [r for r in load_rows()
+            if r.get(key) and not r.get("m") and not r.get("k") and not r.get("ref")]
     rows.sort(key=lambda r: -r[key][1])
     peak = rows[0][key][1]
 
@@ -80,7 +87,7 @@ def render(precision: str, top: int, lang: str) -> str:
 
     W, RH = 720, 22
     y0 = 104
-    H = y0 + len(shown) * RH + (26 if hidden else 0) + 78
+    H = y0 + len(shown) * RH + (26 if hidden else 0) + 94
     tx0, tw = 252, 330
 
     out: list[str] = []
@@ -93,11 +100,13 @@ def render(precision: str, top: int, lang: str) -> str:
         ".bg{fill:#fff}.fg{fill:#111}.mut{fill:#666}.brd{fill:none;stroke:#ddd}"
         ".trk{fill:#eceef0}"
         f".g20{{fill:{GEN_COLOR['20']}}}.g30{{fill:{GEN_COLOR['30']}}}.g40{{fill:{GEN_COLOR['40']}}}"
+        f".g10{{fill:{GEN_COLOR['10']}}}.g16{{fill:{GEN_COLOR['16']}}}"
         ".lock{fill:#b9bec4}"
         "text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif}"
         "@media (prefers-color-scheme:dark){.bg{fill:#111417}.fg{fill:#e6e8ea}.mut{fill:#9aa3ad}"
         ".brd{stroke:#333a42}.trk{fill:#232a31}.lock{fill:#5b636c}"
-        f".g20{{fill:{GEN_COLOR_DARK['20']}}}.g30{{fill:{GEN_COLOR_DARK['30']}}}.g40{{fill:{GEN_COLOR_DARK['40']}}}}}"
+        f".g20{{fill:{GEN_COLOR_DARK['20']}}}.g30{{fill:{GEN_COLOR_DARK['30']}}}.g40{{fill:{GEN_COLOR_DARK['40']}}}"
+        f".g10{{fill:{GEN_COLOR_DARK['10']}}}.g16{{fill:{GEN_COLOR_DARK['16']}}}}}"
     )
     out.append("</style>")
     out.append(f'<rect class="bg" width="{W}" height="{H}" rx="10"/>')
@@ -113,11 +122,20 @@ def render(precision: str, top: int, lang: str) -> str:
         lo, hi = r[key]
         gen = r["g"]
         out.append(f'<text class="mut" x="34" y="{y + 12}" font-size="11" text-anchor="end">{i + 1}</text>')
-        name = escape(r["n"].replace("GeForce RTX ", "RTX "))
-        out.append(f'<text class="fg" x="44" y="{y + 12}" font-size="12">{name}</text>')
-        out.append(f'<text class="mut" x="44" y="{y + 12}" font-size="11">'
-                   f'<tspan x="{44 + 7.2 * len(r["n"].replace("GeForce RTX ", "RTX ")) + 6}">'
-                   f'{escape(r["c"])} · {r["s"]} SM{" †" if precision == "tf32" and gen == "30" else ""}</tspan></text>')
+        name_s = r["n"].replace("GeForce RTX ", "RTX ")
+        name = escape(name_s)
+        suffix = " †" if precision == "tf32" and gen == "30" else ""
+        x_name = 44 + 7.2 * len(name_s) + 6
+        label = f"{r['c']} · {r['s']} SM{suffix}"
+        if text_width(label) <= tx0 - 8 - x_name:
+            out.append(f'<text class="fg" x="44" y="{y + 12}" font-size="12">{name}</text>')
+            out.append(f'<text class="mut" x="44" y="{y + 12}" font-size="11">'
+                       f'<tspan x="{x_name}">{escape(label)}</tspan></text>')
+        else:
+            # Long name leaves no column for the chip note (variant rows); keep
+            # the SM count inline so it is never hidden under the bar.
+            out.append(f'<text class="fg" x="44" y="{y + 12}" font-size="12">{name}'
+                       f'<tspan class="mut" font-size="11"> · {r["s"]} SM{suffix}</tspan></text>')
         out.append(f'<rect class="trk" x="{tx0}" y="{y + 5}" width="{tw}" height="9" rx="2"/>')
         out.append(bar(tx0, y + 5, tw * hi / peak, 9, f"g{gen}"))
         out.append(bar(tx0, y + 5, tw * lo / peak, 9, "lock"))
@@ -133,10 +151,11 @@ def render(precision: str, top: int, lang: str) -> str:
             f'{escape(T["hidden"].format(n=hidden))}</text>'
         )
 
-    foot = H - 30
+    foot = H - 46
     out.append(f'<line class="brd" x1="20" y1="{foot - 14}" x2="{W - 20}" y2="{foot - 14}"/>')
     out.append(f'<text class="mut" x="20" y="{foot}" font-size="11">{escape(T["f1"])}</text>')
     out.append(f'<text class="mut" x="20" y="{foot + 16}" font-size="11">{escape(T["f2"])}</text>')
+    out.append(f'<text class="mut" x="20" y="{foot + 32}" font-size="11">{escape(T["f3"])}</text>')
     out.append("</svg>")
     return "\n".join(out)
 
