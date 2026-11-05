@@ -187,8 +187,11 @@ Two methodological limits, both of which produce false verdicts - read them befo
 | 3 | **devinit replay** (driver init recomputes) | survives | Some GA10x laptops ([#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148); measured on Linux, no Windows sample of this shape yet) | Gate locked + `SS` set to derived values (neither baseline nor override) |
 | 4 | **Narrow write** (gate only) | survives | A few platforms | Gate locked + `SS` intact ([#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) class) |
 | 5 | **Our own tail**: the native-GOP rebuild `StartImage`s the card's ROM | - | Some platforms' ROM POST runs devinit | Broken at `POST-GOP` but fine at `POST-FLR` |
+| 6 | **The OS connection manager taking the USB4/Thunderbolt tunnel over** | Reset | TB/USB4 eGPU ([#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54), desktop TB4 + AD102 measured): Windows `Usb4HostRouter` and the Linux `thunderbolt` module both tear the downstream bus down and re-enumerate it during init | Canary `cleared`; **the loss happens only in the OS** - still live after the handoff, after POST-to-OS, and inside a booted Linux (`UNLOCKED` under `modprobe.blacklist=thunderbolt`) |
 
-Rows 1-2 are physical events, row 3 is the firmware contract (below), and row 5 is the only one still in our hands - `\tx-reconnect-legacy.txt` makes the handoff tail reconnect the vendor stack instead of `StartImage`.
+Row 6 is special: the reset is performed by the **OS connection manager**, not by a platform rail-off, a firmware SBR or a driver re-derivation. The gate is closed by that reset **before any driver binds**, so re-arming after the takeover has no host-write path (`--reapply` is structurally dead, hot-add included). On Linux, `thunderbolt.host_reset=0` is the switch to try; Windows has no known equivalent. Capture by chaining into Linux with `modprobe.blacklist=nouveau,thunderbolt` and `tools/diag-unlock.py` (rEFInd instead of the ISO's own GRUB, Secure Boot may stay on).
+
+Rows 1-2 are physical events, row 3 is the firmware contract (below), row 5 is the only one we can still change in our own code, and row 6 is an OS-side knob (not in this tool) - `\tx-reconnect-legacy.txt` makes the handoff tail reconnect the vendor stack instead of `StartImage`.
 
 **Row 1 has a full field pairing caught by both axes** (2026-11-04, [#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37), HP Victus 16 `25a2`, hybrid-only platform, `docs/evidence/issue37-hp-victus-25a2/`): on the EFI side the canary was set and read back intact with the card in D0 at handoff; in the OS the canary is cleared + FEAT re-derived to factory + the root port `00:01.0` reading `D3` in PMCSR. FLR is excluded by the same log (the chain's own `POST-FLR` proves GA10x selectors survive it), so an event that exceeds FLR is the conventional-reset family, and the port in D3 tips the form to row 1. Contrast: our TU106 desktop read canary intact with both endpoints D0 - that is what a write-type loss looks like; #148 (GA107M 25a0, Linux) was the reset-free devinit rewrite (its canary would have been intact). Same die, different platform, different row. The canary table's fourth cell (`intact` + FEAT live) now has its first field instance too (2026-11-05, [#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109#issuecomment-6650530730): same card, same VBIOS, same subsystem, B650 desktop - `intact` at the handoff and in the OS, both endpoints D0, `UNLOCKED`). "Nothing happened" is a reading as well: it eliminates card, VBIOS and driver from the discriminating variables and leaves only the platform.
 
@@ -310,13 +313,20 @@ Mechanism notes:
 
 ## Does the unlock survive a Thunderbolt handoff?
 
-Persistence is not guaranteed. Native PCIe slots and dGPU-direct configurations are the supported baseline. Thunderbolt tunnel rebuilding, hot reset / PERST# or enclosure power management can reset or power-cycle the GPU after handoff, clearing the unlock. Pure link retraining does not itself reset the endpoint.
+**No - as soon as the OS connection manager completes the takeover.** The criterion changes from "might get reset" to "takeover = reset": while initialising the Thunderbolt/USB4 host router, both Windows (`Usb4HostRouter`) and Linux (the `thunderbolt` module) tear the whole downstream bus down and re-enumerate it, and that bus reset wipes the gate and the selectors out of the AON island together. It is not the card, not the enclosure and not the firmware: on a desktop TB4 + AD102 the canary was still `intact`, the gate still `0xffffffff` and `READOUT_1=0` after the handoff, after POST-to-OS, and even inside a booted Linux - the damage happens only in the few seconds of the module takeover ([#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)). Pure link retraining does not reset the endpoint; that is what distinguishes this row from the ones above.
 
-Start with an [in-OS read-only check](#ssdiag):
+**`--reapply` does not save this path.** The gate is closed by that reset, before any driver binds; after the takeover there is no host-write path, so an in-OS read just shows a closed gate you cannot write back. The only fix is to stop the takeover from doing that reset:
 
-- Ampere/Ada FEAT gate open, SS values reverted: `--reapply` can restore the overrides and verify them.
-- Gate locked, device powered off or registers inaccessible: `--reapply` cannot open the gate or recover power-loss state; follow recovery and USB replay.
+- Linux: `thunderbolt.host_reset=0` is the ready-made knob - it governs exactly the host-router init reset (unverified, not yet concluded).
+- Windows: no known equivalent. `DevPnPCapabilities=0x100` is disproven; only worth a cheap round on the `Usb4HostRouter` node's own `Device Parameters` subkey, and on disabling HostRouter and DeviceRouter separately (disabling both together only removes the tunnel).
+
+An [in-OS read-only check](#ssdiag) is still the first step, but the reading changes:
+
+- Canary `intact`, gate still open: no takeover yet, or it was suppressed - the unlock is live.
+- Canary `cleared`, gate locked: the takeover has reset; nothing recovers it within this boot - replay the USB, or apply the suppression first.
 - SS values correct but throughput low: check power, clocks and the test method.
+
+**Capture recipe (eGPU reporters can copy it verbatim)**: chain into a Linux live USB with `modprobe.blacklist=nouveau,thunderbolt` and read back driver-free with `tools/diag-unlock.py`; rEFInd instead of the ISO's own GRUB dodges the boot-media trap, and Secure Boot may stay on throughout. Full readings and the negative control: `docs/evidence/issue54-tb4-4090-linux-router-reset/`.
 
 Turing intentionally relocks PLM at handoff; do not apply the Ampere/Ada closed-gate interpretation to it. **The relock value itself is not a failure**: the observed value is usually `0xffffffef` (bits 5:6 set) while the cold default is `0xffffff8f`, and it varies with board and driver version. `tu10x: plm=0xffffffef` in `HANDOFF-OUT` together with `tu10x_unlock=true` and SS0/SS1 still reading `0x88888888`/`0x8` is the normal handoff shape ([cold values](cold-values.md), [#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102), [#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)). Source: [Thunderbolt platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54).
 

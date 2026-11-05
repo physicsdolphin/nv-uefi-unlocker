@@ -55,7 +55,7 @@
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**；ES：TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689；🟢 2685/2681/26af · [详情](#device-8) |
 | GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti **2208** / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216（另含 VM/VFIO 环境，#135）/2204（仅系统侧，D#96）/2208（B 站 opus）；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
-| GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；⚠️ 2484 仅 EFI、Windows 不保留（雷电 eGPU 与桌面 X570 两形态；#164 分类中） · [详情](#device-11) |
+| GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；⚠️ 2484 仅 EFI、Windows 不保留（雷电形态=OS 连接管理器接管复位，已定谳；桌面 X570 形态 #164 分类中） · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
 | GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限；**2520 为笔记本，观测到 GC6/D3cold 唤醒后、驱动 bind 前回锁，#126**）；🟢 其余；2560 待复测 · [详情](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9/25ad** / MX570 25a6 / 3050 Laptop 25a2 / **3050 Ti Laptop 25a0** 等 | ✅ **25ad（RTX 2050 Laptop，首个 in-OS 实测 GA107）**；⚠️ 25a0（Linux 观测：链路全绿但本机驱动 init 重推导；同族 25ad Windows 持久——变量未切开）；🟢 其余 · [详情](#device-14) |
@@ -147,7 +147,7 @@
 
 ### GA104 · 3070 2484–248c / 3060 Ti 2489 等（0x24xx 全段放行）
 
-`2489` 在 AMD 平台通过全链及 Windows 验证，跨厂 VBIOS 环境也可用。`2484` 的雷电 eGPU 环境通过 EFI 事务，但 Windows 不保留解锁；雷电不作为保证生效的环境。**2026-11-04 增补一例非雷电形态（X570 AORUS ULTRA 桌面、独显单卡、驱动 617.42）：EFI 全链绿（PLM 翻转 ~148ms、选择器读回、post-FLR AON 存活、`plm_open=true`），进系统后 SS 对不再完好（`0x0`/`0x0`）且门回 `0xffffff8f`**——SS 对失守（非仅关门），与 #99/#109 同族；但 `0x0` 同时也是该卡驱动复位后的基线值（见冷态表），"清零"与"回厂"本机判不开（写入方未定：驱动 init 复位/重推导 vs 平台固件，另含本工具 native-GOP 重建尾这一未排除项），已发安全模式切分与事件日志取证步骤，归类后回填（[#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)）。其余同族设备全段放行。来源：[#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)、[雷电限制](faq.md#thunderbolt)。
+`2489` 在 AMD 平台通过全链及 Windows 验证，跨厂 VBIOS 环境也可用。`2484` 的雷电 eGPU 环境通过 EFI 事务，但 Windows 不保留解锁。**雷电形态的丢失已定谳为 OS 连接管理器（Windows `Usb4HostRouter` / Linux `thunderbolt` 模块）接管隧道时执行的那次下游总线复位**——不是卡、不是坞、不是固件：桌面 TB4 + AD102 同形态实测，交棒后、POST 交 OS 后、乃至已启动的 Linux 里金丝雀都完好，只在模块接管的几秒内被清；门是被复位关掉的且发生在驱动绑定之前，故 `--reapply` 结构性无效，唯一出路是抑制那次复位（Linux `thunderbolt.host_reset=0`，待验证）。**2026-11-04 增补一例非雷电形态（X570 AORUS ULTRA 桌面、独显单卡、驱动 617.42）：EFI 全链绿（PLM 翻转 ~148ms、选择器读回、post-FLR AON 存活、`plm_open=true`），进系统后 SS 对不再完好（`0x0`/`0x0`）且门回 `0xffffff8f`**——SS 对失守（非仅关门），与 #99/#109 同族；但 `0x0` 同时也是该卡驱动复位后的基线值（见冷态表），"清零"与"回厂"本机判不开（写入方未定：驱动 init 复位/重推导 vs 平台固件，另含本工具 native-GOP 重建尾这一未排除项），已发安全模式切分与事件日志取证步骤，归类后回填（[#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)）。其余同族设备全段放行。来源：[#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)、[雷电限制](faq.md#thunderbolt)。
 
 <a id="device-12"></a>
 

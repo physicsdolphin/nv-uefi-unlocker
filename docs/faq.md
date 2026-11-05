@@ -198,8 +198,11 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 3 | **devinit 重放**（驱动 init 自己重算） | 存活 | 部分 GA10x 笔记本（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)，Linux 实测；Windows 侧尚无同形态样本） | 门锁 + `SS` 被写成推导值（≠开机基线、≠覆盖值） |
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
+| 6 | **OS 的连接管理器接管 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102 实测）：Windows `Usb4HostRouter`、Linux `thunderbolt` 模块在初始化时拆掉并重建整棵下游总线 | 金丝雀 `cleared`；**matter 只在 OS 里丢**，交棒后、POST 交 OS 后、已启动的 Linux 里都完好（`modprobe.blacklist=thunderbolt` 下 `UNLOCKED`） |
 
-第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改的地方——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
+第 6 行的特殊性：复位由 **OS 的连接管理器**执行，不是平台断电、不是固件 SBR、不是驱动重推导；门是被那次复位关掉的，**发生在驱动绑定之前**，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）。Linux 侧可试 `thunderbolt.host_reset=0` 抑制初始化复位；Windows 侧无已知对应项。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
+
+第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改自己代码的地方，第 6 行是 OS 侧旋钮（不在本工具内）——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
 
 **第 1 行已有两轴同抓的完整现场对**（2026-11-04，[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)，HP Victus 16 `25a2` 纯混合平台，`docs/evidence/issue37-hp-victus-25a2/`）：EFI 侧金丝雀设置并读回完好、交棒时卡 D0 → 系统内金丝雀清零 + FEAT 回厂推导值 + 根口 `00:01.0` PMCSR `D3`。FLR 被同日志排除（本链 `POST-FLR` 自证 GA10x 选择器活过 FLR），事件超出 FLR 即常规复位族，根口 D3 把形态压向第 1 行。对照组：TU106 桌面金丝雀 intact + 双端 D0（写入型才会长这样）；同为 GA107M 的 [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)（Linux）是无复位的 devinit 重写（金丝雀应完好）——同 die、不同平台、不同行。金丝雀表的第四格（`intact` + FEAT 完好）也已有首个现场实例（2026-11-05，[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109#issuecomment-6650530730)：同卡同 VBIOS 同子系统、B650 桌面，交棒与系统内均 `intact`、双端 D0、`UNLOCKED`）——"什么都没发生"同样是一条读数，它把卡/VBIOS/驱动从鉴别变量里踢了出去，只剩平台。
 
@@ -320,13 +323,20 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 
 ## 雷电 eGPU 能保留解锁吗？
 
-不保证。支持环境以原生 PCIe 插槽和独显直连为准。雷电隧道重建、hot reset / PERST# 或坞供电管理可能在交棒后复位或断电，清除解锁；纯链路重训本身不复位端点。
+**不能——只要 OS 的连接管理器完成接管。** 判据从"可能被复位"改成"接管即复位"：雷电/USB4 主机路由器初始化时，Windows（`Usb4HostRouter`）与 Linux（`thunderbolt` 模块）都会拆掉并重建整棵下游总线，那一次总线复位把 AON 里的门与选择器一并清掉。不是卡、不是坞、不是固件：桌面 TB4 + AD102 实测，交棒后、POST 交 OS 后、乃至已经跑在一个启动完成的 Linux 里，金丝雀都还 `intact`、门仍 `0xffffffff`、`READOUT_1=0`；坏只坏在模块接管的那几秒（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)）。纯链路重训本身不复位端点，这是它与上面各行的区别。
 
-进入系统后先做 [只读检查](#ssdiag)：
+**`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动绑定之前；接管之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让接管做那次复位"：
 
-- Ampere/Ada 的 FEAT 门仍开、SS 值恢复出厂：可以用 `--reapply` 写回并验证。
-- 门已锁、设备失电或读数不可访问：`--reapply` 不能开门或恢复断电状态，需按恢复流程重新进入 U 盘。
+- Linux：`thunderbolt.host_reset=0` 是现成旋钮，管的就是主机路由器初始化那次复位（待验证，未定论）。
+- Windows：无已知对应项。`DevPnPCapabilities=0x100` 已证伪；只值得在 `Usb4HostRouter` 自己的 `Device Parameters` 子键、以及 HostRouter / DeviceRouter 分开禁用上廉价试一轮（合禁只会让隧道不存在）。
+
+进入系统后仍可先做 [只读检查](#ssdiag)，解读随之变化：
+
+- 金丝雀 `intact`、门仍开：接管尚未发生或已被抑制，解锁有效。
+- 金丝雀 `cleared`、门锁：接管已复位，本引导内无解；下轮重跑 U 盘，或先做上面的抑制。
 - SS 值仍正确但性能低：检查功耗、频率与测试方法。
+
+**取证方法（eGPU 报告者可直接照抄）**：chain 到 Linux live USB，`modprobe.blacklist=nouveau,thunderbolt`，用 `tools/diag-unlock.py` 在无驱动环境读回；rEFInd 顶掉 ISO 自带 GRUB 可绕开机介质陷阱，Secure Boot 全程开着也能链过去，不必为此关它。完整读数与阴性对照见 `docs/evidence/issue54-tb4-4090-linux-router-reset/`。
 
 Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。**回锁值本身不是失败**：实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差，`HANDOFF-OUT` 里 `tu10x: plm=0xffffffef` 配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 就是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
 
