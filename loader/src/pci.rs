@@ -969,6 +969,171 @@ pub fn diag_handoff_pci(gpu: &PciIo) {
     diag_bridge_routing("HANDOFF-PCI");
 }
 
+/// Decode a device path into the anchor the dump cares about: every PCI
+/// node folded into the last seen `seg:bus:dev.fn`, plus flags for a UART
+/// (serial) node and any text-ish tail (file nodes). Deliberately bounded -
+/// a poisoned node length must not loop.
+fn dp_anchor(path: &[u8]) -> (Option<(usize, usize, usize)>, bool) {
+    let mut seg = 0usize;
+    let mut pci = None;
+    let mut uart = false;
+    let mut i = 0usize;
+    for _ in 0..64 {
+        if i + 4 > path.len() {
+            break;
+        }
+        let (ty, sub) = (path[i], path[i + 1]);
+        let len = u16::from_le_bytes([path[i + 2], path[i + 3]]) as usize;
+        if len < 4 || i + len > path.len() {
+            break;
+        }
+        match (ty, sub) {
+            // Type 01 = Hardware, subtype 01 = PCI: fun, dev (bus is not in
+            // the path; the segment comes from the PciRoot node).
+            (0x01, 0x01) if len >= 6 => {
+                let (fun, dev) = (path[i + 4] as usize, path[i + 5] as usize);
+                pci = Some((seg, dev, fun));
+            }
+            // Type 03 = Messaging, subtype 0A = UART (serial console).
+            (0x03, 0x0a) => uart = true,
+            // PciRoot carries the segment (u32) as its UID.
+            (0x01, 0x02) if len >= 8 => {
+                seg = u32::from_le_bytes([path[i + 4], path[i + 5], path[i + 6], path[i + 7]]) as usize;
+            }
+            _ => {}
+        }
+        i += len;
+    }
+    (pci, uart)
+}
+
+/// Read-only device path bytes of a handle (`GetProtocol` on the
+/// DevicePath protocol; same technique as the chainload fingerprint).
+fn handle_devpath(handle: uefi::Handle) -> Option<alloc::vec::Vec<u8>> {
+    let dp = unsafe {
+        boot::open_protocol::<uefi::proto::device_path::DevicePath>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .ok()?;
+    Some(dp.as_bytes().to_vec())
+}
+
+/// Hex prefix of a device path (bounded; the tail beyond 64 bytes is
+/// implied by the decoded anchor).
+fn dp_hex(path: &[u8]) -> alloc::string::String {
+    use core::fmt::Write as _;
+    let mut s = alloc::string::String::new();
+    for b in path.iter().take(64) {
+        let _ = write!(s, "{b:02x}");
+    }
+    let _ = write!(s, "{}", if path.len() > 64 { "..." } else { "" });
+    s
+}
+
+/// Identify the PCI device behind a device-path anchor by scanning the
+/// PciIo handle set for the same location (the console handle itself does
+/// not necessarily carry PciIo). Read-only.
+fn anchor_identity(anchor: Option<(usize, usize, usize)>) -> alloc::string::String {
+    use core::fmt::Write as _;
+    let Some((seg, dev, fun)) = anchor else {
+        return "no PCI node".into();
+    };
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
+        return alloc::format!("{seg:04x}:?:{dev:02x}.{fun} (scan failed)");
+    };
+    for handle in handles.iter() {
+        let Ok(pci) = (unsafe {
+            boot::open_protocol::<PciIo>(
+                OpenProtocolParams { handle: *handle, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        }) else {
+            continue;
+        };
+        // Device/fn are unique inside a segment; the bus is not in the path.
+        let Some((pseg, bus, pdev, pfun)) = pci.get_location() else {
+            continue;
+        };
+        if (pseg, pdev, pfun) != (seg, dev, fun) {
+            continue;
+        }
+        let vd = pci.config_read_u32(0x00);
+        let mut s = alloc::format!("{pseg:04x}:{bus:02x}:{pdev:02x}.{pfun} = {:04x}:{:04x}", vd & 0xffff, vd >> 16);
+        if vd & 0xffff == u32::from(NVIDIA_VENDOR_ID) {
+            let _ = write!(s, " (NVIDIA GPU)");
+        }
+        return s;
+    }
+    alloc::format!("{seg:04x}:?:{dev:02x}.{fun} (no PciIo handle)")
+}
+
+/// #122/#170 diag: who owns the boot console. The detach destroys exactly
+/// this stack; the dump names its anchor device so a GPU-anchored GOP
+/// console can be told apart from a VGA/UART one before any disconnect.
+pub fn diag_console_identity() {
+    let st = uefi::table::system_table_raw();
+    let Some(st) = st else {
+        info!("DIAG-CONSOLE: no system table");
+        return;
+    };
+    let st = unsafe { st.as_ref() };
+    for (label, raw) in [("OUT", st.stdout_handle), ("IN", st.stdin_handle)] {
+        let Some(handle) = (unsafe { uefi::Handle::from_ptr(raw) }) else {
+            info!("DIAG-CONSOLE-{label}: handle null (no console)");
+            continue;
+        };
+        match handle_devpath(handle) {
+            Some(path) => {
+                let (anchor, uart) = dp_anchor(&path);
+                info!(
+                    "DIAG-CONSOLE-{label}: handle {:?} uart={} anchor={} dp={}",
+                    handle,
+                    uart,
+                    anchor_identity(anchor),
+                    dp_hex(&path)
+                );
+            }
+            None => info!("DIAG-CONSOLE-{label}: handle {:?} has no device path", handle),
+        }
+    }
+}
+
+/// #122/#170 diag: the USB controller hosting our boot volume. The 8-series
+/// PCH offers EHCI #1 (0:1d.0) / EHCI #2 (0:1a.0) and xHCI (0:14.0); the
+/// port routing is decided by `xUSB2PR`, so "rear USB2 port" alone does not
+/// prove an EHCI path - this dump does.
+pub fn diag_boot_volume_controller() {
+    let image = boot::image_handle();
+    let Ok(loaded) = (unsafe {
+        boot::open_protocol::<uefi::proto::loaded_image::LoadedImage>(
+            OpenProtocolParams { handle: image, agent: image, controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        info!("DIAG-BOOTVOL: LoadedImage unavailable");
+        return;
+    };
+    let Some(dev) = loaded.device() else {
+        info!("DIAG-BOOTVOL: no device handle");
+        return;
+    };
+    match handle_devpath(dev) {
+        Some(path) => {
+            let (anchor, uart) = dp_anchor(&path);
+            info!(
+                "DIAG-BOOTVOL: device {:?} uart={} anchor={} dp={}",
+                dev,
+                uart,
+                anchor_identity(anchor),
+                dp_hex(&path)
+            );
+        }
+        None => info!("DIAG-BOOTVOL: device {:?} has no device path", dev),
+    }
+}
+
 /// Every bridge's Command / Bridge Control (VGA routing bits), under a
 /// caller-supplied tag. Read-only, no driver binding. Two call sites are
 /// wanted (issue #165): the snapshot above runs BEFORE the console

@@ -141,31 +141,42 @@ fn log_handoff_memmap() {
     );
 }
 
-fn chain_load_bootmgfw_inner() -> Result<()> {
-    // No PHASE line here: the fallback path already logged "PHASE: CHAIN".
-    // The shell's `map -r` equivalent: before enumerating filesystems,
-    // recursively reconnect every handle so block devices carry freshly
-    // bound FAT/SFS instances (ours may have been torn down or left in an
-    // intermediate state by the detach/reconnect storm during the
-    // transaction; a fresh UEFI shell re-binds and sees everything).
-    // NVIDIA display functions are skipped: tx_detach::reconnect_all already
-    // re-bound the vendor GOP (non-recursively), and a recursive connect on
-    // the GPU re-binds the console stack over the AMI pathless GOP splitter
-    // child that survives the detach - the firmware resets mid-call
-    // (ASUS Z790 + 2803). Block devices are what this pass is for.
-    if let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&crate::pci::PciIo::GUID)) {
-        info!("CHAIN: reconnect pass over {} PciIo handles (NVIDIA display skipped)", handles.len());
-        for h in handles.iter() {
-            if is_nvidia_display(*h) {
-                info!("CHAIN: reconnect skipped on NVIDIA display {:?}", h);
-                continue;
-            }
-            let _ = boot::connect_controller(*h, &[], None, true);
+/// Recursively `ConnectController` every PciIo handle so block devices carry
+/// a freshly bound FAT/SFS instance under `tag`, then let the binding
+/// callbacks settle. Read-only w.r.t. hardware.
+///
+/// NVIDIA display functions are skipped: tx_detach::reconnect_all already
+/// re-bound the vendor GOP (non-recursively), and a recursive connect on the
+/// GPU re-binds the console stack over the AMI pathless GOP splitter child
+/// that survives the detach - the firmware resets mid-call (ASUS Z790 +
+/// 2803). Block devices are what this pass is for.
+pub(crate) fn reconnect_block_devices(tag: &str) {
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&crate::pci::PciIo::GUID))
+    else {
+        info!("{tag}: reconnect pass: no PciIo handles");
+        return;
+    };
+    info!("{tag}: reconnect pass over {} PciIo handles (NVIDIA display skipped)", handles.len());
+    for h in handles.iter() {
+        if is_nvidia_display(*h) {
+            info!("{tag}: reconnect skipped on NVIDIA display {:?}", h);
+            continue;
         }
-        info!("CHAIN: reconnect pass done");
-        // Let binding callbacks settle before the SFS enumeration.
-        boot::stall(core::time::Duration::from_millis(300));
+        let _ = boot::connect_controller(*h, &[], None, true);
     }
+    info!("{tag}: reconnect pass done");
+    // Let binding callbacks settle before the SFS enumeration.
+    boot::stall(core::time::Duration::from_millis(300));
+}
+
+fn chain_load_bootmgfw_inner() -> Result<()> {
+    // The shell's `map -r` equivalent, called twice: once before the
+    // transaction (main.rs, so the sampling/enumeration runs on freshly
+    // bound filesystems) and once here, before the SFS enumeration - ours
+    // may have been torn down or left in an intermediate state by the
+    // detach/reconnect storm during the transaction (a fresh UEFI shell
+    // re-binds and sees everything).
+    reconnect_block_devices("CHAIN");
     let fs_handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID))?;
     info!("CHAIN: {} SimpleFileSystem handles", fs_handles.len());
 

@@ -80,6 +80,19 @@ fn main() -> Status {
     }
     banner::print(VERSION);
 
+    // Phase: DIAG identity dumps (#122/#170). Read-only, before anything can
+    // hang: names the console's anchor device (GPU-GOP vs VGA/UART) and the
+    // USB controller hosting this stick (xHCI vs EHCI) so a hang stays
+    // attributable even when the screen freezes.
+    pci::diag_console_identity();
+    pci::diag_boot_volume_controller();
+    // Same recursive connect pass the chain phase runs, moved ahead of every
+    // enumeration: firmware with a lazy Fast Boot connect policy may only
+    // have bound the filesystem surface partially, and #122's 14% early
+    // hang logs nothing after the banner - a failed SFS path would look
+    // exactly like that. Idempotent; NVIDIA display handles stay skipped.
+    chainload::reconnect_block_devices("EARLY");
+
     // Phase: ACPI-DUMP (\tx-acpi-dump.txt, read-only). Runs before the
     // confirm so an aborted run still produces the tables; independent of
     // any GPU. See acpi_dump.rs for why this exists (power-ownership

@@ -295,6 +295,13 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
             }
             let before = open_count(gop);
             info!("DETACH: stage GOP handle {:?} protocols {}", gop, before);
+            // #170 diag (D): from here until the reconnect the console stack
+            // is being torn down; any mirror write now goes through a
+            // half-dead stack. Muting BEFORE the disconnect splits the hang:
+            // survives = killed by a Stop() (H2), still hangs = killed by
+            // writing to the detached console (H1).
+            info!("DETACH: console mirror MUTED until reconnect");
+            crate::logging::mute_console();
             let st = boot::disconnect_controller(gop, None, None);
             let after = open_count(gop);
             info!(

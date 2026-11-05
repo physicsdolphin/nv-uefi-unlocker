@@ -16,8 +16,26 @@ use uefi::{cstr16, system, CStr16, CString16};
 
 pub const LOG_PATH: &CStr16 = cstr16!(r"\loader.log");
 
-/// Flush every 16th line, and always on stage/verdict lines. FAT only
-/// commits size/dirent on Flush, so the markers below are what survives a
+/// Close-and-reopen every marker line, Flush() on the count cadence.
+///
+/// Why not Flush() for the markers: `FatIFileAccess` deliberately skips the
+/// cache flush on the success path and `FatFlush` is the only path that
+/// writes the directory entry (size included). Firmware that treats Flush
+/// as a no-op therefore leaves a 0-byte file no matter how often it is
+/// called - measured on both 8-series boards of #122/#170: >40 lines,
+/// `DETACH` markers among them (marker lines are flushed), file still 0
+/// bytes, while the graceful read-only round on the same stick wrote 13 KB
+/// at Close. `EFI_FILE_PROTOCOL.Close` is defined to release the handle and
+/// the EDK2 FAT driver flushes the dirent on the way out, so marker lines
+/// now write -> close -> reopen(ReadWrite, seek END). A hang after the
+/// marker then leaves a readable file instead of an empty one.
+///
+/// Cost: one open + seek + close per marker (~50 markers/run, the same
+/// 0.3-0.5 s envelope the old flush budget assumed). The count cadence
+/// stays a plain Flush() - it is cheap and now only a nicety.
+///
+/// 2026-10-27 background (why markers exist at all): FAT only commits
+/// size/dirent on Flush, so the markers are what survives a
 /// hang or mid-call reset - exactly what the 2026-10-27 Z790 diagnosis
 /// needed (the log ended at "POST-FLR: verified"). A Flush per line is
 /// visible on slow USB media (the TU106 run of 2026-10-28 spent noticeable
@@ -97,6 +115,8 @@ struct DualLogger {
     lines: UnsafeCell<usize>,
     // issue #38: skip the console mirror for non-verdict lines
     quiet: UnsafeCell<bool>,
+    // #122/#170 diag: stop mirroring while the console stack is torn down
+    console_enabled: UnsafeCell<bool>,
 }
 
 static LOGGER: DualLogger = DualLogger {
@@ -104,6 +124,7 @@ static LOGGER: DualLogger = DualLogger {
     file_error_reported: UnsafeCell::new(false),
     lines: UnsafeCell::new(0),
     quiet: UnsafeCell::new(false),
+    console_enabled: UnsafeCell::new(true),
 };
 
 // Safety: UEFI applications are single-threaded during boot services.
@@ -137,27 +158,51 @@ impl Log for DualLogger {
 
         // File mirror FIRST, then console: a dangling console chain is
         // itself a suspected crash site, so the stick must already hold the
-        // line before it is mirrored. Flush policy: see FLUSH_MARKERS above.
+        // line before it is mirrored. Durability policy: see the marker
+        // comment above (close+reopen on markers, Flush on the cadence).
         // Safety: single-threaded boot services; pointer use is confined here.
         unsafe {
             let n = *self.lines.get() + 1;
             *self.lines.get() = n;
             let fe = FLUSH_EVERY_LINES.load(core::sync::atomic::Ordering::Relaxed);
-            let flush = (fe > 0 && n % fe == 0)
-                || FLUSH_MARKERS.iter().any(|m| line.contains(m));
-            if let Some(f) = (*self.file.get()).as_mut() {
-                let ok = f.write(line.as_bytes()).is_ok() && (!flush || f.flush().is_ok());
+            let count_flush = fe > 0 && n % fe == 0;
+            let durable = FLUSH_MARKERS.iter().any(|m| line.contains(m));
+            if (*self.file.get()).is_some() {
+                let mut ok;
+                {
+                    let f = (*self.file.get()).as_mut().unwrap();
+                    ok = f.write(line.as_bytes()).is_ok();
+                    if ok && count_flush {
+                        ok = f.flush().is_ok();
+                    }
+                }
+                if ok && durable {
+                    // Close (drops the handle: that is what commits the
+                    // dirent on firmware where Flush is a no-op), then
+                    // reopen at EOF so logging continues.
+                    let _ = (*self.file.get()).take();
+                    match reopen_log() {
+                        Some(f) => *self.file.get() = Some(f),
+                        None => {
+                            *self.file.get() = None;
+                            ok = false;
+                        }
+                    }
+                }
                 if !ok {
-                    // Media pulled: stop trying, keep console alive.
+                    // Media pulled / reopen refused: console keeps the run
+                    // diagnosable, the file log stops here.
                     *self.file.get() = None;
                 }
             }
         }
 
         // Console mirror. Quiet mode (issue #38) keeps verdict-class lines
-        // only; the stick already holds every line (file mirror ran first).
+        // only; the console-detached gate (#170 diag) suppresses the mirror
+        // entirely between detach and reconnect. The file mirror ran first.
         let quiet = unsafe { *self.quiet.get() };
-        if !quiet || console_visible(&line) {
+        let console_enabled = unsafe { *self.console_enabled.get() };
+        if console_enabled && (!quiet || console_visible(&line)) {
             if let Ok(s) = CString16::try_from(line.as_str()) {
                 system::with_stdout(|out| {
                     let _ = out.output_string_lossy(&s);
@@ -224,6 +269,55 @@ pub fn is_quiet() -> bool {
 
 fn file_open() -> bool {
     unsafe { (*LOGGER.file.get()).is_some() }
+}
+
+/// Stop mirroring to the console (#122/#170 diag, issue #170).
+///
+/// The GOP handle we disconnect carries the console's TextOut instance, so
+/// every call after `DisconnectController` runs against a console stack the
+/// spec never promised would stay usable. This gate makes the next log call
+/// touch nothing but the file, which splits the two candidate hang sites:
+/// a run that survives the mute dies in a Stop() (H2), a run that still
+/// hangs was killed by writing to the detached console (H1).
+///
+/// Read-only builds carry it unused.
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+pub fn mute_console() {
+    // Safety: single-threaded boot services.
+    unsafe {
+        *LOGGER.console_enabled.get() = false;
+    }
+}
+
+/// Re-enable the console mirror. Idempotent and silent (a log line here is
+/// the first post-detach console write, so callers decide when to spend it).
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+pub fn unmute_console() {
+    // Safety: single-threaded boot services.
+    unsafe {
+        *LOGGER.console_enabled.get() = true;
+    }
+}
+
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+pub fn console_muted() -> bool {
+    // Safety: single-threaded boot services.
+    unsafe { !*LOGGER.console_enabled.get() }
+}
+
+/// Reopen `\loader.log` for writing with the position at EOF; used by the
+/// marker-line durability path after the close that commits the dirent.
+/// `FileMode::ReadWrite` on an existing file does not truncate (only
+/// CreateReadWrite does), and `END_OF_FILE` seeks to the current end.
+fn reopen_log() -> Option<RegularFile> {
+    let mut fs = boot::get_image_file_system(boot::image_handle()).ok()?;
+    let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
+    let handle: FileHandle = root
+        .open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty())
+        .ok()?;
+    let mut file = handle.into_regular_file()?;
+    file.set_position(RegularFile::END_OF_FILE).ok()?;
+    Some(file)
 }
 
 fn open_fresh_log() -> Option<RegularFile> {

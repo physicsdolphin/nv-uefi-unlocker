@@ -1520,6 +1520,13 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // the routing bits now, after the console rebuild and the VGA restore.
     crate::pci::diag_bridge_routing("HANDOFF-VGA-FINAL");
 
+    // #170 diag (D): the console stack is either rebuilt or deliberately
+    // left alone - re-enable the mirror. This first post-detach console
+    // write is the H1 probe: a hang here (screen frozen, log line absent)
+    // says the console OBJECT kills, not the disconnect's Stop() calls.
+    crate::logging::unmute_console();
+    info!("CONSOLE: mirror re-enabled after reconnect");
+
     // POST-GOP readback (issue #164): the reconnect/native-GOP rebuild above
     // StartImage'd the card's own driver AFTER the POST-FLR verify (the
     // legacy path reconnects the vendor stack instead), so the
@@ -1631,6 +1638,13 @@ pub fn flr_once(pci: &crate::pci::PciIo) {
 /// compared directly (a mismatch after boot localizes the consumer that undid
 /// the writes - driver reinit, rail cut, or nothing at all).
 pub fn handoff_out(pci: &crate::pci::PciIo) {
+    // #170 diag (D): every error/abort path lands here with the mirror still
+    // muted from the detach; re-enable before the verdict lines so the
+    // failure is visible (the probe line is the unmute site's own report).
+    if crate::logging::console_muted() {
+        crate::logging::unmute_console();
+        info!("CONSOLE: mirror re-enabled at handoff (detach path did not reconnect)");
+    }
     let rd = |off: u32| pci.bar_read_u32(0, off as u64);
     let (ss0, ss1) = (rd(regs::FEAT_SS0), rd(regs::FEAT_SS1));
     let readout = rd(regs::FEAT_READOUT_1);
