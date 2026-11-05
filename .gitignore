@@ -43,3 +43,6 @@ payload_*
 /release/assets-x86_64-windows.exe
 /release/assets-x86_64-linux
 romcore/testdata/
+
+# working drafts (notes and reply drafts, kept local)
+/docs/drafts/
