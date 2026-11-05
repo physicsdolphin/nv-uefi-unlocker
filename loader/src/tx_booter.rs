@@ -1324,10 +1324,25 @@ pub fn verify_execution_tu10x(gpu: &TxGpu, payload_mode: bool, meta: &[u8]) -> R
         info!("POST-BOOT: replay verdict ok (no exception, WPR2 up, PLM stays locked)");
         return Ok(());
     }
-    if plm != 0xffff_ffff {
-        info!("POST-BOOT: PLM still locked - the payload's writes did not happen");
+    // Verdict on the selectors, not on the PLM latch (issue #74, round 33).
+    // TU102 `1e04` over TB4 completes the payload - SS0 reads 0x88888888 and
+    // SS1 0x8 - while 0x409650 reads back 0xffffff8f, the same value tx.rs
+    // calls "the surprise" at handoff. Gating on PLM there is a guaranteed
+    // false negative, and because the failure path restores the stock
+    // signature, a successful payload ends the boot locked instead of
+    // unlocked. ssdiag verdicts on SS0/SS1 for exactly this reason; do the
+    // same here and keep PLM logged as the write gate it is.
+    if ss0 != SS0_UNLOCK || ss1 != SS1_UNLOCK {
+        info!(
+            "POST-BOOT: tu10x selectors not written (ss0={ss0:#x} want {SS0_UNLOCK:#x}, ss1={ss1:#x} want {SS1_UNLOCK:#x}) - the payload's writes did not happen"
+        );
         wpr_desc_rejected_hint(mbox0, meta);
         return Err(TxError::EIO);
+    }
+    if plm != 0xffff_ffff {
+        info!(
+            "POST-BOOT: PLM={plm:#x} did not read back open, but the selectors are written - PLM is the write gate, not the verdict (issue #74)"
+        );
     }
     Ok(())
 }
