@@ -8,6 +8,7 @@
 - [Linux 日志全绿，为什么没有提升？](#linux)
 - [Windows 睡眠后解锁还在吗？（S3 / S0ix 现代待机）](#sleep)
 - [雷电 eGPU 能保留解锁吗？](#thunderbolt)
+- [Secure Boot 开着能用吗？（自签）](#secureboot)
 - [怎样在系统内检查或修复解锁？](#ssdiag)
 - [pmxdrv.sys 的安全模型与权衡（必读披露）](#pmxdrv)
 - [booter status 0x89 是什么？](#bridge-bme)
@@ -168,6 +169,119 @@ sudo update-initramfs -u
 - SS 值仍正确但性能低：检查功耗、频率与测试方法。
 
 Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
+
+<a id="secureboot"></a>
+
+## Secure Boot 开着能用吗？
+
+能，但要把信任交给你自己的密钥。本节只讲**怎么在不关闭 Secure Boot 的前提下启动 U 盘工具**，两条路选一条。
+
+这不属于绕过 Secure Boot：引导链仍然被完整校验，只是校验的根从「微软签发的证书」扩到了「你追加的那张证书」。工具唯一能工作的时窗（驱动加载之前的固件阶段）本来就在 Secure Boot 管辖之下，本项目也不持有微软或 UEFI CA 的签名身份，所以能做的只有让这条链在开着校验时依然成立。
+
+三条边界先看清：
+
+- **自签不解决 `ssdiag`**。它加载的 `pmxdrv.sys` 是 Intel/COMODO 2018 交叉签名、没有微软根，Secure Boot 开着时 DSE 会拒载——`tools/ssdiag/README.md` 把这写成「真正拒载这个驱动的门」（见 [pmxdrv 的安全模型](#pmxdrv) 与 [平台门排查](ssdiag-platform-gates.md)）。SB 常开的机器上，系统内读回走 `loader.log` 的 `HANDOFF-OUT`，或 Linux 侧 `sudo python3 tools/diag-unlock.py`；要 `ssdiag --reapply` 修回锁，仍需临时关一次 SB。
+- **反作弊不是保证**。自签不改 Secure Boot 的状态位，据报告 Vanguard（LoL）看的就是这个状态位，通常可过；ACE 系（腾讯：三角洲等）校验 TPM/PCR[7] 的链式启动记录，自签链的度量与原厂 Windows 引导不一致，**不保证通过**——那类游戏请用「每次切换状态」的做法（休眠 → 改 SB → 恢复会话）。
+- **换版本必须重签**。签名后再改一个字节即失效；`*.bin` 资产不参与 PE 校验，不需要签。
+
+### 路线 A：把 loader 签进主板 db
+
+固件直接校验你的签名。代价是每台机器导一次证书、每次换版本重签。
+
+1. **生成密钥与证书**（Linux 或 WSL；OpenSSL ≥1.1.1）：
+
+   ```bash
+   openssl req -new -x509 -newkey rsa:4096 -nodes -days 3650 \
+     -subj "/CN=NVUEFI Self-Signed/" \
+     -addext "keyUsage=digitalSignature" \
+     -addext "extendedKeyUsage=codeSigning" \
+     -keyout NVUEFI.key -out NVUEFI.crt
+   openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
+   ```
+
+   `extendedKeyUsage=codeSigning` 不能省：Windows 侧的 `signtool` 会校验它（`sbsign` 不校验）。私钥只留本机，不要外传。
+
+2. **签名**（先 `python3 check_efi.py BOOTX64.EFI` 确认 banner 是你要的那个构建）：
+
+   ```bash
+   sbsign --key NVUEFI.key --cert NVUEFI.crt --output BOOTX64.signed.efi BOOTX64.EFI
+   sbverify --cert NVUEFI.crt BOOTX64.signed.efi
+   ```
+
+   Windows 侧等价物：`New-SelfSignedCertificate -Type CodeSigningCert` 生成证书，`signtool sign /fd SHA256 /a /f NVUEFI.pfx /p <密码> BOOTX64.EFI`，再用 `signtool verify /pa BOOTX64.EFI` 复核。
+
+3. **让 maker 直接用签名件**（新版 `make-usbroot.ps1` 有 `-BootEfi`，会把签名版同时写到盘根与 `EFI/BOOT/`）：
+
+   ```powershell
+   .\make-usbroot.ps1 -Family ad102 -Out G:\ -BootEfi .\BOOTX64.signed.efi
+   ```
+
+4. **把证书追加进 db**，三种方式按可用性选一：
+
+   - 固件 UI（最通用）：Security / Secure Boot → Key Management → `db` → **Append / Append from file**，选 FAT32 U 盘上的 `NVUEFI.cer`。菜单灰着通常说明不在 Setup Mode 或没有 PK。
+   - Linux 且有 KEK 私钥（`efitools`）：`efi-updatevar -a -c NVUEFI.crt -k KEK.key db`
+   - Arch 系 `sbctl`：`sbctl enroll-keys --microsoft`（**带 `--microsoft` 才会把微软证书一起写回**），再用 `sbctl sign -s` 签同一文件、`sbctl verify` 复核。
+
+5. **验证**：`mokutil --sb-state` 显示 `SecureBoot enabled`；固件真正放行的铁证是盘上出现新的 `loader.log` 且含 TX banner（无日志就说明固件没放行）。
+
+三条硬纪律：**只追加，不要替换 db 里的微软证书**（`bootmgfw.efi` 靠 Microsoft Windows Production PCA 2011 签名，删了 Windows 起不来）；**动 PK 之前先导出 PK/KEK/db 备份**，若板子要求清 PK 进 Setup Mode 才能追加，事后必须恢复原厂证书并重新 enroll PK；**私钥不外传**。
+
+### 路线 B：MOK + shim（不动 db）
+
+固件只校验微软签名的 `shim`，你的密钥通过 MOK 在 shim 之后生效，主板密钥库一个字节都不改。
+
+1. 用路线 A 第 1 步的方式生成 `MOK.key` / `MOK.crt` / `MOK.der`。
+
+2. **给 loader 加 `.sbat` 再签名**——这是最容易漏的一步：shim ≥ 15.3 会拒绝没有合法 `.sbat` 的第二阶段，而发布包里的 `BOOTX64.EFI` 没有这个节（v2.1.10 发布件实测：`.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc` 五个节，无 `.sbat`），跳过它只会得到一次没有报错的拒绝。
+
+   先写 `sbat.csv`：第一行是 SBAT 元数据行，必须存在；第二行描述本组件（名字自取、generation 保持 1）：
+
+   ```text
+   sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
+   nvuefi,1,nv-uefi-unlocker,nv-uefi-unlocker,<构建版本>,https://github.com/physicsdolphin/nv-uefi-unlocker
+   ```
+
+   新节的 VMA 要按文件自己的节表算：取最后一个节的 `VMA + virtual size`，向上对齐到 PE 头里的 `SectionAlignment`。以 v2.1.10 发布件为例，`SectionAlignment = 0x1000`，最后一节 `.reloc` 起于 `0x67000`、virtual size `0x4fc`，对齐后就是 **`0x68000`**（正好是原 `SizeOfImage`）：
+
+   ```bash
+   objcopy --add-section .sbat=sbat.csv --change-section-vma .sbat=0x68000 BOOTX64.EFI BOOTX64.grub.efi
+   objdump -h BOOTX64.grub.efi | grep -E " \.sbat|Idx"     # 能看到 .sbat，且 SizeOfImage 变大
+   sbsign --key MOK.key --cert MOK.crt --output grubx64.efi BOOTX64.grub.efi
+   sbverify --cert MOK.crt grubx64.efi
+   ```
+
+   顺序不能反：先加节、再签名；签名之后再加节会让签名作废。产物命名为 `grubx64.efi`：shim 默认在自身目录找这个名字作为第二阶段。
+
+3. 取微软签名的 `shimx64.efi.signed` 与 `mmx64.efi`（任一发行版的 `shim-signed` 包，如 Ubuntu / Fedora）。
+
+4. **ESP 布置**（U 盘 FAT 分区 `\EFI\BOOT\`）：`BOOTX64.EFI` ← `shimx64.efi.signed`，`grubx64.efi` ← 第 2 步的产物，`mmx64.efi` ← MokManager，`MOK.der` ← 你的证书。
+
+5. **首次引导**：shim 验不到 MOK → 自动进 MokManager → Enroll key from disk → 选 `MOK.der` → 设一次性密码 → 重启后确认 Enroll。
+
+6. **日常引导**：shim（微软签，SB 放行）→ 用 MokList 验你的签名 → 启动 loader → 解锁 → 链回 `bootmgfw`，Secure Boot 全程开启。
+
+一份现场报告（v2.1.10、RTX 30 笔记本、Secure Boot 开启、PK/KEK/db 未动）确认这条链能跑通，并给出 `.sbat` 与 BitLocker 的实际做法；它的签名与 ESP 脚本作为参考实现链接，不在本仓库内：[J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp)（见 [#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162)）。该报告同时记录了「把 loader 装到内置 ESP」的做法（CHAIN-BOOT 会跳过自己的 `Boot####` 与同一 ESP 上的 Windows 项），但与本 FAQ 的「不要装到系统 ESP」建议冲突，属自选路径，未经第二方复现。
+
+### BitLocker
+
+改引导路径或改 PK/db 状态会移动 PCR[7]，可能触发恢复密钥提示。做法是每次改引导路径前挂起一次保护：
+
+```powershell
+Suspend-BitLocker -RebootCount 1
+```
+
+报告者的机器上这样没有出现恢复提示；这不构成对其他配置的保证。切换前请确认恢复密钥在手。
+
+### 证据状态
+
+| 项目 | 证据 | 状态 |
+| --- | --- | --- |
+| 路线 B（MOK + shim） | 一份现场报告：Secure Boot 开启、v2.1.10、RTX 30 笔记本（`ga102`），解锁存活到 Windows | 单机复现，非本项目验证 |
+| 路线 A（db 自签） | 二手报告（[#145](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/145) 引用的用户反馈） | 未经本项目验证 |
+| Secure Boot 开启 + `ssdiag` | 仓库文档：`pmxdrv.sys` 无微软根，DSE 拒载 | 未实测，预期必拒 |
+| 反作弊（Vanguard / ACE） | 维护者陈述 | 未测量 |
+
+跑了任一条路的话，欢迎回报**主板型号**、**`ssdiag` 是否被拒**、**BitLocker 是否弹过恢复密钥**——这三项能把这四行的状态往前推一格。
 
 <a id="ssdiag"></a>
 

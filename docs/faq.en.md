@@ -8,6 +8,7 @@
 - [Why is there no gain on Linux despite a green log?](#linux)
 - [Does the unlock survive Windows sleep? (S3 / Modern Standby)](#sleep)
 - [Does the unlock survive a Thunderbolt handoff?](#thunderbolt)
+- [Does it work with Secure Boot on? (self-signing)](#secureboot)
 - [How do I check or repair the unlock in the OS?](#ssdiag)
 - [The pmxdrv.sys security model and trade-off (required disclosure)](#pmxdrv)
 - [What does booter status 0x89 mean?](#bridge-bme)
@@ -163,6 +164,119 @@ Start with an [in-OS read-only check](#ssdiag):
 - SS values correct but throughput low: check power, clocks and the test method.
 
 Turing intentionally relocks PLM at handoff; do not apply the Ampere/Ada closed-gate interpretation to it. Source: [Thunderbolt platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54).
+
+<a id="secureboot"></a>
+
+## Does it work with Secure Boot on?
+
+Yes, if you hand the trust to your own key. This section only covers **starting the USB tool without turning Secure Boot off**; pick one of the two routes.
+
+It is not a way around Secure Boot: the boot chain is still verified end to end, the root of that verification just grows from "a certificate Microsoft issued" to "that certificate plus yours". The only window this tool can work in - the firmware stage before any driver loads - is inside Secure Boot's jurisdiction, and this project holds no Microsoft or UEFI CA signing identity, so the only thing available is making the chain valid while verification stays on.
+
+Three limits to read before the steps:
+
+- **Self-signing does not fix `ssdiag`.** It loads `pmxdrv.sys`, which is Intel/COMODO cross-signed from 2018 with no Microsoft root, so DSE refuses it while Secure Boot is on - the gate `tools/ssdiag/README.md` names as the one that actually refuses this driver (see the [pmxdrv security model](#pmxdrv) and [platform gate triage](ssdiag-platform-gates.md)). With Secure Boot on, in-OS read-back comes from `HANDOFF-OUT` in `loader.log`, or from `sudo python3 tools/diag-unlock.py` on Linux; `ssdiag --reapply` still needs Secure Boot off for one boot.
+- **Anti-cheat is not guaranteed.** Self-signing leaves the Secure Boot state bit on, which is reported to be what Vanguard (LoL) checks, so it usually passes. ACE-family clients (Tencent: Delta Force and others) validate the TPM/PCR[7] chain, and a self-signed chain measures differently from the stock Windows boot - passing is not guaranteed. For those titles use the switch-per-session approach (hibernate, change the Secure Boot setting, resume).
+- **Re-sign every build.** A signature dies if one byte changes afterwards; the `*.bin` assets are not PE images and need no signing.
+
+### Route A: sign the loader into the firmware's db
+
+The firmware verifies your signature directly. The cost is one certificate import per machine and a re-sign per build.
+
+1. **Create the key and certificate** (Linux or WSL, OpenSSL >= 1.1.1):
+
+   ```bash
+   openssl req -new -x509 -newkey rsa:4096 -nodes -days 3650 \
+     -subj "/CN=NVUEFI Self-Signed/" \
+     -addext "keyUsage=digitalSignature" \
+     -addext "extendedKeyUsage=codeSigning" \
+     -keyout NVUEFI.key -out NVUEFI.crt
+   openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
+   ```
+
+   Do not drop `extendedKeyUsage=codeSigning`: Windows `signtool` checks it (`sbsign` does not). Keep the private key on this machine only.
+
+2. **Sign it** (run `python3 check_efi.py BOOTX64.EFI` first and confirm the banner is the build you meant):
+
+   ```bash
+   sbsign --key NVUEFI.key --cert NVUEFI.crt --output BOOTX64.signed.efi BOOTX64.EFI
+   sbverify --cert NVUEFI.crt BOOTX64.signed.efi
+   ```
+
+   Windows equivalents: create the certificate with `New-SelfSignedCertificate -Type CodeSigningCert`, sign with `signtool sign /fd SHA256 /a /f NVUEFI.pfx /p <password> BOOTX64.EFI`, verify with `signtool verify /pa BOOTX64.EFI`.
+
+3. **Let the maker use the signed file** (the current `make-usbroot.ps1` has `-BootEfi` and writes the signed copy to both the root and `EFI/BOOT/`):
+
+   ```powershell
+   .\make-usbroot.ps1 -Family ad102 -Out G:\ -BootEfi .\BOOTX64.signed.efi
+   ```
+
+4. **Append the certificate to `db`**, one of three ways:
+
+   - Firmware UI (most portable): Security / Secure Boot -> Key Management -> `db` -> **Append / Append from file**, pick `NVUEFI.cer` from a FAT32 stick. A greyed-out menu usually means the board is not in Setup Mode or has no PK.
+   - Linux with the KEK private key (`efitools`): `efi-updatevar -a -c NVUEFI.crt -k KEK.key db`
+   - Arch-family `sbctl`: `sbctl enroll-keys --microsoft` (**`--microsoft` is what writes the Microsoft certificates back**), then `sbctl sign -s` the same file and `sbctl verify`.
+
+5. **Verify**: `mokutil --sb-state` reports `SecureBoot enabled`. The firmware-level proof is a fresh `loader.log` with the TX banner on the stick; no log means the firmware never accepted the binary (no log means the firmware never accepted it).
+
+Three hard rules: **append, never replace, the Microsoft certificates in `db`** (`bootmgfw.efi` is signed by Microsoft Windows Production PCA 2011, and removing it stops Windows from booting); **export PK/KEK/db before touching PK**, and if the board demands Setup Mode (PK cleared) before it will append, restore the vendor certificates and re-enrol PK afterwards; **keep the private key local**.
+
+### Route B: MOK + shim, db untouched
+
+The firmware verifies only the Microsoft-signed `shim`; your key takes effect after it through MOK, and the firmware key database is not modified at all.
+
+1. Create `MOK.key` / `MOK.crt` / `MOK.der` with the same `openssl` call as route A step 1.
+
+2. **Add a `.sbat` section, then sign** - the step people miss. shim >= 15.3 refuses a second stage without a valid `.sbat`, and the released `BOOTX64.EFI` has none (checked on the v2.1.10 artifact: five sections, `.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc`, no `.sbat`), so skipping this yields a refusal with no message from our side.
+
+   Write `sbat.csv` first: the first line is the SBAT metadata line and must be present; the second line describes this component (pick a name, keep the generation at 1):
+
+   ```text
+   sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
+   nvuefi,1,nv-uefi-unlocker,nv-uefi-unlocker,<build version>,https://github.com/physicsdolphin/nv-uefi-unlocker
+   ```
+
+   The new section's VMA comes from the file's own section table: take the last section's `VMA + virtual size` and round up to the `SectionAlignment` in the PE header. For the v2.1.10 artifact that is `SectionAlignment = 0x1000`, last section `.reloc` at `0x67000` with virtual size `0x4fc`, so the value is **`0x68000`** (which equals the original `SizeOfImage`):
+
+   ```bash
+   objcopy --add-section .sbat=sbat.csv --change-section-vma .sbat=0x68000 BOOTX64.EFI BOOTX64.grub.efi
+   objdump -h BOOTX64.grub.efi | grep -E " \.sbat|Idx"     # .sbat must be listed and SizeOfImage must grow
+   sbsign --key MOK.key --cert MOK.crt --output grubx64.efi BOOTX64.grub.efi
+   sbverify --cert MOK.crt grubx64.efi
+   ```
+
+   The order matters: add the section, then sign. Signing first and adding a section afterwards invalidates the signature. Name the result `grubx64.efi`: shim looks for that name next to itself as the second stage.
+
+3. Take the Microsoft-signed `shimx64.efi.signed` and `mmx64.efi` from the `shim-signed` package of any distribution (Ubuntu, Fedora, ...).
+
+4. **Lay out the ESP** (FAT partition, `\EFI\BOOT\`): `BOOTX64.EFI` <- `shimx64.efi.signed`, `grubx64.efi` <- the output of step 2, `mmx64.efi` <- MokManager, `MOK.der` <- your certificate.
+
+5. **First boot**: shim cannot verify the MOK, so it drops into MokManager -> Enroll key from disk -> `MOK.der` -> one-time password -> confirm Enroll after the reboot.
+
+6. **Normal boots**: shim (Microsoft-signed, accepted by Secure Boot) verifies your signature against MokList, starts the loader, the unlock runs, control chains back to `bootmgfw`, and Secure Boot stayed on the whole time.
+
+One field report (v2.1.10, RTX 30 laptop, Secure Boot on, PK/KEK/db untouched) confirms this chain works and documents the `.sbat` and BitLocker handling; its signing and ESP scripts are linked, not vendored: [J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp) (see [#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162)). The same report installs the loader on the **internal ESP**, which contradicts this FAQ's "do not install to the system ESP" advice (its CHAIN-BOOT skips its own `Boot####` and the Windows entry on the same ESP); treat that as an opt-in path with no second reproduction.
+
+### BitLocker
+
+Changing the boot path or the PK/db state moves PCR[7], which can demand the recovery key. Suspend protection for one reboot before each change:
+
+```powershell
+Suspend-BitLocker -RebootCount 1
+```
+
+The reporter saw no recovery prompt with this in place; that is not a guarantee for other configurations. Have the recovery key in hand before you switch anything.
+
+### Evidence status
+
+| Item | Evidence | Status |
+| --- | --- | --- |
+| Route B (MOK + shim) | One field report: Secure Boot on, v2.1.10, RTX 30 laptop (`ga102`), unlock survives into Windows | one machine, not verified by this project |
+| Route A (db self-sign) | Second-hand report (a user quoted in [#145](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/145)) | not verified by this project |
+| Secure Boot on + `ssdiag` | Repository documentation: `pmxdrv.sys` has no Microsoft root, so DSE refuses it | not measured, expected to be refused |
+| Anti-cheat (Vanguard / ACE) | Maintainer statement | not measured |
+
+If you run either route, reporting the **board model**, whether `ssdiag` was refused, and whether BitLocker asked for the recovery key moves all four rows forward.
 
 <a id="ssdiag"></a>
 
