@@ -87,6 +87,12 @@ const FLUSH_MARKERS: &[&str] = &[
     // TX-only runtime work (enumeration/GOP probe/sample/asset reads)
     // actually runs.
     "log file", "nv-uefi-unlocker", "BOOT", "DIAG", "EARLY", "PREP", "CONFIRM",
+    // Issue #170 diag5: the recovered v2.1.10 logs end at "TX: layout ok",
+    // but "layout ok" and the next log call are adjacent statements - the
+    // evidence pipeline stopped, not necessarily the execution. "TX:" and
+    // "layout" commit every segment boundary and the FWSEC-section step
+    // lines (all "FWSEC:"-prefixed) so the ignition stretch is line-resolved.
+    "TX:", "layout",
 ];
 
 /// Console whitelist for quiet mode (issue #38): with `\tx-quiet.txt` on

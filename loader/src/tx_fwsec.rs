@@ -545,7 +545,22 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
 
     let mapped = 1024 * 1024usize;
     let mut rom_words = alloc::vec![0u32; mapped / 4];
-    let st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000, rom_words.as_mut());
+    // Chunked read with progress commits (issue #170 diag5): the 262k
+    // sequential PROM MMIO reads are the first unbracketed stretch after
+    // "layout ok" - the B85M's recovered evidence ends exactly there, so
+    // every stretch of the FWSEC section must emit commit points. Chunking
+    // is behaviorally identical (same window, same accessor, same order).
+    let chunk_words = rom_words.len() / 16;
+    let mut st = uefi::Status::SUCCESS;
+    for (i, chunk) in rom_words.chunks_mut(chunk_words).enumerate() {
+        st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + (i * chunk_words * 4) as u64, chunk);
+        if st != uefi::Status::SUCCESS {
+            break;
+        }
+        if (i + 1) % 4 == 0 {
+            info!("FWSEC: PROM read {}%", (i + 1) * 100 / 16);
+        }
+    }
     if st != uefi::Status::SUCCESS {
         info!("FWSEC-TRACE: PROM bulk read failed {:?}", st);
         return Err(TxError::ENodev);
@@ -600,6 +615,7 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
         let image = unsafe { core::slice::from_raw_parts_mut(dma.host, fw.image_size as usize) };
         fwsec_patch_frts(image, &fw, layout.frts_offset)?;
     }
+    info!("FWSEC: image staged ({} bytes, frts patched)", fw.image_size);
 
     // FUSE_OPT_FPF_GSP_UCODE_ID + 4*(ucodeId-1) - a zero ucode_id from a
     // crafted descriptor would underflow into an unrelated fuse register,
@@ -610,7 +626,7 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
     }
     let fuse_raw = gpu.read32(0x0082_41c0 + (fw.ucode_id - 1) * 4)?;
     let version = fuse_version(fuse_raw);
-    info!("FWSEC fuse: raw={fuse_raw:#x} version={version}");
+    info!("FWSEC: fuse raw={fuse_raw:#x} version={version}");
     let sig_at = fwsec_sig_offset(fw.sig_versions, version, 384)?;
     let d0 = fw.data_off as usize;
     unsafe {
@@ -628,14 +644,17 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
     // is proven on both engines; everything after placement (BROM PKC
     // params, BOOTVEC, start, HALT) matches the kernel HS sequence.
     const GSP_SEC: u32 = 1 << 28;
+    info!("FWSEC: GSP falcon reset begin");
     crate::tx::falcon_reset(gpu, GSP_BASE, GSP_FBIF, GSP_FALCON2, true)?;
     crate::tx::falcon_dma_unblock(gpu, GSP_BASE, GSP_FBIF)?;
     crate::tx::falcon_authority_probe(gpu, GSP_BASE, "GSP");
+    info!("FWSEC: GSP reset+unblock ok");
     let image = unsafe { core::slice::from_raw_parts(dma.host, fw.image_size as usize) };
     let imem = &image[..fw.imem_size as usize];
     {
         // Kernel FWSEC DMA commands carry SEC=1 for the whole IMEM.
         let blocks = imem.len().div_ceil(256);
+        info!("FWSEC: IMEM portal begin ({} blocks)", blocks);
         let mut tag = fw.imem_va >> 8;
         for blk in 0..blocks {
             let off = blk * 256;
@@ -658,11 +677,13 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
                 gpu.write32(GSP_BASE + 0x184, v);
             }
         }
-        info!("FWSEC portal: IMEM {} blocks ({} bytes, secure)", blocks, imem.len());
+        info!("FWSEC: portal IMEM done ({} blocks, {} bytes, secure)", blocks, imem.len());
     }
     let dmem = &image[fw.data_off as usize..(fw.data_off + fw.dmem_size) as usize];
     crate::tx_portal::portal_load_dmem(gpu, GSP_BASE, fw.dmem_pa, dmem);
+    info!("FWSEC: DMEM portal done ({} bytes)", dmem.len());
     // BROM PKC params (kernel _kgspSetupPkcParams) + BOOTVEC + start.
+    info!("FWSEC: PKC params + BOOTVEC writes begin");
     gpu.write32(GSP_FALCON2 + 0x210, fw.pkc_off);
     gpu.write32(GSP_FALCON2 + 0x19c, fw.engine_mask);
     gpu.write32(GSP_FALCON2 + 0x198, fw.ucode_id & 0xff);
@@ -675,18 +696,19 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
     } else {
         gpu.write32(GSP_BASE + 0x100, 1 << 1);
     }
+    info!("FWSEC: HALT wait begin (5s cap)");
     let r = gpu.poll_us(GSP_BASE + 0x100, 1 << 4, 1 << 4, 5_000_000, true);
     let cpuctl = gpu.pci.bar_read_u32(gpu.bar, (GSP_BASE + 0x100) as u64);
     let exci = gpu.pci.bar_read_u32(gpu.bar, (GSP_BASE + 0x0d0) as u64);
     let mbox0 = gpu.pci.bar_read_u32(gpu.bar, (GSP_BASE + 0x40) as u64);
-    info!("FWSEC portal forensic: CPUCTL={cpuctl:#010x} MAILBOX0={mbox0:#010x} EXCI={exci:#010x}");
+    info!("FWSEC: portal forensic CPUCTL={cpuctl:#010x} MAILBOX0={mbox0:#010x} EXCI={exci:#010x}");
 
     let scratch = gpu.read32(0x1400 + 0x0e * 4)?;
-    info!("FWSEC result: scratch={scratch:#x} expected_hi16=0");
+    info!("FWSEC: result scratch={scratch:#x} expected_hi16=0");
     let wpr_lo = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a824);
     let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
     info!(
-        "FWSEC WPR2: low={wpr_lo:#x} high={wpr_hi:#x} expected_page={:#x} end={:#x}",
+        "FWSEC: WPR2 low={wpr_lo:#x} high={wpr_hi:#x} expected_page={:#x} end={:#x}",
         layout.frts_offset >> 12, layout.wpr_end
     );
     r?;
