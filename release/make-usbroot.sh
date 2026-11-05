@@ -38,15 +38,15 @@
 #                     unlocked card. On Linux the proprietary driver 545+
 #                     runs GSP-RM by default on Turing and newer (no
 #                     EnableGpuFirmware-style switch exists or is needed).
-#                     The host gate therefore refuses to build when
+#                     The host gate therefore warns (never blocks) when
 #                     nvidia-smi reports the GSP firmware N/A - driver too
 #                     old, or NVreg_EnableGpuFirmware=0 forced in a modprobe
 #                     config. Building for a DIFFERENT machine? Pass
 #                     --skip-gsp-check.
 #   all    tu10x + ga102 + ad102 payloads on one stick. The Turing GSP gate
-#                     runs in lenient mode: still refuses when a LOCAL Turing
-#                     card sits in legacy mode, but skips (no prompt) when
-#                     this host has no Turing adapter at all.
+#                     runs in lenient mode: still warns when a LOCAL Turing
+#                     card sits in legacy mode, but is silent when this host
+#                     has no Turing adapter at all.
 #
 # RTD3 notice (issue #9): when the HOST runs with runtime D3 enabled
 # (DynamicPowerManagement 0x02/0x03), the script prints a loud warning -
@@ -81,6 +81,7 @@ usage() {
 
 log() { printf '%s\n' "$*"; }
 logerr() { printf '%s\n' "$*" >&2; }
+warn() { printf 'WARNING: %s\n' "$*" >&2; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
@@ -94,16 +95,6 @@ fetch() { # fetch <url> <dest> -> nonzero on failure (caller decides next step)
     else
         die "need curl or wget to download $1"
     fi
-}
-
-prompt_continue() {
-    local a=""
-    if [ -t 0 ]; then
-        read -r -p "Continue anyway? (y/N) " a || a="n"
-    else
-        a="n"
-    fi
-    [ "${a,,}" = "y" ] || [ "${a,,}" = "yes" ]
 }
 
 # ---------- pinned public inputs (see AGENTS.md / assets/src/manifest.rs) ----------
@@ -309,7 +300,7 @@ rtd3_notice() {
     esac
 }
 
-# ---------- Turing GSP-mode gate (refuse without GSP firmware mode) ----------
+# ---------- Turing GSP-mode gate (warn without GSP firmware mode) ----------
 GSP_GATE_STATUS="n/a"
 ADAPTER_LINES=""
 
@@ -364,9 +355,8 @@ check_turing_gate() { # $1 = 1 strict (explicit/localhost tu10x) | 0 lenient (al
 
         if [ "$is_turing" -eq 0 ]; then
             if [ "$strict" -eq 1 ]; then
-                log "[gate] No NVIDIA Turing adapter found on THIS machine."
-                log "       If the unlock target is a different machine, that is fine."
-                prompt_continue || die "Aborted by user."
+                warn "[gate] No NVIDIA Turing adapter found on THIS machine."
+                log "       If the unlock target is a different machine, pass --skip-gsp-check to silence this check."
             else
                 # --family all may target a machine other than this one.
                 log "[gate] no Turing adapter on this host - GSP check not applicable (--family all)"
@@ -379,40 +369,41 @@ check_turing_gate() { # $1 = 1 strict (explicit/localhost tu10x) | 0 lenient (al
         # Runtime corroboration: a module parameter only proves the switch is
         # SET, not that the current driver session actually loaded GSP firmware
         # (a stale pre-restart session keeps the legacy path). On Linux the
-        # nvidia-smi runtime field IS the primary check.
+        # nvidia-smi runtime field IS the primary check. Warn-and-continue:
+        # the build host's state must not block stick regeneration.
         local state
         state="$(gsp_state)"
         case "$state" in
             active)
                 log "[ok] GSP firmware running (nvidia-smi reports a firmware version)"
+                GSP_GATE_STATUS="passed"
+                log "[ok] host Turing adapter in GSP firmware mode"
                 ;;
             failed)
-                die "nvidia-smi -q failed (driver present but not reporting?).
-If this machine is not the unlock target, re-run with --skip-gsp-check."
+                warn "nvidia-smi -q failed (driver present but not reporting?) - build continues, runtime GSP state unverified."
+                GSP_GATE_STATUS="smi-failed"
                 ;;
             unknown)
-                die "nvidia-smi has no 'GSP Firmware Version' field: the driver is too
-old to report (or to support) GSP-RM. Turing unlock requires GSP firmware
-mode; update the driver (545+ runs GSP by default on Turing+), RESTART and
-re-run. Building for another machine? Use --skip-gsp-check."
+                warn "nvidia-smi has no 'GSP Firmware Version' field: the driver is too old to
+report (or to support) GSP-RM. The build continues, but the Turing target
+needs GSP firmware mode: update the driver (545+ runs GSP by default on
+Turing+) and RESTART before using the stick."
+                GSP_GATE_STATUS="runtime-unknown"
                 ;;
             inactive)
-                die "Turing adapter(s) on this host are NOT in GSP firmware mode
-(nvidia-smi reports GSP firmware N/A) and WILL TDR-loop on the unlocked card.
-On Linux, GSP-RM is the default for Turing+ on 545+ drivers; N/A means the
-driver is too old or NVreg_EnableGpuFirmware=0 is forced somewhere
-(check: modprobe -c | grep -i EnableGpuFirmware). Fix the mode, RESTART
-(not hibernate resume) and re-run. Building for another machine? Use
---skip-gsp-check."
+                warn "Turing adapter(s) on this host are NOT in GSP firmware mode (nvidia-smi
+reports GSP firmware N/A) and WILL TDR-loop on the unlocked card. The build
+continues. On Linux, GSP-RM is the default for Turing+ on 545+ drivers; N/A
+means the driver is too old or NVreg_EnableGpuFirmware=0 is forced somewhere
+(check: modprobe -c | grep -i EnableGpuFirmware). Fix the mode and RESTART
+(not hibernate resume) before using the stick."
+                GSP_GATE_STATUS="runtime-inactive"
                 ;;
         esac
-        GSP_GATE_STATUS="passed"
-        log "[ok] host Turing adapter in GSP firmware mode"
     else
         log "[gate] nvidia-smi not found - no NVIDIA driver on THIS machine."
         log "       If the unlock target is a different machine, that is fine;"
         log "       otherwise install the NVIDIA driver first."
-        prompt_continue || die "Aborted by user."
         GSP_GATE_STATUS="no-host-driver"
         log "[gate] skipped (no NVIDIA driver on this host)"
     fi

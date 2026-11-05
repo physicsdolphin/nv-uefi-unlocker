@@ -94,7 +94,7 @@ Turing 的 Windows 驱动需要 GSP-RM 模式才能正常接管解锁状态。le
 
 源码树中的脚本为 `tools\windows\enable-turing-unlock.ps1`。脚本仅为 Turing 显示设备设置 `EnableGpuFirmware=1`；加 `-Remove` 可撤销。**必须重启**，休眠恢复不会重新初始化驱动。
 
-maker 会检查注册表开关和 `nvidia-smi -q` 中的 GSP 固件运行态，后者不能为 N/A。Linux Turing 同样需要运行 GSP-RM；专有驱动 545+ 默认使用该模式，但可能被 `NVreg_EnableGpuFirmware=0` 关闭，仍以运行态检查为准，不运行 Windows 注册表脚本。30 / 40 系无需这项 Windows 注册表前置。
+maker 会检查注册表开关和 `nvidia-smi -q` 中的 GSP 固件运行态：不满足时给出醒目警告但不阻塞制盘——**目标机**的 GSP 模式才是关键，制盘机状态不构成门槛。制盘机侧的卡检测先读驱动的绑定设备列表（`Services\nvlddmkm\Enum`），维修平台换卡残留的显示类注册表键不会被误认成本机在位卡，被剔除的设备 ID 会以 ghost 警告逐条列出。Linux Turing 同样需要运行 GSP-RM；专有驱动 545+ 默认使用该模式，但可能被 `NVreg_EnableGpuFirmware=0` 关闭，仍以运行态检查为准，不运行 Windows 注册表脚本。30 / 40 系无需这项 Windows 注册表前置。
 
 Turing 的 `gsp_boot_tu10x.bin` 是 proven GspRmBoot 归档的前 `0x6000` 字节（24576 B）。maker 对输入归档与输出切片分别校验，不可用另一种引导镜像代替。
 

@@ -12,8 +12,8 @@
 #   ad102 | rtx40 | 40   RTX 40 series (Ada)          - no Windows prerequisites
 #   ga102 | rtx30 | 30   RTX 30 series (Ampere)       - kmod-verified upstream,
 #                                                     EFI path has no silicon evidence yet
-#   tu10x | rtx20 | 20   RTX 20 series (Turing)       - REQUIRES GSP firmware mode.
-#                        The script refuses to build unless EnableGpuFirmware=1
+#   tu10x | rtx20 | 20   RTX 20 series (Turing)       - EXPECTS GSP firmware mode.
+#                        The script WARNS (never blocks) unless EnableGpuFirmware=1
 #                        and nvidia-smi shows a running GSP firmware; the legacy
 #                        driver path TDR-loops on the unlocked card. Building on a
 #                        DIFFERENT machine than the target? Pass -SkipGspCheck.
@@ -23,14 +23,18 @@
 #                        re-anchored (0x7EA4 -> 0x7E9A). NOT field-proven;
 #                        read-back is the only verdict. Not part of -Family all:
 #                        explicit opt-in only.
-#   localhost            enumerate the NVIDIA GPUs in THIS machine (display-class
-#                        registry, else nvidia-smi) and build exactly the families
-#                        found there; throws when no RTX 20/30/40 card is present.
+#   localhost            enumerate the NVIDIA GPUs in THIS machine and build
+#                        exactly the families found there; throws when no RTX
+#                        20/30/40 card is present. Detection reads the driver's
+#                        bound-device list (Services\nvlddmkm\Enum) first - the
+#                        only registry structure PnP keeps free of card-swap
+#                        residue - so display-class keys orphaned by previously
+#                        removed cards (repair benches) are ignored, not built.
 #   all                  build all three proven 20-40 series families on one
 #                        stick (tu11x excluded - see above). The Turing GSP gate
-#                        runs lenient: still refuses when a LOCAL Turing card sits
-#                        in legacy mode, but skips (no prompt) when this host has
-#                        no Turing adapter at all.
+#                        runs lenient: still warns when a LOCAL Turing card sits
+#                        in legacy mode, but is silent when this host has no
+#                        Turing adapter at all.
 #
 # Requires: PowerShell 5+ and internet access to the pinned URLs.
 
@@ -50,7 +54,10 @@ param(
     # Build for another machine: skip the host-side Turing GSP check.
     [switch]$SkipGspCheck,
     # Display-class registry key to inspect (override for tests/offline hives).
-    [string]$ClassKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}'
+    [string]$ClassKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}',
+    # PnP's bound-device list for the NVIDIA driver (override for tests/offline
+    # hives). Only devnodes the driver actually bound to this boot appear here.
+    [string]$NvServiceEnumKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Enum'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,18 +87,89 @@ function Get-UnlockFamily([string]$DevHex) {
     return $null
 }
 
-# localhost: NVIDIA display adapters in THIS machine. The display-class
-# registry is authoritative; nvidia-smi is the fallback when the class key
-# has no matching entries.
-function Get-LocalNvidiaAdapters {
+# Raw display-class scan. Kept as the fallback path only: class keys are
+# never cleaned up when a card is removed, so a bench that has seen many
+# cards accumulates ghost adapters here (MatchingDeviceId survives, the
+# hardware does not - even the full driver value set survives).
+function Get-AdaptersFromClassKey {
     $adapters = @()
-    Get-ChildItem $ClassKey -ErrorAction SilentlyContinue | ForEach-Object {
-        $props = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+    foreach ($k in (Get-ChildItem $ClassKey -ErrorAction SilentlyContinue)) {
+        $props = Get-ItemProperty $k.PSPath -ErrorAction SilentlyContinue
         if ($props.MatchingDeviceId -and
             $props.MatchingDeviceId -match '(?i)ven_10de&dev_([0-9a-f]{4})') {
             $adapters += [pscustomobject]@{ Dev = $Matches[1].ToLower(); Desc = "$($props.DriverDesc)" }
         }
     }
+    return $adapters
+}
+
+# The devnodes the NVIDIA driver is actually bound to in THIS boot. PnP
+# maintains Services\<driver>\Enum exclusively for started devnodes: unlike
+# the display-class key, entries disappear the boot after the card is pulled,
+# which makes this the only registry structure that separates a live adapter
+# from card-swap residue without leaving the registry. Returns $null when the
+# NVIDIA driver has never been installed on this OS install.
+function Get-BoundNvidiaInstancePaths {
+    $props = Get-ItemProperty $NvServiceEnumKey -ErrorAction SilentlyContinue
+    if (-not $props) { return $null }
+    return @($props.PSObject.Properties |
+             Where-Object { $_.Name -match '^\d+$' -and $_.Value -is [string] } |
+             ForEach-Object { $_.Value })
+}
+
+# Resolve one live instance path to its Enum entry and the display-class key
+# it owns (linked by the Enum 'Driver' value, e.g. "{4d36e968...}\0005").
+function Get-InstanceRegistryProps([string]$InstancePath) {
+    $enumProps = Get-ItemProperty (Join-Path 'HKLM:\SYSTEM\CurrentControlSet\Enum' $InstancePath) -ErrorAction SilentlyContinue
+    $clsProps = $null
+    $slot = ""
+    if ($enumProps -and $enumProps.Driver) {
+        $clsProps = Get-ItemProperty (Join-Path (Split-Path $ClassKey -Parent) $enumProps.Driver) -ErrorAction SilentlyContinue
+        if ($clsProps) { $slot = Split-Path $enumProps.Driver -Leaf }
+    }
+    [pscustomobject]@{ Enum = $enumProps; Class = $clsProps; Slot = $slot }
+}
+
+function Get-InstanceDesc($Props, [string]$InstancePath) {
+    if ($Props.Class -and $Props.Class.DriverDesc) { return "$($Props.Class.DriverDesc)" }
+    if ($Props.Enum -and $Props.Enum.DeviceDesc) { return (($Props.Enum.DeviceDesc -split ';')[-1]) }
+    return $InstancePath
+}
+
+# localhost: NVIDIA display adapters in THIS machine. The driver's
+# bound-device list is authoritative (ghost-free by construction); the
+# display-class scan is the fallback for hosts without a bound driver, and
+# nvidia-smi the last resort when the class key has no matching entries.
+function Get-LocalNvidiaAdapters {
+    $bound = Get-BoundNvidiaInstancePaths
+    if ($bound -and $bound.Count -gt 0) {
+        $adapters = @()
+        foreach ($inst in $bound) {
+            if ($inst -notmatch '(?i)ven_10de&dev_([0-9a-f]{4})') { continue }
+            $adapters += [pscustomobject]@{
+                Dev  = $Matches[1].ToLower()
+                Desc = Get-InstanceDesc (Get-InstanceRegistryProps $inst) $inst
+            }
+        }
+        # Diagnostics: class-key entries whose device id is not bound this
+        # boot are card-swap residue - call them out so the trimming is not
+        # a silent behavior change on repair benches.
+        $boundDevs = @($adapters | ForEach-Object { $_.Dev } | Select-Object -Unique)
+        $ghosts = @()
+        foreach ($k in (Get-ChildItem $ClassKey -ErrorAction SilentlyContinue)) {
+            $props = Get-ItemProperty $k.PSPath -ErrorAction SilentlyContinue
+            if ($props.MatchingDeviceId -and
+                $props.MatchingDeviceId -match '(?i)ven_10de&dev_([0-9a-f]{4})') {
+                $gdev = $Matches[1].ToLower()
+                if ($boundDevs -notcontains $gdev) { $ghosts += $gdev }
+            }
+        }
+        foreach ($g in ($ghosts | Select-Object -Unique)) {
+            Write-Warning ("registry ghost ignored (card not bound this boot): 10de:{0} - orphaned display-class key" -f $g)
+        }
+        return $adapters
+    }
+    $adapters = Get-AdaptersFromClassKey
     if (-not $adapters -and (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
         $rows = & nvidia-smi --query-gpu=pci.device_id,name --format=csv,noheader 2>$null
         foreach ($row in $rows) {
@@ -181,11 +259,13 @@ $ProvenBlobUrls = @(
 $ProvenSliceLen = 0x6000
 $ProvenSliceSha256 = "de676bae28a480011d3d012db14bef539324e62a841a9627863c689bea168af3"
 
-# ---------- Turing GSP-mode gate (refuse without GSP firmware mode) ----------
+# ---------- Turing GSP-mode gate (warn without GSP firmware mode) ----------
 # Turing's Windows driver only accepts a pre-OS FEAT unlock in GSP-RM firmware
 # mode; the legacy path TDR-loops (Code 43 / watchdog storm) on the unlocked
 # card. Building a tu10x stick on a machine that has not enabled GSP mode is
-# how users brick their session - refuse here, point at the fix.
+# how users brick their session - warn here, point at the fix, and let the
+# operator decide: stick regeneration must never block on the BUILD host's
+# state; the TARGET machine's GSP prerequisites are what actually matter.
 
 function Test-TuringDevId([string]$MatchingDeviceId) {
     if ($MatchingDeviceId -notmatch '(?i)ven_10de&dev_([0-9a-f]{4})') { return $false }
@@ -195,15 +275,37 @@ function Test-TuringDevId([string]$MatchingDeviceId) {
 }
 
 function Get-TuringAdapterState {
-    Get-ChildItem $ClassKey -ErrorAction SilentlyContinue | ForEach-Object {
-        $props = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
-        if (-not $props.MatchingDeviceId -or -not (Test-TuringDevId $props.MatchingDeviceId)) { return }
-        [pscustomobject]@{
-            Slot = $_.PSChildName
+    # Instance-exact: only devnodes the driver is bound to this boot can be
+    # GSP-mode candidates, and each maps to exactly one class key via the
+    # Enum 'Driver' value. Class keys orphaned by removed cards are skipped
+    # entirely; the raw class-key scan only runs when nothing is bound (no
+    # usable NVIDIA driver session - there, residue is unavoidable).
+    $bound = Get-BoundNvidiaInstancePaths
+    $state = @()
+    if ($bound -and $bound.Count -gt 0) {
+        foreach ($inst in $bound) {
+            if (-not (Test-TuringDevId $inst)) { continue }
+            $p = Get-InstanceRegistryProps $inst
+            $gsp = $null
+            if ($p.Class) { $gsp = $p.Class.EnableGpuFirmware }
+            $state += [pscustomobject]@{
+                Slot = $(if ($p.Slot) { $p.Slot } else { $inst })
+                Desc = Get-InstanceDesc $p $inst
+                Gsp  = $gsp
+            }
+        }
+        return $state
+    }
+    foreach ($k in (Get-ChildItem $ClassKey -ErrorAction SilentlyContinue)) {
+        $props = Get-ItemProperty $k.PSPath -ErrorAction SilentlyContinue
+        if (-not $props.MatchingDeviceId -or -not (Test-TuringDevId $props.MatchingDeviceId)) { continue }
+        $state += [pscustomobject]@{
+            Slot = $k.PSChildName
             Desc = $props.DriverDesc
             Gsp  = $props.EnableGpuFirmware
         }
     }
+    return $state
 }
 
 # Runtime corroboration: a registry value alone only proves the switch is SET,
@@ -226,18 +328,11 @@ function Get-GspRuntimeState {
 $gateStatus = "n/a"
 if (($Families -contains "tu10x" -or $Families -contains "tu11x") -and -not $SkipGspCheck) {
     Write-Host "[gate] Turing family selected - checking Windows GSP firmware mode"
-    $gateStatus = "passed"
     $turing = @(Get-TuringAdapterState)
     if ($turing.Count -eq 0) {
         if ($gateStrict) {
-            Write-Warning "No NVIDIA Turing display adapter found on THIS machine."
-            Write-Host "If the unlock target is a different machine, pass -SkipGspCheck."
-            try {
-                $answer = Read-Host "Continue anyway? (y/N)"
-            } catch {
-                $answer = "n"
-            }
-            if ($answer -notmatch '^(?i)y') { throw "Aborted by user." }
+            Write-Warning "No NVIDIA Turing display adapter PRESENT on THIS machine (orphaned display-class keys from removed cards are ignored)."
+            Write-Host "If the unlock target is a different machine, pass -SkipGspCheck to silence this check."
         } else {
             # -Family all may target a machine other than this one.
             Write-Host "[gate] no Turing adapter on this host - GSP check not applicable (-Family all)"
@@ -255,35 +350,39 @@ if (($Families -contains "tu10x" -or $Families -contains "tu11x") -and -not $Ski
             Write-Host ("  Turing adapter {0}: {1} -> {2}" -f $t.Slot, $t.Desc, $state)
         }
         if ($notGsp.Count -gt 0) {
-            Write-Host ""
-            throw "Turing adapter(s) above are NOT in GSP firmware mode.
-Fix BEFORE using this stick: run .\enable-turing-unlock.ps1 from an
-elevated PowerShell, then RESTART (a hibernate resume does NOT
-re-initialize the driver and will not apply the mode). Re-run this
-script after the restart."
+            Write-Warning "Turing adapter(s) above are NOT in GSP firmware mode. The build continues, but using the stick on a legacy-mode Turing target WILL TDR (Code 43 / watchdog storm).
+Fix BEFORE using the stick: run .\enable-turing-unlock.ps1 from an
+elevated PowerShell on the target, then RESTART (a hibernate resume
+does NOT re-initialize the driver and will not apply the mode)."
+            $gateStatus = "legacy-mode"
+        } else {
+            $runtime = Get-GspRuntimeState
+            switch ($runtime) {
+                "active" {
+                    Write-Host "[ok] GSP firmware running (nvidia-smi reports a firmware version)"
+                }
+                "absent" {
+                    Write-Warning "nvidia-smi not found - registry check only"
+                }
+                "unknown" {
+                    Write-Warning "nvidia-smi has no 'GSP Firmware Version' field - registry check only"
+                }
+                "failed" {
+                    Write-Warning "nvidia-smi -q failed - registry check only"
+                }
+                "inactive" {
+                    Write-Warning "Registry says EnableGpuFirmware=1 but nvidia-smi reports GSP firmware N/A.
+The setting is not active in this driver session. The build continues, but
+RESTART (not hibernate resume) before using the stick on this machine.
+If it persists, the driver may be too old for GSP."
+                    $gateStatus = "runtime-inactive"
+                }
+            }
+            if ($runtime -eq "active") {
+                Write-Host "[ok] all Turing adapters in GSP firmware mode"
+                $gateStatus = "passed"
+            }
         }
-
-        $runtime = Get-GspRuntimeState
-        switch ($runtime) {
-            "active" {
-                Write-Host "[ok] GSP firmware running (nvidia-smi reports a firmware version)"
-            }
-            "absent" {
-                Write-Warning "nvidia-smi not found - registry check only"
-            }
-            "unknown" {
-                Write-Warning "nvidia-smi has no 'GSP Firmware Version' field - registry check only"
-            }
-            "failed" {
-                Write-Warning "nvidia-smi -q failed - registry check only"
-            }
-            "inactive" {
-                throw "Registry says EnableGpuFirmware=1 but nvidia-smi reports GSP firmware N/A.
-The setting is not active in this driver session: RESTART (not hibernate
-resume) and re-run. If it persists, the driver may be too old for GSP."
-            }
-        }
-        Write-Host "[ok] all Turing adapters in GSP firmware mode"
     }
 } elseif ($Families -contains "tu10x" -or $Families -contains "tu11x") {
     $gateStatus = "skipped"

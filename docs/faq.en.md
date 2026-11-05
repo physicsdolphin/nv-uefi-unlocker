@@ -89,7 +89,7 @@ Turing's Windows driver needs GSP-RM mode to accept the unlocked state. Legacy i
 
 In a checkout, use `tools\windows\enable-turing-unlock.ps1`. It sets `EnableGpuFirmware=1` only for Turing display devices; `-Remove` reverses it. **Restart is required**; hibernate resume does not reinitialize the driver.
 
-The maker checks both the registry switch and running GSP firmware in `nvidia-smi -q`; the latter must not be N/A. Linux Turing also needs GSP-RM. Proprietary drivers 545+ use it by default, but `NVreg_EnableGpuFirmware=0` can disable it; verify runtime state without the Windows registry script. The 30 / 40 series do not require this Windows registry prerequisite.
+The maker checks both the registry switch and running GSP firmware in `nvidia-smi -q`; a failed check prints a loud warning but does not block the build - the TARGET machine's GSP mode is what matters, not the build host's. Host card detection reads the driver's bound-device list (`Services\nvlddmkm\Enum`) first, so display-class keys orphaned by previously removed cards (repair benches that swap many GPUs) are ignored instead of being mistaken for present adapters; each trimmed id is reported as a ghost warning. Linux Turing also needs GSP-RM. Proprietary drivers 545+ use it by default, but `NVreg_EnableGpuFirmware=0` can disable it; verify runtime state without the Windows registry script. The 30 / 40 series do not require this Windows registry prerequisite.
 
 Turing's `gsp_boot_tu10x.bin` is the first `0x6000` bytes (24576 B) of the proven GspRmBoot archive. The maker verifies the source archive and output slice separately; do not substitute another boot image.
 
