@@ -52,6 +52,30 @@ machine; the safe-mode pairing leg needs either a pre-staged SafeBoot key
 (unimplemented) or the zero-driver Linux live route (protocol §1b round 2).
 This round did not need it: the normal-mode leg answered the question.
 
+## Closure (2026-11-05)
+
+The reporter confirmed the machine has no direct-connect option anywhere (not
+in BIOS, not in OMEN Gaming Hub) — hybrid only, permanently. The three axes
+thus settle it: **platform power management, mechanism row 1**. Closed as
+completed. Reply: issuecomment-6648724585.
+
+Two sub-questions were answered in the closure rather than left standing:
+
+- **"BAR0 still reads, though"** — `POWER:` is a snapshot, not history. By
+  probe time the driver had already woken the card (`NVAPI GC6 wake: all GPUs
+  already D0`) and rebuilt `WPR2=0x1fffe00`; the destructive event happened
+  earlier in the boot, where only the canary was watching. Both observations
+  are true at once.
+- **`native-GOP … unexpected EFI image count`** — the non-console card's
+  shadowed ROM carries no EFI image, so the rebuild correctly declines. Zero
+  cost, proven by the intact `POST-GOP` read.
+
+Low-cost remainders offered, none expected to be decisive: enter from a
+Windows advanced-startup **restart** rather than a cold boot (the previous
+driver held a reference), disable Fast Startup and any BIOS RTD3 item, and
+dump the AML to check `_PR3` idempotency and the PERST# GPIO on `00:01.0`.
+Reopen on any contrary reading.
+
 ## Attachments
 
 - `loader-normal-diag1.log` / `loader-safe-diag1.log` — the two EFI runs,
