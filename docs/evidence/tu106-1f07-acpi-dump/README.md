@@ -30,7 +30,7 @@ keeps the Windows-side pass on the hook for #164.
 
 `ssdiag` 0.6.8 from the running OS: `CANARY_A/B … -> intact`,
 `CANARY: intact + SS live - no reset, nothing rewrote the state after
-handoff`, `VERDICT [turing]: UNLOCKED`. Marks the driver rebuilt WPR2
+handoff`, `VERDICT [turing]: UNLOCKED`. It marks that the driver rebuilt WPR2
 (`0x01fce000`/`0x01ffee00`) and left `SEC2_EXCI=0x00003911`, i.e. the normal
 started state.
 
