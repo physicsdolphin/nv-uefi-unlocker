@@ -473,6 +473,12 @@ so no transaction was attempted and nothing was written"
         }
         Err(e) => {
             info!("TX: transaction failed: {e:?} - NOT retrying this session");
+            // Field report (issue #74): on a TB4/USB4 eGPU the unwind FLR can
+            // leave the function off the bus afterwards - Windows then shows
+            // CM_PROB_PHANTOM, fans stop, and the only recovery measured on
+            // that seat is an AC cycle of the enclosure. Say so, or the first
+            // person to see it concludes the card is dead.
+            info!("TX: recovery note: if this card sits in an eGPU enclosure and disappears from the bus after this failure, power-cycle the enclosure (PSU off ~30 s); an internal card needs a normal power cycle");
             // Failure unwind: FLR wipes our half-states (engine resets, BCR,
             // DMA queues) so the Windows driver gets a cold-boot card.
             tx::emergency_flr(g.handle);
