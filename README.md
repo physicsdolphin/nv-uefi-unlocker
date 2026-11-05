@@ -23,7 +23,7 @@
 
 [![理论解锁上限天梯图](docs/tools/tflops-ceiling.svg)](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)
 
-*理论解锁上限天梯图（FP16 · 桌面卡）——[打开可交互版](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)：FP32/TF32/FP16/BF16/FP8 五个精度页签、含 20/30/40 系桌面+笔记本全量、可切换显示出厂现值；[`?k=fp8`](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html?k=fp8) 直达指定精度。理论标尺与上方实测数字口径不同，见[理论提升分析](docs/theoretical-uplift.md)。*
+*理论解锁上限天梯图（FP16 · 桌面卡）——[打开可交互版](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)：FP32/TF32/FP16/BF16/FP8 五个精度页签、含 GTX 10 – RTX 50 桌面/笔记本/专业卡/数据中心全量、可切换显示出厂现值；[`?k=fp8`](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html?k=fp8) 直达指定精度。理论标尺与上方实测数字口径不同，见[理论提升分析](docs/theoretical-uplift.md)。*
 
 ## 兼容性速览
 

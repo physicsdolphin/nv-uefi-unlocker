@@ -130,7 +130,7 @@
 <rect class="g30" x="252.0" y="483.0" width="68.1" height="9" rx="2"/>
 <rect class="lock" x="252.0" y="483.0" width="34.1" height="9" rx="2"/>
 <text class="fg" x="700" y="490" font-size="11" text-anchor="end">34.1 → 68.2</text>
-<text class="mut" x="20" y="514" font-size="11">……21 more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html</text>
+<text class="mut" x="20" y="514" font-size="11">……33 more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html</text>
 <line class="brd" x1="20" y1="560" x2="700" y2="560"/>
 <text class="mut" x="20" y="574" font-size="11">value = SM × FMA/SM/clk × 2 × boost clock; unlock restores the whitepaper rate (×2 on clamped paths)</text>
 <text class="mut" x="20" y="590" font-size="11">real results land lower: power limits, memory bandwidth and library routing each take a cut</text>
