@@ -51,6 +51,8 @@ pub struct Interp {
     pub steps: u64,
     pub max_steps: u64,
     pub trace: bool,
+    /// diagnostic watches (canary-slot writes) — off by default
+    pub watch_canary: bool,
     pub last_dma_sp: Option<u32>,
     /// sp value captured right after the first DMA into the payload window
     pub stop_after_dma: bool,
@@ -75,6 +77,7 @@ impl Interp {
             steps: 0,
             max_steps: 20_000_000,
             trace: false,
+            watch_canary: false,
             last_dma_sp: None,
             stop_after_dma: true,
         }
@@ -104,6 +107,13 @@ impl Interp {
         self.wr8(0x204, 0x400);
         self.wr8(0x208, 0);
         self.wr8(0x20c, 0);
+        // The canary seed: the SEC scans D[0x6130..0x6140) (the crypt
+        // context's key slots, right after `cxset 0x0`) for the first
+        // non-zero dword and adopts it as the canary (stored to D[0x6140]
+        // at 0x4ca). Our crypt stubs are no-ops, so the seed area must be
+        // planted; any non-zero value is self-consistent (the store and
+        // every canary check use the same one).
+        self.wr8(0x6130, 0xd000);
     }
 
     fn rd8(&self, a: usize) -> u32 {
@@ -115,6 +125,12 @@ impl Interp {
     }
 
     fn wr8(&mut self, a: usize, v: u32) {
+        if self.trace && self.watch_canary && a == 0x6140 {
+            println!("    [canary-watch] step {} D[0x6140] <- {v:#x} at pc={:#x}", self.steps, self.pc);
+        }
+        if self.trace && self.watch_canary && v == 0xd000 && a >= 0xff00 {
+            println!("    [d000-watch] step {} D[{a:#x}] <- {v:#x} at pc={:#x}", self.steps, self.pc);
+        }
         if a + 4 <= self.dmem.len() {
             self.dmem[a..a + 4].copy_from_slice(&v.to_le_bytes());
         }
