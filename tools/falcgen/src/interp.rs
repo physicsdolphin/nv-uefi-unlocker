@@ -94,6 +94,16 @@ impl Interp {
         self.wr8(0x1654, 0);
         self.wr8(0x1658, 0);
         self.wr8(0x165c, 0);
+        // FWSEC-established IO state the booter polls for (the loader
+        // fires FWSEC before the booter; the poll at 0x358 waits for
+        // bit8 of [0x10100] to clear — the FWSEC-completion flag).
+        self.io_reads.push((0x10100, 0x1000));
+        // The loader-provided boot descriptor at DMEM 0x200 (the NS stub
+        // snapshots mailboxes there; "any non-zero skips the default fill").
+        self.wr8(0x200, 0x1);
+        self.wr8(0x204, 0x400);
+        self.wr8(0x208, 0);
+        self.wr8(0x20c, 0);
     }
 
     fn rd8(&self, a: usize) -> u32 {
@@ -122,6 +132,14 @@ impl Interp {
 
     fn io_read(&self, addr: u32) -> u32 {
         for (a, v) in &self.io_reads {
+            if *a == addr {
+                return *v;
+            }
+        }
+        // Register read-back: the booter writes a register then reads it
+        // back (e.g. the falcon-enable word 0x7fff -> 0x14000 feeds the
+        // mpush mask). The last write to the address is the value.
+        for (a, v) in self.io_writes.iter().rev() {
             if *a == addr {
                 return *v;
             }
@@ -244,7 +262,7 @@ impl Interp {
         let insn = decode_one(buf, off, base, FUC5_CRYPT);
         let next = self.pc + insn.oplen as u32;
         if self.trace {
-            println!("[{:>8}] {:06x} {}  [r9={:#x} r13={:#x} r14={:#x} r15={:#x} sp={:#x}]", self.steps, self.pc, insn.render(), self.regs[9], self.regs[13], self.regs[14], self.regs[15], self.sp);
+            println!("[{:>8}] {:06x} {}  [r0={:#x} r9={:#x} r10={:#x} sp={:#x}]", self.steps, self.pc, insn.render(), self.regs[0], self.regs[9], self.regs[10], self.sp);
         }
         let name = insn.name.as_str();
         let ops = &insn.operands;
@@ -488,33 +506,29 @@ impl Interp {
                 }
             }
             "mpush" => {
-                // multi-push; mask in the register operand's value
-                if let Some(e) = expr(0) {
-                    let mask = self.eval(&e);
-                    for i in 0..16u32 {
-                        if mask & (1 << i) != 0 {
-                            self.push(self.regs[i as usize]);
+                // push $r0..$rN (the register NUMBER names the top of the
+                // saved range). Verified against three canary-guarded
+                // functions (main/0x1b3b/0x8235): only the range reading
+                // balances prologue vs mpopaddret epilogue for all of them.
+                if let Some(Expr::Reg(d)) = expr(0) {
+                    if let Some(n) = d.strip_prefix('r').and_then(|s| s.parse::<usize>().ok()) {
+                        for i in 0..=n.min(15) {
+                            self.push(self.regs[i]);
                         }
                     }
                 }
             }
             "mpop" | "mpopret" | "mpopadd" | "mpopaddret" => {
-                if let Some(e) = expr(0) {
-                    let mask = self.eval(&e);
-                    let n = mask.count_ones() as u32;
-                    // pop the masked regs (reverse push order: highest
-                    // first); stack arity verified against the golden frames
-                    for i in (0..16u32).rev() {
-                        if mask & (1 << i) != 0 {
-                            let v = self.pop();
-                            self.regs[i as usize] = v;
+                if let Some(Expr::Reg(d)) = expr(0) {
+                    if let Some(n) = d.strip_prefix('r').and_then(|s| s.parse::<usize>().ok()) {
+                        for i in (0..=n.min(15)).rev() {
+                            self.regs[i] = self.pop();
                         }
                     }
                     if let Some(w) = imm(1) {
                         self.sp = self.sp.wrapping_add(w);
                     }
                     if name == "mpopret" || name == "mpopaddret" {
-                        let _ = n;
                         self.pc = self.pop();
                         jumped = true;
                     }
