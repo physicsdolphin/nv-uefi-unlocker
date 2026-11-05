@@ -883,7 +883,14 @@ fn read_boot_file_uncached(path: &str) -> Inner {
                 // attempt at all (symptom: transaction never ran, ssdiag says
                 // NOT_UNLOCKED, reporter files it as a failed unlock).
                 // One read-only retry, one level down, guarded against recursion.
-                if !orig_path.starts_with("\\usbroot\\") {
+                // Assets only: markers (\tx-*.txt) are UI switches, they are
+                // never part of the maker's output folder, and probing that
+                // folder for them produced a confusing line in field logs
+                // (issue #165: "\usbroot\tx-select-bdf.txt fs open failed
+                // ACCESS_DENIED" on a stick where the marker simply did not
+                // exist - it reads like a fault, it is not one).
+                let asset_shaped = orig_path.ends_with(".bin");
+                if asset_shaped && !orig_path.starts_with("\\usbroot\\") {
                     let alt = alloc::format!("\\usbroot{}", orig_path);
                     let probe = read_boot_file_uncached(&alt);
                     if matches!(probe, Inner::Content(_)) {
