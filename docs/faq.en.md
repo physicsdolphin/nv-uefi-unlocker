@@ -620,6 +620,8 @@ Not installing, not running, not understanding it does not affect the unlock its
 
 The shape of the detection is itself the evidence. `ssdiag` is an unsigned Rust host with a whole kernel-driver PE image embedded in `.rdata` (file offset `0x2C7C9`) - the combination static-envelope heuristics like least. Both 2026-11-05 reports point at the same zip, and the two Microsoft names they quote do not even agree (`Trojan:Script/Sabsik.EN.A!ml` vs `Trojan:Script/Wacatac.H!ml`); the third-party hits are one and the same generic name from BitDefender and its engine OEMs (ALYac / Arcabit / eScan / Emsisoft / GData / VIPRE `Trojan.GenericKD.82039403`, Bkav `W32.Malware.*`, CTX's container heuristic `Zip.trojan.generic`, Elastic's `Malicious (moderate)`) - **a cluster of engines agreeing on a generic name while Redmond's whole catalogue stays silent is the textbook false-positive shape**. Re-tested here: Defender signatures 1.463.142.0 (updated 2026-11-05) report `found no threats` on the official zip.
 
+**One residual hit remains after dropping `ssdiag`**: Bkav alone (`W32.Malware.AEFAF8C4`), and it names the Linux-side `assets-x86_64-linux` - another unsigned Rust binary, and ELF has no Authenticode path at all (the `W32.` prefix on an ELF is Bkav habit, not a verdict). Windows users never load that file and can ignore it; Linux users do not run this engine family anyway.
+
 How to judge and what to do:
 
 1. **Check the hashes first** - the zip and every member are in `SHA256SUMS.txt`, and `ssdiag`'s hash is additionally pinned inside the binary and self-verified at run time. Matching hashes rule out a swapped download.

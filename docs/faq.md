@@ -630,6 +630,8 @@ ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊�
 
 报毒的形状本身就是判据。`ssdiag` 是未签名的 Rust 宿主，`.rdata` 里嵌着一整张内核驱动 PE 映像（文件偏移 `0x2C7C9`）——这是按静态包络打分的启发式引擎最不喜欢的组合。2026-11-05 的两份报告都指向同一个 zip，而两处写的微软名字还互不相同（`Trojan:Script/Sabsik.EN.A!ml` 与 `Trojan:Script/Wacatac.H!ml`）；第三方扫描里真正命中的是 BitDefender 与其引擎 OEM 的同一族通用名（ALYac / Arcabit / eScan / Emsisoft / GData / VIPRE 的 `Trojan.GenericKD.82039403`，Bkav `W32.Malware.*`，CTX 的容器启发 `Zip.trojan.generic`，Elastic 的 `Malicious (moderate)`）——**一组引擎报同一个泛化名、微软全库不报，就是典型误报形态**。本机复测：Defender 签名 1.463.142.0（2026-11-05 更新），对官方 zip 扫完 `found no threats`。
 
+**拿掉 `ssdiag` 之后仍有残留**：复测里只剩 Bkav 一家（`W32.Malware.AEFAF8C4`），命中对象是 Linux 侧的 `assets-x86_64-linux`——同样是未签名的 Rust 二进制，而 ELF 根本没有 Authenticode 签名这条路（`W32.` 前缀套在 ELF 上是 Bkav 的惯例，不是判据）。Windows 用户不加载这个文件，可以完全无视；Linux 用户本来也不跑这套引擎。
+
 判定与处置：
 
 1. **先核对 hash**——zip 与每个成员都在 `SHA256SUMS.txt` 里，`ssdiag` 的 hash 同时钉死在二进制内、运行时自校验。hash 对得上就排除"下载被换包"。
