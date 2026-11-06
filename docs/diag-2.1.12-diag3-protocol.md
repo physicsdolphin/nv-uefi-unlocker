@@ -153,3 +153,22 @@ A/B 开关（每次冷启动只动一个，本地化之后再动）：GA10x 的 
 **读法变化**：diag5 之后**屏幕在 `DETACH: console mirror MUTED until reconnect` 冻结是正常的，每一轮都冻（含全绿轮）**，只认日志。
 
 **仍成立的教训**：`protocols` 那两个数是 `protocols_per_handle()` 的**已安装协议接口数**，不是 opener 计数——GOP 的 `5 -> 4` 是子句柄接口随 Stop 卸载，PCI 句柄的 `2 -> 2` 是 DevicePath+PciIo 由 bus driver 持有、Stop 不卸载，属预期，不是泄漏。`DETACH: PCI disconnect` 之后不再进任何 `Stop()` 回调（回调已在返回 `Ok` 的那次调用里跑完）。
+
+## 7. diag6（2026-11-06）：日志 Close 阶梯，diag4/5 在本板死在更上游
+
+diag5 在 #122 上 3/3 冷启动同一签名，且比 diag5 瞄的点更上游：**dirent 每轮被新鲜重建、但零字节、零 FAT 新分配、零字符串命中（53 个孤儿簇 / FAT 双副本差异簇 / 沉积区全检）、显示器无信号**。diag4 一轮同签名，合计 4/4。判读表（PROM/GSP/IMEM/HALT）在该板不可达。
+
+**窗口（代码逐条，无省略）**：`create(CreateReadWrite)` → `into_regular_file` → `Close`（dirent 在此提交；版本独有）→ `Open(ReadWrite)` → `set_position(EOF)` → `set_logger` → 第 1 行 `format`/`Write`/`Flush`/`Close`/`reopen`/屏写。v2.1.9 同窗口只有 `create` → `set_logger` → 第 1 行 `write+flush+echo`，无 Close、无 reopen、无 set_position。**banner 在 init 之后，`DIAG-*` 转储与 `EARLY` connect 在 banner 之后**——它们只能杀第 3 行之后，对第 1 行不成立。dirent 新鲜 = `Close #1` 完成，剩余候选只有 `Open#2 / set_position / 第 1 行 Write / Close#2 / reopen#3`。
+
+**判定式（充分条件式，可用于任何报单）**：若目录项最后写入时刻新鲜（=当轮开机后数秒）**且** size=0 / first_cluster=0，且孤儿簇 / FAT 双副本差异簇 / 沉积区检索均零日志内容 → 死亡窗口 = create 提交之后、第 1 行写→提交完成之前（Write 曾执行但未达媒体，介质上不可区分）。**用户侧初筛：dirent 新鲜重建 + size=0 本身就值得上报。**
+
+**`2.1.15-diag6` = 阶梯构建**（默认 v2.1.9 写路径，逐项开关，单二进制）：
+
+| 根目录文件 | 作用 |
+|---|---|
+| 无 | 默认：write + 标记/节拍 Flush，单句柄，永不 Close（v2.1.9 语义） |
+| `tx-log-commit-lines.txt` | + 标记行 Close/reopen |
+| `tx-log-commit.txt` | + create 时 Close（= diag4/5） |
+| `tx-no-ident-dump.txt` / `tx-no-early-enum.txt` | 跳过转储 / EARLY connect |
+
+开关在日志创建**之前**读：死在这两个探测里则**连新鲜 dirent 都没有**——这是"create 之前"与"create 之后"唯一可用的判别位。命令顺序：空盘 → （不新鲜）预读探测 → （新鲜）先关 dump、再关 EARLY → 恢复后保留该级、再单独试 `tx-log-commit-lines`。
