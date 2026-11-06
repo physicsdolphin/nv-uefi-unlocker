@@ -165,7 +165,7 @@ sudo update-initramfs -u
 
 解锁抬高的是**发射率**，不是功耗上限。所以：锁定态平均功耗明显低于功耗墙、SM 未饱和的负载，解锁后会把省下的时间换成瓦数，时间随之下降；锁定态已经贴着功耗墙、SM 全程 100% 的负载，解锁只把瓦数抬上去，时间几乎不变。
 
-一台 TB4 + AD102（RTX 4090）的同机同会话 A/B（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)，每次两端都过 `ssdiag`）：
+一台 TB4 + AD102（RTX 4090）的同机同会话 A/B（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)，已关闭 completed，每次两端都过 `ssdiag`）：
 
 | 负载 | 锁定 | 解锁 | Δ | 锁定态平均/峰值功耗 |
 | --- | --- | --- | --- | --- |
@@ -233,7 +233,7 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 3 | **devinit 重放**（驱动 init 自己重算） | 存活 | 部分 GA10x 笔记本（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)，Linux 实测；Windows 侧尚无同形态样本） | 门锁 + `SS` 被写成推导值（≠开机基线、≠覆盖值） |
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
-| 6 | **OS 侧连接管理器（USB4 CM）建立/重建 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块绑定/接管时拆掉并重建整棵下游总线。固件 CM 的独立雷电主机（Intel 雷电面板那类）开机不走此行，但重插线时管理栈重建隧道、同样触发 | 金丝雀 `cleared`（域复位）。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
+| 6 | **OS 侧连接管理器（USB4 CM）建立/重建 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)，已关闭，桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块绑定/接管时拆掉并重建整棵下游总线。固件 CM 的独立雷电主机（Intel 雷电面板那类）开机不走此行，但重插线时管理栈重建隧道、同样触发 | 金丝雀 `cleared`（域复位）。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
 
 第 6 行的特殊性：复位由**建立/重建隧道的 CM** 执行——USB4 主机上是 OS 侧 CM，发生在任何驱动绑定之前，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）；固件 CM 主机开机不触发此行（见雷电节分型），重插才触发。唯一出路是抑制那次拆建，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
@@ -368,7 +368,7 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 | **USB4 主机路由器**（集成的 Intel/AMD，或绑定 MS `usb4hostrouter.inf` 的独立芯片如 ASMedia；含被 BIOS 设成 OS CM 模式的独立雷电芯片） | `PCI\…&USB4_MS_CM` 存在、`Usb4HostRouter`/`Usb4DeviceRouter` 服务在 | **开机：OS 侧 CM 一绑定就拆建**（Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块） | **开机即丢**。[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102：交棒后、POST 交 OS 后、乃至已启动的无驱动 Linux 里金丝雀都 `intact`、门 `0xffffffff`——丢只丢在 CM 拆建那几秒 |
 | TB4 设备接在 USB4 主机上（向下兼容） | 同 USB4 行 | 同上 | 同上 |
 
-依据（上表即本仓全部已知的雷电/USB4 实验数据点）：维护者 G614JV（JHL8540 = 雷电 4 主机芯片 + TB3 坞，ATX 强制供电，首开保留/重插域复位）；[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74) 的 PHN16-72（BIOS `Firmware CM Only` + TB4 坞强制供电，系统内 `UNLOCKED`）；Ambolio（ASMedia 芯片但被 MS CM 绑定，开机丢、抑制后留）；GWASDW123（Intel 集成 USB4 + TB3 坞，同前，另测**时序路线无效**——把两路由提前到内核早期、隧道窗口 8.06 s→4.31 s 解锁照样丢，丢锁只看"拆建是否发生"不看"多晚"）；Linux 三轮（`thunderbolt` 模块拆建 / `host_reset=0` 抑制）。
+依据（上表即本仓全部已知的雷电/USB4 实验数据点）：维护者 G614JV（JHL8540 = 雷电 4 主机芯片 + TB3 坞，ATX 强制供电，首开保留/重插域复位）；[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74) 的 PHN16-72（BIOS `Firmware CM Only` + TB4 坞强制供电，系统内 `UNLOCKED`）；Ambolio（ASMedia 芯片但被 MS CM 绑定，开机丢、抑制后留）；GWASDW123（Intel 集成 USB4 + TB3 坞，同前，另测**时序路线无效**——把两路由提前到内核早期、隧道窗口 8.06 s→4.31 s 解锁照样丢，丢锁只看"拆建是否发生"不看"多晚"）；Linux 三轮（`thunderbolt` 模块拆建 / `host_reset=0` 抑制）。**#54 与 #74 均已关闭 completed（2026-11-07）**——后续新的主机形态或丢失形态开新帖，附 `USB4:` 行与金丝雀读数。
 
 **维护者结论（2026-11-06）**：有独立雷电 host 芯片（如 JHL8xxx）+ 坞强制 ATX 上电 → 雷电 3、4 都能保留；USB4 与 USB4 兼容模式下的雷电 4 → 开机即丢，按下面的抑制配方处理。三个必须带上的限定：①判别变量是**绑定哪个 CM 栈**，不是"有没有独立芯片"——ASMedia 是独立芯片但被 MS `usb4hostrouter.inf` 绑定，照样拆建；独立雷电芯片也可能被 BIOS 设成 OS CM 模式，所以以"Intel 雷电控制面板 vs USB4 路由节点/`USB4:` 行"为准。②PHN16-72 那台的抑制状态未记录；若同为 `Firmware CM Only` 则本就无需抑制。③Linux 侧 `thunderbolt` 内核 CM 对所有主机形态都接管（Run A），同样只有 `host_reset=0` 一条路。
 
@@ -402,7 +402,7 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 
 **取证方法（eGPU 报告者可直接照抄）**：chain 到 Linux live USB，`modprobe.blacklist=nouveau,thunderbolt`，用 `tools/diag-unlock.py` 在无驱动环境读回；rEFInd 顶掉 ISO 自带 GRUB 可绕开机介质陷阱，Secure Boot 全程开着也能链过去，不必为此关它。完整读数与阴性对照见 `docs/evidence/issue54-tb4-4090-linux-router-reset/`。
 
-Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。**回锁值本身不是失败**：实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差——`1e04` 22G 改装卡（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)）实测过 `fully closed 0xffffff8f` 且 SS 仍持解锁值，`8f` 本身不作失败判读，看同一行的 `ss0/ss1`。`HANDOFF-OUT` 里 `tu10x: plm=0xffffffef` 配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 就是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
+Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。**回锁值本身不是失败**：实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差——`1e04` 22G 改装卡（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)）实测过 `fully closed 0xffffff8f` 且 SS 仍持解锁值，`8f` 本身不作失败判读，看同一行的 `ss0/ss1`。`HANDOFF-OUT` 里 `tu10x: plm=0xffffffef` 配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 就是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)；#54/#74/#102 均已关闭 completed）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
 
 <a id="secureboot"></a>
 
