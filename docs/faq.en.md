@@ -690,6 +690,20 @@ Check in this order and stop at the first hit:
 3. **You entered through a non-`UEFI:` entry (CSM).** Pick the `UEFI:`-prefixed entry and turn Fast Boot off.
 4. Still no `loader.log` with all of the above correct: try another USB port (prefer a rear onboard one) and another stick; if it still fails, report the board model and BIOS version.
 
+### There is a `loader.log`, but it is 0 bytes
+
+**Do not infer the death point from the byte count.** On a number of firmwares (measured repeatedly on AMI/Insyde boards) `Flush()` does **not** commit the FAT directory entry - only `Close` does. So on those boards "file created, 0 bytes" means **this log was never Closed**, not that execution stopped at some line: dying at the confirmation prompt, dying in the preparation stage, or even finishing the transaction without reaching the teardown all look identical.
+
+- [#170](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/170): a full disk image parsed by BPB, scanning the FAT cluster chain, recovered two complete 261-line logs from a file that read as 0 bytes - the transaction had actually passed detach, AUTH-SCAN, the scrubber and the WPR2 layout while the screen had already frozen. That is what retired the "hangs at DETACH" reading.
+- [#198](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/198): a newer build that commits the directory entry at creation had its **reopen fail** on such firmware, so the logger degraded to console-only for the whole run and the file stayed empty, while the older build on the same machine (single handle, `Flush`, one `Close` at handoff) wrote 47-56 KB normally.
+
+So the order of work is:
+
+1. **Do not try to fix it with `\tx-flush-lines.txt`** - that knob changes flush cadence, not who commits the directory entry.
+2. Run a build that `Close`s at every commit point (`2.1.11-diag3` onwards; `diag4/diag5` instrument the ignition stages too), and the log will stop at the real last line.
+3. If you already have a 0-byte file, recover the body from a full disk image with the cluster scan in #170; when the body only ever existed on the console, a screen photo or serial capture is evidence too.
+4. When reporting, include the build version and SHA - the same "0 bytes" means different things on old and new builds.
+
 Failures that happen after the stick boots and logs are transaction problems - see [recovery](#recovery).
 
 ### Two ESPs, and the chain lands on the dead one (`0xc000000f` / `0xc0000225`)
