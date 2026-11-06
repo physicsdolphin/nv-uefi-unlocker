@@ -1,0 +1,67 @@
+{
+  "benchmark_version": 2,
+  "cache_policy": "keep_alive=0, explicit unload before every measured request",
+  "label": "unlocked-low",
+  "date_utc": "2026-11-05T22:06:52.137046+00:00",
+  "host": "lenovollm",
+  "kernel": "6.8.0-147-generic",
+  "model": "qwen3.5:4b",
+  "context_size": 8192,
+  "output_limit": 192,
+  "fixture": "synthetic OTA logs, 150 entries; per-run nonce at start",
+  "gpu_after": {
+    "query": "NVIDIA GeForce RTX 2070 Super with Max-Q Design, 0x1ED110DE, 595.99.02, 55, P0, 1755 MHz, 4004 MiB, 77.47 W",
+    "gsp": "GSP Firmware Version                               : 595.99.02"
+  },
+  "kernel_cmdline": "BOOT_IMAGE=/vmlinuz-6.8.0-147-generic root=/dev/mapper/ubuntu--vg-ubuntu--lv ro",
+  "samples": [
+    {
+      "run": 1,
+      "prompt_tokens": 4098,
+      "cached_prompt_tokens": 0,
+      "uncached_prompt_tokens": 4098,
+      "generated_tokens": 192,
+      "prompt_eval_ns": 1918317000,
+      "generation_ns": 2882020000,
+      "load_ns": 2145469790,
+      "total_ns": 6974801176,
+      "uncached_prefill_tokens_per_sec": 2136.247554496989,
+      "generation_tokens_per_sec": 66.61994018084538,
+      "wall_seconds": 6.988,
+      "done_reason": "length"
+    },
+    {
+      "run": 2,
+      "prompt_tokens": 4098,
+      "cached_prompt_tokens": 0,
+      "uncached_prompt_tokens": 4098,
+      "generated_tokens": 192,
+      "prompt_eval_ns": 1927877000,
+      "generation_ns": 2891264000,
+      "load_ns": 2169368264,
+      "total_ns": 7019258150,
+      "uncached_prefill_tokens_per_sec": 2125.654281886241,
+      "generation_tokens_per_sec": 66.40694173897644,
+      "wall_seconds": 7.033,
+      "done_reason": "length"
+    },
+    {
+      "run": 3,
+      "prompt_tokens": 4098,
+      "cached_prompt_tokens": 0,
+      "uncached_prompt_tokens": 4098,
+      "generated_tokens": 192,
+      "prompt_eval_ns": 1931079000,
+      "generation_ns": 2896476000,
+      "load_ns": 2166159873,
+      "total_ns": 7022248108,
+      "uncached_prefill_tokens_per_sec": 2122.129648761133,
+      "generation_tokens_per_sec": 66.28744722897756,
+      "wall_seconds": 7.035,
+      "done_reason": "length"
+    }
+  ],
+  "median_uncached_prefill_tokens_per_sec": 2125.65,
+  "median_generation_tokens_per_sec": 66.41,
+  "note": "Ollama did not return prompt_eval_cached_count, so this version cannot compute a reliably cache-adjusted prefill rate; model was explicitly unloaded each run."
+}

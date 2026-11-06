@@ -67,6 +67,50 @@ GA106 卡在库未采样，本节待实机后补。
 | PSTRAPS SET0/SET1 | 0x00400080 / 0x02013000 | straps BAR1=64MiB；活窗 256MiB（枚举期 CTRL 写，见 #12） |
 | NV_PROM 64KiB | crc32 0x63d10fc1，magic 0xeb7faa55 | 本卡身份指纹 |
 
+## TU104（RTX 2060 KO，10de:1e89）——社区只读熔丝图（issue #187，2026-11-05）
+
+非本机；EVGA 2060 KO（06G-P4-2068，TU104 A1，VBIOS `90.04.63.40.55`）、ASUS TUF
+B450-PLUS GAMING + R7 3700X（无 iGPU，本卡带显示）。SystemRescue 13.02（6.18.41-lts）、
+nouveau 绑定态、`resource0` 只读 + `PROT_READ` mmap、32 位对齐读、零写入。
+**条件限定**：这是驱动已绑定、GPU D0 的读点（`runtime_status=active`，PGRAPH 已上电），
+不是 pre-driver 冷采样；熔丝块本身是 boot-static，故数值等同于冷值，但调用链上它仍是"在线读"。
+
+**为什么值得单列**：这是本仓第一份 Turing die 的 floorsweep 熔丝图。TU104 上
+`0x021xxx` 块的地址与 Ampere `gv11b` 命名表逐一对应，统一差 **−0x7FF000**（下表右列）；
+报告还另用 GR 拓扑（`0x409604`、`GPC_UNIT(g,0x2608)`）做交叉验证，两源逐项吻合。
+
+| 寄存器（gv11b 名） | gv11b 地址 | −0x7FF000 | 本卡实测 | 值 / 解读 |
+|---|---|---:|---:|---|
+| STATUS_OPT_GPC | 0x820c1c | 0x21c1c | 0x021c1c | `0x8` → 物理 GPC3 熔断（TU104 满配 6 GPC） |
+| STATUS_OPT_TPC_GPC(0..2) | 0x820c38+4g | 0x21c38+4g | 0x021c38/3c/40 | 全 `0x31` → 每 GPC 的 TPC0 熔断 |
+| STATUS_OPT_TPC_GPC(3) | 同上 | 同上 | 0x021c44 | `0x3f` → 整个 GPC3 关（含不存在的 TPC4/5） |
+| STATUS_OPT_TPC_GPC(4,5) | 同上 | 同上 | 0x021c48/4c | 全 `0x31`，与 GPC0-2 同形 |
+| CTRL_OPT_TPC_GPC(0..5) | 0x820838+4g | 0x21838+4g | 0x021838+4g | 全 `0x0` → 无活覆盖 |
+| STATUS_OPT_FBIO | 0x820c14 | 0x21c14 | 0x021c14 | `0x4` → FBIO2 关 |
+| STATUS_OPT_FBP | 0x820d38 | 0x21d38 | 0x021d38 | `0xf4`（bits 2,4,5,6,7）→ 5 个 FBP 关，3 个活 |
+| STATUS_OPT_ROP_L2_FBP(0..3) | 0x820d70+4f | 0x21d70+4f | 0x021d70+4f | `0x0/0x0/0x3/0x0` → FBP2 的 ROP/L2 切片关 |
+| OPT_FEATURE_FUSES_OVERRIDE_DISABLE | 0x8203f0 | 0x213f0 | 0x0213f0 | **`0x0`——覆盖总开关未烧，解锁域存在** |
+| OPT_PRIV_SEC_EN | 0x820434 | 0x21434 | 0x021434 | `0x1`，特权安全态 |
+| OPT_SEC_DEBUG_EN | 0x820218 | 0x21218 | 0x021218 | `0x1` |
+| GR 拓扑 0x409604 | — | — | 0x06030005 | 5 个活 GPC / 3 个 ROP 分区（与熔丝互证） |
+| GPC_UNIT(g,0x2608) g=0..4 | — | — | 3,3,3,3,3 | 15 个活 TPC = 30 SM = 1920 CUDA |
+| PMC_BOOT_0 / PMC_ENABLE | — | — | 0x164000a1 / 0xd0fdd1c1 | TU104 A1；PGRAPH 已上电（在线读的特征） |
+
+**解码口径**：`STATUS_OPT_TPC_GPC` 的置位=该 TPC 被关（与 gpcprobe 的 GA100 语义一致：
+整 GPC 关时读出 `0xff`）。Turing 上该寄存器是 **6 位宽**（TU102 每 GPC 6 TPC），TU104 每
+GPC 只有 4 个 TPC，**bit4/bit5 恒置位**，只有低 4 位有信息。本卡 floorsweep = GPC3 整关
+（4 TPC）+ 其余 5 个 GPC 各关 TPC0（5 TPC）= 关 9 TPC = 18 SM，48−18=30 SM。
+同一 TPC0 在五个活 GPC 上同关，形态更像配置切割而非逐 die 修补；熔丝不区分二者。
+显存侧 FBP2 + FBIO2 关 + ROP/L2 `0x3` 自洽：192-bit、48 ROP、3 MB L2（KO PCB 上对应
+GDDR6 焊位空置）。**`1e89` 是 2060 SKU 用 TU104 die 的"大 die 降配"特殊品，与 #137 同卡型。**
+
+**一个否定结果是假的**：报告的 `EN_SW_OVERRIDE` / `DIS_SW_OVERRIDE` 猜测用了 −0x800000
+的基址（读 0x021040 / 0x021084，均 `badf5040`），而实测通过的九个寄存器全部走 −0x7FF000——
+两个猜测地址各偏 +0x1000。因此 `0x021084=badf5040` **不构成"Turing 无此寄存器"的证据**，
+应重试的候选址：`0x020040`（EN）/`0x020084`（DIS）/`0x0205c4`（OPT_GPC_DEFECTIVE）/
+`0x020350`（OPT_GPC_DISABLE）。Turing 侧这三类地址尚无任何一手头文件可核（本仓 reference/
+只有 Ampere/Blackwell 的公开 swref），上面的 −0x7FF000 关系是**实测归纳**，不是源码事实。
+
 ## AD107 台式（RTX 4050 LP，10de:28e1）——社区采样（issue #1，2026-10-26）
 
 非本机实测：报告者 U 盘 `\loader.log` 的 SAMPLE 段（AMD 台式机 + 15bf iGPU，
