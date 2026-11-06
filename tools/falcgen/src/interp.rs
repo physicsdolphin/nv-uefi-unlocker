@@ -134,12 +134,15 @@ impl Interp {
         // fires FWSEC before the booter; the poll at 0x358 waits for
         // bit8 of [0x10100] to clear — the FWSEC-completion flag).
         self.io_reads.push((0x10100, 0x1000));
-        // IO 0xd000/0xd400/0xd500 = the loader->booter command mailboxes
-        // (0x8235 = "read IO[$r10] and deliver via the canary block into
-        // $r10"). The booter spins at 0x9c8 until the loader pushes a
-        // non-zero command; the real loader writes the boot parameters
-        // here. Seed non-zero triggers, refine as the flow reveals their
-        // semantics.
+        // IO 0xd000/0xd400/0xd500 = the GetParam channel (0x8235 = "read
+        // IO[$r10] and deliver via the canary block into $r10"): $r10 = the
+        // id, the polled value = the response. The id table (docs/
+        // tu10x-round3-conclusions.md): 0xa-0xe = enables (ctx+0x818/81a/
+        // 814/816/81c, must read 1), 0x11 = the expected-values table
+        // (ctx+0x820), 0x6/7/8/9 = the signature blob halves (ctx+0x414/
+        // 614/14/214, <=0x200 each), 0xf = the expected-values audit.
+        // The enables respond 1; the expected-values/sig responses are
+        // planted as the flow requests them.
         self.io_reads.push((0xd400, 0x1));
         // IO 0xd500: the booter caches its read into DMEM[0xd500] (the st
         // at 0x9f5 with $r0 leaked from the canary block) and the caller's
