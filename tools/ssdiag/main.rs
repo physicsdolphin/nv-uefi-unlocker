@@ -1,4 +1,7 @@
-//! ssdiag v0.6.13 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.6.14 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.6.14 adds a reference-map line to the TPC block: a STATUS vector
+//! byte-identical to the two independent RTX 3070 samples (#169/#54) prints
+//! the match, so future reports self-classify as standard binning.
 //! v0.6.13 adds the read-only `USB4:` block (issue #54): both Microsoft
 //! connection-manager service start types plus the USB4 devnode IDs, and a
 //! verdict on whether the device-router takeover reset is suppressed. The
@@ -2296,9 +2299,11 @@ fn dump_tpc(rd: &dyn Fn(u32) -> u32) {
     println!("--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---");
     let mut off_total = 0u32;
     let mut off_mask = 0u32;
+    let mut statuses = [0u32; TPC_MAX_GPC as usize];
     for gpc in 0..TPC_MAX_GPC {
         let ctrl = rd(TPC_CTRL_BASE + gpc * 4);
         let status = rd(TPC_STATUS_BASE + gpc * 4);
+        statuses[gpc as usize] = status;
         let b = badf_bucket(status);
         let (note, n) = match b {
             Some(b) => (format!(" [{}]", red(b)), 0),
@@ -2343,6 +2348,16 @@ fn dump_tpc(rd: &dyn Fn(u32) -> u32) {
         println!(
             "  verdict: {off_total} TPC(s) fused off; affected GPCs also carry defect bits (mask {:#x})",
             def & off_mask
+        );
+    }
+    // Reference maps from the field (issue #169): byte-identical STATUS
+    // vectors seen on independent machines. Matching is on the vector alone
+    // so a future report self-classifies without a verdict re-derivation.
+    const RTX3070_MAP: [u32; TPC_MAX_GPC as usize] =
+        [0x30, 0x30, 0x30, 0x30, 0x31, 0x30, 0x3f, 0x00];
+    if statuses == RTX3070_MAP {
+        println!(
+            "  ref: STATUS vector matches the standard RTX 3070 (2484) binning map - byte-identical on two independent samples (#169 aston89, #54 GWASDW123); 19 TPCs off, 23 active = the 46-SM SKU"
         );
     }
 }

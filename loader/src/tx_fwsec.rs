@@ -969,6 +969,13 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
         info!(
             "FWSEC-TU10X: WPR2 never came up - lo={wpr_lo:#x} hi={wpr_hi:#x} CPUCTL={cpuctl:#010x} EXCI={exci:#010x} MAILBOX0={mbox0:#010x} scratch={scratch:#010x}"
         );
+        // The booter path (wpr_desc_rejected_hint) carries the full causes
+        // block; this path needs the same triage line, because with VT-d ON
+        // the failure lands HERE (the #74 three-death-shapes: a silent FWSEC
+        // image fetch) even though FWSEC staging is already LOW by default.
+        info!(
+            "FWSEC-TU10X: known causes (issue #74 four-cell matrix): 1) BIOS VT-d/IOMMU ON - it kills staging DMA in BOTH bands, turn it OFF first (SVM/AMD-V and Intel VT-x verified harmless); 2) a bridge on the path without bus master (see the DMA-PATH lines); 3) band problems are unlikely here - FWSEC staging is already LOW by default (\\tx-fwsec-high-staging.txt is ablation only)"
+        );
         let _ = dma.release(gpu.pci);
         return Err(TxError::EIO);
     }

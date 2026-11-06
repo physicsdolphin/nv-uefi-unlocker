@@ -327,9 +327,11 @@ def dump_tpc(bar):
     print("  --- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---")
     off_total = 0
     off_mask = 0
+    statuses = []
     for gpc in range(TPC_MAX_GPC):
         ctrl = bar.rd(TPC_CTRL_BASE + 4 * gpc)
         status = bar.rd(TPC_STATUS_BASE + 4 * gpc)
+        statuses.append(status)
         b = badf_bucket(status)
         if b:
             note = f" [{b}]"
@@ -356,6 +358,12 @@ def dump_tpc(bar):
     else:
         print(f"  verdict: {off_total} TPC(s) fused off; affected GPCs also carry defect bits"
               f" (mask {defv & off_mask:#x})")
+    # Reference map from the field (issue #169): byte-identical STATUS vectors
+    # seen on independent machines, so a future report self-classifies.
+    if statuses == [0x30, 0x30, 0x30, 0x30, 0x31, 0x30, 0x3F, 0x00]:
+        print("  ref: STATUS vector matches the standard RTX 3070 (2484) binning map"
+              " - byte-identical on two independent samples (#169 aston89, #54 GWASDW123);"
+              " 19 TPCs off, 23 active = the 46-SM SKU")
 
 
 def badf_bucket(v):
