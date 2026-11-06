@@ -360,6 +360,16 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 
 **不能——只要 OS 的连接管理器完成接管。** 判据从"可能被复位"改成"接管即复位"：USB4/雷电的**设备路由器侧**驱动一绑定（Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块的同一半），就会拆掉并重建整棵下游总线，那一次总线复位把 AON 里的门与选择器一并清掉。不是卡、不是坞、不是固件：桌面 TB4 + AD102 实测，交棒后、POST 交 OS 后、乃至已经跑在一个启动完成的 Linux 里，金丝雀都还 `intact`、门仍 `0xffffffff`、`READOUT_1=0`；坏只坏在接管的那几秒（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)）。纯链路重训本身不复位端点，这是它与上面各行的区别。
 
+**主机侧先分型（先看绑定的是固件 CM 还是 OS 的 USB4 CM，这决定要不要抑制）**：
+
+| 主机形态 | 判别 | 初始接管复位？ | 依据 |
+|---|---|---|---|
+| **独立雷电 host 芯片 + 固件 CM**（Intel JHL8xxx 类；BIOS 里 `USB4 CM Mode = Firmware CM` 一类设置） | 设备管理器见 "Thunderbolt Controller"、无 `USB4\ROOT_*_ROUTER` 节点；`ssdiag ≥ 0.6.13` 的 `USB4:` 行报无 CM 服务 | **未观测到——首次开机即保留** | 维护者 G614JV（JHL8540 + TB3 坞，ATX 强制供电，TB3）；[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74) 的 PHN16-72（BIOS `Firmware CM Only` + TB4 坞强制供电，TB4，系统内 `UNLOCKED`）——两代各一台 |
+| **USB4 主机路由器**（集成的 Intel/AMD，或绑定 MS `usb4hostrouter.inf` 的独立芯片如 ASMedia） | `PCI\…&USB4_MS_CM` 存在、`Usb4HostRouter`/`Usb4DeviceRouter` 服务在 | **接管即复位** | Ambolio（ASMedia 芯片但走 MS CM）；GWASDW123（Intel 集成 USB4 + TB3 坞） |
+| TB4 设备接在 USB4 主机上（向下兼容） | 同 USB4 行 | 同上 | 社区实验结果：抑制有效（`Usb4DeviceRouter=4` / Linux `host_reset=0`） |
+
+**维护者结论（2026-11-06）**：有独立雷电 host 芯片（如 JHL8xxx）+ 坞强制 ATX 上电 → 雷电 3、4 都能保留；USB4 与 USB4 兼容模式下的雷电 4 → 接管即复位，按上面的抑制配方处理。逐条对账：上表即全部已知的雷电/USB4 实验数据点，目前**全部吻合**。三个必须带上的限定：①判别变量是**绑定哪个 CM 栈**，不是"有没有独立芯片"——ASMedia 是独立芯片但被 MS `usb4hostrouter.inf` 绑定，照样复位；独立芯片也能被 BIOS 设成 OS CM 模式，所以以 `USB4:` 行/设备管理器为准。②PHN16-72 那台的抑制状态未记录；若同为 `Firmware CM Only` 则本就无需抑制。③固件 CM 行的"保留"是**每次引导级**不是热插拔级（JHL8540 那台重插 TB3 线仍回锁），Linux 侧 `thunderbolt` 内核 CM 对所有主机形态都接管（Run A），同样只有 `host_reset=0` 一条路。
+
 **`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动绑定之前；接管之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让接管做那次复位"，而两个 OS 都已有实测可行的抑制：
 
 - **Linux**：内核命令行 `thunderbolt.host_reset=0`。已实测（#54 Run C）：模块照常加载、坞在雷电侧照常被发现，但不再出现 `pci_bus … is released`，层级不拆，金丝雀 `intact`、门 `0xffffffff`、`UNLOCKED`。
