@@ -1,8 +1,8 @@
-# 诊断构建协议：~~2.1.12-diag3 / 2.1.13-diag4~~ → 2.1.14-diag5（2026-11-05/06）
+# 诊断构建协议：~~2.1.12-diag3 / 2.1.13-diag4~~ → 2.1.11-diag5（2026-11-05/06）
 
 > **⚠️ 2026-11-06：diag3 与 diag4 已从 release 撤除（release 与 tag 均删）。**
 > 撤回原因：#170 报告者从 U 盘 FAT 簇链还原出两份完整 v2.1.10 日志，证明事务在 5.6s 完成 detach 并继续跑过 AUTH-SCAN、SEC2 scrubber（ETimeout，容忍）、WPR2 layout，证据停在 ~10.9s 的 `TX: layout ok`——**diag3/diag4 的判读前提"挂点在 DETACH 的 DisconnectController 段"不成立**（屏幕末行只是控制台拆除后的定格帧，不是执行终点），按其判读表排查会走错方向；diag4 对"首行前窗口"的推断也被同一证据推翻（0 字节/黑屏在 Flush 不提交目录项的固件上不可作窗口判据）。
-> 两版中仍然有效的机制（标记行关闭落盘、首行起逐行提交、`DIAG-CONSOLE`/`DIAG-BOOTVOL` 身份 dump、EARLY 枚举前移、拆挂前静音）**全部由 [2.1.14-diag5](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/tag/v2.1.14-diag5) 继承**，并把判读重新定向到 FWSEC 点火段。**现行协议 = §5（diag5）+ §1 通用纪律（含 FAT 簇链还原法，现为主判据之一）**；§2/§3 保留作历史记录，其判读表已失效，勿按其排查。
+> 两版中仍然有效的机制（标记行关闭落盘、首行起逐行提交、`DIAG-CONSOLE`/`DIAG-BOOTVOL` 身份 dump、EARLY 枚举前移、拆挂前静音）**全部由 [2.1.11-diag5](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/tag/v2.1.11-diag5) 继承**，并把判读重新定向到 FWSEC 点火段。**现行协议 = §5（diag5）+ §1 通用纪律（含 FAT 簇链还原法，现为主判据之一）**；§2/§3 保留作历史记录，其判读表已失效，勿按其排查。
 > 两个 issue 的四条推荐评论已原地 PATCH 加撤回横幅（历史未删）。
 
 > **2026-11-05 更新：`2.1.13-diag4` 已发布，请用 diag4。** #122 报告者自建 A/B 后，挂死窗口收窄到"日志文件已创建、首行落盘之前"一条约三条语句的窄带；diag4 把这条窄带本身变成可读记录：
@@ -128,7 +128,7 @@
 
 A/B 开关（每次冷启动只动一个，本地化之后再动）：GA10x 的 FWSEC staging 没有专用 marker（`\tx-fwsec-vram-staging.txt` 是 Turing 路径的），所以第一变量不是 staging；判读落在哪一段，再按该段开新变量。`scrubber did not complete (ETimeout)` 对 30 系**不是**判据（GA106 2504 全链成功轮同形态），不用为它做任何事。
 
-资产：`BOOTX64.EFI.2.1.14-diag5`（tx）。回收清单照 §1，另加：**请把两份还原日志、目录项原始 32 字节、78 个孤立簇清单与 diag4 轮的屏幕照片（banner 是否出现过）随下一轮一起附上**。
+资产：`BOOTX64.EFI.2.1.11-diag5`（tx）。回收清单照 §1，另加：**请把两份还原日志、目录项原始 32 字节、78 个孤立簇清单与 diag4 轮的屏幕照片（banner 是否出现过）随下一轮一起附上**。
 
 ## 6. 2026-11-06 勘误：#122 的 37 会话还原把死点指到日志管线
 
