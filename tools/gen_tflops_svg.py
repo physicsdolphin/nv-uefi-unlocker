@@ -19,8 +19,8 @@ SRC = ROOT / "docs" / "tools" / "tflops-ceiling.html"
 PRECISIONS = {
     "fp32": ("f", "FP32", ("CUDA cores · shipped at full speed, unlock changes nothing",
                            "CUDA 核 · 出厂即全速，解锁不改变")),
-    "tf32": ("t", "TF32", ("Tensor cores · 30-series ships full speed, 40-series is halved",
-                           "张量核 · 30 系出厂即全速，40 系出厂被砍半")),
+    "tf32": ("t", "TF32", ("Tensor cores · 30/40-series both ship at 1× FP32, unlock is 2×",
+                           "张量核 · 30/40 系都出厂砍到 1× FP32，解锁才回 2×")),
     "fp16": ("h", "FP16", ("Tensor cores · FP32 accumulate · halved from factory",
                            "张量核 · FP32 累加 · 出厂被砍半")),
     "bf16": ("b", "BF16", ("Tensor cores · FP32 accumulate · halved from factory",
@@ -37,7 +37,7 @@ TEXT = {
         "hidden": "……{n} more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html",
         "f1": "value = SM × FMA/SM/clk × 2 × boost clock; unlock restores the whitepaper rate (×2 on clamped paths)",
         "f2": "real results land lower: power limits, memory bandwidth and library routing each take a cut",
-        "f3": "† 30-series TF32 ships unclamped · desktop consumer only; laptops, pro, datacenter and RTX 50 rows are interactive-only",
+        "f3": "consumer 30/40-series TF32 is factory-clamped too (measured 2026-11-06) · desktop consumer only; laptops, pro, datacenter and RTX 50 rows are interactive-only",
         "aria": "Theoretical post-unlock ceiling chart · {label}",
     },
     "zh": {
@@ -46,8 +46,8 @@ TEXT = {
         "legend": "灰 = 出厂（钳制） · 彩 = 解锁后理论上限 · 峰值 {peak:.1f} TFLOPS",
         "hidden": "……另有 {n} 款未画出，完整可交互版见 docs/tools/tflops-ceiling.html",
         "f1": "值为 SM × 每 SM 每时钟 FMA × 2 × 加速频率；解锁 = 恢复白皮书全速，钳制路径 ×2",
-        "f2": "实际到手低于此值：功耗墙、显存带宽、库路由各自打折 · † 30 系 TF32 出厂未被钳制",
-        "f3": "仅列桌面消费卡；笔记本、10/16 系、专业卡、数据中心与 50 系对照行见交互版",
+        "f2": "实际到手低于此值：功耗墙、显存带宽、库路由各自打折 · 消费 30/40 系 TF32 同被出厂钳制（2026-11-06 实测）",
+        "f3": "消费 30/40 系 TF32 同样被出厂钳制（2026-11-06 实测）· 仅列桌面消费卡；笔记本、10/16 系、专业卡、数据中心与 50 系对照行见交互版",
         "aria": "理论解锁上限天梯图 · {label}",
     },
 }
@@ -124,7 +124,7 @@ def render(precision: str, top: int, lang: str) -> str:
         out.append(f'<text class="mut" x="34" y="{y + 12}" font-size="11" text-anchor="end">{i + 1}</text>')
         name_s = r["n"].replace("GeForce RTX ", "RTX ")
         name = escape(name_s)
-        suffix = " †" if precision == "tf32" and gen == "30" else ""
+        suffix = " †" if precision == "tf32" and (r.get("ref") or gen == "50") else ""
         x_name = 44 + 7.2 * len(name_s) + 6
         label = f"{r['c']} · {r['s']} SM{suffix}"
         if text_width(label) <= tx0 - 8 - x_name:

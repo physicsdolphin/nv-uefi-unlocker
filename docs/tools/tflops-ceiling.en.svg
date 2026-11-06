@@ -134,5 +134,5 @@
 <line class="brd" x1="20" y1="560" x2="700" y2="560"/>
 <text class="mut" x="20" y="574" font-size="11">value = SM × FMA/SM/clk × 2 × boost clock; unlock restores the whitepaper rate (×2 on clamped paths)</text>
 <text class="mut" x="20" y="590" font-size="11">real results land lower: power limits, memory bandwidth and library routing each take a cut</text>
-<text class="mut" x="20" y="606" font-size="11">† 30-series TF32 ships unclamped · desktop consumer only; laptops, pro, datacenter and RTX 50 rows are interactive-only</text>
+<text class="mut" x="20" y="606" font-size="11">consumer 30/40-series TF32 is factory-clamped too (measured 2026-11-06) · desktop consumer only; laptops, pro, datacenter and RTX 50 rows are interactive-only</text>
 </svg>

@@ -52,7 +52,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 - 每 SM：4 分区 × {32 FP32 + 1× 三代张量核}，FP64 ×2（[GA102 白皮书](https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.1.pdf)、[Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html)：CC 8.6 的 FP32 吞吐是 CC 8.0 的 2×/SM）。
 - 每时钟每 SM：FP32 128 FMA；张量 FP16acc 256 半字 FMA；TF32 128；INT8 IMMA 512；FP64 1 FMA（≈FP32 的 1/64，**架构性**，消费/专业同）。
-- 自验算（3090 · 82 SM · 1.71 GHz）：82 × 256 × 2 × 1.71 ≈ 71.5 TF ✓ = 白皮书 FP16acc 71 dense；FP32acc 35.3 dense = ×0.5 **白皮书直接写明消费减半**；INT8 284 TOPS = 2× FP16acc（全速）；TF32 35.6 = 架构速率（标准 30 系出厂全速）；FP64 0.56。
+- 自验算（3090 · 82 SM · 1.71 GHz）：82 × 256 × 2 × 1.71 ≈ 71.5 TF ✓ = 白皮书 FP16acc 71 dense；FP32acc 35.3 dense = ×0.5 **白皮书直接写明消费减半**；INT8 284 TOPS = 2× FP16acc（全速）；TF32 35.6 = 架构 2×FP32 的出货半速（30 系标准卡同样出厂钳制，#194 实测 3070 Ti 17.0→37.5 解锁翻倍）；FP64 0.56。
 - 熔丝签名：`FEAT_READOUT_1 = 0x00400080`。
 
 ### 3.3 Ada（AD10x · CC 8.9 · RTX 40）
@@ -75,7 +75,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 这张表是全文的锚：**钳制精确到「张量路径 × 累加模式」，CUDA 核与整数张量路径完全无关。**
 
-桌面侧（2684 · 三份独立 cuBLAS 数据：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) 两位报告者 + [#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)）补齐了 Ada 桌面的逐路径谱：**TF32 per-clock 243–247 → 477–493 FLOP/clk/SM（= 512 满速的 93–96%，+96~100%，三尺寸稳定）**——TF32·FP32acc 在 40 系标准桌面卡出厂即钳制 ×0.5（30 系是全速出货，逐代差异）。据此修正白皮书语义：Ada 白皮书 TF32 82.6 是**出货钳制值**而非架构速率（CUDA guide CC 8.9 TF32 = 256 results/clk/SM = 架构值），GeForce「TF32 = FP32 速率」的著名怪象即这把锁的可见形态。FP16/BF16·FP32acc 的 cuBLAS 行为受框架路由支配（见 §5、§7），裸管线在 2684 上尚未被直接测过。
+桌面侧（2684 · 三份独立 cuBLAS 数据：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) 两位报告者 + [#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)）补齐了 Ada 桌面的逐路径谱：**TF32 per-clock 243–247 → 477–493 FLOP/clk/SM（= 512 满速的 93–96%，+96~100%，三尺寸稳定）**——TF32·FP32acc 在 40 系标准桌面卡出厂即钳制 ×0.5（30 系同锁：2026-11-06 由 #194 与本机 3080 12 GB 35→69 实测推翻旧「30 系全速」判断，「逐代差异」不成立）。据此修正白皮书语义：Ada 白皮书 TF32 82.6 是**出货钳制值**而非架构速率（CUDA guide CC 8.9 TF32 = 256 results/clk/SM = 架构值），GeForce「TF32 = FP32 速率」的著名怪象即这把锁的可见形态。FP16/BF16·FP32acc 的 cuBLAS 行为受框架路由支配（见 §5、§7），裸管线在 2684 上尚未被直接测过。
 
 ### 3.4 同代笔记本与台式同构
 
@@ -92,7 +92,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 | **FP16** | HMMA.16816.F32（FP32acc，cuBLAS 默认 hgemm）；HMMA.16816.F16（FP16acc）；HFMA2（CUDA 核半字） | 二至四代张量核 | **FP32acc ×0.5**；FP16acc 无 | 2×（仅 FP32acc 路径） | 1.47–2.0×（#14/#103/2504/2702/2757） |
 | **BF16** | HMMA BF16·FP32acc | 三/四代张量核（SM80+） | **×0.5**（移动端实测；桌面 2684 出厂即满速，#80——见 §8 开放项） | 2× | 1.98×（2757）；1.57×（28e0 热限）；**1.00×（2684 双态一致）** |
 | **INT16** | 标量 INT MAD（无张量路径） | INT32 CUDA 核 | 无 | 1× | — |
-| **TF32** | HMMA TF32（19-bit，FP32acc） | 三/四代张量核（SM80+） | 30 系无；**40 系标准卡 ×0.5（2026-11，#69/#80）**；异常形态有 | 30 系 1×；40 系 2× | +79.9%（3090 20GB 异常形态）；**1.96×（2684 定频，#80）+ per-clock 翻倍（#69）** |
+| **TF32** | HMMA TF32（19-bit，FP32acc） | 三/四代张量核（SM80+） | **30/40 系标准卡 ×0.5（40 系 2026-11 #69/#80；30 系 2026-11-06 #194 + 本机 3080 12G）**；异常形态有 | 2× | +79.9%（3090 20GB 异常形态）；**1.96×（2684 定频，#80）+ per-clock 翻倍（#69）**；2.20×（3070 Ti #194）；约 2×（3080 12G 35→69） |
 | **FP32** | FFMA / FMLA32 | FP32 CUDA 核 | 无（**CMP 矿卡 ÷32 才有**） | 1×（CMP 32×） | — |
 | **INT32** | 标量 INT32 MAD（TIPS 口径） | INT32 CUDA 核 | 无 | 1× | — |
 | **FP64** | DGEMM | FP64 专用核（2/SM） | 无 | 1×（吞吐架构性 = FP32 的 1/32（TU10x）或 1/64（GA10x/AD10x）） | — |
@@ -143,7 +143,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 ## 8. 开放项（如实记录）
 
 - Turing 的 FP16·FP16acc 对照组实验尚未做（模型预测：全速、无感）；Turing INT8 张量对照同样未测。
-- ~~Ada/GA10x 的 TF32 全速出货判断……标准卡 TF32 前后对照仍缺~~ → **已回答（2026-11-02，#69/#80）：GA10x 维持全速出货判断；40 系标准桌面卡 TF32 出厂钳制 ×0.5**（2684 定频 1.96×、per-clock 243→489 三尺寸稳定）；逐代差异已记入 §4/§6。
+- ~~Ada/GA10x 的 TF32 全速出货判断……标准卡 TF32 前后对照仍缺~~ → **已回答（2026-11-02，#69/#80）：40 系标准桌面卡 TF32 出厂钳制 ×0.5**（2684 定频 1.96×、per-clock 243→489 三尺寸稳定）；**“GA10x 全速”已于 2026-11-06 被推翻**：#194 的 3070 Ti 17.0→37.5（2.20×）与本机 3080 12 GB 约 35→69 证明 30 系同一把锁，逐代差异不成立，§4/§6 已改按钳制记。
 - **2684 桌面 BF16·FP32acc 出厂即满速且解锁无感**（#80：506–507 FLOP/clk/SM = 512 类架构值 99%，双态一致）与 2757/28e0 的钳制（1.98×/+56.9%）冲突——逐 die/SKU 分箱 vs instrument，判别 = 2684 跑 mma_bench。
 - **cuBLAS COMPUTE_32F FP16/BF16 行的 FP8 路由机制未文档化**（§5 第三条）——判别 = cuBLASLt log 看 dispatch kernel 名；若证实，README/FAQ 需加「框架口径 vs 裸管线口径」注。
 - **解锁后 F32acc 半精度行 realized 60–76% 未达 fp16acc parity**（N 正相关、无硬 cap）的成因（kernel 实现率/管线属性/路由）——判别 = 2684 mma_bench N-sweep（2757 裸管线已证 parity）。
