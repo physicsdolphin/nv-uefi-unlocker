@@ -370,6 +370,8 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 
 From ssdiag 0.6.13 a `USB4:` block prints both service `Start` values and the USB4 nodes, so a report carries its own configuration.
 
+**The timing route is excluded** (#54, 2026-10-30 round, measured by `GWASDW123`): moving both router services into early kernel boot — `Start=0` plus `Group=Boot Bus Extender` (`Usb4DeviceRouter` originally sits in the `Base` group, position 43 in `ServiceGroupOrder`; changing `Start` alone does not change the load order) — compressed the tunnel-establishment window from +8.06 s after boot to +4.31 s and moved the GPU bind 3.8 s earlier; both services ran, the eGPU enumerated normally, and **the unlock was still lost** (gate back at `0xffffff8f`, SS zeroed). So the loss does not depend on *how late* the takeover happens, only on *whether it happens*: compressing the unprotected window has no escape path, and the only out is stopping the device router from performing the takeover (the suppression above). Same root as "`--reapply` is structurally dead" — an early takeover and a late one are the same reset.
+
 An [in-OS read-only check](#ssdiag) is still the first step, but the reading changes:
 
 - Canary `intact`, gate still open: no takeover yet, or it was suppressed - the unlock is live.

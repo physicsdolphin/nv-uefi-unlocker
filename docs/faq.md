@@ -380,6 +380,8 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 
 `ssdiag` 0.6.13 起会打印 `USB4:` 行（两个服务的 `Start` 与 USB4 节点），报告自带配置，不必口述。
 
+**时机路线已被排除**（#54，2026-10-30 轮，`GWASDW123` 实测）：把两个路由器服务提前到内核早期——`Start=0` + `Group=Boot Bus Extender`（`Usb4DeviceRouter` 原在 `Base` 组、`ServiceGroupOrder` 第 43 位，只改 `Start` 不会改变加载序）——隧道建立窗口从开机后 +8.06 s 压到 +4.31 s、GPU 绑定提前 3.8 s，两个服务照常 RUNNING、eGPU 正常枚举，**解锁照样丢**（门回 `0xffffff8f`、SS 清零）。所以丢锁与"接管多晚"无关，只与"接管发生了"有关：压缩 unprotected 窗口没有逃逸路径，唯一出路就是不让设备路由器做那次接管（上面的抑制）。这也与"`--reapply` 结构性无效"同源——早接管晚接管都是那次复位。
+
 进入系统后仍可先做 [只读检查](#ssdiag)，解读随之变化：
 
 - 金丝雀 `intact`、门仍开：接管尚未发生或已被抑制，解锁有效。

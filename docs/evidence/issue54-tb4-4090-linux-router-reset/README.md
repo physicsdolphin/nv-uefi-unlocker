@@ -139,6 +139,27 @@ behind Windows and cold-booted in the same run, so "`Usb4DeviceRouter` disabled
 is the necessary item" is not yet single-variable. The natural control is
 `Start=3` with everything else unchanged, expected to clear the canary.
 
+## Timing route excluded (2026-10-30, `GWASDW123`)
+
+Before the suppression existed, the suggested workaround was to shrink the
+unprotected window by loading both routers early. Changing `Start` alone is not
+enough — the service loader orders by `Group`, and `Usb4DeviceRouter` sat in
+`Base` (position 43 of `ServiceGroupOrder`), so both services were moved to
+`Start=0` + `Group=Boot Bus Extender`. Both ran, the eGPU enumerated normally
+(no Code 12/43), and the event timestamps moved as intended:
+
+| event | before | after | Δ |
+|---|---|---|---|
+| `Usb4DeviceRouter` (root node) | +2.258 s | +1.577 s | −0.7 s |
+| `Usb4DeviceRouter` (dock `15EF`) | +3.930 s | +3.004 s | −0.9 s |
+| tunnel pci devices START (4) | +8.058 s | +4.307 s | **−3.8 s** |
+| GPU bind | +8.795 s | +5.000 s | **−3.8 s** |
+
+The unlock was lost anyway (`FEAT_OVR_PLM=0xffffff8f`, SS `0x0/0x0`,
+`READOUT_1=0x00400080`). Compressing the tunnel-establishment window from 8.06 s
+to 4.31 s does not save it: the loss depends on *whether* the takeover happens,
+not on *when*. There is no timing-based escape; the only lever is suppression.
+
 ## Control round — the causality closes both directions
 
 `Start` back to `3`, everything else identical (same stick, chain →
