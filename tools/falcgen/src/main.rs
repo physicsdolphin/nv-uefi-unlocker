@@ -214,6 +214,8 @@ fn cmd_run(args: &[String]) {
             a += 4;
         }
     } else {
-        println!("io writes (first 40): {:?}", ip.io_writes.iter().take(40).map(|(a, v)| (format!("{a:#x}"), format!("{v:#x}"))).collect::<Vec<_>>());
+        let n = ip.io_writes.len();
+        println!("io writes: {} total; last 12: {:?}", n,
+            ip.io_writes.iter().rev().take(40).rev().map(|(a, v)| (format!("{a:#x}"), format!("{v:#x}"))).collect::<Vec<_>>());
     }
 }
