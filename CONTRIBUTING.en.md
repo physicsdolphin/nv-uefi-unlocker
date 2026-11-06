@@ -58,7 +58,7 @@ Two reminders:
 
 ## Boundaries for porting contributions
 
-Please don't submit cross-chip ports done by "changing ID constants" — per-chip geometry (booter size, gadget addresses, signature sections) differs every family, and changing constants is not a verified port. A cross-family port means re-extraction plus re-audit; opening an issue to discuss first is very welcome.
+Please don't submit cross-chip ports done by "changing ID constants" — per-chip geometry (booter size, gadget addresses, signature sections) differs per family, and changing constants is not a verified port. A cross-family port means re-extraction plus re-audit; opening an issue to discuss first is very welcome.
 
 ## Code of Conduct
 
