@@ -217,5 +217,14 @@ fn cmd_run(args: &[String]) {
         let n = ip.io_writes.len();
         println!("io writes: {} total; last 12: {:?}", n,
             ip.io_writes.iter().rev().take(40).rev().map(|(a, v)| (format!("{a:#x}"), format!("{v:#x}"))).collect::<Vec<_>>());
+        // stack-tail dump (the validator frames live at 0xff00+)
+        let mut a = 0xff00usize;
+        while a + 4 <= 0x10000 {
+            let v = u32::from_le_bytes(ip.dmem[a..a + 4].try_into().unwrap());
+            if v != 0 {
+                println!("  {a:#06x}: {v:#010x}");
+            }
+            a += 4;
+        }
     }
 }
