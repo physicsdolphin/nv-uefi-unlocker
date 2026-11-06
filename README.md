@@ -16,6 +16,8 @@
 
 解开 NVIDIA 显卡的 Tensor 计算性能限制。从 U 盘启动，解锁后自动进入 Windows 或 Linux 或任意操作系统，无需刷写 VBIOS；断电后恢复原状。
 
+**先看 → [常见问题](docs/faq.md)**（USB 文件放置 / 回锁与睡眠 / 雷电与 eGPU / Secure Boot / 安全约束——绝大多数操作问题已有答案；背景概念见 [什么是 UEFI / DXE / 链式引导](docs/faq.md#uefi-primer)）
+
 [观看项目宣传片 ↗](https://www.bilibili.com/video/BV1d6xN66ECM/)
 [官方视频：工具概览 ↗](https://www.youtube.com/watch?v=y11Pluqoqhg) · [完整实操走录 ↗](https://www.youtube.com/watch?v=hrw1KBTM1EQ)
 
@@ -45,17 +47,20 @@
 | 硬件型号 / 形态 | 社区报告的结果与条件 | 来源 |
 | --- | --- | --- |
 | RTX 2050 Laptop 4GB | EFI 全链通过且 Windows ssdiag 判 UNLOCKED（PLM 全开、SS 覆盖值在效）；初步 PyTorch 峰值 FP16 25.13 / BF16 25.33 TFLOPS，尚无严格锁定态 A/B | [#142](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/142) |
+| RTX 3050 Laptop 6GB（MUXless） | GA107 家族第二个 in-OS 机型：v2.1.10 全链 + Windows ssdiag `UNLOCKED`；同机 A/B FP16 16.03 → 29.14（**+82%**）、BF16 +75%、TF32 +72%、FP32 双对照平；**驱动 init 存活但 S3/S5 清除**——混合本按"每引导重跑"使用 | [#188](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/188) |
 | RTX 2060 12GB | 修复后通过；六轮单变量与 PROM 离线分析把 staging 钉在 4 GiB 边界（未给性能数值） | [#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) |
 | RTX 2060 Super 8GB | 全链通过：FWSEC → WPR2 → BOOT_DIRECT → PLM 开启 → SS0/SS1 读回；签名还原、Windows 交棒正常 | [#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12) |
 | RTX 2070 Laptop 8GB | v2.1.3 通过；首个 Turing 笔记本成功记录，跨芯片同签名推动 >4G 分配修复（未给性能数值） | [#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16) |
 | RTX 2070 8GB（开发者自测） | 全链通过（FWSEC → BOOT_DIRECT booter → PLM 全开 → SS0/SS1 读回）；FP32 累加 GEMM 36 → 60–63 TFLOPS（+67~75%），需 GSP 模式前置 | [最终结果](docs/evidence/m3-tu106/host-and-final-result.md) |
+| RTX 2070 Super Max-Q（笔记本） | 首个 `1ed1` in-OS：同盘两轮 A/B——默认 HIGH staging 必 0x89，`\tx-low-staging.txt` 后全绿；PyTorch FP16 26.63 → 35.15 TFLOPS（**+32%**），FP32 对照持平；Linux 专有驱动下 `UNLOCKED` | [#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191) |
 | RTX 2080 8GB | v2.1.8 修复后通过；报告者以 8 轮单变量和与成功机逐位 diff 定位 0x91（未给性能数值） | [#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62) |
 | RTX 2080 Super 8GB | 0x91 修复后复测通过：46 → 68 TFLOPS（+47.8%）；该修复链的首个成功验证 | [#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14) |
 | RTX 2080 Ti | 同卡精确 A/B：FP16（FP32 累加）持续 58.70 → 94.97 TFLOPS（+62%），每时钟 ×1.80，60 s 浸泡 0 停顿、无 TDR/WHEA；FP32/INT8/带宽不变（300 W 墙、GSP 开启）。另有原厂 11GB 在 Linux 专有驱动下 60.31 → 89.57 TFLOPS 的跨平台全链记录；H3 收益不明显 | [#125](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/125) · [#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103) · [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
 | RTX 2080 Ti 22GB 改卡 | 自述最后一次尝试成功；未给性能对比 | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
 | RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS；Anima 生图 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [截图](docs/community-success.md#s30) |
-| RTX 3060 Ti LHR | v2.1.0 全链通过：PLM `0xffffff8f` → `0xffffffff` 翻转读回（约 149 ms）、SS0/SS1 读回、Windows 交棒正常；跨厂刷映众冰龙 VBIOS（未给性能数值） | [#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11) |
+| RTX 3060 Ti（联想 OEM 整机） | 首个逐精度锁定态 A/B：FP16 30.25 → 56.41（1.86×，按钟 1.96×）、BF16 1.84×、TF32 1.85×，FP32 SIMT 对照 0.95–1.01× 平；锁定态恰为理论峰值的 46.7%——"钳制=恰一半"的正向实证。另有 v2.1.0 全链通过（PLM 翻转读回、跨厂刷映众冰龙 VBIOS） | [#199](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/199) · [#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11) |
 | RTX 3070 8GB（台式机） | USB 引导解锁成功、diag 确认且生成时间 −50%；机器休眠（S4）后 diag 显示 not_unlocked、生成时间回落。同型号另一份 v0.2.0 记录为 EFI 全链 + FLR 后选择器保留、但进 Windows 不保留 | [Discussion #129](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/129) · [#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) |
+| RTX 3070 Ti（台式机） | v2.1.10 全链 + **进 Windows 保留**（ssdiag 读回 PLM 开、SS 在效）；同脚本 A/B：FP16 33.69 → 71.99（**2.14×**）、BF16 2.09×、TF32 2.20×，FP32/带宽对照平——GA10x TF32 出厂同钳的桌面实测点 | [#194](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/194) |
 | RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS；150W VBIOS + 超频环境 | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [截图](docs/community-success.md#s12) |
 | RTX 3070 Ti Laptop | WMMA FP16 45.51 → 88.84 TFLOPS；cuBLAS FP16 基本不变 | [S36](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128) |
 | RTX 3080 10GB | 系统侧 UNLOCKED；FP16 53.91 → 84.60 TFLOPS | [S28](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704) · [截图](docs/community-success.md#s28) |
@@ -67,7 +72,7 @@
 | RTX 3080 Ti（形态未说明） | 截图 FP16 73.9 → 123.2，单位未标；FP32 对照基本不变 | [S48](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318960839137&comment_secondary_id=318960839137) · [截图](docs/community-success.md#s48) |
 | RTX 3090 | Qwen-Image2.1 Turbo BF16 每图接近 60 秒 → 22 秒（前值为约数） | [S49](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322473751376&comment_secondary_id=322473751376) |
 | RTX 3090 20GB OEM（本人标注） | FP16 77.36 → 115.20 TFLOPS；本人另报睡眠唤醒后失效 | [S46](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322654906480&comment_secondary_id=322654906480) · [截图](docs/community-success.md#s46) |
-| RTX 3090 Ti | H3 INT8 工作流同 418.5W，单条总耗时 123.47 → 108.08 秒 | [S25](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322309028240&comment_secondary_id=322309028240) · [截图](docs/community-success.md#s25) |
+| RTX 3090 Ti | v2.1.10 免 marker 全链 + **输出哈希级 A/B**（SM 1440→1015 MHz 同功耗做更多功）：BF16 **1.66×**、273 W 降压下 TF32 +58%/FP16 +44%、300 s 稳态 +38%；HWiNFO 对照解锁后无一更热。另有 H3 INT8 工作流同 418.5W，单条总耗时 123.47 → 108.08 秒 | [#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195) · [S25](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322309028240&comment_secondary_id=322309028240) · [截图](docs/community-success.md#s25) |
 | RTX 4050 Laptop 6GB | 成功自述；仅解锁后 FP16 39.15 TFLOPS，另有超频设置 | [S34](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322434523792&comment_secondary_id=322434523792) · [截图](docs/community-success.md#s34) |
 | RTX 4060 Laptop | 截图 FP16/FP32 累加 31.12 → 54.33（单位未标）；另有生图反馈 | [S01](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318379087793&comment_secondary_id=318379087793) · [S16](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318513166865&comment_secondary_id=318513166865) · [S42](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896) · [截图](docs/community-success.md#s16) |
 | RTX 4060 Ti 8GB | 首个 8GB `2803` 数据点：读回通过（PLM 开、SS0/SS1、READOUT_1=0）；cuBLAS 4096³ 中位 FP16 45.59 → 77.36（+69.7%）、BF16 45.64 → 77.74（+70.3%）、TF32 20.06 → 41.91（+108.9%），FP32 对照为噪声 | [PR #87](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/87) |

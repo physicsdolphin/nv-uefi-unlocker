@@ -2,6 +2,7 @@
 
 [中文](faq.md) | [English](faq.en.md) · [README](../README.en.md) · [Compatibility](compatibility.en.md)
 
+- [What are UEFI / DXE / chain loading? (background)](#uefi-primer)
 - [What files and options belong on the USB stick?](#usb)
 - [Why does Turing need GSP firmware mode?](#turing)
 - [Which display and boot-entry modes work?](#display)
@@ -24,11 +25,27 @@
 - [How do I report an incompatibility or failure?](#reporting)
 - [Where are the code and research records?](#layout)
 
+<a id="uefi-primer"></a>
+
+## What are UEFI / DXE / chain loading? (background)
+
+**UEFI** is the successor to the BIOS: the firmware program a board runs after you press the power button and before any operating system starts. It initializes hardware, enumerates PCIe devices and decides which file on which drive to hand control to next; it is itself a small runtime environment - with memory allocation, filesystem drivers, and the ability to load and execute `.efi` applications.
+
+**DXE** (Driver eXecution Environment) is the main phase of the UEFI boot: the firmware first brings up the most basic drivers, then loads each PCI device's driver in turn - the GPU's GOP (display output), the NVMe/USB storage controllers all come up here. **This tool is a UEFI application loaded by the firmware during DXE**: at that moment no NVIDIA driver exists yet, while the firmware's own initialization of the GPU is already complete - which is exactly the only programmable window "before the driver loads".
+
+**Chain loading** means a UEFI application, once its own work is done, uses `LoadImage`/`StartImage` to load the next boot program (Windows' `bootmgfw.efi`, or GRUB on Linux) into memory and hands control over - a relay baton pass. This tool chains back into your drive's existing boot program automatically after unlocking, so "unlock from the stick" and "boot normally into the OS" are one and the same power-on.
+
+**How does UEFI reach the operating system?** The firmware walks its boot order, finds a boot program in an EFI System Partition (ESP) and executes it; the Windows boot manager takes over, loads the kernel and the drivers, and the firmware then exits the stage entirely. The unlock this tool wrote lives on the GPU's always-on island (AON) and is inherited unchanged by the OS - that is what "volatile override, replayed every boot" means.
+
+**Why does every operating system work?** The unlock happens **before** the OS starts and acts on the GPU's hardware rate selectors; the tool neither knows nor cares which system comes next - Windows, Linux, Hackintosh are all just "the next program to chain-load", so the flow is identical for all three. What does depend on the OS is persistence **after** boot (whether driver init re-derives, whether sleep drops power) - see the [relock](#relock), [sleep](#sleep) and [Thunderbolt](#thunderbolt) sections.
+
 <a id="usb"></a>
 
 ## What files and options belong on the USB stick?
 
 The maker emits the assets into a local `usbroot/` directory (the `*.bin` files flat, plus `EFI/BOOT/BOOTX64.EFI`). Copy the **contents** to the stick root (do not copy the directory itself as `U:\usbroot\`). Do not copy extraction intermediates as runtime assets.
+
+**Why does that path get recognized automatically?** UEFI firmware carries a fixed fallback boot path for **removable media** - `\EFI\BOOT\BOOTX64.EFI` on x86_64. A file at that path is listed and executed as a boot entry on its own, **without** writing or modifying any NVRAM boot entry - which is why the "no persistent boot entry" discipline ([safety](#safety)) holds: pull the stick and the machine is back to stock. Other architectures have their own default file names (aarch64 uses `BOOTAA64.EFI`); the tool, the assets and every field measurement so far are x86_64-only - if you need aarch64 (ARM laptops/servers), please open a feature request or PR describing the platform and firmware; the developer currently has no test hardware for it.
 
 **`-Out G:\` fails on Windows PowerShell 5.1 with `New-Item : The path is not of a legal form`** (a bare drive root ends in `\`, which `New-Item -Path` rejects; [#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)). The script now strips the trailing backslash when creating the directories; on older packages pass **`-Out G:`** (no `\`).
 
