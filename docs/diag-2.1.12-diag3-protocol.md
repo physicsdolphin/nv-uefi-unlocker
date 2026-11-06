@@ -148,6 +148,8 @@ A/B 开关（每次冷启动只动一个，本地化之后再动）：GA10x 的 
 | 仍止于 `DETACH: PCI disconnect` | 屏写销案；下一嫌疑 = `log_display_topology()` 的枚举（`DIAG PCIIO-OPENERS` 段），下一轮把它逐行化 |
 | 止于 `DIAG PCIIO-OPENERS` 前后 | 直接落在枚举里 |
 
+**第三条候选（写盘，2026-11-06 补）**：37 个会话里穿到 `layout ok` 的 2 个恰好是全程最快的两个（4.37s），32 个死在 `PCI disconnect` 的在 5.4–26.7s，行间有 1.5/2.4/10.2s 的 BOT 停顿——**USB 写盘楔死也是候选，且速度相关性偏向它**（屏写若为凶手，每轮屏写次数几乎相同，速度不该有影响）。diag5 的标记行是 write→flush→Close→重开，写入量远大于 v2.1.9：**每轮必须记总耗时（首末时间戳差）**；diag5 比以往同位置更早死 → 写盘升格、屏写降级。另：无核显是前提不是充分原因（#121 唯一 GOP 被拆仍全绿），两板烈度差（2 行 vs ~150 行）在固件处理方式。
+
 **读法变化**：diag5 之后**屏幕在 `DETACH: console mirror MUTED until reconnect` 冻结是正常的，每一轮都冻（含全绿轮）**，只认日志。
 
 **仍成立的教训**：`protocols` 那两个数是 `protocols_per_handle()` 的**已安装协议接口数**，不是 opener 计数——GOP 的 `5 -> 4` 是子句柄接口随 Stop 卸载，PCI 句柄的 `2 -> 2` 是 DevicePath+PciIo 由 bus driver 持有、Stop 不卸载，属预期，不是泄漏。`DETACH: PCI disconnect` 之后不再进任何 `Stop()` 回调（回调已在返回 `Ok` 的那次调用里跑完）。
