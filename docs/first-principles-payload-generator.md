@@ -102,6 +102,12 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > - **gadget 语义首个实解**：0x10B9 中项入口 = `mov $r14 0xffff`（4 字节）后并入规范流 `mov $r10 0x1103c0; lcall 0xe3b`（写 r11→GSP FBIF 窗口）——token = 中项入口注入小工作后落回宿主函数自身的尾声，级联消耗下一链帧。
 > - **关键流程发现**：0x3924 路径在 0x397f 校验 sig_size−1 ≤ 0xfff——**payload 的 sig_size=0xFA00 会被此路径拒绝**；ORCH 按 D[0x318+4] 等阶段旗标分支（0x27a2/0x282b/0x287e…），golden 流程走的是另一分支。**sig_size≤0x1000 与实测 payload 的矛盾 = 下一轮对齐点**（真实流程的 DMA 长度字段或分支待锁定）。
 > - **G1 验收状态**：main SP 0xFFF0 ✓（推导=实证）、copy base 0x600 ✓（sig DMA 实测）、canary 0x6140 ✓、park 0x7ea4 ✓；活帧槽位/步长的静态推导框架完成，0xFF38/40/44/4C 与 0xff34 的差异归因于流程分支——待分支锁定后逐项对拍。
+>
+> **sig_size 之谜定谳（2026-11-07 续）**：
+> - 驱动侧实锤（open-gpu-kernel-modules kernel_gsp.c `_kgspCreateSignatureMemdesc`）：stock 签名 = gsp_fw 容器的 `.fwsignature_*` 节，**对齐 256 后恰 = 0x1000 字节**（本地抽取的 fwsignature_ga10x/ad10x.bin 均 4096B 实证）。booter 的两处 cap（meta 校验 0x13b4 与 0x3924 的 0x397f，均为 sig_size−1 ≤ 0xfff 无符号）= **恰好卡在 stock 尺寸上的合法校验**，fuc5 的 a/b = 无符号比较（envytools branch.rst 明文）。
+> - **payload 模式（我们 loader 发 sig_size=0xFA00）在 TU102 build 的 meta 校验（0x13b4，ORCH 无条件先跑）即拒**——与 TU106 实机 payload 跑通的矛盾 = **golden 流程走 ORCH 另一分支或另一 meta 形状**，头号对齐点。
+> - **golden 活帧形状定案**（generate_v67.py 逐字核对）：waiter 帧 = mpush-$r4 类（5 寄存器槽+ret），**canary 存于 [sp+0]（r4 槽位，mpush 后覆写）**；尾声 `mpopaddret $r4 imm`：pop r4=guard@[sp]、r3、**r2=value@[sp+8]、r1=addr@[sp+C]**、r0，pc=[sp+0x14]=gadget，stride 恰 0x18。0x10B9 中项 gadget 首指令 = `mov $r14 0xffff`（4B）后并入规范流（写 0x1103c0 序列）。
+> - 我方 10.4M 实测链的 waiter = 0x8070（mpush-$r6 形状，首劫持槽 [0xff34]）——与 golden 差恰一个 0x18 帧：**golden 流程的 waiter 是另一个 mpush-$r4 函数**（ORCH 另一分支的 DMA 等待点）。锁分支 = G1 验收的最后一步。
 
 | 里程碑 | 内容 | 验收 | 估时 |
 |---|---|---|---|
