@@ -53,9 +53,9 @@
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788**（AD104 刷新版）/ 4080 Laptop **27a0 / 27e0**；ES：AC AD104 20GB **2785** | ✅ 2783 / 2782（解锁模式）；其余保留上游层级 · [详情](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2702/2704/2705/2709/2757；🟢 2717 · [详情](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**；ES：TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689；🟢 2685/2681/26af · [详情](#device-8) |
-| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti **2208** / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216（另含 VM/VFIO，#135；2206 另有 20GB 魔改 Z890+WSL2，D#163）/2204（#159 全绿+哈希 A/B；D#96 双卡系统侧；D#176 X99；D#181 X870E）/2208（B 站 opus）；其余全段放行 · [详情](#device-9) |
+| GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti **2208** / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216（另含 VM/VFIO，#135；2206 另有 20GB 魔改 Z890+WSL2，D#163）/2204（#159 全绿+哈希 A/B；D#96 双卡系统侧；D#176 X99；D#181 X870E）/2208（B 站 opus）/2203（3090 Ti，X570 GAMING X，免 marker 全绿+输出哈希 A/B，#195）；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
-| GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489；⚠️ 2484 仅 EFI；雷电形态禁 `Usb4DeviceRouter` 后 Windows 可保留（两栈实测，代价=坞 USB 失效），桌面 X570 形态 #164 分类中 · [详情](#device-11) |
+| GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489/2482（3070 Ti 桌面 B860M：进 Windows 保留、TF32 2.20×，#194）；⚠️ 2484 仅 EFI；雷电形态禁 `Usb4DeviceRouter` 后 Windows 可保留（两栈实测，代价=坞 USB 失效），桌面 X570 形态 #164 分类中 · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
 | GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限；**2520 为笔记本，观测到 GC6/D3cold 唤醒后、驱动 bind 前回锁，#126**）；🟢 其余；2560 待复测 · [详情](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9/25ad** / MX570 25a6 / 3050 Laptop 25a2 / **3050 Laptop 6GB 25ac** / **3050 Ti Laptop 25a0** 等 | ✅ **25ad（RTX 2050 Laptop，首个 in-OS 实测 GA107）**；✅ **25ac（3050 6GB Laptop，MUXless；驱动 init 存活、S3/S5 清除，#188）**；⚠️ 25a0（Linux 观测：链路全绿但本机驱动 init 重推导；同族 25ad Windows 持久——变量未切开）；🟢 其余 · [详情](#device-14) |
@@ -137,6 +137,8 @@
 
 2026-11-02 pci.ids 复核纠错：旧表"3070 Ti 2205"有误——零售 3070 Ti 为 GA104 `2482`，`2205` / `2207` 是取消的 GA102 ES SKU（3080 Ti 20GB / GA102 版 3070 Ti），已按 ES 显式收录上表。运行时段同步收口为 `0x2200..=0x223f`（旧 `0x22..ff` 尾段经查无 GA102 核心，只有音频功能、Tegra/THOR/GB10 ARM 块与 H100 NVSwitch）。ES/取消 SKU（`222b` 3090 ES、`222f` 3080 11/12GB ES、`2205`、`2207`）同为 GA102 核心且在段内，持有者可直接运行；证据层级一律 🟢（上游硅验证），首个实机报告升级。来源：[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)、[#15](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/15)。
 
+**`2203` 首个完整日志 + 输出哈希 A/B（[#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)，2026-11-06）**：MSI 3090 Ti、Gigabyte X570 GAMING X（AMI F38f）、5950X、Windows 11 26200、驱动 616.92、480 W stock；Above 4G/ReBAR 开启（BAR1 256→32768 MiB）、CSM 关、无魔改。无 marker，Enter 确认后全链绿：scrubber 未完成但按社区形态继续、FWSEC WPR2 验证、booter `payload_mode=true`、selector 读回、POST-FLR AON 存活、native-GOP 重建 1920x1080 且 `display path verified`、BME 复原、交棒，Windows 正常启动且无问题码。**未跑系统内 ssdiag（限制）**，但解锁态由 A/B 自证：FP16 71.5→99.5、BF16 72.6→120.4、TF32 36.1→64.1，FP32 对照 25.4 平、逐模式输出 SHA-256 相同；功耗同量级且解锁后略低（FP16 467→446 W）而频率 1950→1800 下降=功耗墙形态。**TF32 在本卡也翻倍（1.77×）**，与 #194 同向。附：`-Out G:\` 在 PS 5.1 触发 `New-Item` 非法路径（已修，见 FAQ）；首轮 30 s 超时零写。证据 `docs/evidence/issue195-2203-x570/`。
+
 <a id="device-10"></a>
 
 ### GA103M · 3080 Ti Laptop 2420
@@ -145,9 +147,11 @@
 
 <a id="device-11"></a>
 
-### GA104 · 3070 2484–248c / 3060 Ti 2489 等（0x24xx 全段放行）
+### GA104 · 3070 Ti 2482 / 3070 2484–248c / 3060 Ti 2489 等（0x24xx 全段放行）
 
 `2489` 在 AMD 平台通过全链及 Windows 验证，跨厂 VBIOS 环境也可用。`2484` 的雷电 eGPU 环境通过 EFI 事务，Windows 侧默认不保留。**丢失已定谳为 OS 连接管理器在设备路由器侧接管隧道时执行的那次下游总线复位**——不是卡、不是坞、不是固件：桌面 TB4 + AD102 同形态实测，交棒后、POST 交 OS 后、乃至已启动的 Linux 里金丝雀都完好，只在接管的那几秒被清；门是被复位关掉的且发生在驱动绑定之前，故 `--reapply` 结构性无效。**两个 OS 都有实测可行的抑制**：Linux `thunderbolt.host_reset=0`；Windows 把 `Usb4DeviceRouter` 服务 `Start` 设为 `4`、`Usb4HostRouter` 保持 `3`——两台不同主机栈（ASMedia TB4 + AD102 / Intel 原生 USB4 + GA104）实测卡正常枚举绑定、金丝雀 `intact`、`UNLOCKED`，代价是坞的设备路由器服务失效、USB 口死、路由节点 `Problem 32`。重插/睡眠后行为与"`Usb4DeviceRouter` 是否必要"（启动顺序、冷启同轮引入）尚未单变量闭合。详见 [雷电一节](faq.md#thunderbolt)。**2026-11-04 增补一例非雷电形态（X570 AORUS ULTRA 桌面、独显单卡、驱动 617.42）：EFI 全链绿（PLM 翻转 ~148ms、选择器读回、post-FLR AON 存活、`plm_open=true`），进系统后 SS 对不再完好（`0x0`/`0x0`）且门回 `0xffffff8f`**——SS 对失守（非仅关门），与 #99/#109 同族；但 `0x0` 同时也是该卡驱动复位后的基线值（见冷态表），"清零"与"回厂"本机判不开（写入方未定：驱动 init 复位/重推导 vs 平台固件，另含本工具 native-GOP 重建尾这一未排除项），已发安全模式切分与事件日志取证步骤，归类后回填（[#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164)）。其余同族设备全段放行。来源：[#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11)、[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)、[雷电限制](faq.md#thunderbolt)。
+
+**`2482` 首个桌面点，且解锁在 Windows 保留（[#194](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/194)，2026-11-06）**：ASUS TX GAMING B860M WIFI（Intel B860，BIOS 默认、CSM 关）、Windows 11、驱动 617.42、290 W stock，散热换成 iGame 4090 Vulcan（对 290 W 卡过度）。首轮 30 s 未按 Space → CONFIRM 超时零写（日志明示）；第二轮用 `\i_know_what_i_am_doing.txt`（5 s 自动）一次全绿，进 Windows 后 **ssdiag 读回 PLM `0xffffffff (OPEN)`、SS0 `0x88888888`、SS1 `0x8`、`READOUT_1=0`**，无 CRS/Code 12、无驱动 init 回锁、无 nvlddmkm 事件。同脚本 A/B（4096³，20 iters，dense）：**FP16·FP32acc 33.69→71.99（2.14×）、BF16 34.22→71.52（2.09×）、TF32 17.01→37.50（2.20×）**，FP32 strict 10.57→12.32 与 memcpy 400–490 GB/s 持平；71.99 ≈ 48 SM×512 半字 FMA/clk×2×1.77 GHz≈87 TF（FP16acc 满速）的 83%，余量为 290 W 墙。**`2482` 保留而同为桌面的 X570 `2484` 不保留（#164）→ 回锁变量落在平台/形态而不是 SKU。** 限制：单次采样而非受控轮、无时钟记录；RTC 慢 89 min（固件签名非 X.509 时效依赖，仅观察）。来源：[#194](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/194)。
 
 <a id="device-12"></a>
 

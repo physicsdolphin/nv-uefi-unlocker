@@ -30,6 +30,8 @@
 
 The maker emits the assets into a local `usbroot/` directory (the `*.bin` files flat, plus `EFI/BOOT/BOOTX64.EFI`). Copy the **contents** to the stick root (do not copy the directory itself as `U:\usbroot\`). Do not copy extraction intermediates as runtime assets.
 
+**`-Out G:\` fails on Windows PowerShell 5.1 with `New-Item : The path is not of a legal form`** (a bare drive root ends in `\`, which `New-Item -Path` rejects; [#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)). The script now strips the trailing backslash when creating the directories; on older packages pass **`-Out G:`** (no `\`).
+
 `F` is `ad102` (40 series), `ga102` (30 series) or `tu10x` (20 / 16 series):
 
 | Location | Files | Purpose |

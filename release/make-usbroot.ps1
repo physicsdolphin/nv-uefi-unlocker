@@ -60,6 +60,14 @@ param(
     [string]$NvServiceEnumKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Enum'
 )
 
+# A bare drive root ("G:\") ends in a backslash, which New-Item -Path rejects
+# with "The path is not of a legal form" on Windows PowerShell 5.1 (the DONE
+# message suggests exactly that form) - issue #195. Keep $Out as "G:\" for the
+# path building below (PathBuf::join turns a bare "G:" into the drive-relative
+# "G:file"), and only create the directories from the trimmed form.
+$mkdirOut = $Out.TrimEnd('\')
+$mkdirWork = $Work.TrimEnd('\')
+
 $ErrorActionPreference = 'Stop'
 # Windows PowerShell 5.1 corrupts large Invoke-WebRequest transfers while the
 # progress UI is active ("unexpected EOF or 0 bytes") - issue #59.
@@ -393,7 +401,7 @@ if (-not $AssetsExe) { $AssetsExe = Join-Path $PSScriptRoot "assets-x86_64-windo
 if (-not $BootEfi)   { $BootEfi   = Join-Path $PSScriptRoot "BOOTX64.EFI" }
 if (-not (Test-Path $AssetsExe)) { throw "assets tool not found: $AssetsExe" }
 if (-not (Test-Path $BootEfi))   { throw "BOOTX64.EFI not found: $BootEfi" }
-New-Item -ItemType Directory -Force -Path $Work, $Out | Out-Null
+New-Item -ItemType Directory -Force -Path $mkdirWork, $mkdirOut | Out-Null
 
 foreach ($s in $Sources) {
     $dest = Join-Path $Work $s.Name

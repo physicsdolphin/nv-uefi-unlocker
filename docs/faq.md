@@ -30,6 +30,8 @@
 
 maker 在本地 `usbroot/` 输出资产（`*.bin` 平铺在该目录，另已建好 `EFI/BOOT/BOOTX64.EFI`）；把该目录的**内容**复制到 U 盘根目录（别把目录本身拷成 `U:\usbroot\`）。不要把抽取中间文件当作运行资产复制。
 
+**`-Out G:\` 在 Windows PowerShell 5.1 上会报 `New-Item : The path is not of a legal form`**（盘符根以 `\` 结尾，`New-Item -Path` 不接受；[#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)）。脚本创建目录时会自动剥掉尾反斜杠；若用旧包，改传 **`-Out G:`**（不带 `\`）即可。
+
 maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只生成对应家族；`-Family` / `--family` 可显式指定 `ad102`（40 系）、`ga102`（30 系）、`tu10x`（20 / 16 系）或 `all`（三代全家桶，一张盘服务多种卡）。多家族盘的文件是各家族清单的并集。
 
 `F` 为 `ad102`、`ga102` 或 `tu10x`：
