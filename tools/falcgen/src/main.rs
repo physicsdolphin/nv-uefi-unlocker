@@ -175,6 +175,7 @@ fn cmd_run(args: &[String]) {
     let mut steps = 20_000_000u64;
     let mut sig_len = 0x10u32;
     let mut sig_hex = String::new();
+    let mut brk: Option<u32> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -183,6 +184,7 @@ fn cmd_run(args: &[String]) {
             "--steps" => steps = parse_num(it.next().expect("--steps value")),
             "--sig-len" => sig_len = parse_num(it.next().expect("--sig-len value")) as u32,
             "--sig-hex" => sig_hex = it.next().expect("--sig-hex value").to_string(),
+            "--break" => brk = Some(parse_num(it.next().expect("--break value")) as u32),
             _ => file = Some(a.clone()),
         }
     }
@@ -190,6 +192,7 @@ fn cmd_run(args: &[String]) {
     let mut ip = falcgen::interp::Interp::new();
     ip.max_steps = steps;
     ip.trace = trace;
+    ip.break_pc = brk;
     ip.seed_meta_sig_len(sig_len);
     if !sig_hex.is_empty() {
         let bytes: Vec<u8> = (0..sig_hex.len() / 2)
