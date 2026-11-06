@@ -1,4 +1,4 @@
-# nv-uefi-unlocker 之 老黄刀法回退器
+# nv-uefi-unlocker 之 老黄刀法回退器   · [常见问题 FAQ](docs/faq.md)
 
 [中文](README.md) | [English](README.en.md)
 
@@ -141,7 +141,7 @@
 
 实际倍数受功耗墙、显存带宽与逐 die 分箱制约（典型 1.5–2×，同频归一化贴近 2×）；CMP 矿卡例外（÷32 全路钳制，上限 32×）。
 
-[完整兼容性矩阵与逐卡实测](docs/compatibility.md)（含 4090M 2757 / Alienware m18 R1 约 2 倍） · [常见问题](docs/faq.md)
+[完整兼容性矩阵与逐卡实测](docs/compatibility.md)（含 4090M 2757 / Alienware m18 R1 约 2 倍） 
 
 ## 开始使用
 
