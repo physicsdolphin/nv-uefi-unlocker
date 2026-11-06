@@ -85,6 +85,14 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > - 扫描器：前向行走分类移植，**17/17 已知代码入口全中**——TU102 6/6（含 python 版 miss 的中项 0x10b9/0xc95）、GA102 5/5、AD102 6/6（0x31b5 status writer 形状正确：DmemStore+mailbox 立即数+LCall）。
 > - **G0 实证发现（2026-11-05 勘误）**：初判"envydis 表有编码空洞"**有误**——盲区是 **CRYPT 特性位未开启**（lst 生成时无 crypt）；开启 `F_CRYPT` 后五段 **零未知指令**，SEC 入口页解码为 `csigclr` + csecret/cxor 清密钥序列，全部 ??? 簇都是 cxset/cocmd 族密码指令。扫描器/解释器已改用 FUC5_CRYPT。cmp50hx 的"gadget PC 处 archive 字节≠运行时字节"独立成立（不同密钥流）。同日落地 **G1 Track B 窄解释器**（src/interp.rs）：明文喂入、MMIO 桩、DMA-as-copy；bring-up 至 41K 条真实指令，**main SP = 0xFFF0 已由解释器推导**（与 nlzy 表 golden 一致）+ SEC 入口 SP init 0xfffc / canary 0x6140 / park 0x7ea4 机械化推导。当前 frontier：mpush/mpopaddret 族 ABI 无公开文档（envytools branch.rst 自注 todo），booter 自身 canary 存储与返回槽关系的 bring-up 迭代进行中。
 > - 复评结论：G1 双轨并行（用户裁定）按原案启动；G2/G3 排程不变。
+>
+> **G1 Track B 重大推进（2026-11-07，497fc3b + 后续）**：解释器沿真实流程驱动至 XDMA 层，沿途修复**四个语义真 bug**（mpop 全恢复、adc/sbb 进位、ld/st 宽度、sethi 保低位）——每个 bug 都曾被流程当作"引导问题"而实际是模型错误。环境模型（全部从 booter 自身代码逆向，非猜测）：
+> - **安全服务邮箱**（IO 0xd000-0xd500）：0xd000 = 就绪/错误位（0x1c0000 就绪、0xc00000 错误）、0xd100 = 提交（id|0x10000 = 读型请求；写型 = 0xd200 载荷 + 0xd100 id，参数存入服务存储供写-验证回读）、0xd400 = 门铃/应答、0xd500 = 响应值。旧 GetParam id 表（0xa-0xe 使能、0x11 期望值、0x6-9 签名半块）**全部在描述符块结构中得到解释**（见下）。
+> - **PRI 读服务**（0xf27）：0x1c100 = 行选择、0x1c000 = 触发（0x800000f1 读/f2 写）、0x1c200 = 行数据——同时服务熔丝行和**活寄存器读**（WPR2 0x1fa824/28、FRTS 界 0x1fa81c/20、L2 熔丝 0x100ce0、修订对 0x20800/4）。
+> - **描述符块**（DMEM 0x600，块搬运器 0x2d5e 按尺寸类抽取字段）：头 u16@+2=2、+0x10 ≤0x200、**使能位 +0x814-0x81c（b16，类 0xa-0xe）**、期望值表 +0x820（计数 ≤0xb @+0x878）、+0x880-0x890 五个 u32 字段（类 0x12-0x16）、+0x414/+0x614 = 签名半块（类 0x5/0x6，≤0x200）。旧 id 表的 ctx 即此块。
+> - **meta 校验链**（状态码全部定位到检查点）：0x91 = (WPR2_HI-WPR2_LO)<<8+0x20000 == 1MiB（256B 单位）+ 0x11821c bit17；0x73 = L2 熔丝 (mask<<20)==meta.fbSize（TU102 = 11<<6）；0x8d = frtsSize 必须恰 1MiB + wprEnd-frts 关系；0x1b/0x1d/0xb 如上。**meta 种子已换为自洽的 TU102 11-GiB 布局**（fbSize=0x2c000000 驱动 L2 熔丝与堆公式）。
+> - **XDMA**（拷贝驱动 0x8070/分块器 0x532）：$xdbase = 页基址寄存器，xdld/xdst = 0x100 字节/块（op0 = 页内偏移，op1 = (aperture<<16)|源偏移），xdwait 完成。RM 镜像装入 GSP DMEM（>0x10000 地址）、radix 经 0xf00000 窗口构建。**签名 DMA 调用点已定位**：0x3924 函数（dst=0x600、0x1000 分块、源 = meta+0x48/4c，0x39bb）与 0x3f87 主路径（0x40cd，dst=0x5d00，"FREE"/"PAEH" 魔数校验）。
+> - 前沿：XDMA 模型落地后流程扰动（boot 镜像自装载覆盖 0x600 块——真实顺序=数据镜像含描述符块），快照点已通（sig-page 过滤 + 栈触及检测），待下一轮把装载顺序与描述符块来源对齐。
 
 | 里程碑 | 内容 | 验收 | 估时 |
 |---|---|---|---|

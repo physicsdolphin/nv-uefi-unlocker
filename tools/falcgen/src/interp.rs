@@ -76,6 +76,12 @@ pub struct Interp {
     pub fuse_rows: Vec<(u32, u32)>,
     /// the write-type payload (IO 0xd200) awaiting the 0xd100 submit
     pub last_d200: u32,
+    /// XDMA state: the page-base register (set by `mov $xdbase`) and the
+    /// staged chunks awaiting xdwait
+    pub xdbase: u32,
+    pub xd_pending: Vec<(bool, u32, u32)>,
+    /// optional execution breakpoint (stop before executing this PC)
+    pub break_pc: Option<u32>,
 }
 
 impl Interp {
@@ -106,6 +112,9 @@ impl Interp {
             fuse_row: 0,
             fuse_rows: Vec::new(),
             last_d200: 0,
+            xdbase: 0,
+            xd_pending: Vec::new(),
+            break_pc: None,
         }
     }
 
@@ -390,6 +399,9 @@ impl Interp {
         if name == "sp" {
             self.sp = v;
         }
+        if name == "xdbase" {
+            self.xdbase = v;
+        }
     }
 
     fn cond(&self, mods: &[(String, bool)], regs: &[u32]) -> Option<bool> {
@@ -449,6 +461,11 @@ impl Interp {
 
     /// Execute one instruction. Returns Err on an unimplemented shape.
     fn step_once(&mut self, buf: &[u8], base: u64) -> Result<(), String> {
+        if self.break_pc == Some(self.pc) {
+            self.halted = true;
+            self.exit_reason = format!("breakpoint at {:#x}", self.pc);
+            return Ok(());
+        }
         let off = (self.pc as u64).checked_sub(base).ok_or("pc below base")? as usize;
         if off >= buf.len() {
             self.halted = true;
@@ -807,23 +824,53 @@ impl Interp {
                 }
             }
             "xdst" | "xdld" | "xdst2" => {
-                // XDMA parameter staging: record the pair; the copy fires
-                // on xdwait.
+                // XDMA chunk staging (driver 0x8070): each instruction = one
+                // 0x100-byte chunk. op0 = the offset within the $xdbase
+                // page, op1 = (aperture_tag << 16) | source offset. xdld =
+                // sysmem->DMEM (the signature/RM-image loads), xdst =
+                // DMEM->sysmem (the radix build). The copy fires on xdwait.
                 let a = expr(0).map(|e| self.eval(&e)).unwrap_or(0);
                 let b = expr(1).map(|e| self.eval(&e)).unwrap_or(0);
+                self.xd_pending.push((name == "xdld", a, b));
                 self.io_writes.push((0xf0 << 16 | a, b)); // trace marker
             }
             "xdwait" | "xdfence" | "xcwait" | "sleep" | "xdwait2" => {
-                // DMA completion: perform the pending host->DMEM copy for
-                // the payload window if one was staged.
-                if !self.dma_copies.is_empty() || self.take_dma() {
-                    if self.stop_after_dma && self.last_dma_sp.is_none() {
-                        self.last_dma_sp = Some(self.sp);
-                        self.halted = true;
-                        self.exit_reason = "dma-completed (geometry snapshot point)".into();
-                        return Ok(());
+                // DMA completion: fire the staged XDMA chunks (0x100 bytes
+                // each, dst = (xdbase&0xffff)<<8 | offset), then the legacy
+                // falcon-DMA-window model. The geometry snapshot point =
+                // the first chunk whose destination reaches the stack
+                // region (0xff00+) — that is the moment the payload
+                // overflows into the live frames.
+                let mut touched_stack = false;
+                let staged = std::mem::take(&mut self.xd_pending);
+                // the signature DMA = the load into the 0x600 page (xdbase
+                // = 0x600>>8 = 6); other XDMA users (the meta validator's
+                // descriptors, the radix build) must not trigger the
+                // snapshot
+                let sig_page = self.xdbase & 0xffff == 6;
+                for (is_load, off, _packed) in &staged {
+                    let dst = ((self.xdbase & 0xffff) << 8) + off;
+                    if *is_load {
+                        let host = self.host_buffers.first().cloned().unwrap_or_default();
+                        for k in 0..0x100usize {
+                            let b = host.get((off + k as u32) as usize % host.len().max(1))
+                                .copied()
+                                .unwrap_or(0);
+                            self.wr8((dst + k as u32) as usize, b as u32);
+                        }
+                        self.dma_copies.push(DmaCopy { dst, len: 0x100 });
+                    }
+                    if sig_page && *is_load && dst + 0x100 > 0xff00 {
+                        touched_stack = true;
                     }
                 }
+                if touched_stack && self.stop_after_dma && self.last_dma_sp.is_none() {
+                    self.last_dma_sp = Some(self.sp);
+                    self.halted = true;
+                    self.exit_reason = "dma reached the stack (geometry snapshot point)".into();
+                    return Ok(());
+                }
+                let _ = self.take_dma();
             }
             "trap" => {
                 self.halted = true;
