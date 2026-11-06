@@ -118,7 +118,7 @@
 
 | 日志末行 | 停点 | 判读 |
 |---|---|---|
-| `TX: layout ok` 之后无 `FWSEC: reading PROM` | 相邻语句之间 | 几乎不可能；若出现，先怀疑目录项未提交，做簇链还原 |
+| `TX: layout ok` 之后无 `FWSEC: reading PROM` | 那一行日志自身（屏写或写盘） | **见 §6**：BAR0 读在死点两侧都通，FWSEC 尚未开始；它是日志管线嫌疑，不是点火嫌疑 |
 | `FWSEC: PROM read NN%` | 1MiB PROM 批量读中途 | BAR0 PROM 窗口在读取中段挂——MMIO 层，新失败形态 |
 | `FWSEC: image staged` / `fuse` / `GSP falcon reset begin` / `reset+unblock ok` | staging/复位段 | 复位传播或 FBIF 解锁挂；附 `Falcon reset begin` 内部行 |
 | `FWSEC: IMEM portal begin (N blocks)` | IMEM 逐块寄存器写中途 | GSP 寄存器门户写在第 N 块附近挂 |
@@ -129,3 +129,25 @@
 A/B 开关（每次冷启动只动一个，本地化之后再动）：GA10x 的 FWSEC staging 没有专用 marker（`\tx-fwsec-vram-staging.txt` 是 Turing 路径的），所以第一变量不是 staging；判读落在哪一段，再按该段开新变量。`scrubber did not complete (ETimeout)` 对 30 系**不是**判据（GA106 2504 全链成功轮同形态），不用为它做任何事。
 
 资产：`BOOTX64.EFI.2.1.14-diag5`（tx）。回收清单照 §1，另加：**请把两份还原日志、目录项原始 32 字节、78 个孤立簇清单与 diag4 轮的屏幕照片（banner 是否出现过）随下一轮一起附上**。
+
+## 6. 2026-11-06 勘误：#122 的 37 会话还原把死点指到日志管线
+
+#122 报告者按 §1 做了整盘镜像 + 簇扫描，还原出本盘 37 个会话、6197 行。三条事实：
+
+1. **32/37 止于 `DETACH: PCI disconnect status Ok(()) 2 -> 2`，横跨 4 种二进制**（v2.1.9 / 官方 diag2 / 自建默认 / 自建 slim）；另 2 个会话穿到 `TX: layout ok`；无一会话到达 FWSEC。
+2. 两个会话（含 26.7s 那个）的**屏幕都定格在 `DETACH: stage GOP handle`，日志再走 1–2 行**——与 #170 同形。即屏幕不是挂死时定格的，是**在 GOP 那次 `DisconnectController` 调用内部被拆死的**：ConOut 的底层 GOP 子句柄被销毁，此后 `TextOut` 仍返回、只是画不出东西。
+3. 只读构建从不 detach（`#[cfg(not(feature="tx"))]` 跳过整个 `tx_phase`），控制台永不死 → 自建 A/B 的 "只读 2/2 过、tx 0/4 挂" 量到的是**detach 与否**，不是 tx 代码与否；体积/opt/lto 矩阵全部无效，二进制布局一支销案。
+
+**推论（改写 §5 的 `layout ok` 行）**：`log()` 是先写文件、后写屏，所以任何一行的死点落在"该行屏写 → 下一行写盘"之间时，文件恰好结束在该行。三条死线（`PCI disconnect`、`layout ok`）的上一动作都是成功的设备/BS 操作，下一动作都是一次 `log()`——**病灶在日志管线（对已死控制台的屏写，或写盘），不在 GPU 代码**。`layout ok` 判据尤其明确：`layout_from_registers()` 自身就是 5 次 BAR0 读且全部成功，紧随的 `entry WPR2` 也只是 `read32`，**BAR0 在死点两侧都通**，FWSEC 尚未开始。
+
+**diag5 的静音就是这组判据的 A/B**（它在 GOP disconnect 前一行静音，直到 FLR 后的 reconnect）：
+
+| diag5 结果 | 判读 |
+|---|---|
+| 穿过 detach | 屏写是凶手；静音进默认路径（对这两块板是真修复，不只是仪器） |
+| 仍止于 `DETACH: PCI disconnect` | 屏写销案；下一嫌疑 = `log_display_topology()` 的枚举（`DIAG PCIIO-OPENERS` 段），下一轮把它逐行化 |
+| 止于 `DIAG PCIIO-OPENERS` 前后 | 直接落在枚举里 |
+
+**读法变化**：diag5 之后**屏幕在 `DETACH: console mirror MUTED until reconnect` 冻结是正常的，每一轮都冻（含全绿轮）**，只认日志。
+
+**仍成立的教训**：`protocols` 那两个数是 `protocols_per_handle()` 的**已安装协议接口数**，不是 opener 计数——GOP 的 `5 -> 4` 是子句柄接口随 Stop 卸载，PCI 句柄的 `2 -> 2` 是 DevicePath+PciIo 由 bus driver 持有、Stop 不卸载，属预期，不是泄漏。`DETACH: PCI disconnect` 之后不再进任何 `Stop()` 回调（回调已在返回 `Ok` 的那次调用里跑完）。
