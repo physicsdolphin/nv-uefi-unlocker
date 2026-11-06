@@ -364,11 +364,11 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 
 | 主机形态 | 判别 | 初始接管复位？ | 依据 |
 |---|---|---|---|
-| **独立雷电 host 芯片 + 固件 CM**（Intel JHL8xxx 类；BIOS 里 `USB4 CM Mode = Firmware CM` 一类设置） | 设备管理器见 "Thunderbolt Controller"、无 `USB4\ROOT_*_ROUTER` 节点；`ssdiag ≥ 0.6.13` 的 `USB4:` 行报无 CM 服务 | **未观测到——首次开机即保留** | 维护者 G614JV（JHL8540 + TB3 坞，ATX 强制供电，TB3）；[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74) 的 PHN16-72（BIOS `Firmware CM Only` + TB4 坞强制供电，TB4，系统内 `UNLOCKED`）——两代各一台 |
+| **独立雷电 host 芯片 + 固件/legacy CM**（Intel JHL8xxx 类雷电主机芯片，如 JHL8540；BIOS 侧 `USB4 CM Mode = Firmware CM` 一类设置） | 系统里有 **Intel 雷电控制面板**、设置里**没有 USB4 项目**（G614JV 实测）；设备管理器见 "Thunderbolt Controller"、无 `USB4\ROOT_*_ROUTER` 节点；`ssdiag` 的 `USB4:` 行报无 CM 服务 | **未观测到——首次开机即保留** | 维护者 G614JV（JHL8540 = 雷电 4 主机芯片 + TB3 坞，ATX 强制供电）；[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74) 的 PHN16-72（BIOS `Firmware CM Only` + TB4 坞强制供电，系统内 `UNLOCKED`）——TB4 host × TB3/TB4 device 各一台 |
 | **USB4 主机路由器**（集成的 Intel/AMD，或绑定 MS `usb4hostrouter.inf` 的独立芯片如 ASMedia） | `PCI\…&USB4_MS_CM` 存在、`Usb4HostRouter`/`Usb4DeviceRouter` 服务在 | **接管即复位** | Ambolio（ASMedia 芯片但走 MS CM）；GWASDW123（Intel 集成 USB4 + TB3 坞） |
 | TB4 设备接在 USB4 主机上（向下兼容） | 同 USB4 行 | 同上 | 社区实验结果：抑制有效（`Usb4DeviceRouter=4` / Linux `host_reset=0`） |
 
-**维护者结论（2026-11-06）**：有独立雷电 host 芯片（如 JHL8xxx）+ 坞强制 ATX 上电 → 雷电 3、4 都能保留；USB4 与 USB4 兼容模式下的雷电 4 → 接管即复位，按上面的抑制配方处理。逐条对账：上表即全部已知的雷电/USB4 实验数据点，目前**全部吻合**。三个必须带上的限定：①判别变量是**绑定哪个 CM 栈**，不是"有没有独立芯片"——ASMedia 是独立芯片但被 MS `usb4hostrouter.inf` 绑定，照样复位；独立芯片也能被 BIOS 设成 OS CM 模式，所以以 `USB4:` 行/设备管理器为准。②PHN16-72 那台的抑制状态未记录；若同为 `Firmware CM Only` 则本就无需抑制。③固件 CM 行的"保留"是**每次引导级**不是热插拔级（JHL8540 那台重插 TB3 线仍回锁），Linux 侧 `thunderbolt` 内核 CM 对所有主机形态都接管（Run A），同样只有 `host_reset=0` 一条路。
+**维护者结论（2026-11-06）**：有独立雷电 host 芯片（如 JHL8xxx）+ 坞强制 ATX 上电 → 雷电 3、4 都能保留；USB4 与 USB4 兼容模式下的雷电 4 → 接管即复位，按上面的抑制配方处理。逐条对账：上表即全部已知的雷电/USB4 实验数据点，目前**全部吻合**。三个必须带上的限定：①判别变量是**绑定哪个 CM 栈**，不是"有没有独立芯片"——ASMedia 是独立芯片但被 MS `usb4hostrouter.inf` 绑定，照样复位；独立雷电芯片也可能被 BIOS 设成 OS CM 模式，所以以"Intel 雷电控制面板 vs USB4 路由节点/`USB4:` 行"为准。②PHN16-72 那台的抑制状态未记录；若同为 `Firmware CM Only` 则本就无需抑制。③固件 CM 行的"保留"是**每次引导级**不是热插拔级——JHL8540 那台重插 TB3 线后 PLM 锁回、**金丝雀死亡（`cleared`）**、速率回厂 = 域复位，与初始接管同级；Linux 侧 `thunderbolt` 内核 CM 对所有主机形态都接管（Run A），同样只有 `host_reset=0` 一条路。
 
 **`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动绑定之前；接管之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让接管做那次复位"，而两个 OS 都已有实测可行的抑制：
 
@@ -386,7 +386,7 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 
 **断开/重插已实测（TB4 那台，抑制态）**：会话内拔线重插不回来——卡 `Code 45` Unknown、`pnputil /scan-devices` 无效、坞断电重启隧道也不起；唯一恢复 = 重启走一次 U 盘链，**且重启后解锁仍在**（金丝雀 `intact`）。"开机前插好、不当热插拔用"由保守建议升级为实测事实。睡眠唤醒仍未测。
 
-**第三个主机形态（维护者实测，2026-11-06）**：独立雷电控制器 JHL8540 + TB3 坞（逍遥君 BX，JHL6540）+ GA102 3090（跨刷 VBIOS；G614JV 内置 4060 关闭防冲突，驱动 610.74）：**首次开机即保留**——UEFI 解锁后进系统卡直接识别、PLM 门开、SS 全绿；但**拔插 TB3 线（坞 ATX 强制供电不断电）→ 解锁丢失、PLM 锁回**。两个读法：①复位不只发生在初始接管，也发生在隧道**重建**（重插）时；②该机是否装/禁了 Usb4 CM 服务未记录——独立 TB3 控制器常走 legacy 雷电栈，若根本没有 CM 服务，则"开机保留"意味着 legacy 栈不做初始接管复位、重插复位另有其人。重插后补一次金丝雀读数即可把"域复位 vs 窄写"分开（`cleared` = 域复位，`intact` = 窄写）。
+**第三个主机形态（维护者实测，2026-11-06/07）**：雷电 4 主机芯片 JHL8540 + TB3 坞（逍遥君 BX，JHL6540）+ GA102 3090（跨刷 VBIOS；G614JV 内置 4060 关闭防冲突，驱动 610.74）：**首次开机即保留**——UEFI 解锁后进系统卡直接识别、PLM 门开、SS 全绿；但**拔插 TB3 线（坞 ATX 强制供电不断电）→ 解锁丢失、PLM 锁回、速率回厂，金丝雀死亡（`cleared`）**。两个悬点已闭合：①栈归属——JHL8540 是雷电 4 芯片不是 USB4 芯片，系统里有 Intel 雷电控制面板、设置里没有 USB4 项目（legacy 雷电栈，无 MS USB4 CM 服务，无需 `USB4:` 采样）；②重插复位是**域复位**（canary `cleared`），不是窄写。统一读法：**复位随隧道的（重）建立发生**——固件 CM 主机开机继承 POST 建好的拓扑（不复位），重插时栈重建隧道（复位）；USB4 CM 主机则在绑定时就拆了重建（复位）。两个栈在"开机保不保留"上的差别由此而来。
 
 `ssdiag` 0.6.13 起会打印 `USB4:` 行（两个服务的 `Start` 与 USB4 节点），报告自带配置，不必口述。
 

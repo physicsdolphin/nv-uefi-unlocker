@@ -208,22 +208,26 @@ XYT-BX dock (**JHL6540**, TB3, ATX forced power), EVGA triple-fan **3090
 
 - UEFI: external 3090 recognized and unlocked normally.
 - Windows: card picked up directly, **unlock retained, gate open, SS green from
-  the very first boot** — no suppression recorded on this machine, and a
-  discrete TB3 controller usually runs the legacy Thunderbolt stack rather than
-  the Microsoft USB4 CM (whether `Usb4HostRouter`/`Usb4DeviceRouter` even exist
-  here is unrecorded; a `ssdiag ≥ 0.6.13` `USB4:` block would settle it).
+  the very first boot** — no suppression, none needed: the JHL8540 is a
+  **Thunderbolt 4** host chip (not USB4); the machine runs the **Intel
+  Thunderbolt control panel** and has no USB4 section in settings — the legacy
+  TB stack, no Microsoft USB4 CM service (the `USB4:` sampling suggestion is
+  withdrawn as unnecessary).
 - **Unplug/replug of the TB3 cable (dock kept powered) → unlock lost, gate
-  relocked.** So the reset also rides tunnel *re-establishment*, not only the
-  initial takeover. Contrast the TB4 machine's replug cell: there (suppressed)
-  nobody re-establishes the tunnel and the card just vanishes; here
-  (presumably stock stack) the tunnel comes back and the card returns locked.
+  relocked, rates at factory, and the canary dead (`cleared`)** — a **domain
+  reset**, the same class as the USB4-CM boot takeover, not a narrow write.
+  Contrast the TB4 machine's replug cell: there (suppressed) nobody
+  re-establishes the tunnel and the card just vanishes; here the legacy stack
+  re-establishes it and the card returns locked. Unified rule: **the reset
+  rides tunnel (re-)establishment** — a firmware-CM host inherits the
+  POST-built topology at boot (no reset) and only resets when the stack
+  re-establishes the tunnel; a USB4-CM host tears down and rebuilds at bind
+  time.
 - Photos: `g614jv-tb3-bench-unlocked.jpg` (ssdiag `VERDICT … UNLOCKED (override
   values live)`, Windows graphics settings listing the 3090 as GPU 0, iGPU as
   GPU 1) and `g614jv-tb3-ssdiag-probe.jpg` (the extended probe surface —
   fuse/TPC banks reading `[PRIV_VIOLATION]` is the expected shape for
   PLM-gated banks this tool never opens).
-- Open on this machine: one canary read after a replug (`cleared` = domain
-  reset, `intact` = narrow write), and the `USB4:` block.
 
 ## Power gating (AD102, locked clocks)
 
@@ -247,8 +251,6 @@ at 2100 and 2595 MHz). This belongs with the power-wall section of
 - Linux driver-loaded end to end (bind `nvidia` with the manager loaded and
   `host_reset=0`): not yet run; would be the first "unlocked and usable" Linux
   state on this host.
-- The discrete-TB3 host: whether the Usb4 CM services exist there at all, and a
-  canary read after a cable replug (domain reset vs narrow write).
 - Driver-update re-arm of `Start=4` (PnP reinstall / `pnputil /scan-devices`):
   untested, labelled as such.
 
