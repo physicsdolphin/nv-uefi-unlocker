@@ -139,6 +139,71 @@ behind Windows and cold-booted in the same run, so "`Usb4DeviceRouter` disabled
 is the necessary item" is not yet single-variable. The natural control is
 `Start=3` with everything else unchanged, expected to clear the canary.
 
+## Control round — the causality closes both directions
+
+`Start` back to `3`, everything else identical (same stick, chain →
+`bootmgfw.efi`, cold F11 boot, same day): `CANARY_A/B = 0x00000000/0x00000000
+-> cleared`, `SS0 = 0x01501012 SS1 = 0x00000006` (factory readouts),
+`NOT_UNLOCKED`. Re-applying `Start=4` and cold-booting the same chain returns
+`intact / SS0 = 0x88888888 / UNLOCKED`. Single variable flipped → re-lock
+restored, and back again — the takeover reset is pinned to the device-router
+driver's binding, not to the tunnel coming up.
+
+Answers recorded with it: the card in the `Start=4` cell is fully functional
+(`nvlddmkm` `Problem 0`, days of real CUDA compute, a monitor on the card as
+primary incl. its DP/HDMI audio); `Start=4` persisted every boot over days —
+the only thing that ever changed it was `sc config` itself (a driver-update
+re-arm is untested and labelled as such). The FAQ line this produces: one-time
+service disable + per-session chain boot (the value persists, the state does
+not — a plain cold boot re-locks).
+
+## Undock / redock — hot re-plug does not come back
+
+Machine in the `Start=4` cell, live-tested: cable pulled and re-inserted
+mid-session → the card sits at `Code 45` ("currently not connected"), the dock
+router nodes likewise Unknown; `pnputil /scan-devices` (elevated) completed a
+full scan with no change; a dock power cycle left the tunnel down. Recovery =
+reboot through the loader chain — and after that reboot the canary is `intact`
+and the verdict `UNLOCKED`. The conservative "plug in before boot" note is now
+a measured fact, not a reservation.
+
+## Workload A/B — the rate-limited rule ( folded into FAQ `#gain`)
+
+Same day, fixed seeds, `ssdiag` at both ends, power traces: −18.4% (Qwen-Image
+edit, 4 refs) and −25.2% (t2v 15 s) where the locked card averaged ~300 W
+(rate-limited); **0%** on reference-image-to-video where the locked card already
+averaged 362 W at 100% SM (power-limited; unlocking just added watts), plus ~0%
+single-pass t2i and quantized-MoE LLM. The rule — **gain = GEMM gain × the
+rate-limited fraction** — is in the FAQ since PR #192; the 0% row is its
+control.
+
+## A third host shape — discrete TB3 controller (maintainer's own, 2026-11-06)
+
+ASUS G614JV (i9-13650HX, internal 4060 disabled via the hybrid-graphics mode to
+avoid the driver conflict, driver 610.74), discrete TB controller **JHL8540** →
+XYT-BX dock (**JHL6540**, TB3, ATX forced power), EVGA triple-fan **3090
+(crossflashed VBIOS)** — the first GA102 eGPU datapoint and the first
+**discrete**-controller host:
+
+- UEFI: external 3090 recognized and unlocked normally.
+- Windows: card picked up directly, **unlock retained, gate open, SS green from
+  the very first boot** — no suppression recorded on this machine, and a
+  discrete TB3 controller usually runs the legacy Thunderbolt stack rather than
+  the Microsoft USB4 CM (whether `Usb4HostRouter`/`Usb4DeviceRouter` even exist
+  here is unrecorded; a `ssdiag ≥ 0.6.13` `USB4:` block would settle it).
+- **Unplug/replug of the TB3 cable (dock kept powered) → unlock lost, gate
+  relocked.** So the reset also rides tunnel *re-establishment*, not only the
+  initial takeover. Contrast the TB4 machine's replug cell: there (suppressed)
+  nobody re-establishes the tunnel and the card just vanishes; here
+  (presumably stock stack) the tunnel comes back and the card returns locked.
+- Photos: `g614jv-tb3-bench-unlocked.jpg` (ssdiag `VERDICT … UNLOCKED (override
+  values live)`, Windows graphics settings listing the 3090 as GPU 0, iGPU as
+  GPU 1) and `g614jv-tb3-ssdiag-probe.jpg` (the extended probe surface —
+  fuse/TPC banks reading `[PRIV_VIOLATION]` is the expected shape for
+  PLM-gated banks this tool never opens).
+- Open on this machine: one canary read after a replug (`cleared` = domain
+  reset, `intact` = narrow write), and the `USB4:` block.
+
 ## Power gating (AD102, locked clocks)
 
 The 2x is real but power-gated, and shows it cleanly: with `nvidia-smi -lgc`,
@@ -152,8 +217,8 @@ at 2100 and 2595 MHz). This belongs with the power-wall section of
 
 ## Residual unknowns
 
-- Replug/sleep under suppression: the card may not come back without the
-  device-router driver; conservative usage is plug-in-before-boot.
+- Sleep/resume under suppression (undock/replug is now measured — never comes
+  back hot; recovery is a chain reboot).
 - Which host-router init call issues the reset (a 100 ms canary/FEAT poller
   aligned with Kernel-PnP event IDs would name it).
 - Windows has no narrower knob than service disable: the `Usb4HostRouter` node's
@@ -161,4 +226,8 @@ at 2100 and 2595 MHz). This belongs with the power-wall section of
 - Linux driver-loaded end to end (bind `nvidia` with the manager loaded and
   `host_reset=0`): not yet run; would be the first "unlocked and usable" Linux
   state on this host.
+- The discrete-TB3 host: whether the Usb4 CM services exist there at all, and a
+  canary read after a cable replug (domain reset vs narrow write).
+- Driver-update re-arm of `Start=4` (PnP reinstall / `pnputil /scan-devices`):
+  untested, labelled as such.
 

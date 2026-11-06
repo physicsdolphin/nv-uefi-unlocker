@@ -372,7 +372,13 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_DWORD /d 3 /f
 ```
 
-**未测清楚的两点，报告时请标注**：抑制状态下重插坞/睡眠唤醒后卡还回不回得来（没有设备路由器，重插后可能不再枚举，保守用法是开机前插好、不当热插拔用）；以及 Windows 那组实测里启动顺序与冷启动是两个同轮引入的变量，`Usb4DeviceRouter` 是必要项尚未单变量闭合。`ssdiag` 0.6.13 起会打印 `USB4:` 行（两个服务的 `Start` 与 USB4 节点），报告自带配置，不必口述。
+**抑制的因果已单变量钉死**（#54）：`Usb4DeviceRouter\Start` 改回 `3`、其余一切不动 → 金丝雀 `cleared`、`NOT_UNLOCKED`；再改回 `4` → `intact`、`UNLOCKED`，同机同日双向完成。`Start=4` 跨重启持久（连载数日，唯一改过它的是 `sc config` 本身）；抑制态下卡**完全可用**——`nvlddmkm` `Problem 0`、CUDA/显示/卡载音频日常运行数日（含把显示器接卡上做主屏）。
+
+**断开/重插已实测（TB4 那台，抑制态）**：会话内拔线重插不回来——卡 `Code 45` Unknown、`pnputil /scan-devices` 无效、坞断电重启隧道也不起；唯一恢复 = 重启走一次 U 盘链，**且重启后解锁仍在**（金丝雀 `intact`）。"开机前插好、不当热插拔用"由保守建议升级为实测事实。睡眠唤醒仍未测。
+
+**第三个主机形态（维护者实测，2026-11-06）**：独立雷电控制器 JHL8540 + TB3 坞（逍遥君 BX，JHL6540）+ GA102 3090（跨刷 VBIOS；G614JV 内置 4060 关闭防冲突，驱动 610.74）：**首次开机即保留**——UEFI 解锁后进系统卡直接识别、PLM 门开、SS 全绿；但**拔插 TB3 线（坞 ATX 强制供电不断电）→ 解锁丢失、PLM 锁回**。两个读法：①复位不只发生在初始接管，也发生在隧道**重建**（重插）时；②该机是否装/禁了 Usb4 CM 服务未记录——独立 TB3 控制器常走 legacy 雷电栈，若根本没有 CM 服务，则"开机保留"意味着 legacy 栈不做初始接管复位、重插复位另有其人。重插后补一次金丝雀读数即可把"域复位 vs 窄写"分开（`cleared` = 域复位，`intact` = 窄写）。
+
+`ssdiag` 0.6.13 起会打印 `USB4:` 行（两个服务的 `Start` 与 USB4 节点），报告自带配置，不必口述。
 
 进入系统后仍可先做 [只读检查](#ssdiag)，解读随之变化：
 
@@ -382,7 +388,7 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 
 **取证方法（eGPU 报告者可直接照抄）**：chain 到 Linux live USB，`modprobe.blacklist=nouveau,thunderbolt`，用 `tools/diag-unlock.py` 在无驱动环境读回；rEFInd 顶掉 ISO 自带 GRUB 可绕开机介质陷阱，Secure Boot 全程开着也能链过去，不必为此关它。完整读数与阴性对照见 `docs/evidence/issue54-tb4-4090-linux-router-reset/`。
 
-Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。**回锁值本身不是失败**：实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差，`HANDOFF-OUT` 里 `tu10x: plm=0xffffffef` 配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 就是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
+Turing 的交棒本来就包含 PLM 重锁，不可套用 Ampere/Ada 的“门关即失效”判断。**回锁值本身不是失败**：实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差——`1e04` 22G 改装卡（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)）实测过 `fully closed 0xffffff8f` 且 SS 仍持解锁值，`8f` 本身不作失败判读，看同一行的 `ss0/ss1`。`HANDOFF-OUT` 里 `tu10x: plm=0xffffffef` 配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 就是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
 
 <a id="secureboot"></a>
 
