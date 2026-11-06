@@ -1,4 +1,4 @@
-# nv-uefi-unlocker: Revert Gimpvidia's limit
+# nv-uefi-unlocker: Revert Gimpvidia's limit · [FAQ](docs/faq.en.md)
 
 [中文](README.md) | [English](README.en.md)
 
