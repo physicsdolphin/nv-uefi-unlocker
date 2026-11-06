@@ -84,9 +84,42 @@ impl Interp {
     }
 
     pub fn seed_meta_sig_len(&mut self, len: u32) {
-        // WprMeta at DMEM 0x400 (nlzy table); sig length at +0x50.
-        let at = 0x450;
-        self.dmem[at..at + 4].copy_from_slice(&len.to_le_bytes());
+        // WprMeta at DMEM 0x400 (nlzy table): the loader-shaped meta
+        // (tx_booter.rs wpr_meta_pack) with a self-consistent TU102 8G
+        // layout — the booter validates the relationships (frts < wpr_end,
+        // image <= boot-gsp, heap = 8MiB + align(96KiB*GiB) + 96MiB) and
+        // the expected-value table before touching the signature DMA.
+        let mut wr64 = |a: usize, v: u64| self.dmem[a..a + 8].copy_from_slice(&v.to_le_bytes());
+        wr64(0x400, 0xdc3a_ae21_371a_60b3); // WPR_META_MAGIC
+        wr64(0x408, 1); // version
+        wr64(0x410, 0x2_0000_0000); // radix_dma
+        wr64(0x418, 0x1c0_0000); // image_size (gsp RM)
+        wr64(0x420, 0x1e0_0000); // boot_dma
+        wr64(0x428, 0x6000); // boot image_size
+        wr64(0x430, 0x1800); // boot code_offset
+        wr64(0x438, 0x800); // boot data_offset
+        wr64(0x440, 0x0); // boot manifest_offset
+        wr64(0x448, 0x1e8_0000); // signature_dma
+        wr64(0x450, len as u64); // signature_size
+        wr64(0x458, 0x1f8_0000); // gspFwRsvdStart
+        wr64(0x460, 0x1f8_0000); // nonWprHeapOffset
+        wr64(0x468, 0x690_0000); // nonWprHeapSize (105 MiB, 8G)
+        wr64(0x470, 0x260_0000); // wpr_start
+        wr64(0x478, 0x1f8_0000); // heapOffset
+        wr64(0x480, 0x690_0000); // heapSize
+        wr64(0x488, 0x1e8_0000); // gspOffset
+        wr64(0x490, 0x1e0_0000); // bootOffset
+        wr64(0x498, 0x260_0000); // frtsOffset
+        wr64(0x4a0, 0x1_a0_0000); // frtsSize (wpr_end - frts)
+        wr64(0x4a8, 0x260_0000); // wprEnd
+        wr64(0x4b0, 0x2_0000_0000); // fbSize (8G)
+        wr64(0x4b8, 0x1_fef0_0000); // vgaOffset
+        wr64(0x4c0, 0x110_0000); // fbSize - vgaOffset
+        self.dmem[0x400 + 241] = 0x1; // flags: CLOCK_BOOST
+        // The expected-values check (0x8b1: ld D[$r0=0xd500] == 1) reads a
+        // runtime-populated table entry — the booter's earlier stages store
+        // the descriptor results here.
+        self.wr8(0xd500, 0x1);
         // Pre-SEC machine state the NS stub leaves behind (we start at the
         // SEC entry, so the NS stub's side effects must be seeded):
         // - D[0x6140] = the global canary value (NS canary sub, 0xd2408)
@@ -101,6 +134,18 @@ impl Interp {
         // fires FWSEC before the booter; the poll at 0x358 waits for
         // bit8 of [0x10100] to clear — the FWSEC-completion flag).
         self.io_reads.push((0x10100, 0x1000));
+        // IO 0xd000/0xd400/0xd500 = the loader->booter command mailboxes
+        // (0x8235 = "read IO[$r10] and deliver via the canary block into
+        // $r10"). The booter spins at 0x9c8 until the loader pushes a
+        // non-zero command; the real loader writes the boot parameters
+        // here. Seed non-zero triggers, refine as the flow reveals their
+        // semantics.
+        self.io_reads.push((0xd400, 0x1));
+        // IO 0xd500: the booter caches its read into DMEM[0xd500] (the st
+        // at 0x9f5 with $r0 leaked from the canary block) and the caller's
+        // expected-values check then reads the cache — hardware holds 1.
+        self.io_reads.push((0xd500, 0x1));
+
         // The loader-provided boot descriptor at DMEM 0x200 (the NS stub
         // snapshots mailboxes there; "any non-zero skips the default fill").
         self.wr8(0x200, 0x1);
@@ -113,7 +158,7 @@ impl Interp {
         // at 0x4ca). Our crypt stubs are no-ops, so the seed area must be
         // planted; any non-zero value is self-consistent (the store and
         // every canary check use the same one).
-        self.wr8(0x6130, 0xd000);
+        self.wr8(0x6130, 0xd2408);
     }
 
     fn rd8(&self, a: usize) -> u32 {
@@ -278,7 +323,7 @@ impl Interp {
         let insn = decode_one(buf, off, base, FUC5_CRYPT);
         let next = self.pc + insn.oplen as u32;
         if self.trace {
-            println!("[{:>8}] {:06x} {}  [r0={:#x} r9={:#x} r10={:#x} sp={:#x}]", self.steps, self.pc, insn.render(), self.regs[0], self.regs[9], self.regs[10], self.sp);
+            println!("[{:>8}] {:06x} {}  [r0={:#x} r2={:#x} r9={:#x} sp={:#x}]", self.steps, self.pc, insn.render(), self.regs[0], self.regs[2], self.regs[9], self.sp);
         }
         let name = insn.name.as_str();
         let ops = &insn.operands;
@@ -535,17 +580,22 @@ impl Interp {
                 }
             }
             "mpop" | "mpopret" | "mpopadd" | "mpopaddret" => {
+                // Stack arithmetic only: sp += 4*(N+1) [the saved range],
+                // + imm, and for the *ret forms pc = [sp] (sp += 4). The
+                // register restores are deliberately NOT modeled: the
+                // epilogue pop must not clobber $r1, which carries
+                // 0x8235's IO-read return value to the caller's loop-exit
+                // condition — register values are otherwise unobservable
+                // by the geometry derivation.
                 if let Some(Expr::Reg(d)) = expr(0) {
-                    if let Some(n) = d.strip_prefix('r').and_then(|s| s.parse::<usize>().ok()) {
-                        for i in (0..=n.min(15)).rev() {
-                            self.regs[i] = self.pop();
-                        }
-                    }
+                    let n = d.strip_prefix('r').and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                    self.sp = self.sp.wrapping_add(4 * (n as u32 + 1));
                     if let Some(w) = imm(1) {
                         self.sp = self.sp.wrapping_add(w);
                     }
                     if name == "mpopret" || name == "mpopaddret" {
-                        self.pc = self.pop();
+                        self.pc = self.rd8(self.sp as usize);
+                        self.sp = self.sp.wrapping_add(4);
                         jumped = true;
                     }
                 } else {
