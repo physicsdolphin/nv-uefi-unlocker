@@ -9,7 +9,7 @@
 - [解锁成功、性能却没有提升，怎么判断还会不会有收益？](#gain)
 - [为什么解锁过的卡一进系统又被锁回去？](#relock)
 - [Windows 睡眠后解锁还在吗？（S3 / S0ix 现代待机）](#sleep)
-- [雷电 eGPU 能保留解锁吗？](#thunderbolt)
+- [雷电 3/4/USB4 eGPU 能保留解锁吗？](#thunderbolt)
 - [Secure Boot 开着能用吗？（自签）](#secureboot)
 - [怎样在系统内检查或修复解锁？](#ssdiag)
 - [pmxdrv.sys 的安全模型与权衡（必读披露）](#pmxdrv)
@@ -233,9 +233,9 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 3 | **devinit 重放**（驱动 init 自己重算） | 存活 | 部分 GA10x 笔记本（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)，Linux 实测；Windows 侧尚无同形态样本） | 门锁 + `SS` 被写成推导值（≠开机基线、≠覆盖值） |
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
-| 6 | **OS 的连接管理器接管 USB4/雷电隧道**（设备路由器侧驱动绑定） | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块的同一半在绑定时拆掉并重建整棵下游总线 | 金丝雀 `cleared`；**matter 只在 OS 里丢**，交棒后、POST 交 OS 后、已启动的 Linux 里都完好。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
+| 6 | **OS 侧连接管理器（USB4 CM）建立/重建 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块绑定/接管时拆掉并重建整棵下游总线。固件 CM 的独立雷电主机（Intel 雷电面板那类）开机不走此行，但重插线时管理栈重建隧道、同样触发 | 金丝雀 `cleared`（域复位）。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
 
-第 6 行的特殊性：复位由 **OS 的连接管理器**执行，不是平台断电、不是固件 SBR、不是驱动重推导；门是被那次复位关掉的，**发生在驱动绑定之前**，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）。唯一出路是抑制那次接管，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
+第 6 行的特殊性：复位由**建立/重建隧道的 CM** 执行——USB4 主机上是 OS 侧 CM，发生在任何驱动绑定之前，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）；固件 CM 主机开机不触发此行（见雷电节分型），重插才触发。唯一出路是抑制那次拆建，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
 第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改自己代码的地方，第 6 行是 OS 侧旋钮（不在本工具内）——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
 
@@ -356,21 +356,23 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 
 <a id="thunderbolt"></a>
 
-## 雷电 eGPU 能保留解锁吗？
+## 雷电 3/4/USB4 eGPU 能保留解锁吗？
 
-**不能——只要 OS 的连接管理器完成接管。** 判据从"可能被复位"改成"接管即复位"：USB4/雷电的**设备路由器侧**驱动一绑定（Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块的同一半），就会拆掉并重建整棵下游总线，那一次总线复位把 AON 里的门与选择器一并清掉。不是卡、不是坞、不是固件：桌面 TB4 + AD102 实测，交棒后、POST 交 OS 后、乃至已经跑在一个启动完成的 Linux 里，金丝雀都还 `intact`、门仍 `0xffffffff`、`READOUT_1=0`；坏只坏在接管的那几秒（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)）。纯链路重训本身不复位端点，这是它与上面各行的区别。
+先定义本节的关键词：**连接管理器（CM，Connection Manager）**——雷电/USB4 架构里负责枚举路由器、建立并管理隧道的那个实体，**既可以在固件里，也可以在操作系统里**。雷电主机芯片自带 Firmware CM（Windows 不参与；系统里表现为 Intel 雷电控制面板、没有 USB4 设置项）；操作系统侧的 CM 是 USB4 CM——Windows 的 `Usb4HostRouter`/`Usb4DeviceRouter` 服务栈，或 Linux 的内核 `thunderbolt` 模块。
 
-**主机侧先分型（先看绑定的是固件 CM 还是 OS 的 USB4 CM，这决定要不要抑制）**：
+**丢不解锁，取决于开机后由哪一侧的 CM 去建立/重建隧道**：谁拆建下游总线，谁的那次动作就整域复位，把 AON 里的门与选择器一并清掉（金丝雀 `cleared`）。
 
-| 主机形态 | 判别 | 初始接管复位？ | 依据 |
+| 主机形态 | 判别 | 开机后谁建/重建隧道 | 结果 |
 |---|---|---|---|
-| **独立雷电 host 芯片 + 固件/legacy CM**（Intel JHL8xxx 类雷电主机芯片，如 JHL8540；BIOS 侧 `USB4 CM Mode = Firmware CM` 一类设置） | 系统里有 **Intel 雷电控制面板**、设置里**没有 USB4 项目**（G614JV 实测）；设备管理器见 "Thunderbolt Controller"、无 `USB4\ROOT_*_ROUTER` 节点；`ssdiag` 的 `USB4:` 行报无 CM 服务 | **未观测到——首次开机即保留** | 维护者 G614JV（JHL8540 = 雷电 4 主机芯片 + TB3 坞，ATX 强制供电）；[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74) 的 PHN16-72（BIOS `Firmware CM Only` + TB4 坞强制供电，系统内 `UNLOCKED`）——TB4 host × TB3/TB4 device 各一台 |
-| **USB4 主机路由器**（集成的 Intel/AMD，或绑定 MS `usb4hostrouter.inf` 的独立芯片如 ASMedia） | `PCI\…&USB4_MS_CM` 存在、`Usb4HostRouter`/`Usb4DeviceRouter` 服务在 | **接管即复位** | Ambolio（ASMedia 芯片但走 MS CM）；GWASDW123（Intel 集成 USB4 + TB3 坞） |
-| TB4 设备接在 USB4 主机上（向下兼容） | 同 USB4 行 | 同上 | 社区实验结果：抑制有效（`Usb4DeviceRouter=4` / Linux `host_reset=0`） |
+| **独立雷电 host 芯片 + 固件/legacy CM**（Intel JHL8xxx 类雷电主机芯片，如 JHL8540；BIOS 侧 `USB4 CM Mode = Firmware CM` 一类设置） | 系统里有 **Intel 雷电控制面板**、设置里**没有 USB4 项目**（G614JV 实测）；设备管理器见 "Thunderbolt Controller"、无 `USB4\ROOT_*_ROUTER` 节点 | **开机：没人拆建**——固件 POST 建好的拓扑被原样继承 | **首次开机即保留**。但重插线时管理栈重建隧道 → 域复位（JHL8540 那台实测：PLM 锁回、速率回厂、**金丝雀死亡 `cleared`**）——所以是**每次引导级**保留，不是热插拔级 |
+| **USB4 主机路由器**（集成的 Intel/AMD，或绑定 MS `usb4hostrouter.inf` 的独立芯片如 ASMedia；含被 BIOS 设成 OS CM 模式的独立雷电芯片） | `PCI\…&USB4_MS_CM` 存在、`Usb4HostRouter`/`Usb4DeviceRouter` 服务在 | **开机：OS 侧 CM 一绑定就拆建**（Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块） | **开机即丢**。[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) 桌面 TB4 + AD102：交棒后、POST 交 OS 后、乃至已启动的无驱动 Linux 里金丝雀都 `intact`、门 `0xffffffff`——丢只丢在 CM 拆建那几秒 |
+| TB4 设备接在 USB4 主机上（向下兼容） | 同 USB4 行 | 同上 | 同上 |
 
-**维护者结论（2026-11-06）**：有独立雷电 host 芯片（如 JHL8xxx）+ 坞强制 ATX 上电 → 雷电 3、4 都能保留；USB4 与 USB4 兼容模式下的雷电 4 → 接管即复位，按上面的抑制配方处理。逐条对账：上表即全部已知的雷电/USB4 实验数据点，目前**全部吻合**。三个必须带上的限定：①判别变量是**绑定哪个 CM 栈**，不是"有没有独立芯片"——ASMedia 是独立芯片但被 MS `usb4hostrouter.inf` 绑定，照样复位；独立雷电芯片也可能被 BIOS 设成 OS CM 模式，所以以"Intel 雷电控制面板 vs USB4 路由节点/`USB4:` 行"为准。②PHN16-72 那台的抑制状态未记录；若同为 `Firmware CM Only` 则本就无需抑制。③固件 CM 行的"保留"是**每次引导级**不是热插拔级——JHL8540 那台重插 TB3 线后 PLM 锁回、**金丝雀死亡（`cleared`）**、速率回厂 = 域复位，与初始接管同级；Linux 侧 `thunderbolt` 内核 CM 对所有主机形态都接管（Run A），同样只有 `host_reset=0` 一条路。
+依据（上表即本仓全部已知的雷电/USB4 实验数据点）：维护者 G614JV（JHL8540 = 雷电 4 主机芯片 + TB3 坞，ATX 强制供电，首开保留/重插域复位）；[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74) 的 PHN16-72（BIOS `Firmware CM Only` + TB4 坞强制供电，系统内 `UNLOCKED`）；Ambolio（ASMedia 芯片但被 MS CM 绑定，开机丢、抑制后留）；GWASDW123（Intel 集成 USB4 + TB3 坞，同前，另测**时序路线无效**——把两路由提前到内核早期、隧道窗口 8.06 s→4.31 s 解锁照样丢，丢锁只看"拆建是否发生"不看"多晚"）；Linux 三轮（`thunderbolt` 模块拆建 / `host_reset=0` 抑制）。
 
-**`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动绑定之前；接管之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让接管做那次复位"，而两个 OS 都已有实测可行的抑制：
+**维护者结论（2026-11-06）**：有独立雷电 host 芯片（如 JHL8xxx）+ 坞强制 ATX 上电 → 雷电 3、4 都能保留；USB4 与 USB4 兼容模式下的雷电 4 → 开机即丢，按下面的抑制配方处理。三个必须带上的限定：①判别变量是**绑定哪个 CM 栈**，不是"有没有独立芯片"——ASMedia 是独立芯片但被 MS `usb4hostrouter.inf` 绑定，照样拆建；独立雷电芯片也可能被 BIOS 设成 OS CM 模式，所以以"Intel 雷电控制面板 vs USB4 路由节点/`USB4:` 行"为准。②PHN16-72 那台的抑制状态未记录；若同为 `Firmware CM Only` 则本就无需抑制。③Linux 侧 `thunderbolt` 内核 CM 对所有主机形态都接管（Run A），同样只有 `host_reset=0` 一条路。
+
+**`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动（重新）绑定之前；拆建之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让 OS 侧 CM 做那次拆建"，而两个 OS 都已有实测可行的抑制：
 
 - **Linux**：内核命令行 `thunderbolt.host_reset=0`。已实测（#54 Run C）：模块照常加载、坞在雷电侧照常被发现，但不再出现 `pci_bus … is released`，层级不拆，金丝雀 `intact`、门 `0xffffffff`、`UNLOCKED`。
 - **Windows**：把 `Usb4DeviceRouter` 服务的 `Start` 设为 `4`（Disabled），`Usb4HostRouter` 保持 `3`（Manual）。**只禁设备侧、留主机侧**——两个都禁会让隧道根本不存在。两台不同主机栈（ASMedia TB4 + AD102 桌面 / Intel 原生 USB4 + GA104 笔记本）实测：卡正常枚举并绑定 `nvlddmkm`、金丝雀 `intact`、`ssdiag` 判 `UNLOCKED`，AD102 那台 8192³ FP16 达满血张量速率的 95% 并叠加 `nvidia-smi -lgc` 做了逐时钟扫描。代价如实说：坞的设备路由器服务没了，坞上 USB 口失效、两个 `USB4\ROOT_DEVICE_ROUTER` 节点 `Problem 32`（Code 32 = 服务被禁用，不是故障）；GPU、卡载音频、`nvidia-smi` 均正常。`DevPnPCapabilities=0x100` 已证伪；`Usb4HostRouter` 的 `Device Parameters` 子键只有 WDF/DMA/中断三类，无复位策略面。
