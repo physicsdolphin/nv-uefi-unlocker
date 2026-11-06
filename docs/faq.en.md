@@ -13,6 +13,7 @@
 - [Does it work with Secure Boot on? (self-signing)](#secureboot)
 - [How do I check or repair the unlock in the OS?](#ssdiag)
 - [The pmxdrv.sys security model and trade-off (required disclosure)](#pmxdrv)
+- [An antivirus flags the download - what now?](#av-fp)
 - [What does booter status 0x89 mean?](#bridge-bme)
 - [The stick flashes and bounces back to the boot menu (or straight into the OS) - no loader.log?](#no-boot)
 - [Why does the platform reset after a successful transaction?](#reconnect)
@@ -558,7 +559,7 @@ What still works: ssdiag / diag-unlock / the USB SAMPLE record the FEAT block an
 
 ## How do I check or repair the unlock in the OS?
 
-On Windows, use the release's `ssdiag-x86_64-windows.exe`, abbreviated below as `ssdiag`:
+On Windows, use the `ssdiag-x86_64-windows.exe` published as a separate release asset (the zip does not carry it - see [antivirus false positives](#av-fp)), abbreviated below as `ssdiag`:
 
 ```text
 ssdiag
@@ -610,6 +611,20 @@ ssdiag discovers BAR0 from the OS and accepts no manually supplied physical base
 2. **The right to refuse** — you may decline this kernel driver on any or all of your physical machines and still get verification: the loader's own EFI read-backs (pre-boot, driver-free), GEMM output hashes against a stock baseline, `nvidia-smi` telemetry; Linux users additionally have the driver-free `diag-unlock.py`. Reports that skip `ssdiag` (e.g. [#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135)) are recorded in the compatibility matrix as fully verified all the same.
 
 Not installing, not running, not understanding it does not affect the unlock itself — `pmxdrv.sys` exists only for zero-dependency, zero-residue in-OS testing and first-hand evidence.
+
+<a id="av-fp"></a>
+
+### An antivirus flags the download - what now?
+
+**`ssdiag` was never part of the main package, and the zip no longer carries it** (changed in place for v2.1.10): it is an optional download on the release page, and it is the only thing that gets flagged.
+
+The shape of the detection is itself the evidence. `ssdiag` is an unsigned Rust host with a whole kernel-driver PE image embedded in `.rdata` (file offset `0x2C7C9`) - the combination static-envelope heuristics like least. Both 2026-11-05 reports point at the same zip, and the two Microsoft names they quote do not even agree (`Trojan:Script/Sabsik.EN.A!ml` vs `Trojan:Script/Wacatac.H!ml`); the third-party hits are one and the same generic name from BitDefender and its engine OEMs (ALYac / Arcabit / eScan / Emsisoft / GData / VIPRE `Trojan.GenericKD.82039403`, Bkav `W32.Malware.*`, CTX's container heuristic `Zip.trojan.generic`, Elastic's `Malicious (moderate)`) - **a cluster of engines agreeing on a generic name while Redmond's whole catalogue stays silent is the textbook false-positive shape**. Re-tested here: Defender signatures 1.463.142.0 (updated 2026-11-05) report `found no threats` on the official zip.
+
+How to judge and what to do:
+
+1. **Check the hashes first** - the zip and every member are in `SHA256SUMS.txt`, and `ssdiag`'s hash is additionally pinned inside the binary and self-verified at run time. Matching hashes rule out a swapped download.
+2. **Keep using the main package** - the unlock itself (`BOOTX64.EFI` + generator scripts + `assets`) is unaffected by this false positive; you can skip `ssdiag` and still unlock and verify (EFI read-back, GEMM hashes, `nvidia-smi`).
+3. **If you want `ssdiag`, allow it** - it is a portable tool with no installation, no leftover service (stopped and deleted on exit); add the file or its folder to the Defender exclusions. Treat `Generic` / `!ml` names as false positives; only a concrete trojan-family name is worth a second look.
 
 <a id="bridge-bme"></a>
 
@@ -677,6 +692,8 @@ Some AMI firmware hangs or resets during GOP reconnect after a successful GPU tr
 If the log stops at `RECONNECT: ConnectController ... begin`, or the platform resets there, fully power off and recover before adding `no-reconnect.txt` to the stick root to skip target GOP reconnect. Windows Boot Manager can establish its own console; skipping reconnect does not waive OS verification.
 
 For Turing `0x91` or a GSP-handoff bug-check after EFI success, see the [compatibility matrix](compatibility.en.md#device-16). Not every black screen is a GOP problem. Evidence: [AMI report](ad106-asus-z790-windows-unlock.md), [X470 record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70).
+
+**A failed transaction can leave the screen black while the machine is alive.** The `native-GOP` rebuild runs on the success path only; a failure path just unwinds (stock signature -> FLR -> chainload) and does not rebuild the console it disconnected. Field case ([#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191)): after the failing HIGH-staging round the system still booted, SSH worked, the driver and desktop were fine — only the internal panel stayed dark. On a single-display laptop treat that picture as "black but alive": give it time, confirm over SSH or an external screen, or power off and start over; do not pull the stick mid-boot just because the screen is black.
 
 ### Unlocked, then a CUDA error as soon as load hits? Drop the overclock and the undervolt first
 

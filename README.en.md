@@ -195,7 +195,7 @@ Back up an existing `EFI/BOOT/BOOTX64.EFI` before replacing it. Do not copy into
 1. Select the USB stick in the firmware’s one-time boot menu.
 2. Press **Space or Enter** at the version screen. Any other key or 30 seconds without input aborts the transaction and returns to the OS bootloader. A temporary black screen or frozen frame on the target GPU is expected.
 3. Wait for the automatic OS handoff. The log is `loader.log` at the stick root.
-4. On Windows, run the release’s `ssdiag-x86_64-windows.exe` to check the in-OS state, then compare performance using the same workload. On Linux, run `sudo python3 tools/diag-unlock.py` from a source checkout. See [verification and repair](docs/faq.en.md#ssdiag). Replay after each cold boot.
+4. On Windows, run the `ssdiag-x86_64-windows.exe` that ships as its **own release asset** to check the in-OS state (it is no longer inside the zip - an unsigned host wrapping a kernel driver makes some engines flag the whole package, see [antivirus false positives](docs/faq.en.md#av-fp)), then compare performance using the same workload. On Linux, run `sudo python3 tools/diag-unlock.py` from a source checkout. See [verification and repair](docs/faq.en.md#ssdiag). Replay after each cold boot.
 
 If picking the stick flashes and bounces back to the boot menu (or straight into the OS) with no `loader.log`, the EFI never executed - and nothing was written; usually `EFI/BOOT/BOOTX64.EFI` is missing or Secure Boot is still on. Work through [the no-boot checks](docs/faq.en.md#no-boot).
 

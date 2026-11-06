@@ -13,6 +13,7 @@
 - [Secure Boot 开着能用吗？（自签）](#secureboot)
 - [怎样在系统内检查或修复解锁？](#ssdiag)
 - [pmxdrv.sys 的安全模型与权衡（必读披露）](#pmxdrv)
+- [杀毒软件报毒怎么办？](#av-fp)
 - [booter status 0x89 是什么？](#bridge-bme)
 - [选 U 盘一闪回到启动菜单或直接进系统，盘上没有 loader.log？](#no-boot)
 - [事务成功后为什么会复位或黑屏？](#reconnect)
@@ -568,7 +569,7 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 
 ## 怎样在系统内检查或修复解锁？
 
-Windows 使用发布包中的 `ssdiag-x86_64-windows.exe`。以下简写为 `ssdiag`：
+Windows 使用 release 页单独附带的 `ssdiag-x86_64-windows.exe`（zip 内不含它，理由见[杀软误报](#av-fp)）。以下简写为 `ssdiag`：
 
 ```text
 ssdiag
@@ -620,6 +621,20 @@ ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊�
 2. **拒绝权**——你有权在你的任何或全部物理机器上拒绝这个内核驱动，并且照样获得验证：loader 自身的 EFI 阶段读回（预引导、零驱动）、GEMM 输出哈希对照原厂基线、`nvidia-smi` 遥测；Linux 用户另有零驱动的 `diag-unlock.py`。不跑 `ssdiag` 的实测报告（如 [#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135)）在兼容矩阵中同样按完全验证收录。
 
 不装、不用、不理解都不影响解锁本体——`pmxdrv.sys` 只服务于"系统内零依赖零负载测试，一手证据确诊"这一件事。
+
+<a id="av-fp"></a>
+
+### 杀毒软件报毒怎么办？
+
+**`ssdiag` 从来不是主包的一部分，zip 里也不再包含它**（v2.1.10 起原地调整）：它只是 release 页面上一个可选附件，而它是唯一会被报的东西。
+
+报毒的形状本身就是判据。`ssdiag` 是未签名的 Rust 宿主，`.rdata` 里嵌着一整张内核驱动 PE 映像（文件偏移 `0x2C7C9`）——这是按静态包络打分的启发式引擎最不喜欢的组合。2026-11-05 的两份报告都指向同一个 zip，而两处写的微软名字还互不相同（`Trojan:Script/Sabsik.EN.A!ml` 与 `Trojan:Script/Wacatac.H!ml`）；第三方扫描里真正命中的是 BitDefender 与其引擎 OEM 的同一族通用名（ALYac / Arcabit / eScan / Emsisoft / GData / VIPRE 的 `Trojan.GenericKD.82039403`，Bkav `W32.Malware.*`，CTX 的容器启发 `Zip.trojan.generic`，Elastic 的 `Malicious (moderate)`）——**一组引擎报同一个泛化名、微软全库不报，就是典型误报形态**。本机复测：Defender 签名 1.463.142.0（2026-11-05 更新），对官方 zip 扫完 `found no threats`。
+
+判定与处置：
+
+1. **先核对 hash**——zip 与每个成员都在 `SHA256SUMS.txt` 里，`ssdiag` 的 hash 同时钉死在二进制内、运行时自校验。hash 对得上就排除"下载被换包"。
+2. **主包照用**——解锁本体（`BOOTX64.EFI` + 生成脚本 + `assets`）不因这条误报受任何影响，跳过 `ssdiag` 也能完成解锁与验证（EFI 读回、GEMM 哈希、`nvidia-smi`）。
+3. **要用 `ssdiag` 就放行**——它是绿色免装工具，不留服务、退出即删，把下载的文件或目录加进 Defender 排除即可；报 `Generic`/`!ml` 名的都按误报处理，只有报出具体木马家族名才值得复查。
 
 <a id="bridge-bme"></a>
 
@@ -687,6 +702,8 @@ TX-ASSET-CACHE: cleared 9 entries, 84388324 bytes handed back to the firmware al
 若仍停在 `RECONNECT: ConnectController ... begin` 或该阶段复位，完全断电恢复后，在 U 盘根放 `no-reconnect.txt` 跳过目标 GPU 重连。Windows Boot Manager 可自行建立控制台；跳过重连不代表跳过系统内验证。
 
 Turing 若返回 `0x91`，或 EFI 成功但 GSP 交棒蓝屏，查 [兼容性矩阵](compatibility.md#device-16)，不要把所有黑屏都归为 GOP。平台证据见 [AMI 报告](ad106-asus-z790-windows-unlock.md)和 [X470 记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70)。
+
+**事务失败时屏幕可能保持黑屏，但机器是活的。** `native-GOP` 重建只在成功路径执行；失败路径只做回滚（恢复原厂签名→FLR→链回引导），断开过的 console 不会重建。实测（[#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191)）：失败的 HIGH staging 轮之后系统照常启动、SSH 可用、驱动与桌面正常，只有内屏是黑的。单显笔记本站到这种画面按"黑屏但活着"处理——等它进系统用 SSH 或外接屏确认，或直接断电重来；不要因为黑屏就中途拔盘断电。
 
 ### 解锁后一跑负载就报 CUDA 错误？先撤超频和降压
 

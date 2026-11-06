@@ -196,7 +196,7 @@ U 盘（FAT32）
 1. 从固件的一次性启动菜单选择 U 盘。
 2. 版本屏按 **空格或回车**运行；其他键或 30 秒不操作会中止事务并交回系统引导器。目标 GPU 暂时黑屏或冻结末帧属正常现象。
 3. 等待工具完成并自动链回系统，日志在 U 盘根目录 `loader.log`。
-4. Windows 下用发布包的 `ssdiag-x86_64-windows.exe` 检查系统内状态，并用相同负载比较解锁前后的性能。Linux 可在源码仓库运行 `sudo python3 tools/diag-unlock.py`。详见 [验证与修复](docs/faq.md#ssdiag)。每次冷启动需要重放。
+4. Windows 下用 release 页**单独附带的** `ssdiag-x86_64-windows.exe` 检查系统内状态（它不再打进 zip——内含内核驱动、宿主未签名，整包会被部分杀软引擎误报，见 [杀软误报](docs/faq.md#av-fp)），并用相同负载比较解锁前后的性能。Linux 可在源码仓库运行 `sudo python3 tools/diag-unlock.py`。详见 [验证与修复](docs/faq.md#ssdiag)。每次冷启动需要重放。
 
 选了 U 盘一闪回到启动菜单（或直接进系统）、盘上没有 `loader.log`，说明 EFI 根本没被执行——此时也没有任何写入；多数是缺 `EFI/BOOT/BOOTX64.EFI` 或 Secure Boot 还开着，按 [无法启动排查](docs/faq.md#no-boot)逐条核对。
 
