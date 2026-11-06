@@ -75,7 +75,7 @@ fn main() -> Status {
     // quiet-probe/watchdog strip that follows (#122).
     info!("BOOT: logger init returned, main continuing");
     info!(
-        "BOOT: diag6 switches log-commit={} (0=v2.1.9 default, 1=+marker Close, 2=+create Close)",
+        "BOOT: diag7 log-commit={} (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)",
         logging::log_commit()
     );
     // Phase: QUIET gate (issue #38). The stick opts in via the marker;

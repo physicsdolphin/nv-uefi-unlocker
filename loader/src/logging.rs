@@ -391,7 +391,24 @@ fn open_fresh_log() -> Option<RegularFile> {
         // Create-commit: close the fresh (0-byte) dirent right away so a
         // hang leaves a created-but-empty file instead of a stale one.
         drop(file);
-        return reopen_log();
+        if let Some(f) = reopen_log() {
+            return Some(f);
+        }
+        // Issue #198: on the Y9000P firmware the reopen chain refuses on
+        // every boot - readonly runs completed with the console alive, the
+        // file stayed 0 bytes and a full-cluster carve found nothing - a
+        // second, cleaner failure mode of the same Close/reopen machinery
+        // that wedges the Z97 init window. Nothing has been written yet at
+        // this point, so recover: a fresh truncating handle plus the
+        // flush-only path for the whole run (v2.1.9 semantics, which this
+        // firmware demonstrably logs fine on).
+        set_log_commit(0);
+        let mut fs = boot::get_image_file_system(boot::image_handle()).ok()?;
+        let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
+        let handle: FileHandle = root
+            .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
+            .ok()?;
+        return handle.into_regular_file();
     }
     Some(file)
 }
