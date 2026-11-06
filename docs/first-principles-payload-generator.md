@@ -93,6 +93,15 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > - **meta 校验链**（状态码全部定位到检查点）：0x91 = (WPR2_HI-WPR2_LO)<<8+0x20000 == 1MiB（256B 单位）+ 0x11821c bit17；0x73 = L2 熔丝 (mask<<20)==meta.fbSize（TU102 = 11<<6）；0x8d = frtsSize 必须恰 1MiB + wprEnd-frts 关系；0x1b/0x1d/0xb 如上。**meta 种子已换为自洽的 TU102 11-GiB 布局**（fbSize=0x2c000000 驱动 L2 熔丝与堆公式）。
 > - **XDMA**（拷贝驱动 0x8070/分块器 0x532）：$xdbase = 页基址寄存器，xdld/xdst = 0x100 字节/块（op0 = 页内偏移，op1 = (aperture<<16)|源偏移），xdwait 完成。RM 镜像装入 GSP DMEM（>0x10000 地址）、radix 经 0xf00000 窗口构建。**签名 DMA 调用点已定位**：0x3924 函数（dst=0x600、0x1000 分块、源 = meta+0x48/4c，0x39bb）与 0x3f87 主路径（0x40cd，dst=0x5d00，"FREE"/"PAEH" 魔数校验）。
 > - 前沿：XDMA 模型落地后流程扰动（boot 镜像自装载覆盖 0x600 块——真实顺序=数据镜像含描述符块），快照点已通（sig-page 过滤 + 栈触及检测），待下一轮把装载顺序与描述符块来源对齐。
+>
+> **G1 几何闭环（2026-11-07 续）——活帧链从真实 trace 提取**：
+> - **签名 DMA 调用点实测**（10.4M 步 run，step 10419105）：`0x39bb lcall 0x532`，dst=0x600、src=meta+0x48（0x1e80000）、len=meta+0x50、**sp=0xff44**（0x3924 帧底）。
+> - **完整帧链（全部实证）**：main(sp 0xfff0)→…→0x7fe5 体(sp 0xffe0)→ORCH=0x231b 大编排函数（入口 sp 0xffd4、体 sp 0xff8c，ret@[0xffd4]）→**0x3924**（sp 0xff44，ret@[0xff88]）→0x532（sp 0xff38，canary@[0xff3c]、局部@[0xff38]，ret@[0xff40]）→**0x8070=XDMA 驱动**（sp 0xff14，mpush $r6+canary@[0xff30]，**ret@[0xff34]=首劫持槽**）。
+> - **劫持映射**：DMA 末块覆盖 0xFF00+ 后，0x8070 尾声读 canary@[0xff30]（=payload guard 值）、mpopaddret $r6 0x4 弹 r0..r6@[0xff14..0xff2c]（=payload 填的寄存器值）、pc=[0xff34]=首 gadget。
+> - **0x18 步长推导**：golden 链帧 = 5 寄存器槽 + gadget 槽——尾声 `mpopaddret $r4 <imm=0>`：pop r4..r0（guard@+0、value@+8→r2、addr@+C→r1、gadget@[+0x14]=pc），stride 恰 0x18。golden 的 guard = **canary 存于 r4 槽**（mpush $r4 形状的帧，canary 复用寄存器保存位）。
+> - **gadget 语义首个实解**：0x10B9 中项入口 = `mov $r14 0xffff`（4 字节）后并入规范流 `mov $r10 0x1103c0; lcall 0xe3b`（写 r11→GSP FBIF 窗口）——token = 中项入口注入小工作后落回宿主函数自身的尾声，级联消耗下一链帧。
+> - **关键流程发现**：0x3924 路径在 0x397f 校验 sig_size−1 ≤ 0xfff——**payload 的 sig_size=0xFA00 会被此路径拒绝**；ORCH 按 D[0x318+4] 等阶段旗标分支（0x27a2/0x282b/0x287e…），golden 流程走的是另一分支。**sig_size≤0x1000 与实测 payload 的矛盾 = 下一轮对齐点**（真实流程的 DMA 长度字段或分支待锁定）。
+> - **G1 验收状态**：main SP 0xFFF0 ✓（推导=实证）、copy base 0x600 ✓（sig DMA 实测）、canary 0x6140 ✓、park 0x7ea4 ✓；活帧槽位/步长的静态推导框架完成，0xFF38/40/44/4C 与 0xff34 的差异归因于流程分支——待分支锁定后逐项对拍。
 
 | 里程碑 | 内容 | 验收 | 估时 |
 |---|---|---|---|

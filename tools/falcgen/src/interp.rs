@@ -80,6 +80,9 @@ pub struct Interp {
     /// staged chunks awaiting xdwait
     pub xdbase: u32,
     pub xd_pending: Vec<(bool, u32, u32)>,
+    /// pending fuse row-data write (row, value), committed by the f2
+    /// trigger write at IO 0x1c000
+    pub fuse_write: Option<(u32, u32)>,
     /// optional execution breakpoint (stop before executing this PC)
     pub break_pc: Option<u32>,
 }
@@ -114,6 +117,7 @@ impl Interp {
             last_d200: 0,
             xdbase: 0,
             xd_pending: Vec::new(),
+            fuse_write: None,
             break_pc: None,
         }
     }
@@ -664,8 +668,28 @@ impl Interp {
                             self.param_pending = false; // the ack
                         } else if a == 0xd200 {
                             self.last_d200 = v; // the write-type payload
+                        } else if a == 0x1c000 {
+                            // the trigger: low byte 0xf1 = read, 0xf2 =
+                            // commit the pending row-data write
+                            if v & 0xff == 0xf2 {
+                                if let Some((row, val)) = self.fuse_write.take() {
+                                    if let Some(slot) =
+                                        self.fuse_rows.iter_mut().find(|(r, _)| *r == row)
+                                    {
+                                        slot.1 = val;
+                                    } else {
+                                        self.fuse_rows.push((row, val));
+                                    }
+                                }
+                            }
                         } else if a == 0x1c100 {
                             self.fuse_row = v; // fuse row select
+                        } else if a == 0x1c200 {
+                            // row-data write (the f2 trigger commits it):
+                            // the booter programs the fuse-shadow registers
+                            // (0x11824c/0x118250 from the config fuses,
+                            // 0x1180f8 markers) through this window
+                            self.fuse_write = Some((self.fuse_row, v));
                         }
                         if (DMA_IO_LO..=DMA_IO_HI).contains(&a) && self.trace {
                             println!("    dma-reg write {a:#x} <- {v:#x}");
@@ -851,11 +875,16 @@ impl Interp {
                 for (is_load, off, _packed) in &staged {
                     let dst = ((self.xdbase & 0xffff) << 8) + off;
                     if *is_load {
-                        let host = self.host_buffers.first().cloned().unwrap_or_default();
+                        // Only the signature page (xdbase = 0x600>>8 = 6)
+                        // delivers host bytes (the payload/sig blob); the
+                        // other loads (the boot image's zero data section,
+                        // the page-staging reads) transfer zeros — using
+                        // the host buffer for those leaked 0xaa fill into
+                        // the descriptor area and tripped 0x8070's source
+                        // alignment check (src 0xaaaabaaa, status 0x2).
+                        let host = if sig_page { self.host_buffers.first().cloned().unwrap_or_default() } else { Vec::new() };
                         for k in 0..0x100usize {
-                            let b = host.get((off + k as u32) as usize % host.len().max(1))
-                                .copied()
-                                .unwrap_or(0);
+                            let b = host.get((off + k as u32) as usize).copied().unwrap_or(0);
                             self.wr8((dst + k as u32) as usize, b as u32);
                         }
                         self.dma_copies.push(DmaCopy { dst, len: 0x100 });
