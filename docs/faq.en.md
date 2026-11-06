@@ -6,6 +6,7 @@
 - [Why does Turing need GSP firmware mode?](#turing)
 - [Which display and boot-entry modes work?](#display)
 - [Why is there no gain on Linux despite a green log?](#linux)
+- [The unlock worked but performance did not move - how do I tell whether it can?](#gain)
 - [Why does an unlocked card get locked again once it reaches the OS?](#relock)
 - [Does the unlock survive Windows sleep? (S3 / Modern Standby)](#sleep)
 - [Does the unlock survive a Thunderbolt handoff?](#thunderbolt)
@@ -138,6 +139,36 @@ Restart and check effective values rather than the saved file alone:
 | Unlock state | `sudo python3 tools/diag-unlock.py` (checkout) | Effective SS overrides |
 
 An unlock cleared by power loss needs USB replay; changing configuration alone does not restore it. Source: [RTD3 platform record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/9). For the full mechanism inventory, triage and remedies see [Why does an unlocked card get locked again once it reaches the OS?](#relock).
+
+<a id="gain"></a>
+
+## The unlock worked but performance did not move - how do I tell whether it can?
+
+Separate two questions first: **is the unlock still alive** (see the [in-OS read-back](#ssdiag); a closed gate or reverted selectors is a different problem), and **is the unlock alive but the workload cannot use it**. The second one has a rule, so you do not have to try workload after workload:
+
+> **gain ≈ GEMM gain × the fraction of the workload that is rate-limited at stock clocks.**
+
+The unlock raises the **issue rate**, not the power ceiling. So a workload that leaves the locked card well below its power limit, with SM utilisation unsaturated, converts the saved time into watts and finishes earlier; a workload that already sits on the power limit with SM pinned at 100 % only spends more watts for the same time.
+
+One machine, one session, TB4 + AD102 (RTX 4090), `ssdiag` verified at both ends ([#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)):
+
+| Workload | Locked | Unlocked | Delta | Locked avg / peak power |
+| --- | --- | --- | --- | --- |
+| multi-reference image editing (double UNet pass) | 170.4 s | 139.0 s | -18.4% | 301 / 436 W |
+| text-to-video, 15 s clip | 119 s | 89 s | -25.2% | 298 / 484 W |
+| reference-to-video, 20 steps | 169 s | 169 s | 0% | 362 / 466 W |
+| single-pass text-to-image | 24.8 s | 24.1 s | ~0% | - |
+| quantised MoE LLM (prefill+decode) | - | - | 0% | - |
+
+Controls for the three zero rows: the reference-to-video row already averaged 362 W with SM at 100 % while locked (three baseline runs at 169/169/169 s), and after the unlock it averaged 405 W at the same time; VRAM peaked at 22.1/24.6 GB, so paging to system memory is ruled out.
+
+**How to use it:**
+
+- Read the locked-state power draw and SM utilisation first, in the same session. At the ceiling with SM saturated means this workload can never show the unlock - no amount of tool tuning changes that.
+- Clearly below the ceiling means the time should drop. If it does not, then check whether the gate was closed again ([locked again](#relock), [sleep and RTD3](#sleep)).
+- On laptops, a shared TGP eats the extra issue rate; the measured shared-TGP case is in the [Linux no-gain section](#linux).
+
+**Evidence level**: the table is one desktop machine (TB4 enclosure; setup in #54). The rule and its power criterion are what the numbers support; other architectures have different "full speed" baselines (`READOUT` semantics in the [read-back verdicts](#ssdiag)), so do not carry these multipliers to another card.
 
 <a id="relock"></a>
 
