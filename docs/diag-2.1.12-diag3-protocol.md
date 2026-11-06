@@ -172,3 +172,11 @@ diag5 在 #122 上 3/3 冷启动同一签名，且比 diag5 瞄的点更上游�
 | `tx-no-ident-dump.txt` / `tx-no-early-enum.txt` | 跳过转储 / EARLY connect |
 
 开关在日志创建**之前**读：死在这两个探测里则**连新鲜 dirent 都没有**——这是"create 之前"与"create 之后"唯一可用的判别位。命令顺序：空盘 → （不新鲜）预读探测 → （新鲜）先关 dump、再关 EARLY → 恢复后保留该级、再单独试 `tx-log-commit-lines`。
+
+## 8. diag7（2026-11-06）：Close/reopen 机制的第二种固件失败形态（#198）
+
+#198（Y9000P IRX8H / RPL-HX / Lenovo 固件）报 diag5 两构建日志恒 0 字节：tx 与 readonly 皆然，**readonly 成功跑完也 0 字节**，768MB 全簇考古零命中；v2.1.10/diag2 同盘 47–56KB 正常。代码定位：diag3+ 的 create-commit 舞步（`CreateReadWrite → Close → Open(ReadWrite) → set_position(EOF)`）在该固件上 **reopen 链干净失败** → logger 整轮降级 console-only → 数据从未进文件。同一套机制在 #122 Z97-K 上是**楔死**（4/4 init 窗口无信号）——两种失败形态、同一处代码、两个独立机型。
+
+**`2.1.11-diag7`**（tag=提交 a0ebe01，资产 tx `f2340566…` / readonly `5c27e80b…`）：reopen 失败时 init 现场自动降级——趁零写入改取新句柄、整轮强制 level 0（v2.1.9 写路径）。日志第 3 行 `BOOT: diag7 log-commit=N (…; auto-degrades to 0 …)` 自报实际状态。开关与 diag6 一致（`tx-log-commit[-lines]` / `tx-no-ident-dump` / `tx-no-early-enum`）。
+
+**判读修正**：①Y9000P 上 level 2/默认都能拿到完整日志（后者经降级）；②Z97 阶梯轮照旧，默认=0 从构造上避开楔死窗；③"Close/reopen 机制在 AMI 系固件上有两种失败形态"入档——**任何报"diag 线 0 字节且成功跑完"的轮，先查第 3 行 log-commit 值与是否出现降级路径**，不要再按窗口推断。铁律重申：diag 线默认 level 0 = 历代 shipping 路径，永远可用作基线。
