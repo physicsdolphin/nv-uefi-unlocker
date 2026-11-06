@@ -57,10 +57,27 @@ const CONFIRM_WAIT: u64 = 30;
 #[entry]
 fn main() -> Status {
     timing::init();
+    // diag6 (#122): the log-commit ladder is read from the stick BEFORE the
+    // log exists, because the create-commit is itself a suspect. Both probes
+    // are read-only directory opens; if a run dies inside them there is no
+    // fresh dirent at all - that is the discriminator against a death after
+    // the create.
+    let commit = if chainload::boot_volume_has(cstr16!(r"\tx-log-commit.txt")) {
+        2
+    } else if chainload::boot_volume_has(cstr16!(r"\tx-log-commit-lines.txt")) {
+        1
+    } else {
+        0
+    };
+    logging::set_log_commit(commit);
     logging::init(VERSION);
     // Durable (marker) line: separates a completed logger init from the
     // quiet-probe/watchdog strip that follows (#122).
     info!("BOOT: logger init returned, main continuing");
+    info!(
+        "BOOT: diag6 switches log-commit={} (0=v2.1.9 default, 1=+marker Close, 2=+create Close)",
+        logging::log_commit()
+    );
     // Phase: QUIET gate (issue #38). The stick opts in via the marker;
     // refused when the log file could not be opened (console = only
     // record, it must stay complete).
@@ -87,14 +104,22 @@ fn main() -> Status {
     // hang: names the console's anchor device (GPU-GOP vs VGA/UART) and the
     // USB controller hosting this stick (xHCI vs EHCI) so a hang stays
     // attributable even when the screen freezes.
-    pci::diag_console_identity();
-    pci::diag_boot_volume_controller();
+    if chainload::boot_volume_has(cstr16!(r"\tx-no-ident-dump.txt")) {
+        info!("DIAG: identity dumps OFF (\tx-no-ident-dump.txt)");
+    } else {
+        pci::diag_console_identity();
+        pci::diag_boot_volume_controller();
+    }
     // Same recursive connect pass the chain phase runs, moved ahead of every
     // enumeration: firmware with a lazy Fast Boot connect policy may only
     // have bound the filesystem surface partially, and #122's 14% early
     // hang logs nothing after the banner - a failed SFS path would look
     // exactly like that. Idempotent; NVIDIA display handles stay skipped.
-    chainload::reconnect_block_devices("EARLY");
+    if chainload::boot_volume_has(cstr16!(r"\tx-no-early-enum.txt")) {
+        info!("EARLY: connect pass OFF (\tx-no-early-enum.txt)");
+    } else {
+        chainload::reconnect_block_devices("EARLY");
+    }
 
     // Phase: ACPI-DUMP (\tx-acpi-dump.txt, read-only). Runs before the
     // confirm so an aborted run still produces the tables; independent of

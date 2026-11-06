@@ -67,6 +67,31 @@ pub fn set_flush_every_lines(n: usize) {
     FLUSH_EVERY_LINES.store(n, core::sync::atomic::Ordering::Relaxed);
 }
 
+/// Close-based commit ladder (#122 diag6). The diag3-5 builds always did
+/// `Close` (create-commit and per-marker commit); v2.1.9 and diag2 never
+/// did. On the Z97 board every diag4/5 run died inside the window that
+/// opens with the create-commit and never left a single log line, while
+/// the old builds sedimented 157-239 lines per run - so the ladder is now
+/// a stick switch and the OLD behaviour is the default:
+///
+///   0 (default)            write + cadence Flush, one long-lived handle
+///                          (v2.1.9/diag2 semantics - the sedimentation
+///                          baseline)
+///   1 (`tx-log-commit-lines`)  + Close/reopen on marker lines
+///   2 (`tx-log-commit`)        + the create-commit as well (diag3-5)
+///
+/// The dirent is then only committed on Close, so with 0/1 the "0 bytes
+/// with a stale dirent" shape comes back - the cluster carve is the reader.
+static LOG_COMMIT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+pub fn set_log_commit(level: usize) {
+    LOG_COMMIT.store(level.min(2), core::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn log_commit() -> usize {
+    LOG_COMMIT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 const FLUSH_MARKERS: &[&str] = &[
     "PHASE", "RESULT", "POST-", "FINAL", "RECONNECT", "DETACH", "CHAIN",
     "SELECTOR", "HANDOFF", "WATCHDOG", "AUTH-SCAN end",
@@ -181,13 +206,17 @@ impl Log for DualLogger {
             *self.lines.get() = n;
             let fe = FLUSH_EVERY_LINES.load(core::sync::atomic::Ordering::Relaxed);
             let count_flush = fe > 0 && n % fe == 0;
-            let durable = FLUSH_MARKERS.iter().any(|m| line.contains(m));
+            // Marker lines always Flush (v2.1.9 semantics at every level);
+            // the Close half of the durability path is the diag6 knob.
+            let marker = FLUSH_MARKERS.iter().any(|m| line.contains(m));
+            let flush = count_flush || marker;
+            let durable = marker && log_commit() >= 1;
             if (*self.file.get()).is_some() {
                 let mut ok;
                 {
                     let f = (*self.file.get()).as_mut().unwrap();
                     ok = f.write(line.as_bytes()).is_ok();
-                    if ok && count_flush {
+                    if ok && flush {
                         ok = f.flush().is_ok();
                     }
                 }
@@ -358,6 +387,11 @@ fn open_fresh_log() -> Option<RegularFile> {
     // bytes" now means the run died between this point and the first log
     // line - a three-call strip (set_logger, first format, first write)
     // instead of an unknown one.
-    drop(file);
-    reopen_log()
+    if log_commit() >= 2 {
+        // Create-commit: close the fresh (0-byte) dirent right away so a
+        // hang leaves a created-but-empty file instead of a stale one.
+        drop(file);
+        return reopen_log();
+    }
+    Some(file)
 }
