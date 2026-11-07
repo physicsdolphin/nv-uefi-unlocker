@@ -70,6 +70,7 @@ fn cmd_synth(args: &[String]) {
     let geo = falcgen::synth::Geometry::tu102();
     let payload = match family.as_str() {
         "tu102" => falcgen::synth::synth(&writes, &geo),
+        "tu11x" => falcgen::synth::synth(&writes, &falcgen::synth::Geometry::tu11x()),
         "ga102" => falcgen::synth::synth_ga102(&writes),
         "ad102" => falcgen::synth::synth_ad102(&writes),
         other => {
