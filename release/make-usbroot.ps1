@@ -403,48 +403,100 @@ if (-not (Test-Path $AssetsExe)) { throw "assets tool not found: $AssetsExe" }
 if (-not (Test-Path $BootEfi))   { throw "BOOTX64.EFI not found: $BootEfi" }
 New-Item -ItemType Directory -Force -Path $mkdirWork, $mkdirOut | Out-Null
 
-foreach ($s in $Sources) {
-    $dest = Join-Path $Work $s.Name
-    $part = "$dest.part"
-    # A file already in the work dir with the pinned hash is accepted as-is:
-    # that is the sanctioned offline path (obtain the exact bytes by any
-    # transport, drop them here, build).
-    if ((Test-Path $dest) -and (Get-FileHash -Algorithm SHA256 $dest).Hash -eq $s.Sha256) {
-        Write-Host "[ok] $($s.Name) SHA-256 verified (cached)"
-        continue
-    }
-    Remove-Item $dest -Force -ErrorAction SilentlyContinue
-    # The SHA-256 pin is the authority, not the URL: try every transport.
-    # Download to .part and hash it there - a killed or corrupted transfer
-    # never lands at $dest (issue #59).
-    $done = $false
-    foreach ($pass in 1..2) {
-        foreach ($u in $s.Urls) {
-            if (Test-Path $part) { Remove-Item $part -Force }
-            Write-Host ("[fetch] {0} <- {1}{2}" -f $s.Name, $u, $(if ($pass -gt 1) { " (retry)" } else { "" }))
-            try {
-                Invoke-WebRequest -Uri $u -OutFile $part
-            } catch {
-                Remove-Item $part -Force -ErrorAction SilentlyContinue
-                continue
-            }
-            $hash = (Get-FileHash -Algorithm SHA256 $part).Hash
-            if ($hash -eq $s.Sha256) {
-                Move-Item -Force $part $dest
-                $done = $true
-                break
-            }
-            Write-Host "[warn] $($s.Name) hash mismatch from $u - refusing this copy, trying next source"
-            Remove-Item $part -Force
+# ---------- pinned-download transport (issues #52/#59/#180/#205) ----------
+# PS 5.1 Invoke-WebRequest is a single connection with no resume: one reset
+# on a 314 MB file restarts from zero, and with one URL x two passes the run
+# dies. curl.exe (ships with Windows 10 1803+, 64-bit PowerShell) is the
+# preferred transport: real exit codes and HTTP Range resume, so a dropped
+# transfer continues where it died. Invoke-WebRequest stays as the fallback
+# (32-bit PowerShell has no visible System32 curl.exe). The SHA-256 pin
+# remains the only authority: every transport writes to .part and the hash
+# gate decides - a killed or corrupted transfer never lands at $dest.
+$script:CurlExe = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
+
+function Invoke-PinnedFetch {
+    # One transfer attempt to $OutFile. Never throws; returns Ok/Via/Reason
+    # so the caller can log the verdict. curl's own error line (if any)
+    # prints above ours and exit codes are stable, so no stderr capture.
+    param([string]$Url, [string]$OutFile)
+    if ($script:CurlExe) {
+        & $script:CurlExe -fLsS --retry 2 -C - --connect-timeout 30 -o $OutFile $Url
+        $code = $LASTEXITCODE
+        if ($code -eq 33) {
+            # Server refused the resume range on a leftover .part: restart
+            # the transfer clean instead of failing the attempt.
+            & $script:CurlExe -fLsS --retry 2 --connect-timeout 30 -o $OutFile $Url
+            $code = $LASTEXITCODE
         }
-        if ($done) { break }
+        if ($code -eq 0) { return @{ Ok = $true; Via = "curl.exe"; Reason = "" } }
+        return @{ Ok = $false; Via = "curl.exe"; Reason = "exit $code" }
     }
-    if (-not $done) {
-        Remove-Item $part -Force -ErrorAction SilentlyContinue
-        throw "download failed for $($s.Name): no pinned source served the pinned bytes ($($s.Sha256)).
-Drop the exact file into $Work yourself and re-run to build offline."
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile
+        return @{ Ok = $true; Via = "Invoke-WebRequest"; Reason = "" }
+    } catch {
+        $msg = ($_.Exception.Message -split "`r?`n")[0]
+        return @{ Ok = $false; Via = "Invoke-WebRequest"; Reason = $msg }
     }
-    Write-Host "[ok] $($s.Name) SHA-256 verified"
+}
+
+function Get-PinnedFile {
+    # Fetch one pinned input: cached-accept, then every URL over up to three
+    # passes. Two DISTINCT failure verdicts (a transport that never delivered
+    # is not a hash accusation, and a hash mismatch is not flaky network):
+    #   - a source answered but the bytes did not hash to the pin -> refuse,
+    #     never accept a different version of the file;
+    #   - no transport completed -> network/client-side; re-run resumes the
+    #     kept .part, or drop the exact file into the work dir to build
+    #     offline (that path is sanctioned, issue #205).
+    param([string]$Name, [string[]]$Urls, [string]$Sha256, [string]$Dest)
+    $part = "$Dest.part"
+    if ((Test-Path $Dest) -and (Get-FileHash -Algorithm SHA256 $Dest).Hash -eq $Sha256) {
+        Write-Host "[ok] $Name SHA-256 verified (cached)"
+        return
+    }
+    Remove-Item $Dest -Force -ErrorAction SilentlyContinue
+    $servedWrongBytes = $false
+    $lastReason = "no transport attempted"
+    foreach ($pass in 1..3) {
+        foreach ($u in $Urls) {
+            $had = [long](Get-Item $part -ErrorAction SilentlyContinue).Length
+            if ($had -gt 0) {
+                Write-Host ("[fetch] {0} <- {1} (pass {2}, resuming {3} bytes)" -f $Name, $u, $pass, $had)
+            } else {
+                Write-Host ("[fetch] {0} <- {1} (pass {2})" -f $Name, $u, $pass)
+            }
+            $r = Invoke-PinnedFetch $u $part
+            if ($r.Ok) {
+                $hash = (Get-FileHash -Algorithm SHA256 $part).Hash
+                if ($hash -eq $Sha256) {
+                    Move-Item -Force $part $Dest
+                    Write-Host "[ok] $Name SHA-256 verified"
+                    return
+                }
+                $servedWrongBytes = $true
+                $lastReason = "wrong bytes from $u (sha256 $hash)"
+                Write-Host "[warn] $Name`: $u served the wrong bytes (sha256 $hash, want $Sha256) - refusing this copy"
+                # Wrong bytes must never be resumed into a good file.
+                Remove-Item $part -Force
+            } else {
+                # Keep .part: the next pass (or the next run) resumes it.
+                $kept = [long](Get-Item $part -ErrorAction SilentlyContinue).Length
+                Write-Host ("[warn] {0}: transport failed via {1} ({2}); {3} bytes kept for resume" -f $Name, $r.Via, $r.Reason, $kept)
+                $lastReason = "{0} from {1}" -f $r.Reason, $u
+            }
+        }
+    }
+    Remove-Item $part -Force -ErrorAction SilentlyContinue
+    if ($servedWrongBytes) {
+        throw "download failed for ${Name}: a source answered but did not serve the pinned bytes (sha256 $Sha256). The pin/URL pairing is broken - please report this. Never substitute another version of the file."
+    }
+    throw "download failed for ${Name}: no transport delivered the file (last: $lastReason).
+This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $($script:Work) (sha256 $Sha256) to build offline."
+}
+
+foreach ($s in $Sources) {
+    Get-PinnedFile -Name $s.Name -Urls $s.Urls -Sha256 $s.Sha256 -Dest (Join-Path $Work $s.Name)
 }
 
 $SrcTar = Join-Path $Work $Sources[0].Name
@@ -492,15 +544,10 @@ function Resolve-ProvenBlob {
     ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
     if (-not $blob) {
         $blob = Join-Path $script:Work $script:ProvenBlobName
-        foreach ($u in $script:ProvenBlobUrls) {
-            Write-Host "[fetch] $($script:ProvenBlobName) <- $u"
-            try {
-                Invoke-WebRequest -Uri $u -OutFile $blob
-                break
-            } catch {
-                Remove-Item $blob -Force -ErrorAction SilentlyContinue
-            }
-        }
+        # Same transport + hash gate as the pinned sources above; throws its
+        # own verdict (transport failure vs wrong bytes) on total failure.
+        Get-PinnedFile -Name $script:ProvenBlobName -Urls $script:ProvenBlobUrls `
+            -Sha256 $script:ProvenBlobSrcSha256 -Dest $blob
     }
     if (-not (Test-Path $blob)) {
         throw "could not fetch $($script:ProvenBlobName) from any pinned transport; drop the exact file (sha256 $($script:ProvenBlobSrcSha256)) into $($script:Work) and re-run"

@@ -89,9 +89,17 @@ size_of() { stat -c %s "$1"; }
 
 fetch() { # fetch <url> <dest> -> nonzero on failure (caller decides next step)
     if have curl; then
-        curl -fsSL --retry 3 -o "$2" "$1"
+        # Resume a partial $2 (HTTP Range) so a dropped 314 MB transfer
+        # continues where it died instead of restarting from zero
+        # (issues #52/#59/#180/#205). Exit 33 = the server refused the
+        # resume range on a leftover .part: restart the transfer clean.
+        curl -fsSL --retry 2 -C - --connect-timeout 30 -o "$2" "$1" && return 0
+        [ "$?" -eq 33 ] || return 1
+        curl -fsSL --retry 2 --connect-timeout 30 -o "$2" "$1"
     elif have wget; then
-        wget -q -O "$2" "$1"
+        # -c continues a partial file (wget restarts by itself when the
+        # server has no range support); -t 3 retries, -T 30 bounds a stall.
+        wget -qc -t 3 -T 30 -O "$2" "$1"
     else
         die "need curl or wget to download $1"
     fi
@@ -429,43 +437,58 @@ if [ "$RUN_TURING_GATE" -eq 1 ]; then check_turing_gate "$GATE_STRICT"; fi
 
 fetch_verify() { # <name> <sha> <url> [url...] -> echoes dest path (logs to stderr)
     local dest="$WORK/$1" part="$WORK/$1.part" got pass url
-    local sha="$2"
+    local name="$1" sha="$2"
     shift 2
     # A file already in the work dir with the pinned hash is accepted as-is:
     # that is the sanctioned offline path (obtain the exact bytes by any
     # transport, drop them here, build).
     if [ -f "$dest" ] && [ "$(sha256_of "$dest")" = "$sha" ]; then
-        logerr "[ok] $1 SHA-256 verified (cached)"
+        logerr "[ok] $name SHA-256 verified (cached)"
         printf '%s' "$dest"
         return 0
     fi
     rm -f "$dest"
     # The SHA-256 pin is the authority, not the URL: try every transport.
     # Download to .part and hash it there - a killed or corrupted transfer
-    # never lands at $dest (issue #59).
-    for pass in 1 2; do
+    # never lands at $dest (issue #59). A partial .part is KEPT across
+    # attempts so the next pass (or the next run) resumes it. Two DISTINCT
+    # failure verdicts: a transport that never delivered is not a hash
+    # accusation, and wrong bytes are not flaky network (issue #205).
+    local served=0 had last="no transport attempted"
+    for pass in 1 2 3; do
         for url in "$@"; do
-            rm -f "$part"
-            if [ "$pass" -eq 2 ]; then
-                logerr "[fetch] $1 <- ${url#https://} (retry)"
+            had="$(size_of "$part" 2>/dev/null || echo 0)"
+            if [ "$had" -gt 0 ]; then
+                logerr "[fetch] $name <- ${url#https://} (pass $pass, resuming $had bytes)"
             else
-                logerr "[fetch] $1 <- ${url#https://}"
+                logerr "[fetch] $name <- ${url#https://} (pass $pass)"
             fi
-            fetch "$url" "$part" || { rm -f "$part"; continue; }
-            got="$(sha256_of "$part")"
-            if [ "$got" = "$sha" ]; then
-                mv -f "$part" "$dest"
-                logerr "[ok] $1 SHA-256 verified"
-                printf '%s' "$dest"
-                return 0
+            if fetch "$url" "$part"; then
+                got="$(sha256_of "$part")"
+                if [ "$got" = "$sha" ]; then
+                    mv -f "$part" "$dest"
+                    logerr "[ok] $name SHA-256 verified"
+                    printf '%s' "$dest"
+                    return 0
+                fi
+                served=1
+                last="wrong bytes from ${url#https://} (sha256 $got)"
+                logerr "[warn] $name: ${url#https://} served the wrong bytes (sha256 $got, want $sha) - refusing this copy"
+                # Wrong bytes must never be resumed into a good file.
+                rm -f "$part"
+            else
+                had="$(size_of "$part" 2>/dev/null || echo 0)"
+                logerr "[warn] $name: transport failed from ${url#https://}; $had bytes kept for resume"
+                last="transport failure from ${url#https://}"
             fi
-            logerr "[warn] $1 hash mismatch from ${url#https://} - refusing this copy, trying next source"
-            rm -f "$part"
         done
     done
     rm -f "$part"
-    die "download failed for $1: no pinned source served the pinned bytes (sha256 $sha).
-Drop the exact file into $WORK/ yourself and re-run to build offline."
+    if [ "$served" -eq 1 ]; then
+        die "download failed for $name: a source answered but did not serve the pinned bytes (sha256 $sha). The pin/URL pairing is broken - please report this. Never substitute another version of the file."
+    fi
+    die "download failed for $name: no transport delivered the file (last: $last).
+This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $WORK/ (sha256 $sha) to build offline."
 }
 
 SRC_TAR="$(fetch_verify "$SRC1_NAME" "$SRC1_SHA" "$SRC1_URL")"
@@ -559,12 +582,10 @@ for fam in "${FAMILIES[@]}"; do
                 if [ -n "$cand" ] && [ -f "$cand" ]; then blob="$cand"; break; fi
             done
             if [ -z "$blob" ]; then
+                # Same transport + hash gate as the pinned sources above;
+                # dies with its own verdict (transport vs wrong bytes).
+                fetch_verify "$PROVEN_NAME" "$PROVEN_SRC_SHA" "${PROVEN_URLS[@]}" >/dev/null
                 blob="$WORK/$PROVEN_NAME"
-                for purl in "${PROVEN_URLS[@]}"; do
-                    log "[fetch] $PROVEN_NAME <- ${purl#https://}"
-                    fetch "$purl" "$blob" && break
-                    rm -f "$blob"
-                done
             fi
             [ -f "$blob" ] || die "could not fetch $PROVEN_NAME from any pinned transport; drop the exact file (sha256 $PROVEN_SRC_SHA) into $WORK/ and re-run"
             blob_hash="$(sha256_of "$blob")"
