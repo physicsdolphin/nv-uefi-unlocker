@@ -4,9 +4,10 @@
 //! with volumes and partition offsets (unelevated volume extents), and the
 //! other PCI devices on the bus. The Secure Boot note now says "may not
 //! load" - field reports show the probe running on some SB-ON hosts. The
-//! per-card driver/GSP read anchors on the driver's own bound-instance list
+//! per-card driver / GSP read anchors on the driver's own bound-instance list
 //! (Services\nvlddmkm\Enum, the maker's ghost-free source) instead of the
-//! devnode property walk, which a card-swap ghost can mislead.
+//! devnode property walk, which a card-swap ghost can mislead. The #99
+//! PF-FLR driver advisory is withdrawn - not verified beyond one issue.
 //! v0.7.0 adds the unelevated `--inventory` block (the issue-report hardware
 //! snapshot): OS/CPU/board/BIOS/chassis from the registry + raw SMBIOS,
 //! per-card driver / VBIOS / EnableGpuFirmware from the class key + nvapi,
@@ -1472,17 +1473,6 @@ fn inventory_advisories(gpus: &[Gpu], inv: &InventorySummary) {
                     "ADVISORY: Turing adapter in LEGACY driver mode - unlocking it WILL TDR (Code 43 / watchdog storm); run tools/windows/enable-turing-unlock.ps1 and fully RESTART first (a hibernate resume does not apply it)"
                 )
             );
-        }
-        if let Some(m) = marketing_driver_version(&cd.version) {
-            if m == "621.01" || m == "630.20" {
-                any = true;
-                println!(
-                    "{}",
-                    yellow(&format!(
-                        "ADVISORY: driver {m} - this family PF-FLRs the unlocked card back to stock in Windows (issue #99, TU106 evidence); an in-OS read-back of NOT_UNLOCKED there is the driver, not a failed EFI transaction"
-                    ))
-                );
-            }
         }
     }
     if inv.chassis_laptop {

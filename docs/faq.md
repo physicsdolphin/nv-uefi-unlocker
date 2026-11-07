@@ -618,7 +618,7 @@ ssdiag --select 2504
 ssdiag --reapply
 ```
 
-`--inventory`（0.7.0 起，0.7.1 扩容）打印**免管理员、只读**的硬件采集块：OS/CPU（含 CPUID 拓扑与 F/M/S 判读——ES/QS 烂名牌也能读出家族型号与核线程数）/主板/BIOS/机箱形态/内存插槽分布（容量+频率，SMBIOS Type 17，不读序列号）/磁盘型号与容量/分区布局（偏移、文件系统、盘符、余量）/其他 PCI 设备清单，以及每张卡的设备 ID/子系统 ID/VBIOS/驱动版本/GSP 模式（经驱动绑定列表定位，无换卡 ghost），并给出家族准入判定（IN-SCOPE/OUT-OF-SCOPE）与预检提示（Secure Boot 开启、Turing 未开 GSP 模式、#99 驱动族回锁、笔电掉锁风险）。这就是 issue 模板让你粘贴的那一块——发帖前过目并脱敏你不想公开的内容；它不读主机名、用户名或序列号。完整运行（寄存器读回）仍需管理员；`--select` 按 DeviceID 筛选。`--reapply` 是写操作，仅在门仍开放时重写 SS0/SS1 并读回，不写 PLM。Turing 保持只读。Linux 在源码树根目录运行 `sudo python3 tools/diag-unlock.py`，可用 `--bdf` 指定实际目标地址，也提供 `--reapply`；对应的免 root 采集块为 `python3 tools/diag-unlock.py --inventory`（sysfs/DMI/nvidia-smi 只读，输出格式与 ssdiag 相同）。
+`--inventory`（0.7.0 起，0.7.1 扩容）打印**免管理员、只读**的硬件采集块：OS/CPU（含 CPUID 拓扑与 F/M/S 判读——ES/QS 烂名牌也能读出家族型号与核线程数）/主板/BIOS/机箱形态/内存插槽分布（容量+频率，SMBIOS Type 17，不读序列号）/磁盘型号与容量/分区布局（偏移、文件系统、盘符、余量）/其他 PCI 设备清单，以及每张卡的设备 ID/子系统 ID/VBIOS/驱动版本/GSP 模式（经驱动绑定列表定位，无换卡 ghost），并给出家族准入判定（IN-SCOPE/OUT-OF-SCOPE）与预检提示（Secure Boot 开启、Turing 未开 GSP 模式、笔电掉锁风险）。这就是 issue 模板让你粘贴的那一块——发帖前过目并脱敏你不想公开的内容；它不读主机名、用户名或序列号。完整运行（寄存器读回）仍需管理员；`--select` 按 DeviceID 筛选。`--reapply` 是写操作，仅在门仍开放时重写 SS0/SS1 并读回，不写 PLM。Turing 保持只读。Linux 在源码树根目录运行 `sudo python3 tools/diag-unlock.py`，可用 `--bdf` 指定实际目标地址，也提供 `--reapply`；对应的免 root 采集块为 `python3 tools/diag-unlock.py --inventory`（sysfs/DMI/nvidia-smi 只读，输出格式与 ssdiag 相同）。
 
 若遇到 `MAP_PHYS win32 error 5`（映射被拒）：0.6.3+ 会输出一次前置分类清单（HVCI 运行态 / 内核态杀软过滤驱动 / 驱动加载被拒）。**杀软的「暂停保护」或退出用户态进程不会卸载其内核钩子**——已两例实机闭环（Kaspersky，卸载后痊愈），详见 [平台门与 MAP 被拒排查](ssdiag-platform-gates.md)。
 

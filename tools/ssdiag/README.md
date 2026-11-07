@@ -25,7 +25,7 @@ For read-back verdicts, Turing behavior, Linux checks and handoff diagnosis, use
   ranges the loader admission table carries), and the block ends in
   advisories: Secure Boot on ("may not load" - field reports show the probe
   running on some SB-ON hosts), Turing in legacy GSP mode (the TDR warning),
-  the #99 PF-FLR driver family, laptop chassis. Every other mode prints this
+  laptop chassis. Every other mode prints this
   block first, so a full dump carries its own platform context; the line
   prefixes (`OS:` / `RAM SLOT:` / `DISK:` / `PART:` / `PCI DEV:` /
   `GPU n PCI:` / `GPU n VBIOS:` ...) are the format
