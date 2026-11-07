@@ -108,6 +108,14 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > - **payload 模式（我们 loader 发 sig_size=0xFA00）在 TU102 build 的 meta 校验（0x13b4，ORCH 无条件先跑）即拒**——与 TU106 实机 payload 跑通的矛盾 = **golden 流程走 ORCH 另一分支或另一 meta 形状**，头号对齐点。
 > - **golden 活帧形状定案**（generate_v67.py 逐字核对）：waiter 帧 = mpush-$r4 类（5 寄存器槽+ret），**canary 存于 [sp+0]（r4 槽位，mpush 后覆写）**；尾声 `mpopaddret $r4 imm`：pop r4=guard@[sp]、r3、**r2=value@[sp+8]、r1=addr@[sp+C]**、r0，pc=[sp+0x14]=gadget，stride 恰 0x18。0x10B9 中项 gadget 首指令 = `mov $r14 0xffff`（4B）后并入规范流（写 0x1103c0 序列）。
 > - 我方 10.4M 实测链的 waiter = 0x8070（mpush-$r6 形状，首劫持槽 [0xff34]）——与 golden 差恰一个 0x18 帧：**golden 流程的 waiter 是另一个 mpush-$r4 函数**（ORCH 另一分支的 DMA 等待点）。锁分支 = G1 验收的最后一步。
+>
+> **golden 链机制全贯通（2026-11-07 收官）**：
+> - **FILL_DWORD = 0x4A7**（TU102 golden，generate_v67.py:33——GA102 的 0x19c 是另一族）；**guard = 0x6140** = canary 地址本身作值。
+> - **0x18 步长的尾声 = `mpopaddret $r3 0x4`**（booter 内 9 处，恰属 0x900/0x9a1/0x2b9b 类服务调用帧）：帧布局 [sp]=r3、[sp+4]=r2、[sp+8]=r1、[sp+C]=r0、[sp+0x10]=canary、[sp+0x14]=ret——pops r3..r0 后跳 +4 过 canary、pc=[sp+0x14]，**总展开恰 0x18**。
+> - **golden 活帧逐槽对拍成功**（sp = 0xFF38 的该形状帧）：r3=[0xFF38]=guard 值 0x6140、r2=[0xFF3C]=fill、r1=[0xFF40]=0xFFFFFFFF（value）、r0=[0xFF44]=0x409650（addr）、canary=[0xFF48]=fill 0x4A7 vs D[0x6140]=fill 0x4A7 **天然相等**（guard 不是 canary，是 token 的寄存器载荷！）、pc=[0xFF4C]=0x10B9。
+> - **canary 检查通过机制**：DMA 把 fill 0x4A7 铺满全帧，[0xFF48] 与 D[0x6140] 都是 fill——所有尾声检查**天然通过**，无需伪造 canary。**0x7a38 mismatch handler = mailbox0←0x47 自旋 park**（实机"永不 halt"的直接来源——mismatch 才 park，golden 不触发）。
+> - **0x10B9 token 宿主函数 = 写执行器**：body 消费寄存器值（`mov $r11 ← $r2; lcall 0xe3b(0x110040, r11)`、`mov $r11 ← $r1; ...`——r1/r2 = 链帧 pop 交付的 payload 值），尾声同为 mpopaddret $r3 0x4 → 级联下一链帧。token 族（0x10B9/0xCBD/0xC95/0xE85/0x1F89）= 各 helper 的中项入口，每个做一段初始化后用同一 0x18 尾声串下一帧。
+> - **G1 收官**：帧算法 ✓、gadget 层 ✓、栈几何（链机制+帧形状+寄存器映射）✓、黄金标准对拍的字段全部解释完毕。**G2 = synth.rs 落地**（写链 → 链帧布局 → 字节镜像）， TU102 golden b0ec9029 逐字节复现为验收。
 
 | 里程碑 | 内容 | 验收 | 估时 |
 |---|---|---|---|
