@@ -71,7 +71,7 @@ Optional markers go in the stick root; normal use needs none:
 | --- | --- |
 | `tx-require-d0.txt` | Abort before GPU writes/reset when entry is not D0 |
 | `tx-select-bdf.txt` | Contents `bb:dd.f` or `dddd:bb:dd.f`; process only that card; invalid or absent target never selects another card |
-| `chain-target.txt` | First nonempty, non-`#` line specifies an EFI path tried on each volume before the default order; missing path is logged and falls back |
+| `chain-target.txt` | First nonempty, non-`#` line specifies an EFI path tried on each volume before the default order; missing path is logged and falls back. **Check this first when the firmware BootOrder holds a stale cross-disk entry**: the default resolution follows BootOrder and can land on another disk's old loader ([#204](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/204) hit a leftover `\EFI\ubuntu\shimx64.efi` — green transaction, chain into Linux); put `\EFI\Microsoft\Boot\bootmgfw.efi` on the first line to pin the local chain target |
 | `no-reconnect.txt` | Skip target GOP reconnect for a post-transaction reconnect hang/reset |
 | `tx-reconnect-nonrecursive.txt` | Non-recursive reconnect only, keeps the vendor GOP binding (console stack left to bootmgfw to rebuild); gentler than `no-reconnect.txt`, for the "boots fine but hangs in reconnect" family (issue #52 X470, [Discussion #131](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/131) X99/C610) |
 | `i_know_what_i_am_doing.txt` | Auto-run after an N-second countdown, any key aborts; the first marker line sets N (1-30, default 5). The armed path fills the countdown window with read-only prep (enumerate/sample/select/asset reads into RAM), so the auto-run starts from memory |
