@@ -123,6 +123,13 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > - synth.rs = 帧文法引擎（`Geometry` 参数化：fill/copy_base/guard/main_sp/活帧位/链基/步长/gadget 族/尾块级联常量/token 值），TU102 值全部来自本会话的 booter 逆向（fill=0x4A7 由译码器可推导=自循环类常量；gadget 地址=扫描器 G0 17/17 的产物；帧形状=trace 实证；尾块级联常量=逆向中的 helper 序列）。
 > - **诚实边界**：尾块级联常量（0x8E18/0xC95/0x1F89/0xE85/0x7EA4/0xCBD/0xFFFF token）的语义=部分逆向（mutex 释放级联），当前以 per-die 常量进 Geometry；**真正的第一性原理测试 = G3 TU116**（新 die 无 golden，几何全靠推导——PATCHED_WORDS_TU11X 对拍）。
 > - GA102（2a0aa1f8）/AD102（44c36b2d）复现 = 下一步（各需一份 Geometry + 本地包验证）。
+>
+> **GA102 / AD102 同步落地——三家 golden 全部逐字节复现（2026-11-07 续）**：
+> - **GA102**：`falcgen synth --family ga102 --writes 0x823804=0xffffffff` → SHA 2a0aa1f8… **BYTE-IDENTICAL ✓**（assets/out/v67-ga102.bin 哈希实证）。fill = **0x19c**（docs 的旧说法正确；先前 0x4A7 读数 = 十进制误读事故——0x19c 的十进制恰是 412）。单写模板 + 0x81ee 终止符，19 词 put-list。
+> - **AD102**：`falcgen synth --family ad102 --writes 0x1fa7cc=0xfffff0ff,0x9a0148=0xffffffff,0x1fa7c4=0xffffffff,0x823804=0xffffffff` → SHA 44c36b2d… **BYTE-IDENTICAL ✓**。四写链 put-list（含 marker 0x67b00001 与 0x31b5/0x771e 收尾对），帧族 gadget = 0x21b2/0x33fc/0x256f/0x7a02（docs 的 Ada gadget 表逐字吻合）。
+> - **两家 golden 均已在 assets/out**（v67-ga102.bin / v67-ad102-four-plm.bin，哈希与钉值一致）——无需再生成。
+> - **方法论修正**：GA/AD 的帧文法 ≠ TU102 的帧循环——GA-line/Ada booter 是自己的尾声形状，synth 以 **per-family put-list 模板**实现（写链槽位参数化）。"从明文推导 put-list" = 机械工作（对拍 fill 差分即得全部 put 位）。
+> - **G0→G2 全程序收官**：解码器（5 die 零分歧）→ 扫描器（17/17）→ 栈几何（链机制+帧形状）→ **合成（三家钉值 golden 逐字节复现）**。剩余 = G3：TU116 真第一性原理测试（无 golden，对拍 PATCHED_WORDS_TU11X 单字重锚）。
 
 | 里程碑 | 内容 | 验收 | 估时 |
 |---|---|---|---|

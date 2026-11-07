@@ -194,3 +194,98 @@ pub fn synth(writes: &[(u32, u32)], geo: &Geometry) -> Vec<u8> {
 
     p
 }
+
+/// The GA-line/Ada payloads use a different frame grammar (the GA-line
+/// booter's own epilogue shapes); their goldens are explicit put-lists
+/// over the same 0x19c fill with the write-chain slots parameterized.
+pub const GA_FILL: u32 = 0x19c;
+pub const AD_FILL: u32 = 0x19c;
+
+/// GA102: single-write payload (0x823804 ← value), terminator 0x81ee.
+/// Reproduces 2a0aa1f8… byte-for-byte.
+pub fn synth_ga102(writes: &[(u32, u32)]) -> Vec<u8> {
+    assert!(!writes.is_empty(), "the write chain must not be empty");
+    let mut p = vec![0u8; V67_SIZE];
+    let fill = GA_FILL.to_le_bytes();
+    for w in p.chunks_exact_mut(4) {
+        w.copy_from_slice(&fill);
+    }
+    let mut put = |dmem: u32, v: u32| {
+        let off = (dmem - 0x600) as usize;
+        assert!(off + 4 <= V67_SIZE, "put {dmem:#x} outside the image");
+        p[off..off + 4].copy_from_slice(&v.to_le_bytes());
+    };
+    let puts: [(u32, u32); 19] = [
+        (0x1700, 7),
+        (0xFF48, writes[0].1),
+        (0xFF50, 0xD44),
+        (0xFF60, writes[0].0),
+        (0xFF68, 0x1FCE),
+        (0xFF74, 0),
+        (0xFF7C, 0x1101),
+        (0xFF80, 0x84C8),
+        (0xFF84, 0x8E18),
+        (0xFF8C, 0x84C8),
+        (0xFF90, 0),
+        (0xFF98, 0x1FCE),
+        (0xFFA4, 0xFFBC),
+        (0xFFAC, 0x5789),
+        (0xFFBC, 0xD44),
+        (0xFFCC, 3),
+        (0xFFD4, 0x1FCE),
+        (0xFFE8, 0xD52),
+        (0xFFEC, 0x81EE), // terminator
+    ];
+    for (dmem, v) in puts {
+        put(dmem, v);
+    }
+    p
+}
+
+/// AD102: the four-PLM chain ((0x1fa7cc, 0xfffff0ff), (0x9a0148, 0xffffffff),
+/// (0x1fa7c4, 0xffffffff), (0x823804, 0xffffffff)), marker 0x67b00001,
+/// the 0x31b5/0x771e close-out pair. Reproduces 44c36b2d… byte-for-byte.
+pub fn synth_ad102(writes: &[(u32, u32)]) -> Vec<u8> {
+    assert!(writes.len() == 4, "the Ada chain is exactly four writes");
+    let mut p = vec![0u8; V67_SIZE];
+    let fill = AD_FILL.to_le_bytes();
+    for w in p.chunks_exact_mut(4) {
+        w.copy_from_slice(&fill);
+    }
+    let mut put = |dmem: u32, v: u32| {
+        let off = (dmem - 0x600) as usize;
+        assert!(off + 4 <= V67_SIZE, "put {dmem:#x} outside the image");
+        p[off..off + 4].copy_from_slice(&v.to_le_bytes());
+    };
+    let puts: [(u32, u32); 25] = [
+        (0x1700, 7),
+        (0xFF48, writes[0].1),
+        (0xFF50, 0x21B2),
+        (0xFF60, writes[0].0),
+        (0xFF68, 0x33FC),
+        (0xFF74, writes[1].1),
+        (0xFF7C, 0x256F),
+        (0xFF80, 0x7A02),
+        (0xFF84, writes[1].0),
+        (0xFF8C, 0x33FC),
+        (0xFF98, writes[2].1),
+        (0xFFA0, 0x256F),
+        (0xFFA4, 0x7A02),
+        (0xFFA8, writes[2].0),
+        (0xFFB0, 0x33FC),
+        (0xFFBC, writes[3].1),
+        (0xFFC4, 0x256F),
+        (0xFFC8, 0x7A02),
+        (0xFFCC, writes[3].0),
+        (0xFFD4, 0x33FC),
+        (0xFFE0, 0x67B0_0001), // the marker
+        (0xFFE8, 0x256F),
+        (0xFFEC, 0x7A02),
+        (0xFFF8, 0x31B5),
+        (0xFFFC, 0x771E),
+    ];
+    for (dmem, v) in puts {
+        put(dmem, v);
+    }
+    p
+}
