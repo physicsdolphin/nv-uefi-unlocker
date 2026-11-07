@@ -311,7 +311,12 @@ def _gsp_runtime():
     return "active"
 
 
-def inventory():
+def inventory_block():
+    """The inventory block itself: platform lines, per-GPU rows, advisories.
+
+    Printed by --inventory alone AND at the top of every full (root) run -
+    ssdiag 0.7.0 parity, so a register dump carries its own platform
+    context instead of the reporter having to describe it."""
     print("===== diag-unlock inventory (read-only; no root, no BAR0) =====")
     pretty = ""
     try:
@@ -421,6 +426,10 @@ def inventory():
         print(f"ADVISORY: {a}")
     if not advisories:
         print("ADVISORY: none of the known pre-flight cautions apply")
+
+
+def inventory():
+    inventory_block()
     print("inventory complete - read-only, nothing was written")
     print("posting this block? review it and redact anything you consider personal first")
     return 0
@@ -732,6 +741,9 @@ def main():
     if not devs:
         print("no NVIDIA display controller found", file=sys.stderr)
         return 1
+
+    # ssdiag 0.7.0 parity: a full dump opens with its own platform block
+    inventory_block()
 
     rc = 0
     for bdf, devpath in devs:
