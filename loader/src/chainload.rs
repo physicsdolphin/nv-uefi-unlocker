@@ -83,6 +83,15 @@ pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
     #[cfg(feature = "tx")]
     crate::tx::handoff_free_assets();
     log_handoff_memmap();
+    // Operator pin: exit to the firmware boot manager instead of
+    // LoadImage/StartImage. On platforms where a chain-loaded bootmgfw
+    // mis-resolves its BCD (MSI/AMI GP66: "File: \BCD, 0xc0000034"),
+    // returning SUCCESS lets the firmware's own BootOrder run Windows
+    // Boot Manager natively - same power cycle, unlock intact.
+    if boot_volume_has(cstr16!(r"\tx-exit-fw.txt")) {
+        info!("CHAIN: \\tx-exit-fw.txt present - exiting to the firmware boot manager (no chain)");
+        return Ok(());
+    }
     if let Some(pre) = pre.as_ref() {
         if start_preloaded(pre).is_ok() {
             return Ok(());
