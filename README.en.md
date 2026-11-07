@@ -195,6 +195,8 @@ Keep the generated `v67-*.bin` unlock file. [Full file list and purposes](docs/f
 
 Back up an existing `EFI/BOOT/BOOTX64.EFI` before replacing it. Do not copy into the system ESP or change the permanent boot order. See [USB files and options](docs/faq.en.md#usb) for file details, building on another host, GPU selection and advanced options.
 
+Unsure about the machine or driver state? Run the read-only pre-flight first: `ssdiag-x86_64-windows.exe --inventory` on Windows (the separate release asset, no admin) or `python3 tools/diag-unlock.py --inventory` on Linux (no root). It prints the family admission verdict (IN-SCOPE/OUT-OF-SCOPE) plus known cautions (Secure Boot, Turing GSP mode, the relocking driver families) - and it is the no-lookups source of the hardware block an issue report asks for.
+
 ### 3. Boot and verify
 
 1. Select the USB stick in the firmware’s one-time boot menu.

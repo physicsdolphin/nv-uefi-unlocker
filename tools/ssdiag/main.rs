@@ -1,4 +1,12 @@
-//! ssdiag v0.6.14 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.0 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.0 adds the unelevated `--inventory` block (the issue-report hardware
+//! snapshot): OS/CPU/board/BIOS/chassis from the registry + raw SMBIOS,
+//! per-card driver / VBIOS / EnableGpuFirmware from the class key + nvapi,
+//! and a device-id family verdict with pre-flight advisories (Turing GSP
+//! legacy mode, the #99 PF-FLR driver family, Secure Boot, laptop chassis).
+//! Every mode prints the block first, so a full dump carries its own platform
+//! context; `--inventory` prints it alone - no admin, no driver, nothing
+//! written.
 //! v0.6.14 adds a reference-map line to the TPC block: a STATUS vector
 //! byte-identical to the two independent RTX 3070 samples (#169/#54) prints
 //! the match, so future reports self-classify as standard binning.
@@ -322,6 +330,11 @@ mod cm {
     pub const BASIC_LOG_CONF: u32 = 0x0000_0006;
     pub const RES_TYPE_MEM: u32 = 0x0000_0001;
     pub const RES_TYPE_MEM_LARGE: u32 = 0x0000_0007; // >= 4 GiB descriptors
+    // CM_DRP numbering field-verified with a live devnode probe (values ARE
+    // 1-based here, not the 0-based layout some headers suggest):
+    // 1=DeviceDesc, 10=Driver class slot, 14=LocationInformation, 22=BusNumber
+    pub const CM_DRP_DEVICEDESC: u32 = 0x0000_0001;
+    pub const CM_DRP_DRIVER: u32 = 0x0000_000A;
     pub const CM_DRP_LOCATION_INFORMATION: u32 = 0x0000_000E;
     pub const CM_DRP_BUSNUMBER: u32 = 0x0000_0016;
     pub const CM_DRP_ADDRESS: u32 = 0x0000_001D;
@@ -494,7 +507,7 @@ fn usb4_config() {
     }
     match (host, dev) {
         (_, Some(4)) if host != Some(4) => println!(
-            "USB4: device-router driver DISABLED - the tunnel takeover reset is suppressed; expect the unlock to survive the handoff"
+            "USB4: device-router driver DISABLED - the takeover reset is suppressed; expect the unlock to survive the handoff"
         ),
         (Some(4), Some(4)) => println!(
             "USB4: both routers disabled - the takeover is suppressed, but the tunnel may not come up at all"
@@ -506,6 +519,332 @@ fn usb4_config() {
             "USB4: device-router driver ENABLED - the takeover will reset the tunnel at bind; a cleared canary is expected"
         ),
         _ => println!("USB4: device-router Start unreadable - treat as unknown"),
+    }
+}
+
+// ---------------------------------------------------------------- inventory (v0.7.0)
+
+/// The unelevated machine/GPU snapshot every mode prints first, and that
+/// `--inventory` prints alone: the hardware block the issue templates ask
+/// for, collected from the registry / raw SMBIOS / nvapi instead of the
+/// reporter's memory. Nothing here needs the probe driver or elevation, and
+/// nothing is written anywhere. No hostname, username or serials are read.
+const OS_CURVER: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+const SMBIOS_BIOS_KEY: &str = r"HARDWARE\DESCRIPTION\System\BIOS";
+const CPU0_KEY: &str = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0";
+const CLASS_ROOT: &str = r"SYSTEM\CurrentControlSet\Control\Class";
+
+/// One named HKLM string value (reg_value_string takes the wide value name).
+fn hklm_string(subkey: &str, value: &str) -> Option<String> {
+    let v = wide(value);
+    reg_value_string(HKEY_LOCAL_MACHINE, subkey, v.as_ptr())
+}
+
+/// Chassis class from the raw SMBIOS table (GetSystemFirmwareTable 'RSMB'):
+/// walk the DMTF structures ({u8 type, u8 len, u16 handle} + formatted area +
+/// double-NUL string set); System Enclosure (type 3) carries the chassis type
+/// byte at struct offset 5. The registry has no chassis type, and the CIM
+/// route would cost a spawn (the thing v0.6.1 removed).
+fn chassis_class() -> Option<(&'static str, u8)> {
+    const RSMB: u32 = 0x5253_4D42; // 'RSMB'
+    let need = unsafe { win::GetSystemFirmwareTable(RSMB, 0, core::ptr::null_mut(), 0) };
+    if need == 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; need as usize];
+    let got = unsafe { win::GetSystemFirmwareTable(RSMB, 0, buf.as_mut_ptr(), need) };
+    if got == 0 {
+        return None;
+    }
+    // RAW_SMBIOS_DATA: u8 calling, u8 major, u8 minor, u8 dmi_rev, u32 len
+    if buf.len() < 8 {
+        return None;
+    }
+    let data_len = u32::from_le_bytes(buf[4..8].try_into().ok()?) as usize;
+    if data_len == 0 || buf.len() < 8 + data_len {
+        return None;
+    }
+    let data = &buf[8..8 + data_len];
+    let mut off = 0usize;
+    while off + 4 <= data.len() {
+        let typ = data[off];
+        let len = data[off + 1] as usize;
+        if len < 4 || off + len > data.len() {
+            break;
+        }
+        // Win32_SystemEnclosure.ChassisTypes encoding (portable set only)
+        if typ == 3 && len >= 8 {
+            let chassis = data[off + 5];
+            let word = match chassis {
+                8 | 9 | 10 | 11 | 14 | 30 | 31 | 32 => "laptop/portable",
+                3 | 4 | 5 | 6 | 7 | 13 | 15 | 16 | 17 | 23 | 24 | 28 | 35 => "desktop/tower",
+                _ => "other/unknown",
+            };
+            return Some((word, chassis));
+        }
+        // skip the formatted area, then the double-NUL string set
+        let mut p = off + len;
+        let mut nul = 0usize;
+        while p < data.len() && nul < 2 {
+            if data[p] == 0 {
+                nul += 1;
+            } else {
+                nul = 0;
+            }
+            p += 1;
+        }
+        off = p;
+    }
+    None
+}
+
+/// WDDM DriverVersion "32.0.15.6094" -> the marketing number "560.94"
+/// (part[2] drops its leading digit, part[3] splits 2+2; anchors: 15.3742 ->
+/// 537.42, 16.2101 -> 621.01). None when the shape does not fit - callers
+/// then print the raw version only.
+fn marketing_driver_version(raw: &str) -> Option<String> {
+    let p: Vec<&str> = raw.split('.').collect();
+    if p.len() != 4 || p[2].len() != 2 || p[3].len() != 4 {
+        return None;
+    }
+    let d2 = *p[2].as_bytes().get(1)? as char;
+    let (maj, min) = p[3].split_at(2);
+    if !d2.is_ascii_digit() || !maj.bytes().chain(min.bytes()).all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!("{d2}{maj}.{min}"))
+}
+
+/// Per-adapter driver facts from the class key the devnode's CM_DRP_DRIVER
+/// property names - the same source the maker's Turing gate reads
+/// (make-usbroot.ps1 Get-TuringAdapterState): DriverVersion/DriverDate and
+/// the EnableGpuFirmware GSP switch. None = no bound driver (uninstalled or
+/// never started this boot).
+struct CardDriver {
+    version: String,
+    date: Option<String>,
+    gsp: Option<u32>,
+}
+
+fn card_driver(devinst: u32) -> Option<CardDriver> {
+    let slot = cm_string(devinst, cm::CM_DRP_DRIVER)?;
+    let key = format!(r"{CLASS_ROOT}\{slot}");
+    let version = hklm_string(&key, "DriverVersion")?;
+    Some(CardDriver {
+        version,
+        date: hklm_string(&key, "DriverDate"),
+        gsp: hklm_dword(&key, "EnableGpuFirmware"),
+    })
+}
+
+/// "PCI\VEN_10DE&DEV_1F07&SUBSYS_8671043..." -> "8671043" (Windows writes
+/// subsystem device first, subsystem vendor second).
+fn subsys_from(instance: &str) -> Option<String> {
+    let up = instance.to_uppercase();
+    let i = up.find("SUBSYS_")? + 7;
+    let s = up.get(i..i + 8)?;
+    if s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Some(s.to_string())
+    } else {
+        None
+    }
+}
+
+/// Transaction-family admission by PCI device id - the same ranges the
+/// loader's admission table and tools/collect_compat.py carry. The inventory
+/// verdict is a pre-answer, not the unlock verdict: the register-level FEAT
+/// read still needs the elevated run.
+fn family_verdict_by_devid(devid: u16) -> (&'static str, bool) {
+    match devid {
+        0x2600..=0x28FF => ("ad10x (Ada)", true),
+        0x2400..=0x25FF => ("ga10x (Ampere GA103/104/106/107)", true),
+        0x2200..=0x223F => ("ga102 (Ampere)", true),
+        0x1E02..=0x1FFF => ("tu10x (Turing)", true),
+        0x2182..=0x21D1 => ("tu11x (Turing TU116/117)", true),
+        _ => ("outside the tu10x/ga10x/ad10x families", false),
+    }
+}
+
+/// Facts the advisories need once the header is printed.
+struct InventorySummary {
+    secure_boot: Option<u32>,
+    chassis_laptop: bool,
+}
+
+/// Print the inventory block (stable `KEY:` line prefixes - the block is
+/// what tools/collect_compat.py ingests) and return the advisory inputs.
+fn inventory_header(gpus: &[Gpu]) -> InventorySummary {
+    println!(
+        "===== ssdiag inventory v{} (read-only; no admin, no driver) =====",
+        env!("CARGO_PKG_VERSION")
+    );
+    // ProductName stays "Windows 10 ..." on many Win11 installs, so the major
+    // is derived from the build number (>= 22000 = 11) and shown with
+    // DisplayVersion + build.UBR.
+    let build = hklm_string(OS_CURVER, "CurrentBuildNumber");
+    let disp = hklm_string(OS_CURVER, "DisplayVersion")
+        .or_else(|| hklm_string(OS_CURVER, "ReleaseId"));
+    let ubr = hklm_dword(OS_CURVER, "UBR");
+    let os_line = match &build {
+        Some(b) => {
+            let major: u32 = b.parse().unwrap_or(0);
+            let win = if major >= 22000 {
+                "Windows 11"
+            } else if major > 0 {
+                "Windows 10"
+            } else {
+                "Windows"
+            };
+            let dv = disp.as_deref().map(|v| format!(" {v}")).unwrap_or_default();
+            match ubr {
+                Some(u) => format!("{win}{dv} build {b}.{u}"),
+                None => format!("{win}{dv} build {b}"),
+            }
+        }
+        None => "unknown".into(),
+    };
+    println!("OS:      {os_line}");
+    let cpu = hklm_string(CPU0_KEY, "ProcessorNameString").unwrap_or_else(|| "unknown".into());
+    println!("CPU:     {cpu}");
+    let sys_man = hklm_string(SMBIOS_BIOS_KEY, "SystemManufacturer").unwrap_or_default();
+    let sys_prod = hklm_string(SMBIOS_BIOS_KEY, "SystemProductName").unwrap_or_default();
+    let bb_man = hklm_string(SMBIOS_BIOS_KEY, "BaseBoardManufacturer").unwrap_or_default();
+    let bb_prod = hklm_string(SMBIOS_BIOS_KEY, "BaseBoardProduct").unwrap_or_default();
+    let board = if !sys_prod.is_empty() {
+        format!("{sys_man} {sys_prod} (board: {bb_man} {bb_prod})")
+    } else if !bb_prod.is_empty() {
+        format!("{bb_man} {bb_prod}")
+    } else {
+        "unknown".to_string()
+    };
+    println!("BOARD:   {}", board.trim());
+    let bios_v = hklm_string(SMBIOS_BIOS_KEY, "BIOSVersion").unwrap_or_else(|| "unknown".into());
+    match hklm_string(SMBIOS_BIOS_KEY, "BIOSReleaseDate") {
+        Some(d) => println!("BIOS:    {bios_v} ({d})"),
+        None => println!("BIOS:    {bios_v}"),
+    }
+    let (chassis, ctype) = chassis_class().unwrap_or(("unknown", 0));
+    println!("CHASSIS: {chassis} (SMBIOS chassis type {ctype})");
+
+    // nvapi VBIOS strings keyed by PCI bus number (handles are opaque)
+    let nvapi_cards = nvapi_wake::vbios_by_bus().ok();
+
+    for (i, g) in gpus.iter().enumerate() {
+        let n = i + 1;
+        let desc = cm_string(g.devinst, cm::CM_DRP_DEVICEDESC).unwrap_or_else(|| "unknown".into());
+        println!("GPU {n}: {desc}");
+        let devid = dev_id_from(&g.id);
+        let mut pci_line = match devid {
+            Some(d) => format!("10de:{d:04x}"),
+            None => "10de:????".to_string(),
+        };
+        if let Some(s) = subsys_from(&g.id) {
+            pci_line.push_str(&format!(" SUBSYS {s}"));
+        }
+        if let Some((b, d, f)) = g.bdf {
+            pci_line.push_str(&format!(" BDF {b:02x}:{d:02x}.{f}"));
+        }
+        println!("GPU {n} PCI: {pci_line}");
+        if let Some(d) = devid {
+            let (fam, in_scope) = family_verdict_by_devid(d);
+            let verdict = if in_scope {
+                green("IN-SCOPE (unlock transaction family)")
+            } else {
+                red("OUT-OF-SCOPE")
+            };
+            println!("GPU {n} family: {fam} - {verdict}");
+        }
+        // VBIOS via nvapi bus match; unavailable without the NVIDIA driver
+        let vbios = g
+            .bdf
+            .and_then(|(b, _, _)| {
+                nvapi_cards
+                    .as_ref()?
+                    .iter()
+                    .find(|c| c.bus == b)
+                    .map(|c| c.vbios.clone())
+            });
+        match vbios {
+            Some(v) => println!("GPU {n} VBIOS: {v} (nvapi)"),
+            None => println!("GPU {n} VBIOS: unknown (nvapi unavailable or no bus match)"),
+        }
+        if let Some(cd) = card_driver(g.devinst) {
+            let mkt = marketing_driver_version(&cd.version)
+                .map(|m| format!(" ({m})"))
+                .unwrap_or_default();
+            let date = cd.date.map(|d| format!(", dated {d}")).unwrap_or_default();
+            let gsp = match cd.gsp {
+                Some(1) => "EnableGpuFirmware = 1 (GSP firmware mode)".to_string(),
+                Some(_) => red("EnableGpuFirmware = 0 (LEGACY mode)"),
+                None => "EnableGpuFirmware unset (LEGACY mode)".to_string(),
+            };
+            println!("GPU {n} driver: {}{mkt}{date}; {gsp}", cd.version);
+        } else {
+            println!(
+                "GPU {n} driver: no bound NVIDIA class key (driver not installed / never started this boot?)"
+            );
+        }
+    }
+    println!("===== end inventory =====");
+    InventorySummary {
+        secure_boot: hklm_dword(SECUREBOOT_STATE, "UEFISecureBootEnabled"),
+        chassis_laptop: chassis.starts_with("laptop"),
+    }
+}
+
+/// Pre-flight cautions derived from the inventory facts. Short by design -
+/// each names its fix and where it is explained; none of these block
+/// anything (this is a report, not a gate).
+fn inventory_advisories(gpus: &[Gpu], inv: &InventorySummary) {
+    let mut any = false;
+    if inv.secure_boot == Some(1) {
+        any = true;
+        println!(
+            "{}",
+            yellow(
+                "ADVISORY: Secure Boot ON - the EFI stick needs the FFS/driver form or a db-signed EFI; the in-OS ssdiag full dump cannot load its probe driver here (FAQ: Secure Boot)"
+            )
+        );
+    }
+    for g in gpus {
+        let Some(d) = dev_id_from(&g.id) else { continue };
+        let (fam, in_scope) = family_verdict_by_devid(d);
+        if !in_scope {
+            continue;
+        }
+        let Some(cd) = card_driver(g.devinst) else { continue };
+        if fam.starts_with("tu") && cd.gsp != Some(1) {
+            any = true;
+            println!(
+                "{}",
+                yellow(
+                    "ADVISORY: Turing adapter in LEGACY driver mode - unlocking it WILL TDR (Code 43 / watchdog storm); run tools/windows/enable-turing-unlock.ps1 and fully RESTART first (a hibernate resume does not apply it)"
+                )
+            );
+        }
+        if let Some(m) = marketing_driver_version(&cd.version) {
+            if m == "621.01" || m == "630.20" {
+                any = true;
+                println!(
+                    "{}",
+                    yellow(&format!(
+                        "ADVISORY: driver {m} - this family PF-FLRs the unlocked card back to stock in Windows (issue #99, TU106 evidence); an in-OS read-back of NOT_UNLOCKED there is the driver, not a failed EFI transaction"
+                    ))
+                );
+            }
+        }
+    }
+    if inv.chassis_laptop {
+        any = true;
+        println!(
+            "{}",
+            yellow(
+                "ADVISORY: laptop chassis - the volatile unlock can drop on sleep/RTD3/MUX events; note the display mode (hybrid vs dGPU-direct) when reporting (FAQ: losing the unlock)"
+            )
+        );
+    }
+    if !any {
+        println!("ADVISORY: none of the known pre-flight cautions apply");
     }
 }
 
@@ -747,6 +1086,78 @@ mod nvapi_wake {
                 }
             }
             Ok(report)
+        }
+    }
+
+    /// One read-only VBIOS fact per nvapi physical GPU.
+    pub struct NvCardFact {
+        pub bus: u32,
+        pub vbios: String,
+    }
+
+    /// VBIOS strings keyed by PCI bus number (NvAPI handles are opaque; the
+    /// bus id correlates them with the CfgMgr32 devnodes). Read-only; needs
+    /// the NVIDIA driver present - callers degrade gracefully.
+    /// Query ids from the nvapi-rs reverse table (the same source as the GC6
+    /// control id above): GetBusId 0x1BE0B8E5, GetVbiosVersionString
+    /// 0xA561FD7D (out param is an NvAPI_ShortString, 64 bytes).
+    pub fn vbios_by_bus() -> Result<Vec<NvCardFact>, String> {
+        fn encode16(name: &str) -> Vec<u16> {
+            name.encode_utf16().chain([0]).collect()
+        }
+        type BusIdFn = unsafe extern "system" fn(u32, *mut u32) -> i32;
+        type VbiosFn = unsafe extern "system" fn(u32, *mut i8) -> i32;
+        unsafe {
+            let mut lib = win::LoadLibraryW(encode16("nvapi64.dll").as_ptr());
+            if lib.is_null() {
+                lib = win::LoadLibraryW(encode16("nvapi.dll").as_ptr());
+            }
+            if lib.is_null() {
+                return Err("nvapi64.dll not loadable - NVIDIA driver installed?".into());
+            }
+            let qip = win::GetProcAddress(lib, b"nvapi_QueryInterface\0".as_ptr());
+            if qip.is_null() {
+                return Err("nvapi_QueryInterface missing".into());
+            }
+            let qi: QueryInterfaceFn = std::mem::transmute(qip);
+            let init: InitializeFn = std::mem::transmute(qi(0x0150_E828));
+            if init() != NVAPI_OK {
+                return Err("NvAPI_Initialize failed".into());
+            }
+            let enumf: EnumFn = std::mem::transmute(qi(0xE5AC_921F));
+            let mut handles = [0u32; 64];
+            let mut count = 0u32;
+            if enumf(handles.as_mut_ptr(), &mut count) != NVAPI_OK {
+                return Err("NvAPI_EnumPhysicalGPUs failed".into());
+            }
+            let bus_p = qi(0x1BE0_B8E5);
+            let vbios_p = qi(0xA561_FD7D);
+            if bus_p.is_null() || vbios_p.is_null() {
+                return Err("VBIOS query ids not resolved by this driver version".into());
+            }
+            let busf: BusIdFn = std::mem::transmute(bus_p);
+            let vbiosf: VbiosFn = std::mem::transmute(vbios_p);
+            let mut out = Vec::new();
+            for &h in &handles[..count.min(64) as usize] {
+                let mut bus = 0u32;
+                if busf(h, &mut bus) != NVAPI_OK {
+                    continue;
+                }
+                let mut s = [0i8; 64];
+                if vbiosf(h, s.as_mut_ptr()) != NVAPI_OK {
+                    continue;
+                }
+                let bytes: Vec<u8> = s
+                    .iter()
+                    .take_while(|&&c| c != 0)
+                    .map(|&c| c as u8)
+                    .collect();
+                let vbios = String::from_utf8_lossy(&bytes).to_string();
+                if !vbios.is_empty() {
+                    out.push(NvCardFact { bus, vbios });
+                }
+            }
+            Ok(out)
         }
     }
 }
@@ -2592,6 +3003,7 @@ fn main() {
 fn run() -> i32 {
     let mut reapply = false;
     let mut dry = false;
+    let mut inv_only = false;
     let mut sb_arm = false;
     let mut sb_disarm = false;
     let mut select: Option<String> = None;
@@ -2624,6 +3036,10 @@ OPTIONS:
   --safeboot-disarm  remove that staging completely (SafeBoot keys, service,
                    persistent copy) - run elevated in NORMAL mode
   --dry-run        print the platform gates + discovered cards, load nothing
+  --inventory      print the unelevated read-only hardware inventory block
+                   (OS, CPU, board, BIOS, chassis, per-GPU driver / VBIOS /
+                   family verdict + advisories) and exit - the block the
+                   issue templates ask for; no admin, no driver, no writes
   --help           this text
 
 WHAT IT DOES:
@@ -2673,6 +3089,9 @@ SSDIAG_COLOR=force pins on.",
             "--dry-run" => {
                 dry = true;
             }
+            "--inventory" => {
+                inv_only = true;
+            }
             "--select" => {
                 select = Some(args.next().unwrap_or_else(|| {
                     eprintln!("--select needs a DeviceID substring (e.g. 1F07 or 4&38d5f52c)");
@@ -2699,26 +3118,10 @@ SSDIAG_COLOR=force pins on.",
         return safeboot_disarm();
     }
 
-    // Fast capability gate: deploying the driver needs SC_MANAGER_CREATE_SERVICE
-    // access, and this probe is the very call deploy_driver() makes - failing
-    // here predicts that failure exactly (same token, same access mask), so
-    // report it now instead of after the multi-second PowerShell discovery.
-    // The borrow path (a PMXDRV-class driver already running) needs no SCM
-    // access and stays open to a non-elevated run; --dry-run loads nothing.
-    if !dry && PmxDrv::try_open().is_none() {
-        let mgr = unsafe { win::OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CREATE_SERVICE) };
-        if mgr.is_null() {
-            eprintln!(
-                "OpenSCManager failed (admin required): win32 {} - re-run from an elevated prompt",
-                last_err()
-            );
-            return 2;
-        }
-        unsafe {
-            win::CloseServiceHandle(mgr);
-        }
-    }
-
+    // v0.7.0: discovery sits ABOVE the admin gate. It is unelevated CfgMgr32
+    // (fast since 0.6.1) and both the inventory header and --inventory need
+    // it first; an unelevated full run now prints its inventory block before
+    // reporting "admin required".
     let (mut gpus, skipped) = match discover_gpus() {
         Ok(g) => g,
         Err(e) => {
@@ -2749,6 +3152,36 @@ SSDIAG_COLOR=force pins on.",
             return 2;
         }
     }
+
+    let inv = inventory_header(&gpus);
+    stage("inventory");
+    if inv_only {
+        preflight();
+        inventory_advisories(&gpus, &inv);
+        println!("inventory complete - read-only, nothing was loaded or written");
+        println!("posting this block? review it and redact anything you consider personal first");
+        return 0;
+    }
+
+    // Fast capability gate: deploying the driver needs SC_MANAGER_CREATE_SERVICE
+    // access, and this probe is the very call deploy_driver() makes - failing
+    // here predicts that failure exactly (same token, same access mask).
+    // The borrow path (a PMXDRV-class driver already running) needs no SCM
+    // access and stays open to a non-elevated run; --dry-run loads nothing.
+    if !dry && PmxDrv::try_open().is_none() {
+        let mgr = unsafe { win::OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CREATE_SERVICE) };
+        if mgr.is_null() {
+            eprintln!(
+                "OpenSCManager failed (admin required): win32 {} - re-run from an elevated prompt",
+                last_err()
+            );
+            return 2;
+        }
+        unsafe {
+            win::CloseServiceHandle(mgr);
+        }
+    }
+
     // only functions with a BAR0-class window (companion audio/USB-C are small)
     gpus.retain(|g| !g.bar0_candidates().is_empty());
     if gpus.is_empty() {
@@ -2762,11 +3195,13 @@ SSDIAG_COLOR=force pins on.",
             println!("DRY-RUN card: {} ({} range(s), bdf {:?})", g.id, g.ranges.len(), g.bdf);
         }
         preflight();
+        inventory_advisories(&gpus, &inv);
         println!("DRY-RUN: {} NVIDIA range set(s) discovered, nothing was loaded or written", gpus.len());
         return 0;
     }
 
     preflight();
+    inventory_advisories(&gpus, &inv);
     stage("platform gates");
     let drv = match ensure_driver() {
         Ok(d) => d,

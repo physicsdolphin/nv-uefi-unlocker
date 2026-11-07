@@ -601,12 +601,13 @@ What still works: ssdiag / diag-unlock / the USB SAMPLE record the FEAT block an
 On Windows, use the `ssdiag-x86_64-windows.exe` published as a separate release asset (the zip does not carry it - see [antivirus false positives](#av-fp)), abbreviated below as `ssdiag`:
 
 ```text
+ssdiag --inventory
 ssdiag
 ssdiag --select 2504
 ssdiag --reapply
 ```
 
-Default mode is read-only; `--select` filters by DeviceID. `--reapply` writes and verifies SS0/SS1 only behind an open gate; it does not write PLM. Turing remains read-only. On Linux, run `sudo python3 tools/diag-unlock.py` from the checkout root; `--bdf` selects an actual target address, and `--reapply` is also available.
+`--inventory` (since 0.7.0) prints the **no-admin, read-only** hardware snapshot: OS/CPU/board/BIOS/chassis form, per-card device ID / subsystem ID / VBIOS / driver version / GSP mode, plus the family admission verdict (IN-SCOPE/OUT-OF-SCOPE) and pre-flight advisories (Secure Boot on, Turing without GSP firmware mode, the #99 PF-FLR driver family, laptop relock exposure). This is the block the issue templates ask you to paste - review it and redact anything you would rather not post; it reads no hostname, username or serials. The full run (register read-backs) still needs an administrator; `--select` filters by DeviceID. `--reapply` writes and verifies SS0/SS1 only behind an open gate; it does not write PLM. Turing remains read-only. On Linux, run `sudo python3 tools/diag-unlock.py` from the checkout root; `--bdf` selects an actual target address, and `--reapply` is also available; the no-root snapshot twin is `python3 tools/diag-unlock.py --inventory` (sysfs/DMI/nvidia-smi reads only, same output format as ssdiag).
 
 If you hit `MAP_PHYS win32 error 5` (mapping denied): 0.6.3+ prints a one-shot precondition breakdown (HVCI runtime / kernel-mode AV filter driver / driver refused load). **Pausing protection or exiting user-mode AV processes does NOT unload the kernel hooks** - two field closures (Kaspersky, cured after uninstall); see [platform gates and denied-map triage](ssdiag-platform-gates.md).
 
@@ -810,7 +811,7 @@ Combined operation can exceed factory power and thermal envelopes. Monitor Board
 
 ## How do I report an incompatibility or failure?
 
-Submit the full `loader.log`, GPU model/PCI ID, platform, driver, display mode, entry path and in-OS diagnosis to [Issues](https://github.com/physicsdolphin/nv-uefi-unlocker/issues). Modded cards need the original model, VBIOS and VRAM capacity. Redact machine-specific details as needed. For performance issues, include matched dimensions, precision, power and before/after results.
+Submit the full `loader.log`, GPU model/PCI ID, platform, driver, display mode, entry path and in-OS diagnosis to [Issues](https://github.com/physicsdolphin/nv-uefi-unlocker/issues). **No need to look the hardware up by hand** - run `ssdiag --inventory` on Windows or `python3 tools/diag-unlock.py --inventory` on Linux and paste the block straight into the form (both read-only, no admin / no root respectively; VBIOS, driver, subsystem ID and chassis form are all in the block). Modded cards need the original model, VBIOS and VRAM capacity. Redact machine-specific details as needed. For performance issues, include matched dimensions, precision, power and before/after results.
 
 Use [Discussions](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions) for success reports. For no in-OS gain, check [RTD3](#linux) and [read-back verdicts](#ssdiag) first.
 

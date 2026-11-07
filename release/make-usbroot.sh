@@ -236,6 +236,7 @@ case "$FAMILY" in
 this machine. Use an explicit --family (ad102 | ga102 | tu10x) or --family all."
         fi
         log "[localhost] building for: ${FAMILIES[*]}"
+        log "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): python3 tools/diag-unlock.py --inventory"
         ;;
     *) die "unknown family: $FAMILY (ad102 | ga102 | tu10x | all | localhost)" ;;
 esac

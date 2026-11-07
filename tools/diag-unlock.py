@@ -32,11 +32,14 @@ Usage:
   sudo python3 diag-unlock.py                 # read all NVIDIA dGPUs
   sudo python3 diag-unlock.py --bdf 0000:01:00.0
   sudo python3 diag-unlock.py --reapply       # SS0=0x88888888 SS1=0x8 when open
+  python3 diag-unlock.py --inventory          # unelevated hardware snapshot
 """
 
 import argparse
 import mmap
 import os
+import platform
+import subprocess
 import sys
 
 SS0_UNLOCK = 0x8888_8888
@@ -244,6 +247,183 @@ def find_gpus():
             continue
         out.append((bdf, p))
     return out
+
+
+# ---------------------------------------------------------------- inventory
+# The unelevated hardware snapshot twin of ssdiag 0.7.0 --inventory (same
+# KEY: line prefixes, so tools/collect_compat.py ingests both identically):
+# sysfs + DMI + /proc + nvidia-smi reads only, never root, never a write.
+# Serial-number DMI files are deliberately not opened.
+
+INVENTORY_FAMILIES = [
+    ((0x2600, 0x28FF), "ad10x (Ada)"),
+    ((0x2400, 0x25FF), "ga10x (Ampere GA103/104/106/107)"),
+    ((0x2200, 0x223F), "ga102 (Ampere)"),
+    ((0x1E02, 0x1FFF), "tu10x (Turing)"),
+    ((0x2182, 0x21D1), "tu11x (Turing TU116/117)"),
+]
+
+
+def family_verdict_by_devid(devid):
+    for (lo, hi), name in INVENTORY_FAMILIES:
+        if lo <= devid <= hi:
+            return name, True
+    return "outside the tu10x/ga10x/ad10x families", False
+
+
+def _read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _nvidia_smi(query):
+    """Best-effort nvidia-smi CSV query -> list of row lists (no raise)."""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", f"--query-gpu={query}", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=30)
+        if out.returncode != 0:
+            return []
+        return [r.split(",") for r in out.stdout.strip().splitlines() if r.strip()]
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+def _gsp_runtime():
+    """aggregate GSP state, fail-closed semantics like make-usbroot.sh gsp_state"""
+    try:
+        q = subprocess.run(["nvidia-smi", "-q"], capture_output=True,
+                           text=True, timeout=30)
+        if q.returncode != 0:
+            return "unknown"
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    hits = [ln for ln in q.stdout.splitlines() if "GSP Firmware Version" in ln]
+    if not hits:
+        return "unknown"
+    for ln in hits:
+        val = ln.split(":", 1)[1].strip() if ":" in ln else ""
+        if val.lower() in ("n/a", "na", ""):
+            return "inactive"
+    return "active"
+
+
+def inventory():
+    print("===== diag-unlock inventory (read-only; no root, no BAR0) =====")
+    pretty = ""
+    try:
+        with open("/etc/os-release") as f:
+            for ln in f:
+                if ln.startswith("PRETTY_NAME="):
+                    pretty = ln.split("=", 1)[1].strip().strip('"')
+                    break
+    except OSError:
+        pass
+    print(f"OS:      {pretty or platform.system()} (kernel {platform.release()}, {platform.machine()})")
+    cpu = ""
+    try:
+        with open("/proc/cpuinfo") as f:
+            for ln in f:
+                if ln.startswith("model name"):
+                    cpu = ln.split(":", 1)[1].strip()
+                    break
+    except OSError:
+        pass
+    print(f"CPU:     {cpu or 'unknown'}")
+    dmi = "/sys/class/dmi/id"
+    board = f"{_read(os.path.join(dmi, 'board_vendor'))} {_read(os.path.join(dmi, 'board_name'))}".strip()
+    system = f"{_read(os.path.join(dmi, 'sys_vendor'))} {_read(os.path.join(dmi, 'product_name'))}".strip()
+    if board:
+        print(f"BOARD:   {board}" + (f" (system: {system})" if system else ""))
+    else:
+        print(f"BOARD:   {system or 'unknown'}")
+    bios = _read(os.path.join(dmi, "bios_version"))
+    bios_date = _read(os.path.join(dmi, "bios_date"))
+    print(f"BIOS:    {bios or 'unknown'}" + (f" ({bios_date})" if bios_date else ""))
+    chassis_word, ctype = "unknown", 0
+    ct = _read(os.path.join(dmi, "chassis_type"))
+    if ct.isdigit():
+        t = int(ct)
+        chassis_word = ("laptop/portable" if t in (8, 9, 10, 11, 14, 30, 31, 32)
+                        else "desktop/tower" if t in (3, 4, 5, 6, 7, 13, 15, 16, 17, 23, 24, 28, 35)
+                        else "other/unknown")
+        ctype = t
+    print(f"CHASSIS: {chassis_word} (DMI chassis type {ctype})")
+
+    sb = "unknown"
+    try:
+        r = subprocess.run(["mokutil", "--sb-state"], capture_output=True,
+                           text=True, timeout=15)
+        if r.returncode == 0:
+            sb = "ON" if "enabled" in r.stdout.lower() else "OFF"
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    print(f"PLATFORM: Secure Boot = {sb}")
+
+    nvrm = _read("/proc/driver/nvidia/version")
+    if nvrm:
+        print(f"NVIDIA driver: {nvrm.splitlines()[0]}")
+    # per-GPU rows keyed by nvidia-smi's PCI bus id suffix
+    smi = {}
+    for row in _nvidia_smi("pci.bus_id,name,vbios_version,driver_version"):
+        if len(row) != 4:
+            continue
+        bus, name, vbios, drv = (c.strip() for c in row)
+        smi[bus.split(":")[-2] + ":" + bus.split(":")[-1]] = (name, vbios, drv)
+    gsp = _gsp_runtime()
+    if gsp != "unknown":
+        print(f"PLATFORM: GSP firmware = {gsp} (nvidia-smi)")
+
+    devs = find_gpus()
+    advisories = []
+    if sb == "ON":
+        advisories.append("Secure Boot ON - the EFI stick needs the FFS/driver form or a db/MOK-signed EFI (FAQ: Secure Boot)")
+    for i, (bdf, p) in enumerate(devs, 1):
+        devid_s = _read(os.path.join(p, "device"))
+        sub_dev = _read(os.path.join(p, "subsystem_device"))
+        sub_ven = _read(os.path.join(p, "subsystem_vendor"))
+        devid = int(devid_s, 16) if devid_s.startswith("0x") else 0
+        name, vbios, drv = smi.get(bdf, ("unknown", "", ""))
+        print(f"GPU {i}: {name}")
+        pci = f"10de:{devid:04x}"
+        if sub_dev.startswith("0x") and sub_ven.startswith("0x"):
+            # Windows SUBSYS order = subsystem device, then subsystem vendor
+            pci += f" SUBSYS {sub_dev[2:6].upper()}{sub_ven[2:6].upper()}"
+        print(f"GPU {i} PCI: {pci} BDF {bdf.split(':', 1)[1] if ':' in bdf else bdf}")
+        fam, in_scope = family_verdict_by_devid(devid)
+        print(f"GPU {i} family: {fam} - {'IN-SCOPE (unlock transaction family)' if in_scope else 'OUT-OF-SCOPE'}")
+        if vbios and vbios.lower() != "[n/a]":
+            print(f"GPU {i} VBIOS: {vbios} (nvidia-smi)")
+        else:
+            print(f"GPU {i} VBIOS: unknown (nvidia-smi unavailable)")
+        if drv:
+            print(f"GPU {i} driver: {drv} (nvidia-smi)")
+        if in_scope and fam.startswith("tu") and gsp == "inactive":
+            advisories.append("Turing adapter with GSP firmware NOT active (nvidia-smi reports N/A) - unlocking it WILL TDR; get GSP mode running first (FAQ: Turing)")
+    if chassis_word.startswith("laptop"):
+        advisories.append("laptop chassis - the volatile unlock can drop on sleep/RTD3/MUX events; note the display mode (hybrid vs dGPU-direct) when reporting (FAQ: losing the unlock)")
+    dpm = ""
+    try:
+        with open("/proc/driver/nvidia/params") as f:
+            for ln in f:
+                if ln.startswith("DynamicPowerManagement:"):
+                    dpm = ln.split(":", 1)[1].strip()
+                    break
+    except OSError:
+        pass
+    if dpm.lower() in ("0x02", "0x2", "2", "0x03", "0x3", "3"):
+        advisories.append(f"NVIDIA runtime D3 enabled (DynamicPowerManagement={dpm}) - D3cold parks erase the volatile unlock after handoff (issue #9); fix: NVreg_DynamicPowerManagement=0x00 in modprobe.d, then reboot")
+    print("===== end inventory =====")
+    for a in advisories:
+        print(f"ADVISORY: {a}")
+    if not advisories:
+        print("ADVISORY: none of the known pre-flight cautions apply")
+    print("inventory complete - read-only, nothing was written")
+    print("posting this block? review it and redact anything you consider personal first")
+    return 0
 
 
 class Bar0:
@@ -533,7 +713,14 @@ def main():
     ap.add_argument("--bdf", help="only this PCI address, e.g. 0000:01:00.0")
     ap.add_argument("--reapply", action="store_true",
                     help="write SS0=0x88888888 SS1=0x8 where the PLM gate is open")
+    ap.add_argument("--inventory", action="store_true",
+                    help="print the unelevated read-only hardware inventory "
+                         "block (OS/CPU/board/BIOS/chassis/per-GPU family "
+                         "verdict + advisories) and exit - no root needed")
     args = ap.parse_args()
+
+    if args.inventory:
+        return inventory()
 
     if os.geteuid() != 0:
         print("root required (sysfs BAR0 mmap)", file=sys.stderr)

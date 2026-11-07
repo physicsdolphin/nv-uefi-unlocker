@@ -6,6 +6,20 @@ For read-back verdicts, Turing behavior, Linux checks and handoff diagnosis, use
 
 ## What it dumps
 
+- `--inventory` (0.7.0, no admin, no driver): the issue-report hardware
+  block - OS (build-derived Win10/11 + DisplayVersion + UBR), CPU, board and
+  BIOS from the registry, chassis form from the raw SMBIOS table
+  (GetSystemFirmwareTable `RSMB`), and per card the DeviceDesc, device id,
+  subsystem id, BDF, VBIOS (nvapi `GetVbiosVersionString`, matched by
+  `GetBusId`), the class-key DriverVersion (with the WDDM→marketing
+  conversion `32.0.15.6094 → 560.94`) and the `EnableGpuFirmware` GSP switch.
+  Each card gets a device-id family verdict (IN-SCOPE/OUT-OF-SCOPE, the same
+  ranges the loader admission table carries), and the block ends in
+  advisories: Secure Boot on, Turing in legacy GSP mode (the TDR warning),
+  the #99 PF-FLR driver family, laptop chassis. Every other mode prints this
+  block first, so a full dump carries its own platform context; the line
+  prefixes (`OS:` / `GPU n PCI:` / `GPU n VBIOS:` ...) are the format
+  `tools/collect_compat.py` ingests (schema nvuu-compat-profile/2).
 - multi-GPU: every NVIDIA Display-class function is dumped (companion
   audio/USB-C functions excluded), `--select` narrows.
 - core/debug block: PMC_BOOT_0, PSTRAPS (decoded BAR1/BAR0/BAR3 sizes),
@@ -76,6 +90,7 @@ pre-fix build of the Eclypsium-disclosed flaw (CVE-2019-11147, compiled
 
 ```text
 ssdiag                              # dump every NVIDIA display GPU (auto-discovers BAR0 per card)
+ssdiag --inventory                  # unelevated hardware block + family verdict + advisories, exit
 ssdiag --dry-run                    # print platform gates + discovered cards, load nothing
 ssdiag --reapply                    # + SS0=0x88888888 SS1=0x8 per card where the gate is open
 ssdiag --select 1F07                # narrow to functions whose DeviceID matches

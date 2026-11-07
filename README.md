@@ -196,6 +196,8 @@ U 盘（FAT32）
 
 替换已有 `EFI/BOOT/BOOTX64.EFI` 前先备份。不要复制到系统 ESP，也不需要调整永久启动顺序。完整文件用途、异机制盘、多卡选择和其他选项见 [USB 文件与选项](docs/faq.md#usb)。
 
+不确定机器或驱动状态？先跑一次只读预检：Windows 运行 release 页单独附带的 `ssdiag-x86_64-windows.exe --inventory`（免管理员），Linux 运行 `python3 tools/diag-unlock.py --inventory`（免 root）。它给出家族准入判定（IN-SCOPE/OUT-OF-SCOPE）和已知风险提示（Secure Boot、Turing GSP 模式、特定驱动族回锁等），也是 issue 报告里硬件信息的免手查来源。
+
 ### 3. 启动并验证
 
 1. 从固件的一次性启动菜单选择 U 盘。

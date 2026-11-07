@@ -37,7 +37,8 @@ body:
     id: problem
     attributes:
       label: 当前问题与需求 / Current problem and need
-      description: 说明使用场景与现有限制；新型号需求附已知 GPU 型号和 PCI ID，未知请注明。 / Describe the use case and current limitation. For new devices, provide known GPU model and PCI ID; mark unknown details.
+      description: |
+        说明使用场景与现有限制；新型号需求附已知 GPU 型号和 PCI ID，未知请注明。更省事的办法：Windows 运行 `ssdiag --inventory`（Releases 页独立附件，无需管理员、只读）粘贴输出块，Linux 运行 `python3 tools/diag-unlock.py --inventory`。 / Describe the use case and current limitation. For new devices, provide known GPU model and PCI ID; mark unknown details. Easier: run `ssdiag --inventory` on Windows (separate release asset; no admin, read-only) or `python3 tools/diag-unlock.py --inventory` on Linux and paste the block.
     validations:
       required: true
   - type: textarea

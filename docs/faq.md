@@ -611,12 +611,13 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 Windows 使用 release 页单独附带的 `ssdiag-x86_64-windows.exe`（zip 内不含它，理由见[杀软误报](#av-fp)）。以下简写为 `ssdiag`：
 
 ```text
+ssdiag --inventory
 ssdiag
 ssdiag --select 2504
 ssdiag --reapply
 ```
 
-默认只读诊断；`--select` 按 DeviceID 筛选。`--reapply` 是写操作，仅在门仍开放时重写 SS0/SS1 并读回，不写 PLM。Turing 保持只读。Linux 在源码树根目录运行 `sudo python3 tools/diag-unlock.py`，可用 `--bdf` 指定实际目标地址，也提供 `--reapply`。
+`--inventory`（0.7.0 起）打印**免管理员、只读**的硬件采集块：OS/CPU/主板/BIOS/机箱形态、每张卡的设备 ID/子系统 ID/VBIOS/驱动版本/GSP 模式，并给出家族准入判定（IN-SCOPE/OUT-OF-SCOPE）与预检提示（Secure Boot 开启、Turing 未开 GSP 模式、#99 驱动族回锁、笔电掉锁风险）。这就是 issue 模板让你粘贴的那一块——发帖前过目并脱敏你不想公开的内容；它不读主机名、用户名或序列号。完整运行（寄存器读回）仍需管理员；`--select` 按 DeviceID 筛选。`--reapply` 是写操作，仅在门仍开放时重写 SS0/SS1 并读回，不写 PLM。Turing 保持只读。Linux 在源码树根目录运行 `sudo python3 tools/diag-unlock.py`，可用 `--bdf` 指定实际目标地址，也提供 `--reapply`；对应的免 root 采集块为 `python3 tools/diag-unlock.py --inventory`（sysfs/DMI/nvidia-smi 只读，输出格式与 ssdiag 相同）。
 
 若遇到 `MAP_PHYS win32 error 5`（映射被拒）：0.6.3+ 会输出一次前置分类清单（HVCI 运行态 / 内核态杀软过滤驱动 / 驱动加载被拒）。**杀软的「暂停保护」或退出用户态进程不会卸载其内核钩子**——已两例实机闭环（Kaspersky，卸载后痊愈），详见 [平台门与 MAP 被拒排查](ssdiag-platform-gates.md)。
 
@@ -822,7 +823,7 @@ Ada 的 FBPA 读回 `0xffffff0f` 是允许的观察值，不应单独据此判�
 
 ## 怎样反馈不兼容或异常？
 
-向 [Issues](https://github.com/physicsdolphin/nv-uefi-unlocker/issues)提交完整 `loader.log`、GPU 型号与 PCI ID、平台、驱动、显示模式、进入方式及系统侧诊断结果。魔改卡附原型号、VBIOS 与显存容量；日志可先脱敏机器信息。性能问题附相同条件下的测试规模、精度、功耗和前后结果。
+向 [Issues](https://github.com/physicsdolphin/nv-uefi-unlocker/issues)提交完整 `loader.log`、GPU 型号与 PCI ID、平台、驱动、显示模式、进入方式及系统侧诊断结果。**硬件信息不用手查**：Windows 跑 `ssdiag --inventory`、Linux 跑 `python3 tools/diag-unlock.py --inventory`，把输出块直接粘进表单（两工具均只读、分别免管理员/免 root；VBIOS/驱动/子系统 ID/机箱形态都在块里）。魔改卡附原型号、VBIOS 与显存容量；日志可先脱敏机器信息。性能问题附相同条件下的测试规模、精度、功耗和前后结果。
 
 分享成功案例可使用 [Discussions](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions)。系统内无提升时先查 [RTD3](#linux)与 [读回判定](#ssdiag)。
 

@@ -218,6 +218,7 @@ this machine. Use an explicit -Family (ad102 | ga102 | tu10x | tu11x) or -Family
     # along when a 16-series card is present, same as any detected family.
     $Families = @("tu10x", "tu11x", "ga102", "ad102") | Where-Object { $detected -contains $_ }
     Write-Host ("[localhost] building for: {0}" -f ($Families -join ", "))
+    Write-Host "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): ssdiag --inventory"
     if ($Families.Count -lt 3) {
         Write-Host ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($Families -join "/") +
                     " generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot." +
