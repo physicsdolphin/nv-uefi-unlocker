@@ -48,12 +48,14 @@ fn cmd_synth(args: &[String]) {
     let mut writes_s = String::new();
     let mut golden: Option<String> = None;
     let mut out: Option<String> = None;
+    let mut family = "tu102".to_string();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--writes" => writes_s = it.next().expect("--writes value").to_string(),
             "--golden" => golden = Some(it.next().expect("--golden value").to_string()),
             "--out" => out = Some(it.next().expect("--out value").to_string()),
+            "--family" => family = it.next().expect("--family value").to_string(),
             _ => {}
         }
     }
@@ -66,7 +68,15 @@ fn cmd_synth(args: &[String]) {
         ));
     }
     let geo = falcgen::synth::Geometry::tu102();
-    let payload = falcgen::synth::synth(&writes, &geo);
+    let payload = match family.as_str() {
+        "tu102" => falcgen::synth::synth(&writes, &geo),
+        "ga102" => falcgen::synth::synth_ga102(&writes),
+        "ad102" => falcgen::synth::synth_ad102(&writes),
+        other => {
+            eprintln!("falcgen synth: unknown family '{other}' (tu102|ga102|ad102)");
+            std::process::exit(2);
+        }
+    };
     let got = sha256_hex(&payload);
     println!("payload: {} bytes, sha256 {}", payload.len(), got);
     if let Some(path) = out {
