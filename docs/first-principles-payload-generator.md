@@ -130,6 +130,12 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > - **两家 golden 均已在 assets/out**（v67-ga102.bin / v67-ad102-four-plm.bin，哈希与钉值一致）——无需再生成。
 > - **方法论修正**：GA/AD 的帧文法 ≠ TU102 的帧循环——GA-line/Ada booter 是自己的尾声形状，synth 以 **per-family put-list 模板**实现（写链槽位参数化）。"从明文推导 put-list" = 机械工作（对拍 fill 差分即得全部 put 位）。
 > - **G0→G2 全程序收官**：解码器（5 die 零分歧）→ 扫描器（17/17）→ 栈几何（链机制+帧形状）→ **合成（三家钉值 golden 逐字节复现）**。剩余 = G3：TU116 真第一性原理测试（无 golden，对拍 PATCHED_WORDS_TU11X 单字重锚）。
+>
+> **G3 落地——TU116 真第一性原理测试通过（2026-11-07 续，synth.rs Geometry::tu11x）**：
+> - **扫描器独立复现手工锚**：TU116_sec_plain.bin 上 `--check 0x10b9,0xcbd,0xc95,0xe85,0x1f89,0x7e9a,0x7ea4` 全 HIT——**park = 0x7e9a 由 [ParkSelf, LBra] 形状独立推出**（TU102 的 0x7ea4 在 TU116 上 = [MmioWrite..]，非 park）——单字重锚被第一性原理管道确认。
+> - **TU11X 钉值载荷逐字节复现**：`Geometry::tu11x()`（= TU102 文法 + park 0x7E9A）+ PLM/WPR2 写链 → SHA **c79208ac… = V67_TU11X_PAYLOAD_SHA256 钉值**（golden 文件由 PATCHED_WORDS_TU11X 重建后哈希核验）。
+> - **首个第一性原理产物（SS0/SS1 链）**：`synth --family tu11x --writes 0x409664=0x88888888,0x40966c=0x8` → SHA 1db35f51…；与钉值差异**恰四词**（0xFF40/44 = SS0 值/址、0xFF58/5C = SS1 值/址），guard/gadget/尾块/park 逐字节不动。
+> - **诚实注记**：Turing SS0/SS1 地址 = 0x409664/0x40966c（tx_booter.rs TU10X_FEAT_SS0/SS1，字段值 0x88888888/0x8 = SS0_UNLOCK/SS1_UNLOCK 实测常量）；**#6 发现"SS0/SS1 selectors follow host-side from the open PLM"**——不开 FEAT_PLM（0x409650）时寄存器写入落位（heavy-secure 上下文）但主机侧速率跟随与否未证——"其他不动"按字面执行，效果以读回为准（FEAT_READOUT_1 = 0x409668）。
 
 | 里程碑 | 内容 | 验收 | 估时 |
 |---|---|---|---|

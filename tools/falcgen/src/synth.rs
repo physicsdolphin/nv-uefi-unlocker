@@ -114,6 +114,17 @@ impl Geometry {
             },
         }
     }
+
+    /// TU11x (TU116/117) — the TU102 frame grammar with the TU116 booter's
+    /// park gadget. The scanner independently derives park = 0x7E9A
+    /// ([ParkSelf, LBra] on TU116_sec_plain.bin; TU102's 0x7EA4 reads as
+    /// [MmioWrite..] there, not a park). Validates against the pinned
+    /// V67_TU11X_PAYLOAD_SHA256 (c79208ac…).
+    pub fn tu11x() -> Self {
+        let mut g = Self::tu102();
+        g.tail.b6c = 0x7E9A; // park
+        g
+    }
 }
 
 /// Synthesize the payload for `writes` (the (addr, value) chain, in order).
