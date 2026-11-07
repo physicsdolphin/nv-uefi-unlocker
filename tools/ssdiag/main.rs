@@ -1,4 +1,12 @@
-//! ssdiag v0.7.0 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.1 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.1 widens the inventory block: physical RAM total + per-module
+//! SMBIOS Type 17 rows (slot / capacity / MT/s, no serials), disk models
+//! with volumes and partition offsets (unelevated volume extents), and the
+//! other PCI devices on the bus. The Secure Boot note now says "may not
+//! load" - field reports show the probe running on some SB-ON hosts. The
+//! per-card driver/GSP read anchors on the driver's own bound-instance list
+//! (Services\nvlddmkm\Enum, the maker's ghost-free source) instead of the
+//! devnode property walk, which a card-swap ghost can mislead.
 //! v0.7.0 adds the unelevated `--inventory` block (the issue-report hardware
 //! snapshot): OS/CPU/board/BIOS/chassis from the registry + raw SMBIOS,
 //! per-card driver / VBIOS / EnableGpuFirmware from the class key + nvapi,
@@ -161,6 +169,52 @@ mod win {
             handler: Option<unsafe extern "system" fn(u32) -> i32>,
             add: i32,
         ) -> i32;
+        pub fn GlobalMemoryStatusEx(buf: *mut c_void) -> i32;
+        pub fn FindFirstVolumeW(buf: *mut u16, len: u32) -> Handle;
+        pub fn FindNextVolumeW(h: Handle, buf: *mut u16, len: u32) -> i32;
+        pub fn FindVolumeClose(h: Handle) -> i32;
+        pub fn GetVolumePathNamesForVolumeNameW(
+            name: *const u16,
+            buf: *mut u16,
+            len: u32,
+            ret: *mut u32,
+        ) -> i32;
+        #[link_name = "GetVolumeInformationW"]
+        pub fn GetVolumeInformationW(
+            root: *const u16,
+            vol_buf: *mut u16,
+            vol_len: u32,
+            serial: *mut u32,
+            maxlen: *mut u32,
+            flags: *mut u32,
+            fs_buf: *mut u16,
+            fs_len: u32,
+        ) -> i32;
+        pub fn GetDiskFreeSpaceExW(
+            dir: *const u16,
+            free_avail: *mut u64,
+            total: *mut u64,
+            total_free: *mut u64,
+        ) -> i32;
+        pub fn GetNativeSystemInfo(info: *mut SystemInfo) -> i32;
+    }
+
+    /// Field layout matches winnt.h SYSTEM_INFO for x64 (ULONG_PTR fields
+    /// are 8 bytes here - active_mask as u32 silently shifted everything
+    /// after it and num_processors read as 0).
+    #[repr(C)]
+    pub struct SystemInfo {
+        pub arch: u16,
+        pub reserved: u16,
+        pub page_size: u32,
+        pub min_addr: *mut c_void,
+        pub max_addr: *mut c_void,
+        pub active_mask: usize,
+        pub num_processors: u32,
+        pub processor_type: u32,
+        pub alloc_granularity: u32,
+        pub processor_level: u16,
+        pub processor_revision: u16,
     }
 
     #[repr(C)]
@@ -368,6 +422,15 @@ mod cm {
             len: *mut u32,
             flags: u32,
         ) -> ConfigRet;
+        // device -> its disk interface paths (\\?\scsi#...), the documented
+        // bridge from a PnP devnode to a PhysicalDrive number
+        pub fn CM_Get_Device_Interface_ListW(
+            guid: *const u8,
+            device_id: *const u16,
+            buffer: *mut u16,
+            buffer_len: u32,
+            flags: u32,
+        ) -> ConfigRet;
     }
 }
 
@@ -419,12 +482,12 @@ fn gate_word(v: Option<u32>) -> &'static str {
 /// and `--dry-run` can print it on a machine where the real run would only
 /// fail with a raw win32 code.
 ///
-/// Gate semantics (verified 2026-11, issue #40):
-/// - Secure Boot ON is the gate that actually refuses THIS driver: the pinned
-///   pmxdrv.sys is Intel/COMODO cross-signed (leaf cert issued 2018-10-24, no
-///   Microsoft root), so it qualifies for none of the DSE cross-signing
-///   carve-outs (only machines upgraded from Windows <= 1607, Secure Boot
-///   off, or end-entity certs issued before 2015-07-29 are exempt).
+/// Gate semantics (issue #40 analysis, softened 2026-11-08 per field data):
+/// - Secure Boot ON was expected to refuse THIS driver (the pinned pmxdrv.sys
+///   is Intel/COMODO cross-signed, no Microsoft root, post-2015 leaf cert -
+///   none of the DSE carve-outs), but field reports show the probe loading
+///   and running on some SB-ON hosts, so the tool now says "may not load"
+///   instead of a verdict and asks the user to simply try.
 /// - The Microsoft vulnerable-driver blocklist does NOT list this hash (file
 ///   SHA256, authentihashes and imphash all absent from both the OS-delivered
 ///   and the downloadable policies, with in-list control hashes verified), so
@@ -447,12 +510,13 @@ fn preflight() {
     if secure_boot == Some(1) {
         println!(
             "{}",
-            red("PLATFORM: Secure Boot is ON - the pinned pmxdrv.sys cannot load here.")
+            yellow("PLATFORM: Secure Boot is ON - the pinned pmxdrv.sys may not load here.")
         );
         println!("  It is cross-signed (Intel/COMODO, no Microsoft root, signing cert issued");
-        println!("  after the 2015-07-29 cutoff), so it fits none of the DSE carve-outs and");
-        println!("  StartService is expected to be refused - unless this OS was upgraded from");
-        println!("  Windows <= 1607. The driver-free path is the EFI read-only sampler.");
+        println!("  after the 2015-07-29 cutoff), which fits none of the DSE carve-outs - but");
+        println!("  field reports show the probe running on some Secure Boot ON hosts, so this");
+        println!("  is a caution, not a verdict: just try. If the load fails, the driver-free");
+        println!("  path is the EFI read-only sampler.");
     }
     if blocklist == Some(1) || hvci == Some(1) {
         println!(
@@ -532,6 +596,8 @@ fn usb4_config() {
 const OS_CURVER: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
 const SMBIOS_BIOS_KEY: &str = r"HARDWARE\DESCRIPTION\System\BIOS";
 const CPU0_KEY: &str = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0";
+const ENUM_ROOT: &str = r"SYSTEM\CurrentControlSet\Enum";
+const NV_ENUM_KEY: &str = r"SYSTEM\CurrentControlSet\Services\nvlddmkm\Enum";
 const CLASS_ROOT: &str = r"SYSTEM\CurrentControlSet\Control\Class";
 
 /// One named HKLM string value (reg_value_string takes the wide value name).
@@ -615,19 +681,42 @@ fn marketing_driver_version(raw: &str) -> Option<String> {
     Some(format!("{d2}{maj}.{min}"))
 }
 
-/// Per-adapter driver facts from the class key the devnode's CM_DRP_DRIVER
-/// property names - the same source the maker's Turing gate reads
-/// (make-usbroot.ps1 Get-TuringAdapterState): DriverVersion/DriverDate and
-/// the EnableGpuFirmware GSP switch. None = no bound driver (uninstalled or
-/// never started this boot).
+/// Instance paths the NVIDIA driver is actually bound to THIS boot - the
+/// numbered values of Services\nvlddmkm\Enum, the maker's authoritative
+/// ghost-free source (make-usbroot.ps1 Get-BoundNvidiaInstancePaths): PnP
+/// maintains this list for started devnodes only, so card-swap residue
+/// disappears the boot after the card is pulled.
+fn nvlddmkm_bound() -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(count) = hklm_dword(NV_ENUM_KEY, "Count") {
+        for i in 0..count.min(16) {
+            if let Some(p) = hklm_string(NV_ENUM_KEY, &i.to_string()) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+/// Per-adapter driver facts from the class key: DriverVersion/DriverDate and
+/// the EnableGpuFirmware GSP switch. The class slot is resolved the way the
+/// maker resolves it (Get-InstanceRegistryProps): when this instance is on
+/// the driver's bound list, the live slot is Enum\<instance>\Driver - the
+/// devnode CM_DRP_DRIVER walk can land on a card-swap ghost when two
+/// devnodes share one location string, which read the wrong slot in the
+/// field (LEGACY shown for a GSP-mode card). None = no bound driver.
 struct CardDriver {
     version: String,
     date: Option<String>,
     gsp: Option<u32>,
 }
 
-fn card_driver(devinst: u32) -> Option<CardDriver> {
-    let slot = cm_string(devinst, cm::CM_DRP_DRIVER)?;
+fn card_driver(instance: &str, devinst: u32) -> Option<CardDriver> {
+    let slot = if nvlddmkm_bound().iter().any(|b| b.eq_ignore_ascii_case(instance)) {
+        hklm_string(&format!(r"{ENUM_ROOT}\{instance}"), "Driver")
+    } else {
+        cm_string(devinst, cm::CM_DRP_DRIVER)
+    }?;
     let key = format!(r"{CLASS_ROOT}\{slot}");
     let version = hklm_string(&key, "DriverVersion")?;
     Some(CardDriver {
@@ -663,6 +752,544 @@ fn family_verdict_by_devid(devid: u16) -> (&'static str, bool) {
         0x2182..=0x21D1 => ("tu11x (Turing TU116/117)", true),
         _ => ("outside the tu10x/ga10x/ad10x families", false),
     }
+}
+
+// ---- v0.7.1 inventory additions: RAM / disks / partitions / other PCI ----
+
+/// nth (1-based) NUL-terminated string of a structure's string block
+/// (starts right after the formatted area, ends at the double NUL).
+fn smbios_string(data: &[u8], mut p: usize, idx: u8) -> String {
+    if idx == 0 {
+        return String::new();
+    }
+    let mut cur = 1u8;
+    while p < data.len() && data[p] != 0 {
+        let start = p;
+        while p < data.len() && data[p] != 0 {
+            p += 1;
+        }
+        let s = String::from_utf8_lossy(&data[start..p]).to_string();
+        p += 1; // its NUL
+        if cur == idx {
+            return s;
+        }
+        cur += 1;
+    }
+    String::new()
+}
+
+/// Physical RAM total via GlobalMemoryStatusEx.
+fn physical_total_mib() -> Option<u64> {    #[repr(C)]
+    struct MsEx {
+        length: u32,
+        load: u32,
+        total_phys: u64,
+        avail_phys: u64,
+        total_page: u64,
+        avail_page: u64,
+        total_virt: u64,
+        avail_virt: u64,
+        avail_ext: u64,
+    }
+    let mut ms = MsEx {
+        length: core::mem::size_of::<MsEx>() as u32,
+        load: 0,
+        total_phys: 0,
+        avail_phys: 0,
+        total_page: 0,
+        avail_page: 0,
+        total_virt: 0,
+        avail_virt: 0,
+        avail_ext: 0,
+    };
+    let ok = unsafe { win::GlobalMemoryStatusEx((&mut ms as *mut MsEx).cast()) };
+    if ok != 0 && ms.total_phys > 0 {
+        Some(ms.total_phys >> 20)
+    } else {
+        None
+    }
+}
+
+/// CPUID topology: "family X model Y stepping Z, N cores / M threads" - the
+/// brand string alone is useless on ES/QS CPUs ("Genuine Intel(R) CPU 0000").
+/// The logical count comes from the OS (all sockets), threads-per-core from
+/// CPUID leaf 0x0B sub-leaf 0, cores = logical / tpc; F/M/S per the standard
+/// display-family/model decode.
+#[cfg(target_arch = "x86_64")]
+fn cpu_topology() -> Option<String> {
+    use core::arch::x86_64::__cpuid_count;
+    let mut si = win::SystemInfo {
+        arch: 0,
+        reserved: 0,
+        page_size: 0,
+        min_addr: ptr::null_mut(),
+        max_addr: ptr::null_mut(),
+        active_mask: 0,
+        num_processors: 0,
+        processor_type: 0,
+        alloc_granularity: 0,
+        processor_level: 0,
+        processor_revision: 0,
+    };
+    unsafe { win::GetNativeSystemInfo((&mut si as *mut win::SystemInfo).cast()) };
+    let logical = si.num_processors;
+    if logical == 0 {
+        return None;
+    }
+    let tpc = __cpuid_count(0x0B, 0).ebx & 0xFFFF;
+    let tpc = if tpc == 0 || tpc > logical { 1 } else { tpc };
+    let cores = logical / tpc;
+    let leaf1 = __cpuid_count(1, 0);
+    let family = (leaf1.eax >> 8) & 0xF;
+    let ext_family = (leaf1.eax >> 20) & 0xFF;
+    let ext_model = (leaf1.eax >> 16) & 0xF;
+    let model_low = (leaf1.eax >> 4) & 0xF;
+    let display_family = if family == 0xF {
+        family + ext_family
+    } else {
+        family
+    };
+    let display_model = if family == 0xF || family == 0x6 {
+        (ext_model << 4) | model_low
+    } else {
+        model_low
+    };
+    let stepping = leaf1.eax & 0xF;
+    Some(format!(
+        "family {display_family} model {display_model:#04x} stepping {stepping}, {cores} cores / {logical} threads"
+    ))
+}
+
+/// Populated SMBIOS Type 17 modules: slot locator, capacity, speed (the
+/// configured speed when the firmware records one), manufacturer + part
+/// number. Serials are deliberately NOT read. Offsets are the spec's
+/// formatted area; string indexes point into the trailing string block.
+fn ram_summary() -> (Option<u32>, Vec<String>) {
+    let rsmb: u32 = 0x5253_4D42; // 'RSMB'
+    let mut out = Vec::new();
+    let need = unsafe { win::GetSystemFirmwareTable(rsmb, 0, core::ptr::null_mut(), 0) };
+    if need == 0 {
+        return (None, out);
+    }
+    let mut buf = vec![0u8; need as usize];
+    if unsafe { win::GetSystemFirmwareTable(rsmb, 0, buf.as_mut_ptr(), need) } == 0 {
+        return (None, out);
+    }
+    if buf.len() < 8 {
+        return (None, out);
+    }
+    let data_len = u32::from_le_bytes(buf[4..8].try_into().unwrap_or([0; 4])) as usize;
+    if data_len == 0 || buf.len() < 8 + data_len {
+        return (None, out);
+    }
+    let data = &buf[8..8 + data_len];
+    let mut slots = None;
+    let mut off = 0usize;
+    while off + 4 <= data.len() {
+        let typ = data[off];
+        let len = data[off + 1] as usize;
+        if len < 4 || off + len > data.len() {
+            break;
+        }
+        if typ == 16 && len >= 0x11 {
+            // physical memory array: populated device count @0x0D
+            slots = Some(u16::from_le_bytes(data[off + 0x0D..off + 0x0F].try_into().unwrap()) as u32);
+        }
+        if typ == 17 && len >= 0x17 {
+            let raw = u16::from_le_bytes(data[off + 0x0C..off + 0x0E].try_into().unwrap());
+            let mib: Option<u32> = if raw == 0 {
+                None // slot empty
+            } else if raw == 0x7FFF {
+                // extended size @0x1D; bit30 = value in MiB
+                if len >= 0x21 {
+                    let ext = u32::from_le_bytes(data[off + 0x1D..off + 0x21].try_into().unwrap());
+                    let v = ext & 0x3FFF_FFFF;
+                    Some(if ext & 0x4000_0000 != 0 { v } else { v / 1024 })
+                } else {
+                    None
+                }
+            } else if raw & 0x8000 != 0 {
+                Some((raw & 0x7FFF) as u32) // already MiB
+            } else {
+                // Field-observed AMI quirk (ASUS Z170, SMBIOS 3.0): 16 GiB DIMMs
+                // written as 0x4000 - plain MiB WITHOUT the bit15 flag - so a
+                // spec-literal KiB read yields "16 MiB". No module sold this
+                // millennium is smaller than 128 MiB, so a KiB reading that
+                // small is really MiB.
+                let kib = raw as u32;
+                Some(if kib < 131_072 {
+                    kib
+                } else {
+                    kib / 1024
+                })
+            };
+            if let Some(mib) = mib {
+                let sp = u16::from_le_bytes(data[off + 0x15..off + 0x17].try_into().unwrap());
+                // The same board writes ConfiguredMemorySpeed = 10 (MT/s -
+                // impossible; junk placeholder) while Speed holds the real
+                // 2720. Trust the configured value only when it is physically
+                // plausible; everything real is >= 200 MT/s.
+                let cs = if len >= 0x23 {
+                    u16::from_le_bytes(data[off + 0x21..off + 0x23].try_into().unwrap())
+                } else {
+                    0
+                };
+                let mt = if cs >= 200 { cs } else { sp };
+                let locator = smbios_string(data, off + len, data[off + 0x10]);
+                let man = smbios_string(data, off + len, data[off + 0x17]);
+                let part = smbios_string(data, off + len, data[off + 0x1A]);
+                let mut line = format!(
+                    "RAM SLOT: {} {} MiB",
+                    if locator.is_empty() { "?" } else { &locator },
+                    mib
+                );
+                if mt != 0 {
+                    line.push_str(&format!(" @ {mt} MT/s"));
+                }
+                let tag = format!("{man} {part}").trim().to_string();
+                if !tag.is_empty() {
+                    line.push_str(&format!(" ({tag})"));
+                }
+                out.push(line);
+            }
+        }
+        // skip the formatted area, then the double-NUL string set
+        let mut p = off + len;
+        let mut nul = 0usize;
+        while p < data.len() && nul < 2 {
+            if data[p] == 0 {
+                nul += 1;
+            } else {
+                nul = 0;
+            }
+            p += 1;
+        }
+        off = p;
+    }
+    (slots, out)
+}
+
+const GUID_DEVINTERFACE_DISK: [u8; 16] = [
+    0x07, 0x63, 0xf5, 0x53, 0xbf, 0xb6, 0xd0, 0x11, 0x94, 0xf2, 0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b,
+];
+const DISK_CLASS: &str = "{4d36e967-e325-11ce-bfc1-08002be10318}";
+const IOCTL_DISK_GET_DRIVE_GEOMETRY: u32 = 0x0007_0000;
+// CTL_CODE(0x2d, 0x420, METHOD_BUFFERED, FILE_ANY_ACCESS) - the misremembered
+// 0x2d0048 is an unassigned function and fails with win32 1
+const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x002D_1080;
+const IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS: u32 = 0x0056_0000;
+
+/// PnP devnodes of one setup class (CM_GETIDLIST_FILTER_CLASS).
+fn enum_class(class: &str) -> Vec<String> {
+    unsafe {
+        let filter = wide(class);
+        let mut len = 0u32;
+        let cr = cm::CM_Get_Device_ID_List_SizeW(&mut len, filter.as_ptr(), cm::CM_GETIDLIST_FILTER_CLASS);
+        if cr != cm::CR_SUCCESS || len == 0 {
+            return Vec::new();
+        }
+        let mut buf = vec![0u16; len as usize];
+        let cr = cm::CM_Get_Device_ID_ListW(filter.as_ptr(), buf.as_mut_ptr(), len, cm::CM_GETIDLIST_FILTER_CLASS);
+        if cr != cm::CR_SUCCESS {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut rest: &[u16] = &buf;
+        while let Some(nul) = rest.iter().position(|&c| c == 0) {
+            let id_w = &rest[..nul];
+            rest = &rest[nul + 1..];
+            if id_w.is_empty() {
+                break;
+            }
+            out.push(String::from_utf16_lossy(id_w));
+        }
+        out
+    }
+}
+
+/// \\?\scsi#... interface paths of one devnode's disk interface.
+fn disk_interface_paths(instance: &str) -> Vec<String> {
+    let verbose = std::env::var_os("SSDIAG_VERBOSE_DISCOVERY").is_some();
+    let mut id = wide(instance);
+    id.push(0);
+    let mut buf = [0u16; 2048];
+    let cr = unsafe {
+        cm::CM_Get_Device_Interface_ListW(
+            GUID_DEVINTERFACE_DISK.as_ptr(),
+            id.as_ptr(),
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            0, // CM_GET_DEVICE_INTERFACE_LIST_PRESENT
+        )
+    };
+    if cr != cm::CR_SUCCESS {
+        if verbose {
+            eprintln!("[discover] disk interface list CR_{cr:04x} for {instance}");
+        }
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut rest: &[u16] = &buf;
+    while let Some(nul) = rest.iter().position(|&c| c == 0) {
+        let p = &rest[..nul];
+        rest = &rest[nul + 1..];
+        if p.is_empty() {
+            break;
+        }
+        out.push(String::from_utf16_lossy(p));
+    }
+    if verbose {
+        let first = out.first().map(|s| s.chars().take(48).collect::<String>()).unwrap_or_default();
+        eprintln!("[discover] disk interface list for {instance}: {cr:04x} paths={} first={first:?}", out.len());
+    }
+    out
+}
+
+/// Open a device with zero access (works unelevated) and run one ioctl.
+fn dev_ioctl(path: &str, ioctl: u32, out: &mut [u8]) -> bool {
+    let verbose = std::env::var_os("SSDIAG_VERBOSE_DISCOVERY").is_some();
+    let w = wide(path);
+    let h = unsafe {
+        win::CreateFileW(w.as_ptr(), 0, 3, ptr::null(), OPEN_EXISTING, 0, ptr::null())
+    };
+    if h as isize == -1 {
+        if verbose {
+            eprintln!("[discover] ioctl open failed ({path}): win32 {}", last_err());
+        }
+        return false;
+    }
+    let mut returned = 0u32;
+    let ok = unsafe {
+        win::DeviceIoControl(h, ioctl, ptr::null(), 0, out.as_mut_ptr().cast(), out.len() as u32, &mut returned, ptr::null())
+    };
+    if ok == 0 && verbose {
+        eprintln!("[discover] ioctl {ioctl:#x} on {path}: win32 {}", last_err());
+    }
+    unsafe { win::CloseHandle(h) };
+    ok != 0
+}
+
+fn fmt_size(bytes: u64) -> String {
+    let mib = bytes >> 20;
+    if mib >= 1024 {
+        let gib_x10 = (mib * 10 / 1024) as u64;
+        format!("{}.{} GiB", gib_x10 / 10, gib_x10 % 10)
+    } else {
+        format!("{mib} MiB")
+    }
+}
+
+/// Disks with model + size, volumes mapped onto them via disk extents
+/// (partition offset/size), filesystem/label/free. All queries work
+/// unelevated (zero-access opens + buffered ioctls); no serials read.
+fn disk_report() -> Vec<String> {
+    let mut disks: Vec<(u32, String, u64)> = Vec::new(); // (number, name, bytes)
+    for id in enum_class(DISK_CLASS) {
+        let mut idw = wide(&id);
+        idw.push(0);
+        let mut devinst = 0u32;
+        if unsafe { cm::CM_Locate_DevNodeW(&mut devinst, idw.as_mut_ptr(), 0) } != cm::CR_SUCCESS {
+            continue; // phantom (card-swap style residue)
+        }
+        let name = hklm_string(&format!(r"{ENUM_ROOT}\{id}"), "FriendlyName") // the model line
+            .or_else(|| cm_string(devinst, 0x0B)) // CM_DRP_FRIENDLYNAME
+            .or_else(|| cm_string(devinst, cm::CM_DRP_DEVICEDESC))
+            .unwrap_or_else(|| id.clone());
+        let number = disk_interface_paths(&id).iter().find_map(|p| {
+            let mut out = [0u8; 12];
+            if dev_ioctl(p, IOCTL_STORAGE_GET_DEVICE_NUMBER, &mut out) {
+                let n = u32::from_le_bytes(out[4..8].try_into().unwrap());
+                if n != 0xFFFF_FFFF {
+                    return Some(n);
+                }
+            }
+            None
+        });
+        let Some(number) = number else {
+            if std::env::var_os("SSDIAG_VERBOSE_DISCOVERY").is_some() {
+                eprintln!("[discover] disk {id}: no storage device number resolved");
+            }
+            continue;
+        };
+        let mut geo = [0u8; 24];
+        let bytes = if dev_ioctl(&format!(r"\\.\PhysicalDrive{number}"), IOCTL_DISK_GET_DRIVE_GEOMETRY, &mut geo) {
+            // DISK_GEOMETRY: {LI cylinders @0, MEDIA_TYPE @8, tpc @12,
+            // spt @16, bps @20} - the DWORDs sit one slot later than a
+            // naive layout guess (field-verified: [8..12] reads the
+            // MediaType, FixedMedia=12)
+            let cyl = u64::from_le_bytes(geo[0..8].try_into().unwrap());
+            let tpc = u32::from_le_bytes(geo[12..16].try_into().unwrap()) as u64;
+            let spt = u32::from_le_bytes(geo[16..20].try_into().unwrap()) as u64;
+            let bps = u32::from_le_bytes(geo[20..24].try_into().unwrap()) as u64;
+            if std::env::var_os("SSDIAG_VERBOSE_DISCOVERY").is_some() {
+                eprintln!("[discover] disk {id} -> #{number} cyl={cyl} tpc={tpc} spt={spt} bps={bps}");
+            }
+            cyl * tpc * spt * bps
+        } else {
+            if std::env::var_os("SSDIAG_VERBOSE_DISCOVERY").is_some() {
+                eprintln!("[discover] disk {id} -> #{number}: geometry refused");
+            }
+            0
+        };
+        disks.push((number, name, bytes));
+    }
+    disks.sort_by_key(|(n, _, _)| *n);
+
+    // volumes: extents give (disk, offset, length); letters/fs/free from the
+    // volume APIs - every step unelevated
+    let mut vols: Vec<(u32, i64, u64, String, String, String, Option<(u64, u64)>)> = Vec::new();
+    let mut buf = [0u16; 512];
+    let h = unsafe { win::FindFirstVolumeW(buf.as_mut_ptr(), buf.len() as u32) };
+    if h as isize != -1 {
+        let handle = h;
+        loop {
+            let nul = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            let vol = String::from_utf16_lossy(&buf[..nul]); // \\?\Volume{guid}\
+            if !vol.is_empty() {
+                let root_w = wide(&vol); // with trailing backslash: volume APIs
+                let mut letters = [0u16; 512];
+                let letters = if unsafe {
+                    win::GetVolumePathNamesForVolumeNameW(root_w.as_ptr(), letters.as_mut_ptr(), letters.len() as u32, ptr::null_mut())
+                } != 0 {
+                    let n = letters.iter().position(|&c| c == 0).unwrap_or(0);
+                    String::from_utf16_lossy(&letters[..n])
+                        .split('\0')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.trim_end_matches('\\').to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                } else {
+                    String::new()
+                };
+                let mut fs = [0u16; 64];
+                let mut label = [0u16; 128];
+                let (fs_s, label_s) = if unsafe {
+                    win::GetVolumeInformationW(root_w.as_ptr(), label.as_mut_ptr(), label.len() as u32, ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), fs.as_mut_ptr(), fs.len() as u32)
+                } != 0 {
+                    let f = {
+                        let n = fs.iter().position(|&c| c == 0).unwrap_or(0);
+                        String::from_utf16_lossy(&fs[..n])
+                    };
+                    let l = {
+                        let n = label.iter().position(|&c| c == 0).unwrap_or(0);
+                        String::from_utf16_lossy(&label[..n])
+                    };
+                    (f, l)
+                } else {
+                    (String::new(), String::new())
+                };
+                let mut free = 0u64;
+                let mut total = 0u64;
+                let mut tfree = 0u64;
+                let sizes = if unsafe {
+                    win::GetDiskFreeSpaceExW(root_w.as_ptr(), &mut free, &mut total, &mut tfree)
+                } != 0 {
+                    Some((free, total))
+                } else {
+                    None
+                };
+                // extents via the volume device (no trailing backslash)
+                let dev_w = wide(vol.trim_end_matches('\\'));
+                let vh = unsafe { win::CreateFileW(dev_w.as_ptr(), 0, 3, ptr::null(), OPEN_EXISTING, 0, ptr::null()) };
+                if vh as isize == -1 {
+                    if std::env::var_os("SSDIAG_VERBOSE_DISCOVERY").is_some() {
+                        eprintln!("[discover] volume open failed ({vol}): win32 {}", last_err());
+                    }
+                }
+                if vh as isize != -1 {
+                    let mut out = [0u8; 1024];
+                    let mut returned = 0u32;
+                    let ok = unsafe {
+                        win::DeviceIoControl(vh, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, ptr::null(), 0, out.as_mut_ptr().cast(), out.len() as u32, &mut returned, ptr::null())
+                    };
+                    unsafe { win::CloseHandle(vh) };
+                    if ok != 0 && out.len() >= 8 {
+                        // VOLUME_DISK_EXTENTS: ULONG count, then DISK_EXTENTS -
+                        // which carry LARGE_INTEGERs, so extent[0] sits at
+                        // offset 8 (4-byte count + 4-byte alignment pad), 24
+                        // bytes each: {disk u32, offset i64, length i64}
+                        let n = u32::from_le_bytes(out[0..4].try_into().unwrap()) as usize;
+                        let n = n.min((out.len() - 8) / 24);
+                        for e in 0..n {
+                            let base = 8 + e * 24;
+                            let dnum = u32::from_le_bytes(out[base..base + 4].try_into().unwrap());
+                            let soff = i64::from_le_bytes(out[base + 8..base + 16].try_into().unwrap());
+                            let slen = i64::from_le_bytes(out[base + 16..base + 24].try_into().unwrap());
+                            if slen > 0 {
+                                vols.push((dnum, soff, slen as u64, letters.clone(), fs_s.clone(), label_s.clone(), sizes));
+                                break; // first extent = partition start
+                            }
+                        }
+                    }
+                }
+            }
+            if unsafe { win::FindNextVolumeW(handle, buf.as_mut_ptr(), buf.len() as u32) } == 0 {
+                break;
+            }
+        }
+        unsafe { win::FindVolumeClose(handle) };
+    }
+
+    let mut out = Vec::new();
+    for (n, name, bytes) in &disks {
+        out.push(format!(
+            "DISK: #{n} {name} - {}",
+            if *bytes > 0 { fmt_size(*bytes) } else { "size unknown".into() }
+        ));
+    }
+    vols.sort_by_key(|(d, o, _, _, _, _, _)| (*d, *o));
+    for (d, soff, slen, letters, fs, label, sizes) in &vols {
+        let letter = if letters.is_empty() { "(no letter)" } else { &letters };
+        let fs_s = if fs.is_empty() { "?" } else { fs };
+        let mut line = format!(
+            "PART: disk {d} @ {} size {} {letter} {fs_s}",
+            fmt_size(*soff as u64),
+            fmt_size(*slen)
+        );
+        if !label.is_empty() {
+            line.push_str(&format!(" \"{label}\""));
+        }
+        if let Some((free, total)) = sizes {
+            line.push_str(&format!(" free {} / {}", fmt_size(*free), fmt_size(*total)));
+        }
+        out.push(line);
+    }
+    out
+}
+
+/// Every PCI function on the bus (desc + ven:dev), sorted; capped so a
+/// dense bus does not flood the report. Includes the NVIDIA companions
+/// (audio/USB-C functions) already excluded from the GPU rows.
+fn pci_lines() -> Vec<String> {
+    let mut rows = Vec::new();
+    if let Ok(ids) = enum_filtered("PCI") {
+        for id in &ids {
+            let mut idw = wide(id);
+            idw.push(0);
+            let mut devinst = 0u32;
+            if unsafe { cm::CM_Locate_DevNodeW(&mut devinst, idw.as_mut_ptr(), 0) } != cm::CR_SUCCESS {
+                continue;
+            }
+            let desc = cm_string(devinst, cm::CM_DRP_DEVICEDESC).unwrap_or_else(|| id.clone());
+            let up = id.to_uppercase();
+            let part = |tag: &str| -> String {
+                up.find(tag)
+                    .and_then(|i| up.get(i + 4..i + 8))
+                    .filter(|s| s.bytes().all(|b| b.is_ascii_hexdigit()))
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_else(|| "????".into())
+            };
+            rows.push(format!("{} ({}:{})", desc, part("VEN_"), part("DEV_")));
+        }
+    }
+    rows.sort();
+    rows.dedup();
+    let cap = 48;
+    let mut out: Vec<String> = rows.iter().take(cap).map(|r| format!("PCI DEV: {r}")).collect();
+    if rows.len() > cap {
+        out.push(format!("PCI DEV: ... +{} more", rows.len() - cap));
+    }
+    out
 }
 
 /// Facts the advisories need once the header is printed.
@@ -705,7 +1332,10 @@ fn inventory_header(gpus: &[Gpu]) -> InventorySummary {
     };
     println!("OS:      {os_line}");
     let cpu = hklm_string(CPU0_KEY, "ProcessorNameString").unwrap_or_else(|| "unknown".into());
-    println!("CPU:     {cpu}");
+    match cpu_topology() {
+        Some(t) => println!("CPU:     {cpu} ({t})"),
+        None => println!("CPU:     {cpu}"),
+    }
     let sys_man = hklm_string(SMBIOS_BIOS_KEY, "SystemManufacturer").unwrap_or_default();
     let sys_prod = hklm_string(SMBIOS_BIOS_KEY, "SystemProductName").unwrap_or_default();
     let bb_man = hklm_string(SMBIOS_BIOS_KEY, "BaseBoardManufacturer").unwrap_or_default();
@@ -725,6 +1355,27 @@ fn inventory_header(gpus: &[Gpu]) -> InventorySummary {
     }
     let (chassis, ctype) = chassis_class().unwrap_or(("unknown", 0));
     println!("CHASSIS: {chassis} (SMBIOS chassis type {ctype})");
+
+    // v0.7.1: memory, disks/partitions, other PCI devices
+    let total = physical_total_mib();
+    let (slots, slot_lines) = ram_summary();
+    let slots_s = slots.map(|s| format!(", {s} SMBIOS slots")).unwrap_or_default();
+    match total {
+        Some(mib) => println!("RAM: {mib} MiB physical{slots_s}"),
+        None => println!("RAM: unknown (GlobalMemoryStatusEx refused){slots_s}"),
+    }
+    for l in &slot_lines {
+        println!("{l}");
+    }
+    if slot_lines.is_empty() {
+        println!("RAM SLOT: none decoded (SMBIOS Type 17 absent or unreadable)");
+    }
+    for l in disk_report() {
+        println!("{l}");
+    }
+    for l in pci_lines() {
+        println!("{l}");
+    }
 
     // nvapi VBIOS strings keyed by PCI bus number (handles are opaque)
     let nvapi_cards = nvapi_wake::vbios_by_bus().ok();
@@ -768,7 +1419,7 @@ fn inventory_header(gpus: &[Gpu]) -> InventorySummary {
             Some(v) => println!("GPU {n} VBIOS: {v} (nvapi)"),
             None => println!("GPU {n} VBIOS: unknown (nvapi unavailable or no bus match)"),
         }
-        if let Some(cd) = card_driver(g.devinst) {
+        if let Some(cd) = card_driver(&g.id, g.devinst) {
             let mkt = marketing_driver_version(&cd.version)
                 .map(|m| format!(" ({m})"))
                 .unwrap_or_default();
@@ -802,7 +1453,7 @@ fn inventory_advisories(gpus: &[Gpu], inv: &InventorySummary) {
         println!(
             "{}",
             yellow(
-                "ADVISORY: Secure Boot ON - the EFI stick needs the FFS/driver form or a db-signed EFI; the in-OS ssdiag full dump cannot load its probe driver here (FAQ: Secure Boot)"
+                "ADVISORY: Secure Boot ON - the EFI stick needs the FFS/driver form or a db-signed EFI; the in-OS ssdiag probe may not load here (field reports show it running on some SB-ON machines - just try it) (FAQ: Secure Boot)"
             )
         );
     }
@@ -812,7 +1463,7 @@ fn inventory_advisories(gpus: &[Gpu], inv: &InventorySummary) {
         if !in_scope {
             continue;
         }
-        let Some(cd) = card_driver(g.devinst) else { continue };
+        let Some(cd) = card_driver(&g.id, g.devinst) else { continue };
         if fam.starts_with("tu") && cd.gsp != Some(1) {
             any = true;
             println!(
@@ -3037,9 +3688,11 @@ OPTIONS:
                    persistent copy) - run elevated in NORMAL mode
   --dry-run        print the platform gates + discovered cards, load nothing
   --inventory      print the unelevated read-only hardware inventory block
-                   (OS, CPU, board, BIOS, chassis, per-GPU driver / VBIOS /
-                   family verdict + advisories) and exit - the block the
-                   issue templates ask for; no admin, no driver, no writes
+                   (OS, CPU, board, BIOS, chassis, RAM slots/speeds, disks
+                   and partitions, other PCI devices, per-GPU driver /
+                   VBIOS / family verdict + advisories) and exit - the
+                   block the issue templates ask for; no admin, no driver,
+                   no writes
   --help           this text
 
 WHAT IT DOES:

@@ -56,6 +56,15 @@ INV_PLATFORM_RES = {
     "board": re.compile(r"^BOARD:\s+(.+)$"),
     "bios": re.compile(r"^BIOS:\s+(.+)$"),
     "chassis": re.compile(r"^CHASSIS:\s+(.+)$"),
+    "ram": re.compile(r"^RAM:\s+(.+)$"),
+}
+# ssdiag 0.7.1 list rows: many entries per machine, stored as lists
+INV_LIST_RE = re.compile(r"^(RAM SLOT|DISK|PART|PCI DEV):\s+(.+)$")
+INV_LIST_KEYS = {
+    "RAM SLOT": "ram_slots",
+    "DISK": "disks",
+    "PART": "partitions",
+    "PCI DEV": "pci_devices",
 }
 # per-GPU lines; the GPU index n ties them together within one block
 INV_GPU_RE = re.compile(r"^GPU (\d+): (.+)$")
@@ -113,6 +122,10 @@ def collect_inventory(path: str, platform: dict, gpus: dict) -> None:
                 m = rex.match(line)
                 if m and key not in platform:
                     platform[key] = m.group(1).strip()
+            lm = INV_LIST_RE.match(line)
+            if lm:
+                platform.setdefault(INV_LIST_KEYS[lm.group(1)], []).append(lm.group(2).strip())
+                continue
             m = INV_GPU_RE.match(line)
             if m:
                 idx_key = int(m.group(1))

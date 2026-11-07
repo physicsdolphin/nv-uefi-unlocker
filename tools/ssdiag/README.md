@@ -6,19 +6,29 @@ For read-back verdicts, Turing behavior, Linux checks and handoff diagnosis, use
 
 ## What it dumps
 
-- `--inventory` (0.7.0, no admin, no driver): the issue-report hardware
-  block - OS (build-derived Win10/11 + DisplayVersion + UBR), CPU, board and
-  BIOS from the registry, chassis form from the raw SMBIOS table
-  (GetSystemFirmwareTable `RSMB`), and per card the DeviceDesc, device id,
-  subsystem id, BDF, VBIOS (nvapi `GetVbiosVersionString`, matched by
-  `GetBusId`), the class-key DriverVersion (with the WDDM→marketing
-  conversion `32.0.15.6094 → 560.94`) and the `EnableGpuFirmware` GSP switch.
+- `--inventory` (0.7.0, widened 0.7.1; no admin, no driver): the issue-report
+  hardware block - OS (build-derived Win10/11 + DisplayVersion + UBR), CPU
+  with the CPUID topology and F/M/S decode (an ES/QS brand string like
+  "Genuine Intel(R) CPU 0000" still yields family/model/cores/threads),
+  board and BIOS from the registry, chassis form + RAM slots/capacity/speed
+  from the raw SMBIOS table (Type 16/17; serials deliberately skipped;
+  handles the AMI flagless-MiB Size quirk and junk ConfiguredSpeed values),
+  disks (FriendlyName + geometry size) with their volumes as PART rows
+  (offset, size, letters, filesystem, free), the other PCI devices on the
+  bus, and per card the DeviceDesc, device id, subsystem id, BDF, VBIOS
+  (nvapi `GetVbiosVersionString`, matched by `GetBusId`), the class-key
+  DriverVersion (with the WDDM→marketing conversion `32.0.15.6094 → 560.94`)
+  and the `EnableGpuFirmware` GSP switch - resolved through the driver's own
+  bound-instance list (`Services\nvlddmkm\Enum`, the maker's ghost-free
+  source) so a card-swap ghost cannot name the wrong class slot.
   Each card gets a device-id family verdict (IN-SCOPE/OUT-OF-SCOPE, the same
   ranges the loader admission table carries), and the block ends in
-  advisories: Secure Boot on, Turing in legacy GSP mode (the TDR warning),
+  advisories: Secure Boot on ("may not load" - field reports show the probe
+  running on some SB-ON hosts), Turing in legacy GSP mode (the TDR warning),
   the #99 PF-FLR driver family, laptop chassis. Every other mode prints this
   block first, so a full dump carries its own platform context; the line
-  prefixes (`OS:` / `GPU n PCI:` / `GPU n VBIOS:` ...) are the format
+  prefixes (`OS:` / `RAM SLOT:` / `DISK:` / `PART:` / `PCI DEV:` /
+  `GPU n PCI:` / `GPU n VBIOS:` ...) are the format
   `tools/collect_compat.py` ingests (schema nvuu-compat-profile/2).
 - multi-GPU: every NVIDIA Display-class function is dumped (companion
   audio/USB-C functions excluded), `--select` narrows.
