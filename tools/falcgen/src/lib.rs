@@ -8,3 +8,4 @@ pub mod decode;
 pub mod interp;
 pub mod isa;
 pub mod scan;
+pub mod synth;

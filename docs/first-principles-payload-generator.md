@@ -116,6 +116,13 @@ canary 地址 0x6140；main SP 0xFFF0；fill 0x4A7
 > - **canary 检查通过机制**：DMA 把 fill 0x4A7 铺满全帧，[0xFF48] 与 D[0x6140] 都是 fill——所有尾声检查**天然通过**，无需伪造 canary。**0x7a38 mismatch handler = mailbox0←0x47 自旋 park**（实机"永不 halt"的直接来源——mismatch 才 park，golden 不触发）。
 > - **0x10B9 token 宿主函数 = 写执行器**：body 消费寄存器值（`mov $r11 ← $r2; lcall 0xe3b(0x110040, r11)`、`mov $r11 ← $r1; ...`——r1/r2 = 链帧 pop 交付的 payload 值），尾声同为 mpopaddret $r3 0x4 → 级联下一链帧。token 族（0x10B9/0xCBD/0xC95/0xE85/0x1F89）= 各 helper 的中项入口，每个做一段初始化后用同一 0x18 尾声串下一帧。
 > - **G1 收官**：帧算法 ✓、gadget 层 ✓、栈几何（链机制+帧形状+寄存器映射）✓、黄金标准对拍的字段全部解释完毕。**G2 = synth.rs 落地**（写链 → 链帧布局 → 字节镜像）， TU102 golden b0ec9029 逐字节复现为验收。
+>
+> **G2 落地——TU102 golden 一次通过（2026-11-07，synth.rs）**：
+> - `falcgen synth --writes 0x409650=0xffffffff,0x1fa828=0 --golden v67-tu102-610.43.03.bin` → **BYTE-IDENTICAL ✓**（64000 字节，SHA 双方 = b0ec90294d1de3c67e024631c0a11000f281470d76eed806fc24c66b7fd1ef41）。
+> - golden 对照物本地可再生：cmpunlocker generate_v67.py + **本地 pinned 包（SHA e17e7c92… 与其 PACKAGE_SHA256 完全一致）**，WSL 内 zstd 解包。golden 文件不入库（资产纪律），对比走 CLI --golden 参数。
+> - synth.rs = 帧文法引擎（`Geometry` 参数化：fill/copy_base/guard/main_sp/活帧位/链基/步长/gadget 族/尾块级联常量/token 值），TU102 值全部来自本会话的 booter 逆向（fill=0x4A7 由译码器可推导=自循环类常量；gadget 地址=扫描器 G0 17/17 的产物；帧形状=trace 实证；尾块级联常量=逆向中的 helper 序列）。
+> - **诚实边界**：尾块级联常量（0x8E18/0xC95/0x1F89/0xE85/0x7EA4/0xCBD/0xFFFF token）的语义=部分逆向（mutex 释放级联），当前以 per-die 常量进 Geometry；**真正的第一性原理测试 = G3 TU116**（新 die 无 golden，几何全靠推导——PATCHED_WORDS_TU11X 对拍）。
+> - GA102（2a0aa1f8）/AD102（44c36b2d）复现 = 下一步（各需一份 Geometry + 本地包验证）。
 
 | 里程碑 | 内容 | 验收 | 估时 |
 |---|---|---|---|
