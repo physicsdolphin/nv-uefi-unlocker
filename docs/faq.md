@@ -87,6 +87,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-no-canary.txt` | 整组跳过复位金丝雀的读写（A/B 对照；见[回锁章](#relock)） |
 | `tx-keep-assets.txt` | **退出阀**：交棒前不释放资产缓存（默认自 v2.1.11 起释放，见[交棒内存](#handoff)）。仅用于 A/B 或排查"链载后仍要读资产"的形态；`tx-free-assets.txt` 旧标记仍被接受，已是空操作 |
 | `tx-acpi-dump.txt` | 只读：把固件 DSDT 与全部 SSDT 连同关键词索引落到卷根 `\acpi\`（离线 `iasl -d` 反编译；回答"谁在管这张卡的电"）。确认键之前执行，没有 N 卡也生效 |
+| `tx-exit-fw.txt` | **退出阀**（[PR #209](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/209)，issue #208 A 线）：跳过链式 `bootmgfw`，事务完成后直接交回固件引导管理器、由固件按 BootOrder 原生引导 Windows。适用于链载 `bootmgfw` 报 `\BCD` 0xc0000034 的机器（MSI GP66 11UG/AMI 实证：路径/卷/映像字节全精确仍死=bootmgfw 内部启动上下文差异，只能让固件自己拉）。**前提**：固件持久 BootOrder 里 Windows Boot Manager 须排在 U 盘之前，否则循环回 U 盘；一次性启动菜单进入则正常落穿。中止路径（30 秒超时/按错键）同样过此检查，marker 存在时中止也交回固件——链路坏掉的机器上这反而是更好行为（链载会落到 Recovery 屏）。marker 同置时事务前预载自动跳过 |
 
 无自动运行标记时，事务只接受空格或回车确认，其他键或 30 秒超时均中止。链回顺序为 Windows Boot Manager → 受支持的 Linux shim/grub/systemd-boot/Limine → 通用 `EFI/BOOT/BOOTX64.EFI`；最后一档提供 5 秒按键退出窗口。慢速 console 的提速走 `tx-quiet.txt` 的 console 白名单（issue #38），不做异步输出——UEFI 引导服务单线程，GOP 文本渲染本身是同步调用，异步提不了吞吐；每行日志带 `[+ms]` 阶段计时前缀，回显耗时与事务等待在 `loader.log` 里直接可分。
 

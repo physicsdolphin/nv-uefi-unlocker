@@ -186,7 +186,13 @@ fn main() -> Status {
     // preload problem falls back to the legacy post-transaction path. Pure
     // chain-side behavior (no GPU writes), so it runs in every build.
     let preloaded = if let keywait::Confirm::Proceed = confirmed {
-        chainload::preload_os_loader()
+        // PR #209 follow-up: with \tx-exit-fw.txt the StartImage never runs,
+        // so the pre-transaction USB read would buy nothing - skip it.
+        if chainload::boot_volume_has(cstr16!(r"\tx-exit-fw.txt")) {
+            None
+        } else {
+            chainload::preload_os_loader()
+        }
     } else {
         None
     };
@@ -211,7 +217,16 @@ fn main() -> Status {
     // The verdict lines above are in \loader.log; no pause before handing
     // off (the log file is the evidence record, not the screen).
     match chainload::chain_load_bootmgfw(preloaded) {
-        Ok(()) => info!("CHAIN: bootmgfw returned unexpectedly"),
+        Ok(()) => {
+            // PR #209 follow-up: the exit-to-fw marker also returns Ok -
+            // distinguish it from a genuine bootmgfw return so the evidence
+            // log does not record an anomaly on every marker run.
+            if chainload::boot_volume_has(cstr16!(r"\tx-exit-fw.txt")) {
+                info!("CHAIN: exit-to-fw marker - handed back to the firmware boot manager (expected)");
+            } else {
+                info!("CHAIN: bootmgfw returned unexpectedly");
+            }
+        }
         Err(e) => info!("CHAIN: failed: {:?}", e.status()),
     }
 
