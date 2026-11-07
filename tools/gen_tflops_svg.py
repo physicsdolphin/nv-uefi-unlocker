@@ -37,7 +37,7 @@ TEXT = {
         "hidden": "……{n} more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html",
         "f1": "value = SM × FMA/SM/clk × 2 × boost clock; unlock restores the whitepaper rate (×2 on clamped paths)",
         "f2": "real results land lower: power limits, memory bandwidth and library routing each take a cut",
-        "f3": "consumer 30/40-series TF32 is factory-clamped too (measured 2026-11-06) · desktop consumer only; laptops, pro, datacenter and RTX 50 rows are interactive-only",
+        "f3": "consumer 30/40-series TF32 is factory-clamped too (measured 2026-11-06) · desktop consumer only; laptops, 9/10/16 series, pro, mobile-workstation, datacenter and RTX 50 rows are interactive-only",
         "aria": "Theoretical post-unlock ceiling chart · {label}",
     },
     "zh": {
@@ -47,13 +47,13 @@ TEXT = {
         "hidden": "……另有 {n} 款未画出，完整可交互版见 docs/tools/tflops-ceiling.html",
         "f1": "值为 SM × 每 SM 每时钟 FMA × 2 × 加速频率；解锁 = 恢复白皮书全速，钳制路径 ×2",
         "f2": "实际到手低于此值：功耗墙、显存带宽、库路由各自打折 · 消费 30/40 系 TF32 同被出厂钳制（2026-11-06 实测）",
-        "f3": "消费 30/40 系 TF32 同样被出厂钳制（2026-11-06 实测）· 仅列桌面消费卡；笔记本、10/16 系、专业卡、数据中心与 50 系对照行见交互版",
+        "f3": "消费 30/40 系 TF32 同样被出厂钳制（2026-11-06 实测）· 仅列桌面消费卡；笔记本、9/10/16 系、专业卡、移动工作站、数据中心与 50 系对照行见交互版",
         "aria": "理论解锁上限天梯图 · {label}",
     },
 }
 
-GEN_COLOR = {"10": "#92400e", "16": "#d97706", "20": "#4d7c0f", "30": "#0e7490", "40": "#c2410c"}
-GEN_COLOR_DARK = {"10": "#92400e", "16": "#d97706", "20": "#a3e635", "30": "#22d3ee", "40": "#fb923c"}
+GEN_COLOR = {"9": "#78350f", "10": "#92400e", "16": "#d97706", "20": "#4d7c0f", "30": "#0e7490", "40": "#c2410c"}
+GEN_COLOR_DARK = {"9": "#b45309", "10": "#92400e", "16": "#d97706", "20": "#a3e635", "30": "#22d3ee", "40": "#fb923c"}
 
 
 def load_rows() -> list[dict]:
@@ -100,13 +100,13 @@ def render(precision: str, top: int, lang: str) -> str:
         ".bg{fill:#fff}.fg{fill:#111}.mut{fill:#666}.brd{fill:none;stroke:#ddd}"
         ".trk{fill:#eceef0}"
         f".g20{{fill:{GEN_COLOR['20']}}}.g30{{fill:{GEN_COLOR['30']}}}.g40{{fill:{GEN_COLOR['40']}}}"
-        f".g10{{fill:{GEN_COLOR['10']}}}.g16{{fill:{GEN_COLOR['16']}}}"
+        f".g9{{fill:{GEN_COLOR['9']}}}.g10{{fill:{GEN_COLOR['10']}}}.g16{{fill:{GEN_COLOR['16']}}}"
         ".lock{fill:#b9bec4}"
         "text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif}"
         "@media (prefers-color-scheme:dark){.bg{fill:#111417}.fg{fill:#e6e8ea}.mut{fill:#9aa3ad}"
         ".brd{stroke:#333a42}.trk{fill:#232a31}.lock{fill:#5b636c}"
         f".g20{{fill:{GEN_COLOR_DARK['20']}}}.g30{{fill:{GEN_COLOR_DARK['30']}}}.g40{{fill:{GEN_COLOR_DARK['40']}}}"
-        f".g10{{fill:{GEN_COLOR_DARK['10']}}}.g16{{fill:{GEN_COLOR_DARK['16']}}}}}"
+        f".g9{{fill:{GEN_COLOR_DARK['9']}}}.g10{{fill:{GEN_COLOR_DARK['10']}}}.g16{{fill:{GEN_COLOR_DARK['16']}}}}}"
     )
     out.append("</style>")
     out.append(f'<rect class="bg" width="{W}" height="{H}" rx="10"/>')

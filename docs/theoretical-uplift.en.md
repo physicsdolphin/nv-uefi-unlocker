@@ -81,6 +81,10 @@ On the desktop side (2684 · three independent cuBLAS datasets: two reporters in
 
 2757 (4090 Laptop), 28e0 (4060 Laptop: FP16 +49.4% / BF16 +56.9%, thermal-limited, [#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119)), 28a1 (4050 Laptop: 22 → 38–42 TF), 2702 (4080 SUPER: cuBLAS 1.66–1.78× with the **FP16acc control flat**) — mobile and desktop share one clamp model; gain differences are explained by power and cooling.
 
+### 3.5 Maxwell / Pascal (9/10 series) and mobile workstations: unclamped reference
+
+9-series (Maxwell, GM10x/GM20x) and 10-series (Pascal, GP10x) carry 128 FP32 lanes per SM and no tensor units: TF32/BF16/FP8 do not exist, FP16 runs on the FP32 CUDA cores at a native 1/64 rate (CUDA guide cc 5.x/6.1, 2 ops/clk/SM against 128 for FP32), so frameworks convert it to FP32 — the chart lists FP16 equal to FP32 to mark that emulated path (the P100's GP100 at cc 6.0 with native 2× is the one exception). The tool supports neither generation, so all of them are as-shipped reference rows; mobile workstations (the Mobile parts of Quadro M/P/T/RTX, RTX A, RTX Ada-MW and Blackwell-MW) are unclamped architectural full rate like desktop pro cards and are reference rows too.
+
 ## 4. Simple × precise classification master table
 
 Simple classification follows the community convention (TechPowerUp / whitepapers / mainstream benchmarks); the precise classification goes to instruction level.

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="720" height="620" viewBox="0 0 720 620" role="img" aria-label="Theoretical post-unlock ceiling chart · FP16">
 <style>
-.bg{fill:#fff}.fg{fill:#111}.mut{fill:#666}.brd{fill:none;stroke:#ddd}.trk{fill:#eceef0}.g20{fill:#4d7c0f}.g30{fill:#0e7490}.g40{fill:#c2410c}.g10{fill:#92400e}.g16{fill:#d97706}.lock{fill:#b9bec4}text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif}@media (prefers-color-scheme:dark){.bg{fill:#111417}.fg{fill:#e6e8ea}.mut{fill:#9aa3ad}.brd{stroke:#333a42}.trk{fill:#232a31}.lock{fill:#5b636c}.g20{fill:#a3e635}.g30{fill:#22d3ee}.g40{fill:#fb923c}.g10{fill:#92400e}.g16{fill:#d97706}}
+.bg{fill:#fff}.fg{fill:#111}.mut{fill:#666}.brd{fill:none;stroke:#ddd}.trk{fill:#eceef0}.g20{fill:#4d7c0f}.g30{fill:#0e7490}.g40{fill:#c2410c}.g9{fill:#78350f}.g10{fill:#92400e}.g16{fill:#d97706}.lock{fill:#b9bec4}text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif}@media (prefers-color-scheme:dark){.bg{fill:#111417}.fg{fill:#e6e8ea}.mut{fill:#9aa3ad}.brd{stroke:#333a42}.trk{fill:#232a31}.lock{fill:#5b636c}.g20{fill:#a3e635}.g30{fill:#22d3ee}.g40{fill:#fb923c}.g9{fill:#b45309}.g10{fill:#92400e}.g16{fill:#d97706}}
 </style>
 <rect class="bg" width="720" height="620" rx="10"/>
 <text class="fg" x="20" y="36" font-size="16" font-weight="600">Theoretical post-unlock ceiling · FP16</text>
@@ -130,9 +130,9 @@
 <rect class="g30" x="252.0" y="483.0" width="68.1" height="9" rx="2"/>
 <rect class="lock" x="252.0" y="483.0" width="34.1" height="9" rx="2"/>
 <text class="fg" x="700" y="490" font-size="11" text-anchor="end">34.1 → 68.2</text>
-<text class="mut" x="20" y="514" font-size="11">……33 more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html</text>
+<text class="mut" x="20" y="514" font-size="11">……42 more not drawn; the interactive version has all of them: docs/tools/tflops-ceiling.html</text>
 <line class="brd" x1="20" y1="560" x2="700" y2="560"/>
 <text class="mut" x="20" y="574" font-size="11">value = SM × FMA/SM/clk × 2 × boost clock; unlock restores the whitepaper rate (×2 on clamped paths)</text>
 <text class="mut" x="20" y="590" font-size="11">real results land lower: power limits, memory bandwidth and library routing each take a cut</text>
-<text class="mut" x="20" y="606" font-size="11">consumer 30/40-series TF32 is factory-clamped too (measured 2026-11-06) · desktop consumer only; laptops, pro, datacenter and RTX 50 rows are interactive-only</text>
+<text class="mut" x="20" y="606" font-size="11">consumer 30/40-series TF32 is factory-clamped too (measured 2026-11-06) · desktop consumer only; laptops, 9/10/16 series, pro, mobile-workstation, datacenter and RTX 50 rows are interactive-only</text>
 </svg>

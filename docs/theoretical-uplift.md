@@ -81,6 +81,10 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 2757（4090 Laptop）、28e0（4060 Laptop：FP16 +49.4% / BF16 +56.9%，热限，[#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119)）、28a1（4050 Laptop：22 → 38–42 TF）、2702（4080 SUPER：cuBLAS 1.66–1.78× 且 **FP16acc 对照组持平**）——移动端与台式同一套钳制模型，增益差异由功耗墙与散热解释。
 
+### 3.5 Maxwell / Pascal（9/10 系）与移动工作站：无锁参考
+
+9 系（Maxwell，GM10x/GM20x）与 10 系（Pascal，GP10x）每 SM 128 FP32 通道，均无张量核：TF32/BF16/FP8 不存在，FP16 走 FP32 CUDA 核，原生速率 1/64（CUDA guide cc 5.x/6.1 的 2 ops/clk/SM 对 FP32 的 128），框架实际转 FP32 执行——图里 FP16 直接取 FP32 值标示模拟路径（P100 的 GP100 cc 6.0 原生 2× 是唯一例外）。本工具不支持这两代，故全部按出厂参考行列出；移动工作站（Quadro M/P/T/RTX、RTX A、RTX Ada-MW、Blackwell-MW 的 Mobile 部件）与桌面专业卡同为不钳制的架构全速，作参考行。
+
 ## 4. 简单分类 × 精确分类总表
 
 简单分类按社区通行口径（TechPowerUp/白皮书/主流基准）；精确分类到指令级。
