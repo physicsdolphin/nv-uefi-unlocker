@@ -150,6 +150,13 @@ pub fn armed_confirm_with_prep(seconds: u64) -> Confirm {
             );
             return Confirm::Abort;
         }
-        uefi::boot::stall(Duration::from_millis(50));
+        // The 50 ms tick paces the countdown; once the deadline has passed
+        // (armed seconds = 0), pacing buys nothing - drop to a 5 ms tick so
+        // the abort key poll still breathes without idling the prep steps.
+        let pacing_done = match (deadline_ms, crate::timing::ms_since_entry()) {
+            (Some(dl), Some(now)) => now >= dl,
+            _ => waited_ticks >= budget_ticks,
+        };
+        uefi::boot::stall(Duration::from_millis(if pacing_done { 5 } else { 50 }));
     }
 }

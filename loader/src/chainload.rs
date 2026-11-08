@@ -178,8 +178,11 @@ pub(crate) fn reconnect_block_devices(tag: &str) {
         let _ = boot::connect_controller(*h, &[], None, true);
     }
     info!("{tag}: reconnect pass done");
-    // Let binding callbacks settle before the SFS enumeration.
-    boot::stall(core::time::Duration::from_millis(300));
+    // Binding callbacks from the pass may still be installing filesystems;
+    // that settle used to be an unconditional 300 ms stall here - now the
+    // SFS enumeration in chain_load_bootmgfw_inner retries after the beat
+    // only when the first pass came up empty, so boots where the volumes
+    // are already bound pay nothing.
 }
 
 fn chain_load_bootmgfw_inner() -> Result<()> {
@@ -190,7 +193,18 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
     // detach/reconnect storm during the transaction (a fresh UEFI shell
     // re-binds and sees everything).
     reconnect_block_devices("CHAIN");
-    let fs_handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID))?;
+    // The reconnect pass no longer stalls unconditionally (that beat moved
+    // here as a retry): pay the 300 ms settle only when the first
+    // enumeration came up empty - a sign that binding callbacks are still
+    // installing filesystems.
+    let fs_handles = match boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID)) {
+        Ok(h) if h.len() > 0 => h,
+        _ => {
+            info!("CHAIN: no SimpleFileSystem handles on the first pass - 300 ms settle + retry");
+            boot::stall(core::time::Duration::from_millis(300));
+            boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID))?
+        }
+    };
     info!("CHAIN: {} SimpleFileSystem handles", fs_handles.len());
 
     // Our own volume is fingerprinted per volume inside open_volume_logged
