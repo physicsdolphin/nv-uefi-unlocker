@@ -21,7 +21,7 @@ ROP 触发——**对 GSP 镜像自身的任何校验都在那之后**，而那�
 **GspRmBoot BL**（同源）、**FWSEC**（VBIOS 内置）——它们与 GSP 版本解耦
 （`driver-version-unlock-coupling` 结论的镜像侧推论）。
 
-## 二、实测矩阵（TU106 / Z370，2026-11-08）
+## 二、实测矩阵（TU106 / Z170-A，2026-11-08）
 
 **作用域铁律：全部实测都在图灵谱系（`gsp_tu10x`）上**。GSP 按 GPU 世代分发
 （图灵=`gsp_tu10x.bin`；Ampere/Ada=`gsp_ga10x.bin`，Ada 用其中
