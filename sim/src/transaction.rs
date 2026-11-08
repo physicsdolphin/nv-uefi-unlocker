@@ -49,6 +49,19 @@ pub struct Faults {
     /// fail, so the "unwind" phase error was unproducible and t18 was a
     /// tautology).
     pub fail_free_at: Option<u32>,
+    /// Platform cannot deliver SEC2 DMA reads from >=4GiB sysmem (issues
+    /// #74/#156/#191): with the HIGH band staged the booter dies at the meta
+    /// magic compare (mailbox0 = 0x89) while the HOST view stays intact.
+    pub high_band_unreachable: bool,
+    /// The harder platform: LOW band does not deliver either (#57 analog,
+    /// HIGH->0x11 / LOW->0x91/0x89) - the fallback retry must fail too.
+    pub both_bands_unreachable: bool,
+    /// Mirror class (issues #16/#57): the card locks sub-4GB sysmem reads -
+    /// staging LOW fails with 0x91 regardless of the loader's retry gate.
+    pub sub4gb_lock: bool,
+    /// Host-side meta page corruption (buffer-side bug): 0x89, but the
+    /// fallback gate must NOT fire - no retry can fix our own memory.
+    pub meta_magic_corrupt: bool,
 }
 
 /// Payload return-path shape (canonical falcon_hs `wait_plm` split).
@@ -105,6 +118,11 @@ pub struct Transaction<'a> {
     /// Operator-marker analog of the loader's \tx-accept-warm-wpr2.txt:
     /// accept an up WPR2 whose evidence is inconclusive.
     pub warm_wpr2_marker: bool,
+    /// Staging band gate (loader analog: >4GB staging is the Turing default,
+    /// \tx-low-staging.txt forces LOW). The STAGING-FALLBACK retry flips it
+    /// false; the phase log carries the evidence.
+    pub staging_high: bool,
+    staging_fallback_used: bool,
     // bookkeeping (unwind contract)
     dma_live: usize,
     dma_allocs: usize,
@@ -130,6 +148,8 @@ impl<'a> Transaction<'a> {
             shape: PayloadShape::AdaTriad,
             tu10x_entry: false,
             warm_wpr2_marker: false,
+            staging_high: false,
+            staging_fallback_used: false,
             dma_live: 0,
             last_marker: None,
             last_cpuctl: None,
@@ -286,6 +306,54 @@ impl<'a> Transaction<'a> {
             let bcr = self.gpu.read(SEC2_BCR);
             if self.faults.switch_stuck || bcr == 0 {
                 return Err(PhaseError::new("booter", "BCR switch stuck at 0"));
+            }
+        }
+        // STAGING-FALLBACK analog (issues #74/#156/#191): the booter's first
+        // device read is the meta page; on a platform that cannot deliver
+        // >=4GiB DMA reads that compare fails (mailbox0 = 0x89, the GA
+        // plaintext second-magic-compare status) while the HOST view of the
+        // page stays intact. The loader retries ONCE in the LOW band - no
+        // FLR, nothing unlocked yet, and the fire below re-runs the reset
+        // dance itself. Mirror classes must NOT retry: the sub-4GB read lock
+        // (#16) fails a different status (0x91) on LOW, and a corrupt host
+        // page is a buffer-side bug no retry fixes.
+        if self.payload && self.shape == PayloadShape::AdaTriad {
+            let corrupt = self.faults.meta_magic_corrupt;
+            let dead_high = self.staging_high
+                && (self.faults.high_band_unreachable || self.faults.both_bands_unreachable);
+            let locked_low = !self.staging_high && self.faults.sub4gb_lock;
+            if dead_high || locked_low || corrupt {
+                let (code, why) = if corrupt {
+                    (0x89u32, "meta magic CORRUPT on the host view (buffer-side, not band)")
+                } else if locked_low {
+                    (0x91, "sub-4GB read lock (mirror class, issues #16/#57)")
+                } else {
+                    (0x89, ">=4GiB staging read undelivered (issues #74/#156/#191 class)")
+                };
+                self.gpu.force_write(SEC2_MAILBOX0, code);
+                self.gpu.force_write(regs::SEC2_CPUCTL, regs::CPUCTL_HALTED);
+                let mbox0 = self.gpu.read(SEC2_MAILBOX0);
+                let cpuctl = self.gpu.read(regs::SEC2_CPUCTL);
+                self.last_marker = Some(mbox0);
+                self.last_cpuctl = Some(cpuctl);
+                // The loader's fallback gate: 0x89 + intact host magic + high
+                // band staged + one shot only.
+                if code == 0x89 && !corrupt && self.staging_high && !self.staging_fallback_used {
+                    self.staging_fallback_used = true;
+                    self.staging_high = false;
+                    self.note(format!(
+                        "STAGING-FALLBACK: {why} - one retry in the LOW band (no FLR: nothing unlocked yet)"
+                    ));
+                    if self.faults.both_bands_unreachable {
+                        return Err(PhaseError::new("verify",
+                            "STAGING-FALLBACK: LOW-band retry also undelivered (both bands unreachable, #57 analog)"));
+                    }
+                    // Fall through: the fire below is attempt 2, LOW band.
+                } else {
+                    return Err(PhaseError::new("verify", format!(
+                        "booter failed: {why} - fallback gate not met (needs 0x89 + intact host magic + high band, one shot)"
+                    )));
+                }
             }
         }
         // Reset SEC2 with propagation semantics; assert then wait.

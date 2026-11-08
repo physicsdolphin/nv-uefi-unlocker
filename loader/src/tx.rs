@@ -1247,7 +1247,8 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     }
 
     // Radix over the GSP-RM image (84 MiB) — one big contiguous DMA block.
-    let radix = tb::radix_build(gpu, &assets.gsp_image)?;
+    // mut: the STAGING-FALLBACK retry rebinds it to a LOW-band rebuild.
+    let mut radix = tb::radix_build(gpu, &assets.gsp_image)?;
 
     // WprMeta publication (first signature call) then fire.
     {
@@ -1382,11 +1383,134 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     info!("TX: booter fired");
 
     let meta_view = unsafe { core::slice::from_raw_parts(meta_dma.host, tb::WPR_META_SIZE) };
-    let booter_ok = if family_is_turing(assets.family) {
+    let mut booter_ok = if family_is_turing(assets.family) {
         tb::verify_execution_tu10x(gpu, payload_mode, meta_view).is_ok()
     } else {
         tb::verify_execution(gpu, assets.family, payload_mode, meta_view).is_ok()
     };
+
+    // STAGING-FALLBACK (issues #74/#156/#191): a Turing payload run that dies
+    // on SEC2 mailbox0 == 0x89 while the HOST view of the published meta page
+    // still carries the intact magic has exactly one meaning on the GA
+    // plaintext code table (0x2784 = second magic compare failed): our write
+    // landed in DRAM and SEC2's >=4GiB DMA read of it did not deliver - the
+    // unreachable-high staging band. Retry ONCE in the LOW band through the
+    // same allocation path \tx-low-staging.txt forces. No FLR: the PLM never
+    // opened and zero payload writes happened, so there is no state to
+    // protect, and booter_fire_direct performs its own B-reset before the
+    // portal reload. Everything the booter DMA-reads moves (meta, signature,
+    // radix+RM image, boot image); the booter IMAGE is portal-copied and
+    // stays. The mirror class never enters here: the sub-4GB read lock fails
+    // a different status (0x91, issues #16/#57) or succeeds outright, and a
+    // corrupt host page is a buffer-side bug no retry can fix.
+    if !booter_ok && !force_continue
+        && family_is_turing(assets.family) && payload_mode && !vram_fb
+    {
+        if crate::pci::high_staging() {
+            let mbox0 = gpu.pci.bar_read_u32(gpu.bar, (crate::tx::eng::SEC2 + 0x40) as u64);
+            let magic_ok = u64::from_le_bytes(meta_view[0..8].try_into().expect("meta is 256B"))
+                == tb::WPR_META_MAGIC;
+            if mbox0 == 0x89 && magic_ok {
+                info!("STAGING-FALLBACK: booter 0x89 with host meta magic intact = the >=4GiB staging read did not deliver (issues #74/#156/#191 class) - one retry in the LOW band; no FLR (nothing unlocked yet, the fire does its own B-reset)");
+                crate::pci::set_high_staging(false);
+                let sig2 = gpu.pci.dma_alloc(sig_size.max(4096));
+                let meta2 = gpu.pci.dma_alloc(tb::WPR_META_SIZE);
+                let boot2 = gpu.pci.dma_alloc(assets.gsp_boot.len());
+                let radix2 = tb::radix_build(gpu, &assets.gsp_image);
+                match (sig2, meta2, boot2, radix2) {
+                    (Ok(mut sig2), Ok(mut meta2), Ok(mut boot2), Ok(mut radix2)) => {
+                        unsafe {
+                            match &assets.v67 {
+                                Some(v67) => core::ptr::copy_nonoverlapping(
+                                    v67.as_ptr(), sig2.host, tb::V67_SIZE),
+                                None => core::ptr::copy_nonoverlapping(
+                                    assets.stock_sig.as_ptr(), sig2.host, assets.stock_sig.len()),
+                            }
+                            core::ptr::copy_nonoverlapping(
+                                assets.gsp_boot.as_ptr(), boot2.host, assets.gsp_boot.len());
+                        }
+                        let packed = unsafe {
+                            let m = core::slice::from_raw_parts_mut(meta2.host, tb::WPR_META_SIZE);
+                            tb::wpr_meta_pack(m, &layout, assets.family, 1 << 20,
+                                sig2.dev, sig_size as u64, radix2.level0,
+                                assets.gsp_image.len() as u64, boot2.dev, &boot).is_ok()
+                        };
+                        if packed {
+                            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                            let fired = if probe_file("\\tx-sec2-c-load.txt") {
+                                tb::booter_fire_direct_c(gpu, &hdr, booter_view, meta2.dev)
+                            } else {
+                                tb::booter_fire_direct(gpu, &hdr, booter_view, meta2.dev)
+                            };
+                            match fired {
+                                Ok(()) => {
+                                    let mv2 = unsafe {
+                                        core::slice::from_raw_parts(meta2.host, tb::WPR_META_SIZE)
+                                    };
+                                    booter_ok =
+                                        tb::verify_execution_tu10x(gpu, payload_mode, mv2).is_ok();
+                                    if booter_ok {
+                                        info!("STAGING-FALLBACK: LOW-band retry verified - staging rebound to the LOW buffers (staging=low(fallback))");
+                                        // Hygiene (#146 class): the dead high-band
+                                        // staging does not ride through the handoff.
+                                        let _ = sig_dma.release(gpu.pci);
+                                        let _ = meta_dma.release(gpu.pci);
+                                        let _ = boot_dma.release(gpu.pci);
+                                        let _ = radix.dma.release(gpu.pci);
+                                        sig_dma = sig2;
+                                        meta_dma = meta2;
+                                        boot_dma = boot2;
+                                        radix = radix2;
+                                    } else {
+                                        info!("STAGING-FALLBACK: LOW-band retry failed as well - a band alone is not the whole story; canonical failure path follows (VT-d ON blocks both bands - check BIOS; also the DMA-PATH BME lines)");
+                                        unsafe {
+                                            let m = core::slice::from_raw_parts_mut(
+                                                meta2.host, tb::WPR_META_SIZE);
+                                            tb::signature_restore(
+                                                m, stock_dma.dev, assets.stock_sig.len() as u64);
+                                        }
+                                        let _ = sig2.release(gpu.pci);
+                                        let _ = meta2.release(gpu.pci);
+                                        let _ = boot2.release(gpu.pci);
+                                        let _ = radix2.dma.release(gpu.pci);
+                                    }
+                                }
+                                Err(e) => {
+                                    info!("STAGING-FALLBACK: retry fire failed ({e:?}) - canonical failure path follows");
+                                    let _ = sig2.release(gpu.pci);
+                                    let _ = meta2.release(gpu.pci);
+                                    let _ = boot2.release(gpu.pci);
+                                    let _ = radix2.dma.release(gpu.pci);
+                                }
+                            }
+                        } else {
+                            info!("STAGING-FALLBACK: meta repack failed on the LOW buffers - canonical failure path follows");
+                            let _ = sig2.release(gpu.pci);
+                            let _ = meta2.release(gpu.pci);
+                            let _ = boot2.release(gpu.pci);
+                            let _ = radix2.dma.release(gpu.pci);
+                        }
+                    }
+                    (s, m, b, r) => {
+                        // Partial allocation failure: release whatever landed,
+                        // never abort the unwind on the fallback's own budget.
+                        info!("STAGING-FALLBACK: LOW-band realloc incomplete (sig={:?} meta={:?} boot={:?} radix={:?}) - canonical failure path follows",
+                            s.as_ref().err(), m.as_ref().err(), b.as_ref().err(), r.as_ref().err());
+                        if let Ok(mut x) = s { let _ = x.release(gpu.pci); }
+                        if let Ok(mut x) = m { let _ = x.release(gpu.pci); }
+                        if let Ok(mut x) = b { let _ = x.release(gpu.pci); }
+                        if let Ok(mut x) = r { let _ = x.dma.release(gpu.pci); }
+                    }
+                }
+            } else {
+                info!("STAGING-FALLBACK: not attempted - the signature does not match the band class (mbox0={mbox0:#x}, meta magic {})",
+                    if magic_ok { "intact" } else { "CORRUPT (buffer-side)" });
+            }
+        } else {
+            info!("STAGING-FALLBACK: not attempted - staging already in the LOW band (\\tx-low-staging.txt or non-Turing gate)");
+        }
+    }
+
     if !booter_ok && !force_continue {
         // Canonical failure-path invariant (unlock_610.c restores the stock
         // signature before the unwind; -EPROTO otherwise): never leave a

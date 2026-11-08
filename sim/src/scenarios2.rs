@@ -415,3 +415,117 @@ fn t33_dma_free_failure_reports_unwind_phase() {
     assert_eq!(err.phase, "unwind", "a failed free must surface as unwind: {err:?}");
     assert!(err.reason.contains("leak") || err.phase == "unwind");
 }
+
+// ---- STAGING-FALLBACK batch (issues #74/#156/#191) -------------------------
+// The loader's gate: booter mailbox0 == 0x89 AND the host meta magic intact
+// AND the HIGH band staged AND one shot only. Anything else - 0x91 (the
+// sub-4GB lock mirror class), a corrupt host page, LOW already staged, or a
+// second failure - must go straight to the canonical failure path.
+
+fn run_high(faults: Faults) -> Result<crate::transaction::Report, PhaseError> {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, faults);
+    tx.staging_high = true;
+    tx.run()
+}
+
+/// The #74/#156/#191 class: HIGH band staged, >=4GiB reads undelivered.
+/// Attempt 1 records 0x89 + HALT, the fallback fires exactly once, attempt 2
+/// in the LOW band verifies, and the transaction completes with a clean
+/// unwind (the dead HIGH buffers were released, the LOW ones ride to the end).
+#[test]
+fn t34_high_band_unreachable_fallback_recovers() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { high_band_unreachable: true, ..Default::default() },
+    );
+    tx.staging_high = true;
+    let report = tx.run().expect("the LOW-band retry must carry the boot");
+    assert!(report.unwind_clean && report.selectors_written && report.flr_done);
+    let hits = tx.log().iter().filter(|l| l.contains("STAGING-FALLBACK")).count();
+    assert_eq!(hits, 1, "the fallback must fire exactly once, got {hits}");
+    assert!(tx.log().iter().any(|l| l.contains(">=4GiB staging read undelivered")));
+}
+
+/// Negative control for the gate: LOW staged + the platform only blocks HIGH
+/// - the plain path succeeds and the fallback must never appear.
+#[test]
+fn t35_low_staged_unreachable_high_needs_no_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { high_band_unreachable: true, ..Default::default() },
+    );
+    tx.staging_high = false; // \tx-low-staging.txt analog
+    let report = tx.run().expect("LOW staging delivers on a HIGH-blocked platform");
+    assert!(report.unwind_clean);
+    assert!(
+        !tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")),
+        "the fallback must not fire when LOW was staged by choice"
+    );
+}
+
+/// #57 analog: both bands dead. The fallback fires, the retry fails, and the
+/// canonical failure path takes over - exactly one fallback attempt, clean
+/// unwind, no loops.
+#[test]
+fn t36_both_bands_dead_retry_fails_canonical() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { both_bands_unreachable: true, ..Default::default() },
+    );
+    tx.staging_high = true;
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "verify");
+    assert!(err.reason.contains("both bands"), "retry-fail verdict: {err:?}");
+    let hits = tx.log().iter().filter(|l| l.contains("STAGING-FALLBACK")).count();
+    assert_eq!(hits, 1, "no retry loops: exactly one fallback attempt");
+    assert!(tx.log().iter().all(|l| !l.contains("rebound to the LOW buffers")));
+}
+
+/// Mirror class (#16): LOW band is read-locked and fails 0x91 - a different
+/// status the gate must never mistake for the band class.
+#[test]
+fn t37_sub4gb_lock_fails_0x91_without_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { sub4gb_lock: true, ..Default::default() },
+    );
+    tx.staging_high = false; // forced LOW (e.g. \tx-low-staging.txt on a #16 board)
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "verify");
+    assert!(err.reason.contains("sub-4GB read lock"), "{err:?}");
+    assert!(!tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")));
+}
+
+/// Buffer-side bug: the HOST meta page is corrupt, so no retry can help -
+/// the gate must refuse and say why.
+#[test]
+fn t38_magic_corrupt_no_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { meta_magic_corrupt: true, ..Default::default() },
+    );
+    tx.staging_high = true;
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "verify");
+    assert!(err.reason.contains("buffer-side"), "{err:?}");
+    assert!(!tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")));
+}
+
+/// The healthy majority: HIGH staged, platform delivers - the fallback path
+/// is never entered at all (the default arm must stay byte-for-byte the old
+/// behavior).
+#[test]
+fn t39_healthy_high_staging_never_enters_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.staging_high = true;
+    let report = tx.run().expect("default HIGH path stays green");
+    assert!(report.unwind_clean && report.selectors_written);
+    assert!(!tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")));
+}
