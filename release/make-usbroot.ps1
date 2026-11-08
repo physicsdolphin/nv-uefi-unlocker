@@ -8,8 +8,9 @@
 #   .\make-usbroot.ps1 -Family tu10x -Out E:\
 #   .\make-usbroot.ps1 -Family all         (every RTX 20/30/40 family)
 #   .\make-usbroot.ps1 -UtilsSource run    (pin the nvidia-utils transport:
-#                     auto = Arch archive -> first-party .run -> CachyOS cache,
-#                     first that lands; arch | run | cachyos pins one route)
+#                     auto = local DriverStore (badge mode) -> Arch archive
+#                     -> first-party .run -> CachyOS cache, first that lands;
+#                     arch | run | cachyos | local pins one route)
 #
 # -Family (default localhost):
 #   ad102 | rtx40 | 40   RTX 40 series (Ada)          - no Windows prerequisites
@@ -56,13 +57,16 @@ param(
     [string]$ProvenBlob = "",
     # Build for another machine: skip the host-side Turing GSP check.
     [switch]$SkipGspCheck,
-    # Which pinned nvidia-utils transport to try: auto (default) walks the
-    # source group in order (Arch archive -> first-party .run -> CachyOS
-    # cache); arch | run | cachyos pins one route for a known-good path on
-    # your network. Selects the TRANSPORT only - the hash gate is identical.
-    # The offline path always wins regardless: any ONE exact container file
-    # already in the work dir is accepted as (cached).
-    [ValidateSet("auto", "arch", "run", "cachyos")]
+    # Which nvidia-utils transport to try: auto (default) tries the LOCAL
+    # DriverStore first (badge mode; most build hosts have the driver
+    # installed), then the download group (Arch archive -> first-party .run
+    # -> CachyOS cache); arch | run | cachyos pins one download route.
+    # Selects the TRANSPORT only - the hash gate is identical for downloads,
+    # and local is badge mode (version pin waived;
+    # docs/gsp-compatibility.md). The offline path always wins regardless:
+    # any ONE exact container file already in the work dir is accepted as
+    # (cached).
+    [ValidateSet("auto", "arch", "run", "cachyos", "local")]
     [string]$UtilsSource = "auto",
     # Display-class registry key to inspect (override for tests/offline hives).
     [string]$ClassKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}',
@@ -527,18 +531,72 @@ function Get-PinnedFile {
     return $false
 }
 
+function Get-LocalDriverStoreGsp {
+    # Badge-mode source (docs/gsp-compatibility.md): the LOCALLY INSTALLED
+    # NVIDIA driver's own GSP firmware. The DriverStore ships the split
+    # gsp_ga10x.bin / gsp_tu10x.bin ELFs (format era >= 525; pre-52x drivers
+    # have a single multi-generation gsp.bin and are refused with a named
+    # reason). The extracted fwimage+fwsignature pair is paired by
+    # construction, and the local driver is the handoff target's own driver
+    # - the most realistic GSP to map. Version pin WAIVED by measured
+    # compat: 525-621 all unlock (TU106 bench, 16.7-37.1 MB).
+    $stores = Get-ChildItem 'C:\Windows\System32\DriverStore\FileRepository' `
+        -Directory -Filter 'nv*inf_amd64_*' -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName 'gsp_tu10x.bin') }
+    if (-not $stores) {
+        Write-Host "[local] no DriverStore directory with gsp_tu10x.bin (no NVIDIA driver installed, or a pre-52x driver whose store carries only the single gsp.bin)"
+        return $null
+    }
+    $best = $null
+    foreach ($st in $stores) {
+        $inf = Get-ChildItem $st.FullName -Filter '*.inf' -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        $ver = $null
+        if ($inf) {
+            $line = (Select-String -Path $inf.FullName -Pattern '^DriverVer\s*=\s*(.+)$' -ErrorAction SilentlyContinue |
+                Select-Object -First 1)
+            if ($line) { $ver = $line.Matches[0].Groups[1].Value.Trim() }
+        }
+        Write-Host ("[local] candidate {0} (DriverVer {1})" -f $st.Name, $(if ($ver) { $ver } else { "unknown" }))
+        if (-not $best) { $best = @{ Dir = $st.FullName; Ver = $ver }; continue }
+        # Newest wins; version-less candidates lose to any versioned one.
+        if ($ver -and ($best.Ver -eq $null -or $ver -gt $best.Ver)) {
+            $best = @{ Dir = $st.FullName; Ver = $ver }
+        }
+    }
+    if (-not (Test-Path (Join-Path $best.Dir 'gsp_ga10x.bin'))) {
+        Write-Host "[local] chosen store lacks gsp_ga10x.bin - refusing"
+        return $null
+    }
+    Write-Host ("[local] using DriverStore {0} (DriverVer {1})" -f $best.Dir, $(if ($best.Ver) { $best.Ver } else { "unknown" }))
+    return @{ Dir = $best.Dir; Ver = $best.Ver }
+}
+
 function Get-UtilsPackage {
     # Resolve the nvidia-utils GSP-firmware input from the SOURCE GROUP
     # above: automatic fallback, first source that lands wins (cached file,
     # or a verified download). -UtilsSource pins a single route; the offline
     # cache-accept check inside Get-PinnedFile runs first for every
     # candidate, so a user-supplied exact file still wins regardless.
-    # Returns @{ Path; Kind }; on total failure throws the all-sources
-    # report so the user sees every transport, its pinned hash and how to
-    # go fully offline (any ONE of the files).
-    $candidates = if ($UtilsSource -eq "auto") { $UtilsSources }
+    # In auto mode the LOCAL DriverStore leads (most build hosts have the
+    # NVIDIA driver installed; its GSP is the handoff target's own firmware
+    # and badge mode waives the version pin - measured 525-621 compatible,
+    # docs/gsp-compatibility.md); downloads follow as fallback. Returns
+    # @{ Path; Kind }; on total failure throws the all-sources report so the
+    # user sees every transport, its pinned hash and how to go fully
+    # offline (any ONE of the files).
+    $candidates = if ($UtilsSource -eq "auto") { @(@{ Id = "local"; Kind = "local" }) + @($UtilsSources) }
+                  elseif ($UtilsSource -eq "local") { @(@{ Id = "local"; Kind = "local" }) }
                   else { $UtilsSources | Where-Object { $_.Id -eq $UtilsSource } }
     foreach ($s in $candidates) {
+        if ($s.Kind -eq "local") {
+            $store = Get-LocalDriverStoreGsp
+            if ($store) {
+                return @{ Path = $store.Dir; Kind = "local"; Ver = $store.Ver }
+            }
+            Write-Host "[fallback] local DriverStore unusable - trying the next pinned source"
+            continue
+        }
         $dest = Join-Path $Work $s.Name
         if (Get-PinnedFile -Name $s.Name -Urls $s.Urls -Sha256 $s.Sha256 -Dest $dest) {
             return @{ Path = $dest; Kind = $s.Kind }
@@ -546,7 +604,11 @@ function Get-UtilsPackage {
         Write-Host ("[fallback] {0} unusable ({1}: {2}) - trying the next pinned source" -f $s.Name, $script:LastPinnedKind, $script:LastPinnedReason)
     }
     $listing = ($candidates | ForEach-Object {
-        "  - {0}`n      {1}`n      sha256 {2}" -f $_.Name, ($_.Urls -join " ; "), $_.Sha256
+        if ($_.Kind -eq "local") {
+            "  - local DriverStore (C:\Windows\System32\DriverStore\FileRepository\nv*inf_amd64_*\gsp_*.bin)"
+        } else {
+            "  - {0}`n      {1}`n      sha256 {2}" -f $_.Name, ($_.Urls -join " ; "), $_.Sha256
+        }
     }) -join "`n"
     $pinnedNote = $(if ($UtilsSource -ne "auto") {
         "Only '$UtilsSource' was tried (pinned via -UtilsSource). Re-run without the flag to try every transport."
@@ -592,7 +654,18 @@ Get-ChildItem $Out -File -ErrorAction SilentlyContinue |
 # goes through fw, the first-party .run through fw-run (same inner hash
 # gate; requires an assets build that advertises fw-run in its usage).
 Write-Host "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
-if ($UtilsInput.Kind -eq "run") {
+if ($UtilsInput.Kind -eq "local") {
+    # Badge mode (docs/gsp-compatibility.md): the ELFs come from the local
+    # DriverStore (the installed driver's own GSP; fwimage+fwsignature
+    # paired by construction). Version pin WAIVED - measured 525-621 all
+    # unlock. Format-gated downstream: the per-family gsp-sections calls
+    # fail loudly on a pre-52x single-ELF store.
+    Write-Host "[extract] BADGE MODE: GSP from the local DriverStore$(
+        if ($UtilsInput.Ver) { " (DriverVer $($UtilsInput.Ver))" }) - version pin waived (525-621 measured compatible)"
+    Copy-Item (Join-Path $UtilsInput.Path 'gsp_ga10x.bin') (Join-Path $Out 'gsp_ga10x.bin') -Force
+    Copy-Item (Join-Path $UtilsInput.Path 'gsp_tu10x.bin') (Join-Path $Out 'gsp_tu10x.bin') -Force
+    Write-Host "[ok] gsp_ga10x.bin + gsp_tu10x.bin staged from the local driver (format gate = per-family gsp-sections)"
+} elseif ($UtilsInput.Kind -eq "run") {
     # Capability probe: assets prints its usage on stderr with a nonzero
     # exit, which PS 5.1 + ErrorActionPreference=Stop turns into a
     # NativeCommandError on `2>&1` - capture under Continue instead.

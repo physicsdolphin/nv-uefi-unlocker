@@ -26,9 +26,11 @@
 #                     `cargo build -p assets` in the enclosing repo checkout.
 #   --boot-efi PATH   BOOTX64.EFI to place on the stick (default: next to script)
 #   --proven-blob P   explicit 128 KiB cmp50hx GspRmBoot archive (tu10x only)
-#   --utils-source S  nvidia-utils transport: auto (default: Arch archive ->
-#                     first-party .run -> CachyOS cache, first that lands) or
-#                     arch | run | cachyos to pin one route. Hash gate identical.
+#   --utils-source S  nvidia-utils transport: auto (default: local driver
+#                     firmware (badge mode) -> Arch archive -> first-party
+#                     .run -> CachyOS cache, first that lands) or arch | run |
+#                     cachyos | local to pin one route. Hash gate identical
+#                     for downloads; local is badge mode.
 #   --skip-gsp-check  build for another machine: skip the host Turing GSP check
 #   -h | --help       this text
 #
@@ -525,9 +527,28 @@ fetch_verify() { # <name> <sha> <url> [url...] -> sets FETCH_DEST on success;
 resolve_utils() {
     local entry id kind name sha url
     case "${UTILS_SOURCE:-auto}" in
-        auto|arch|run|cachyos) ;;
-        *) die "invalid --utils-source '$UTILS_SOURCE' (auto | arch | run | cachyos)" ;;
+        auto|arch|run|cachyos|local) ;;
+        *) die "invalid --utils-source '$UTILS_SOURCE' (auto | arch | run | cachyos | local)" ;;
     esac
+    # local: the host's own installed driver firmware (badge mode,
+    # docs/gsp-compatibility.md - version pin waived, measured 525-621
+    # compatible). nvidia-utils installs the split-format ELFs under
+    # /usr/lib/firmware/nvidia/<ver>/ (also /lib/firmware on some distros);
+    # the highest version wins. In auto mode this leads; downloads follow.
+    if { [ "${UTILS_SOURCE:-auto}" = "auto" ] || [ "${UTILS_SOURCE:-auto}" = "local" ]; }; then
+        local fwdir=""
+        fwdir=$(for d in /usr/lib/firmware/nvidia/* /lib/firmware/nvidia/*                     /run/current-system/firmware/nvidia/* /var/run/current-system/firmware/nvidia/*; do
+            [ -f "$d/gsp_tu10x.bin" ] && [ -f "$d/gsp_ga10x.bin" ] && echo "$d"
+        done | sort -V | tail -n1)
+        if [ -n "$fwdir" ]; then
+            UTILS_PATH="$fwdir"
+            UTILS_KIND="local"
+            log "[local] GSP from the installed driver: $fwdir (badge mode, version pin waived)"
+            return 0
+        fi
+        log "[local] no installed-driver GSP found (/usr/lib|/lib|/run/current-system)/firmware/nvidia/*/gsp_*.bin absent)"
+        [ "${UTILS_SOURCE:-auto}" = "local" ] && die "--utils-source local: no installed-driver GSP found"
+    fi
     for entry in "${UTILS_SOURCES[@]}"; do
         IFS='|' read -r id kind name sha url <<< "$entry"
         [ "${UTILS_SOURCE:-auto}" = "auto" ] || [ "$id" = "$UTILS_SOURCE" ] || continue
@@ -589,7 +610,15 @@ shopt -u nullglob
 # goes through fw, the first-party .run through fw-run (same inner hash
 # gate; requires an assets build that advertises fw-run in its usage).
 log "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
-if [ "$UTILS_KIND" = "run" ]; then
+if [ "$UTILS_KIND" = "local" ]; then
+    # Badge mode (docs/gsp-compatibility.md): the ELFs come from the host's
+    # installed driver (fwimage+fwsignature paired by construction). Version
+    # pin WAIVED - measured 525-621 all unlock. Format-gated downstream: the
+    # per-family gsp-sections calls fail loudly on a pre-52x single-ELF store.
+    log "[extract] BADGE MODE: GSP from the local installed driver ($UTILS_PATH) - version pin waived (525-621 measured compatible)"
+    cp "$UTILS_PATH/gsp_ga10x.bin" "$UTILS_PATH/gsp_tu10x.bin" "$OUT/"
+    log "[ok] gsp_ga10x.bin + gsp_tu10x.bin staged from the local driver (format gate = per-family gsp-sections)"
+elif [ "$UTILS_KIND" = "run" ]; then
     if ! "$ASSETS_BIN" 2>&1 | grep -q "fw-run"; then
         die "the nvidia-utils input is the first-party .run, but this assets build has no fw-run support. Rebuild assets (cargo build -p assets) or supply either .pkg.tar.zst container from the source group instead."
     fi
