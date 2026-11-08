@@ -66,7 +66,7 @@ param(
     # docs/gsp-compatibility.md). The offline path always wins regardless:
     # any ONE exact container file already in the work dir is accepted as
     # (cached).
-    [ValidateSet("auto", "arch", "run", "cachyos", "local")]
+    [ValidateSet("auto", "arch", "run", "cachyos", "cachyos4", "local")]
     [string]$UtilsSource = "auto",
     # Display-class registry key to inspect (override for tests/offline hives).
     [string]$ClassKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}',
@@ -279,6 +279,15 @@ $UtilsSources = @(
         Id = "cachyos"; Kind = "pkg"; Name = "nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
         Urls = @("https://archive.cachyos.org/archive/cachyos-v3/nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst")
         Sha256 = "E17E7C92EEFFA178B0FE1F40EB17A47095F8FC3CE4A77BF115CF5BD5A4DF86E9"
+    },
+    @{
+        # The v4 (x86-64-v4) container of the SAME 610.43.03-1 package -
+        # still alive after the v3 entry rolled out of the archive window
+        # (issue #212/#205): found by kbaccki on #205, inner GSP ELFs
+        # verified bit-identical to the pin on 2026-11-08.
+        Id = "cachyos4"; Kind = "pkg"; Name = "nvidia-utils-610.43.03-1-x86_64_v4.pkg.tar.zst"
+        Urls = @("https://archive.cachyos.org/archive/cachyos-v4/nvidia-utils-610.43.03-1-x86_64_v4.pkg.tar.zst")
+        Sha256 = "0FE26739363632A91DF0D60738460AFD5620ABB3A9175F9FB4D8A3794D3DB780"
     }
 )
 

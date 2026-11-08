@@ -130,6 +130,7 @@ UTILS_SOURCES=(
     "arch|pkg|nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst|c3367ff68632ac7daf6ca50ef7cbdd1cb5d09f7fe0b26125b312c73e52a34cf4|https://archive.archlinux.org/packages/n/nvidia-utils/nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst"
     "run|run|NVIDIA-Linux-x86_64-610.43.03.run|45e2d4c134a23c35e50f253a4aa63e7e5e8d17e3d185d4a07c8a58e9612ed392|https://download.nvidia.com/XFree86/Linux-x86_64/610.43.03/NVIDIA-Linux-x86_64-610.43.03.run"
     "cachyos|pkg|nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst|e17e7c92eeffa178b0fe1f40eb17a47095f8fc3ce4a77bf115cf5bd5a4df86e9|https://archive.cachyos.org/archive/cachyos-v3/nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
+    "cachyos4|pkg|nvidia-utils-610.43.03-1-x86_64_v4.pkg.tar.zst|0fe26739363632a91df0d60738460afd5620abb3a9175f9fb4d8a3794d3db780|https://archive.cachyos.org/archive/cachyos-v4/nvidia-utils-610.43.03-1-x86_64_v4.pkg.tar.zst"
 )
 
 # Provenance-pinned Turing BOOT_DIRECT bootloader. 0x6000 is not an arbitrary
@@ -527,7 +528,7 @@ fetch_verify() { # <name> <sha> <url> [url...] -> sets FETCH_DEST on success;
 resolve_utils() {
     local entry id kind name sha url
     case "${UTILS_SOURCE:-auto}" in
-        auto|arch|run|cachyos|local) ;;
+        auto|arch|run|cachyos|cachyos4|local) ;;
         *) die "invalid --utils-source '$UTILS_SOURCE' (auto | arch | run | cachyos | local)" ;;
     esac
     # local: the host's own installed driver firmware (badge mode,
