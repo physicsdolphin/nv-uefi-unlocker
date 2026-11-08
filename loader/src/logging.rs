@@ -310,7 +310,7 @@ pub fn init(version: &str) {
     } else {
         log::info!("log file unavailable (console-only); open failed");
     }
-    log::info!("nv-uefi-unloader v{version} (M0 skeleton: read-only)");
+    log::info!("nv-uefi-unlocker v{version} (tx builds carry the gated transaction; readonly = console output only)");
     if console_off() {
         log::info!("CONSOLE: \\tx-no-console.txt present - console mirror off (fully silent run; combine with the armed marker)");
     }
