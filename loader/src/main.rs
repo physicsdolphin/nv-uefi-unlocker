@@ -57,10 +57,27 @@ const CONFIRM_WAIT: u64 = 30;
 #[entry]
 fn main() -> Status {
     timing::init();
+    // diag6 (#122): the log-commit ladder is read from the stick BEFORE the
+    // log exists, because the create-commit is itself a suspect. Both probes
+    // are read-only directory opens; if a run dies inside them there is no
+    // fresh dirent at all - that is the discriminator against a death after
+    // the create.
+    let commit = if chainload::boot_volume_has(cstr16!(r"\tx-log-commit.txt")) {
+        2
+    } else if chainload::boot_volume_has(cstr16!(r"\tx-log-commit-lines.txt")) {
+        1
+    } else {
+        0
+    };
+    logging::set_log_commit(commit);
     logging::init(VERSION);
     // Durable (marker) line: separates a completed logger init from the
     // quiet-probe/watchdog strip that follows (#122).
     info!("BOOT: logger init returned, main continuing");
+    info!(
+        "BOOT: diag7 log-commit={} (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)",
+        logging::log_commit()
+    );
     // Phase: QUIET gate (issue #38). The stick opts in via the marker;
     // refused when the log file could not be opened (console = only
     // record, it must stay complete).
