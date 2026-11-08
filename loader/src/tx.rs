@@ -108,6 +108,10 @@ pub fn canary_verdict(a: u32, b: u32) -> &'static str {
 /// scratch dying while the AON values are intact says "FLR/SBR-class reset",
 /// both intact says "no reset - the writer was a plain register write".
 pub fn canary_arm(gpu: &TxGpu) {
+    if crate::ultrafast() {
+        info!("CANARY: ultrafast - arm skipped (no-canary semantics folded in)");
+        return;
+    }
     let (pre_a, pre_b) = (gpu.read32_raw(regs::CANARY_A), gpu.read32_raw(regs::CANARY_B));
     let ctrl = gpu.read32_raw(regs::PMC_BOOT_0);
     info!(
@@ -293,6 +297,10 @@ pub fn falcon_dma_unblock(gpu: &TxGpu, base: u32, fbif: u32) -> Result<(), TxErr
 /// block localizes the authority gate. +0x3c4 is TOTORONG's reset-PLM
 /// candidate. Data ports (IMEMD/DMEMD) are skipped to avoid side effects.
 pub fn authority_scan(gpu: &TxGpu) {
+    if crate::ultrafast() {
+        info!("AUTH-SCAN: ultrafast - skipped (pre-ignition differential probe is diagnostic-only)");
+        return;
+    }
     const GSP: u32 = 0x0011_0000;
     const SEC2: u32 = 0x0084_0000;
     const GSP2: u32 = 0x0011_1000;
@@ -577,6 +585,10 @@ fn ptimer_seed_reference(gpu: &TxGpu) {
 /// sees them (kills hidden-extension / rename / placement hypotheses in
 /// one log).
 pub fn list_root_entries() {
+    if crate::ultrafast() {
+        info!("TX-ROOT-DIR: ultrafast - skipped (stick-content dump is diagnostic-only)");
+        return;
+    }
 
     // Directory = FileHandle; read entries RAW (RegularFile::read) and parse
     // the EFI_FILE_INFO layout ourselves: size/file_size/physical_size
@@ -1423,11 +1435,17 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // Turing: with the payload's PLM open, sweep the real FEAT block
             // - the factory clamp state (open question #10) is readable here
             // for the first time, BEFORE the FLR wipes the override inputs.
+            // The four decisive values (PLM/SS0/SS1/READOUT) reappear in
+            // HANDOFF-OUT either way, so ultrafast skips the per-dword flood.
             if family_is_turing(assets.family) {
-                for off in (0x0040_9600..0x0040_9700).step_by(4) {
-                    let v = gpu.pci.bar_read_u32(gpu.bar, off as u64);
-                    if v != 0 {
-                        info!("TU10X FEAT sweep 0x{off:06x} = {v:#010x}");
+                if crate::ultrafast() {
+                    info!("TU10X FEAT sweep: ultrafast - skipped (quadruple still in HANDOFF-OUT)");
+                } else {
+                    for off in (0x0040_9600..0x0040_9700).step_by(4) {
+                        let v = gpu.pci.bar_read_u32(gpu.bar, off as u64);
+                        if v != 0 {
+                            info!("TU10X FEAT sweep 0x{off:06x} = {v:#010x}");
+                        }
                     }
                 }
             }
@@ -1526,7 +1544,9 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
 
     // Read-only handoff PCI snapshot (issue #61 ask #2): the config state
     // Windows will inherit, logged before the reconnect touches anything.
-    crate::pci::diag_handoff_pci(gpu.pci);
+    if !crate::ultrafast() {
+        crate::pci::diag_handoff_pci(gpu.pci);
+    }
 
     // Restore the display path before handing off (TOTORONG craft): the
     // FLR-rebooted function re-binds its vendor GOP/driver stack. Non-fatal
@@ -1561,7 +1581,9 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // Windows inherits (issue #165: the only recorded bridgectl for the
     // VGA-owning root port was 0x0010 with no FINAL counterpart). Re-dump
     // the routing bits now, after the console rebuild and the VGA restore.
-    crate::pci::diag_bridge_routing("HANDOFF-VGA-FINAL");
+    if !crate::ultrafast() {
+        crate::pci::diag_bridge_routing("HANDOFF-VGA-FINAL");
+    }
 
     // #170 diag (D): the console stack is either rebuilt or deliberately
     // left alone - re-enable the mirror. This first post-detach console
@@ -1576,7 +1598,9 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // last state readback before this point predates a driver load. Cheap,
     // read-only, and the only way to tell "the console rebuild re-derived
     // the FEAT block" apart from "the Windows driver pass did".
-    tb::probe_post_console(gpu, &assets.family, payload_mode, tx_relock);
+    if !crate::ultrafast() {
+        tb::probe_post_console(gpu, &assets.family, payload_mode, tx_relock);
+    }
 
     // Unwind: release every DMA buffer.
     let _ = booter_dma.release(gpu.pci);
@@ -1712,9 +1736,15 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
     let wpr_lo = rd(regs::WPR2_LO);
     // Reset canary: armed after the FLR, so a cleared scratch pair here (with
     // the FEAT values still right) is a reset we did not perform - the case
-    // that points at the platform, not the Windows driver pass.
-    let (can_a, can_b) = (rd(regs::CANARY_A), rd(regs::CANARY_B));
-    let can = canary_verdict(can_a, can_b);
+    // that points at the platform, not the Windows driver pass. Ultrafast
+    // skips the arm (no-canary semantics folded in), and an unarmed pair
+    // would render as a misleading "cleared" - say "off" instead.
+    let can_field = if crate::ultrafast() {
+        alloc::format!("off(ultrafast)")
+    } else {
+        let (a, b) = (rd(regs::CANARY_A), rd(regs::CANARY_B));
+        alloc::format!("{}({a:#010x}/{b:#010x})", canary_verdict(a, b))
+    };
     let (pmcsr, dstate) = match pci.pm_cap() {
         Some(cap) => {
             let v = pci.pmcsr(cap);
@@ -1729,7 +1759,7 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
     // chased a nonexistent EFI-side failure on exactly this shape).
     let (ga_prefix, tu_prefix) = ("ga/ada:", "tu10x:");
     info!(
-        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_lo={wpr_lo:#010x} wpr2_hi={wpr_hi:#x} canary={can}({can_a:#010x}/{can_b:#010x}) pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | {tu_prefix}unlock={} {ga_prefix}ss0_unlock={} ss1_unlock={} plm_open={}",
+        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_lo={wpr_lo:#010x} wpr2_hi={wpr_hi:#x} canary={can_field} pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | {tu_prefix}unlock={} {ga_prefix}ss0_unlock={} ss1_unlock={} plm_open={}",
         // Relock-aware (issues #12/#14): the shipped tu10x chain closes the
         // PLM gate after the SS writes (open -> write -> close), so the
         // success shape is the SS override persisted behind a closed gate -

@@ -153,6 +153,10 @@ fn log_openers(label: &str, handle: Handle, guid: &uefi::Guid) {
 /// GPU. Pathless GOPs (firmware splitters / ConSplitter) are skipped by the
 /// detach below; this records what stays alive on top of the target.
 fn log_display_topology(pci_handle: Handle) {
+    if crate::ultrafast() {
+        info!("DIAG topology: ultrafast - skipped (opener/openers dumps are diagnostic-only)");
+        return;
+    }
     log_openers("PCIIO-OPENERS", pci_handle, &PciIo::GUID);
     let Ok(h) = boot::locate_handle_buffer(boot::SearchType::ByProtocol(&GraphicsOutput::GUID)) else {
         info!("DIAG GOP-TOPOLOGY: no GOP handles");

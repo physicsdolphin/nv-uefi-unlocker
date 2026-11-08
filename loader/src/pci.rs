@@ -729,14 +729,18 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
         let vendor = pci.config_read_u16(0x00);
         let device = pci.config_read_u16(0x02);
         if vendor == 0xffff || vendor == 0x0000 {
-            info!("PCI {:04x}:{:02x}:{:02x}.{} empty slot (vendor {:#06x})", seg, bus, dev, fun, vendor);
+            if !crate::ultrafast() {
+                info!("PCI {:04x}:{:02x}:{:02x}.{} empty slot (vendor {:#06x})", seg, bus, dev, fun, vendor);
+            }
             continue;
         }
         let class = pci.config_read_u32(0x08) >> 16; // class<<8 | subclass
-        info!(
-            "PCI {:04x}:{:02x}:{:02x}.{} {:04x}:{:04x} class {:06x}",
-            seg, bus, dev, fun, vendor, device, class
-        );
+        if !crate::ultrafast() {
+            info!(
+                "PCI {:04x}:{:02x}:{:02x}.{} {:04x}:{:04x} class {:06x}",
+                seg, bus, dev, fun, vendor, device, class
+            );
+        }
 
         if vendor == NVIDIA_VENDOR_ID {
             // Candidate = NVIDIA display adapter (class 03), function 0.
@@ -749,7 +753,9 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
                     seg, bus, dev, fun,
                 });
             }
-            describe_nvidia(&pci, seg, bus, dev, fun, device);
+            if !crate::ultrafast() {
+                describe_nvidia(&pci, seg, bus, dev, fun, device);
+            }
         }
     }
     if candidates.len() > 1 {

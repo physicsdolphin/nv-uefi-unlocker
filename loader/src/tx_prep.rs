@@ -47,10 +47,18 @@ impl PrepState {
                 self.gpus = Some(pci::enumerate());
             }
             1 => {
-                crate::gop::enumerate_gop();
+                // Ultrafast skips the probe everywhere (main.rs mirrors this
+                // on the non-armed path); the step order stays identical.
+                if crate::ultrafast() {
+                    info!("GOP-PROBE: ultrafast - skipped");
+                } else {
+                    crate::gop::enumerate_gop();
+                }
             }
             2 => {
-                if let Some(gpus) = &self.gpus {
+                if crate::ultrafast() {
+                    info!("SAMPLE: ultrafast - skipped");
+                } else if let Some(gpus) = &self.gpus {
                     if let Some(gpu) = gpus.first() {
                         crate::sample::run(gpu);
                     } else {

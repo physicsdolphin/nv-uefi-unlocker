@@ -114,6 +114,10 @@ pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
 /// checks the map key) and winload reserves its boot block out of a single
 /// descriptor, so contiguity - not the conventional total - is what matters.
 fn log_handoff_memmap() {
+    if crate::ultrafast() {
+        info!("CHAIN-MEMMAP: ultrafast - skipped (low-memory forensics dump)");
+        return;
+    }
     use uefi::mem::memory_map::{MemoryMap as _, MemoryType};
     let Ok(mmap) = boot::memory_map(MemoryType::BOOT_SERVICES_DATA) else {
         info!("CHAIN-MEMMAP: capture failed");

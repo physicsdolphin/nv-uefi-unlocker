@@ -54,6 +54,28 @@ const QUIET_MARKER: &CStr16 = cstr16!(r"\tx-quiet.txt");
 const FLUSH_LINES_MARKER: &CStr16 = cstr16!(r"\tx-flush-lines.txt");
 const CONFIRM_WAIT: u64 = 30;
 
+/// \tx-ultrafast.txt: verified-machine speed profile. Skips every purely
+/// diagnostic pre/post probe (M1 sample, GOP probe, AUTH-SCAN, ROOT-DIR
+/// dump, opener/topology dumps, post-payload FEAT sweep, HANDOFF-PCI /
+/// HANDOFF-VGA-FINAL dumps, POST-GOP probe, CHAIN-MEMMAP) and folds in
+/// quiet + no-canary + stage-marker-only flush (an explicit
+/// \tx-flush-lines.txt still wins). NOT skippable and always kept: the
+/// verdict readbacks - selector write/readback, WPR2/POST-BOOT verdicts,
+/// booter load audit - because readback is the only success criterion
+/// (constitution #1).
+static ULTRAFAST: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Read by every diagnostic-probe site across the crate; set once in
+/// `main` before the logger exists (plain marker probe, same shape as the
+/// log-commit ladder above).
+pub fn ultrafast() -> bool {
+    ULTRAFAST.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+fn set_ultrafast(v: bool) {
+    ULTRAFAST.store(v, core::sync::atomic::Ordering::Relaxed);
+}
+
 #[entry]
 fn main() -> Status {
     timing::init();
@@ -69,11 +91,15 @@ fn main() -> Status {
     } else {
         0
     };
+    set_ultrafast(chainload::boot_volume_has(cstr16!(r"\tx-ultrafast.txt")));
     logging::set_log_commit(commit);
     logging::init(VERSION);
     // Durable (marker) line: separates a completed logger init from the
     // quiet-probe/watchdog strip that follows (#122).
     info!("BOOT: logger init returned, main continuing");
+    if ultrafast() {
+        info!("ULTRAFAST: \\tx-ultrafast.txt present - diagnostic probes skipped; quiet + no-canary + marker-only flush folded in; verdict readbacks unchanged");
+    }
     info!(
         "BOOT: diag7 log-commit={} (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)",
         logging::log_commit()
@@ -81,14 +107,14 @@ fn main() -> Status {
     // Phase: QUIET gate (issue #38). The stick opts in via the marker;
     // refused when the log file could not be opened (console = only
     // record, it must stay complete).
-    if chainload::boot_volume_has(QUIET_MARKER) {
+    if chainload::boot_volume_has(QUIET_MARKER) || ultrafast() {
         if logging::set_quiet(true) {
             info!(
-                "QUIET: \\tx-quiet.txt present - console shows verdict lines only; every line still lands in \\loader.log"
+                "QUIET: quiet profile on (\\tx-quiet.txt or \\tx-ultrafast.txt) - console shows verdict lines only; every line still lands in \\loader.log"
             );
         } else {
             info!(
-                "QUIET: \\tx-quiet.txt present but the log file is unavailable - console stays complete (it is the only record)"
+                "QUIET: quiet profile requested but the log file is unavailable - console stays complete (it is the only record)"
             );
         }
     }
@@ -104,8 +130,10 @@ fn main() -> Status {
     // hang: names the console's anchor device (GPU-GOP vs VGA/UART) and the
     // USB controller hosting this stick (xHCI vs EHCI) so a hang stays
     // attributable even when the screen freezes.
-    pci::diag_console_identity();
-    pci::diag_boot_volume_controller();
+    if !ultrafast() {
+        pci::diag_console_identity();
+        pci::diag_boot_volume_controller();
+    }
     // Same recursive connect pass the chain phase runs, moved ahead of every
     // enumeration: firmware with a lazy Fast Boot connect policy may only
     // have bound the filesystem surface partially, and #122's 14% early
@@ -129,6 +157,10 @@ fn main() -> Status {
         } else {
             info!("FLUSH: \\tx-flush-lines.txt - every {n} lines");
         }
+    } else if ultrafast() {
+        // Explicit cadence marker wins; ultrafast only supplies a default.
+        logging::set_flush_every_lines(0);
+        info!("FLUSH: ultrafast - count-based flush off (stage-marker lines only)");
     }
 
     // Phase: CONFIRM. TX builds: ONLY Space or Enter proceeds - timeout or
@@ -180,12 +212,18 @@ fn main() -> Status {
 
     // Phase: GOP-PROBE (read-only; which console driver owns which GPU).
     if !prep_ran {
-        gop::enumerate_gop();
+        if ultrafast() {
+            info!("GOP-PROBE: ultrafast - skipped");
+        } else {
+            gop::enumerate_gop();
+        }
     }
 
     // Phase: SAMPLE (M1: read-only cold-state register sweep, first card).
     if !prep_ran {
-        if let Some(gpu) = gpus.first() {
+        if ultrafast() {
+            info!("SAMPLE: ultrafast - skipped");
+        } else if let Some(gpu) = gpus.first() {
             sample::run(gpu);
         } else {
             info!("SAMPLE: no NVIDIA GPU present, skipped (negative control path)");
