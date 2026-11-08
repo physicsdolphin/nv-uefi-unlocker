@@ -396,12 +396,15 @@ fn parse_marker_number(content: &[u8], default: u64, min: u64, max: u64) -> u64 
     value.clamp(min, max)
 }
 
-/// `\i_know_what_i_am_doing.txt` countdown seconds: first line 1..=30,
+/// `\i_know_what_i_am_doing.txt` countdown seconds: first line 0..=30,
 /// default 5 (the historical constant) when the content carries no usable
-/// number. The marker file is the operator's declaration of intent; the
-/// number only shortens the abort window they still own.
+/// number. 0 = no countdown wait: PROCEED fires as soon as the read-only
+/// prep (enumerate / select / asset reads) finishes - the abort window is
+/// the prep itself, key polls still run every tick. The marker file is the
+/// operator's declaration of intent; the number only shortens the abort
+/// window they still own.
 pub fn parse_armed_seconds(content: &[u8]) -> u64 {
-    parse_marker_number(content, 5, 1, 30)
+    parse_marker_number(content, 5, 0, 30)
 }
 
 /// `\tx-flush-lines.txt` flush cadence: 0..=4096 count-based flushes per

@@ -42,7 +42,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// CONFIRM semantics switch (armed mode): when this file exists on the
 /// stick root, the operator has declared intent ON THE STICK ITSELF - the
 /// wait becomes a short countdown that auto-proceeds, any key aborts. The
-/// first marker line may set the countdown seconds (1..=30, default 5).
+/// first marker line may set the countdown seconds (0..=30, default 5;
+/// 0 = no wait, PROCEED as soon as the read-only prep finishes).
 const ARMED_MARKER: &CStr16 = cstr16!(r"\i_know_what_i_am_doing.txt");
 /// Issue #38: verdict-lines-only console output. Some iGPU GOPs render
 /// ~1 line/s, so the full console mirror cost minutes per run; the log
