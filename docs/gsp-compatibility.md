@@ -40,7 +40,7 @@ Windows 522.27 / Linux 525.60.11，需验证其 `fwsignature_ad10x` 在位），
 
 尺寸跨度 **16.7–37.1 MB（2.2×）**（图灵谱系内），全部 layout 吸收、radix 字节精确、
 `HANDOFF-OUT tu10x:unlock=true`、selector 0x88888888/0x8 落盘、READOUT_1=0x0 全速。
-证据：`docs/evidence/z370-tu106-logcommit/`（525/621 两份完整 unlock log）。
+证据：`docs/evidence/z170a-tu106-logcommit/`（525/621 两份完整 unlock log）。
 
 两种 loader（v2.1.10 与 main 修复后）各自跨版本全绿——loader 与 GSP 版本亦无耦合。
 
@@ -60,19 +60,17 @@ Windows 522.27 / Linux 525.60.11，需验证其 `fwsignature_ad10x` 在位），
 stock/诊断模式（无 V67）与 payload 模式 FLR 前的签名复原都依赖这个配对。
 滚动容器天然成对，手动拼装不允许。
 
-## 五、对管线与用户的含义
+## 五、默认行为（v2.1.11 起）与对用户的含义
 
-- **钉定 610.43.03 保持不变**（可复现性纪律，宪法 6）；兼容面结论是知识，不是配置项。
-- maker 下载源若再死：**任何 525–621 的 `gsp_tu10x.bin` 都能当离线替代**——
-  抽 `.fwimage`+`.fwsignature_tu10x` 成对放 `inputs/`/根目录即可（运行时无 hash 钉，
-  只查尺寸窗口）；这也是 Windows 驱动仓库（`DriverStore\FileRepository\nv_dispi.inf_*\gsp_tu10x.bin`）
-  的官方用法——本机 621.01 即如此提取。
-- 不提供"GSP 版本选择"下载参数：全兼容意味着选项没有功能收益，反而制造一个
-  需要逐组合验证的虚假支持矩阵。需要非钉版 GSP 的用户走离线投放路径（官方认可）。
+- **默认 = 本地驱动 GSP 优先（badge 模式）**：`make-usbroot` 的 auto 链首选本机已装驱动的 DriverStore/firmware 目录（Windows `DriverStore\FileRepository
+v*inf_amd64_*\gsp_*.bin`，按 `DriverVer` 取最新；Linux `/usr/lib|/lib|/run/current-system` firmware `sort -V`），找不到才回退下载链（Arch 归档 → 第一方 .run → CachyOS v3 → v4）。badge 模式**豁免版本钉定**——豁免的依据就是本文件的实测矩阵（525–621 全绿），且本地驱动即交棒对象自带的固件，语义上是最正确的选择。`-UtilsSource/--utils-source local` 可单独钉定该路；`arch|run|cachyos|cachyos4` 钉定某一下载通道（下载通道内部哈希闸不变）。
+- **可复现性边界如实陈述**：钉定 610.43.03（宪法 6）仍约束全部**下载**通道；badge 模式产出的 stick 携带的是本机驱动自带的 GSP（loader.log 的 `fwimage_*.bin loaded N bytes` 行即其尺寸指纹）。需要逐位可重建 stick 的场合（evidence-as-commits）应显式走下载通道并保留 `inputs/` 里的钉定文件。
+- 下载源若再死：**任何 525–621 的 `gsp_tu10x.bin` 都能当离线替代**——抽 `.fwimage`+`.fwsignature_tu10x` 成对放 `inputs/`/根目录即可（运行时无 hash 钉，只查尺寸窗口）。
+- 不提供"GSP 版本选择"下载参数：全兼容意味着选项没有功能收益，反而制造一个需要逐组合验证的虚假支持矩阵；非钉版 GSP 走 badge 模式或离线投放（均为官方路径）。
 
 ## 六、证据与复现
 
 - sim：`sim/src/gsp_version_swap.rs`（125 测试）；真机 log：
-  `docs/evidence/z370-tu106-logcommit/`（62101/525 两份完整 unlock log）。
+  `docs/evidence/z170a-tu106-logcommit/`（62101/525 两份完整 unlock log）。
 - 抽取配方：`gsp-swap` kit README（U 盘根目录），.run 双格式壳解析
   （skip=行号 + xz/zstd 魔数判别）。
