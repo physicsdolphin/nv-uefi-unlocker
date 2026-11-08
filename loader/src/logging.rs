@@ -120,6 +120,19 @@ const FLUSH_MARKERS: &[&str] = &[
     "TX:", "layout",
 ];
 
+/// Ultrafast speed profile (`\tx-ultrafast.txt`): marker flushes are the
+/// per-line USB BOT cost driver (~0.1-0.25 s each, worse when flash GC
+/// kicks), and the shared marker set matches ~70-80 lines per run. The
+/// verified-machine profile flushes only on transaction anchors - phase
+/// boundaries, the FWSEC ignition result, the booter halt, the verdicts
+/// and the chain handoff. Trade: a hang between anchors leaves the log
+/// blind since the last anchor; that is the documented ultrafast bargain
+/// (multi-round-verified machines only).
+const ULTRAFAST_FLUSH_MARKERS: &[&str] = &[
+    "log file", "PHASE", "BEGIN", "WPR2 UP", "halted", "FLR",
+    "SELECTOR RESULT", "FINAL", "HANDOFF-OUT", "CHAIN-PRE",
+];
+
 /// Console whitelist for quiet mode (issue #38): with `\tx-quiet.txt` on
 /// the stick root, only lines carrying one of these substrings are mirrored
 /// to the screen; every line still goes to the file first. Deliberately
@@ -208,7 +221,11 @@ impl Log for DualLogger {
             let count_flush = fe > 0 && n % fe == 0;
             // Marker lines always Flush (v2.1.9 semantics at every level);
             // the Close half of the durability path is the diag6 knob.
-            let marker = FLUSH_MARKERS.iter().any(|m| line.contains(m));
+            let marker = if crate::ultrafast() {
+                ULTRAFAST_FLUSH_MARKERS.iter().any(|m| line.contains(m))
+            } else {
+                FLUSH_MARKERS.iter().any(|m| line.contains(m))
+            };
             let flush = count_flush || marker;
             let durable = marker && log_commit() >= 1;
             if (*self.file.get()).is_some() {
