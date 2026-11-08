@@ -1,6 +1,8 @@
 //! Version banner (TOTORONG-style phase banner).
 
 use log::info;
+// The only cstr16 use sits inside the tx-only banner block.
+#[cfg(feature = "tx")]
 use uefi::cstr16;
 
 pub fn print(version: &str) {
