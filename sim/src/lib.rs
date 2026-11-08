@@ -297,4 +297,5 @@ pub mod dma;
 pub mod layout;
 pub mod radix;
 pub mod transaction;
+pub mod gsp_version_swap;
 pub mod booter_diag;
