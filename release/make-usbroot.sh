@@ -26,6 +26,9 @@
 #                     `cargo build -p assets` in the enclosing repo checkout.
 #   --boot-efi PATH   BOOTX64.EFI to place on the stick (default: next to script)
 #   --proven-blob P   explicit 128 KiB cmp50hx GspRmBoot archive (tu10x only)
+#   --utils-source S  nvidia-utils transport: auto (default: Arch archive ->
+#                     first-party .run -> CachyOS cache, first that lands) or
+#                     arch | run | cachyos to pin one route. Hash gate identical.
 #   --skip-gsp-check  build for another machine: skip the host Turing GSP check
 #   -h | --help       this text
 #
@@ -109,9 +112,23 @@ fetch() { # fetch <url> <dest> -> nonzero on failure (caller decides next step)
 SRC1_NAME="NVIDIA-kernel-module-source-610.43.03.tar.xz"
 SRC1_URL="https://download.nvidia.com/XFree86/NVIDIA-kernel-module-source/NVIDIA-kernel-module-source-610.43.03.tar.xz"
 SRC1_SHA="7e118923c7a23edc36114d63273a46e3e04e9af98695a42203e7ac2dfe9fc1dc"
-SRC2_NAME="nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
-SRC2_URL="https://archive.cachyos.org/archive/cachyos-v3/nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
-SRC2_SHA="e17e7c92eeffa178b0fe1f40eb17a47095f8fc3ce4a77bf115cf5bd5a4df86e9"
+
+# The nvidia-utils GSP-firmware input is a SOURCE GROUP (issue #212): any
+# container that yields the pinned inner ELFs is acceptable - the gate is
+# content-addressed (gsp_ga10x 57237362..., gsp_tu10x 73065619...), not
+# container-addressed. The original CachyOS v3 archive keeps only a
+# ~3-version rolling window per package and dropped 610.43.03 on 2026-11-08;
+# it stays last in line for anyone holding a cache of the exact bytes. The
+# Arch Linux Archive (official rollback archive, versions never purged) and
+# the first-party NVIDIA .run (XFree86 tree is append-only) are
+# permanent-class transports; all three verified bit-identical firmware on
+# 2026-11-08. Order: alive-and-permanent first. Fields: id|kind|name|sha|url
+# (id feeds --utils-source; kind picks the extractor: pkg -> fw, run -> fw-run).
+UTILS_SOURCES=(
+    "arch|pkg|nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst|c3367ff68632ac7daf6ca50ef7cbdd1cb5d09f7fe0b26125b312c73e52a34cf4|https://archive.archlinux.org/packages/n/nvidia-utils/nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst"
+    "run|run|NVIDIA-Linux-x86_64-610.43.03.run|45e2d4c134a23c35e50f253a4aa63e7e5e8d17e3d185d4a07c8a58e9612ed392|https://download.nvidia.com/XFree86/Linux-x86_64/610.43.03/NVIDIA-Linux-x86_64-610.43.03.run"
+    "cachyos|pkg|nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst|e17e7c92eeffa178b0fe1f40eb17a47095f8fc3ce4a77bf115cf5bd5a4df86e9|https://archive.cachyos.org/archive/cachyos-v3/nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
+)
 
 # Provenance-pinned Turing BOOT_DIRECT bootloader. 0x6000 is not an arbitrary
 # truncation: it is GSP_RM_BOOT_SIZE (cmp50hx kernel source), the exact length
@@ -152,6 +169,12 @@ while [ $# -gt 0 ]; do
         --boot-efi=*)      BOOT_EFI="${1#*=}"; shift ;;
         --proven-blob)     PROVEN_BLOB="${2:?missing value for $1}"; shift 2 ;;
         --proven-blob=*)   PROVEN_BLOB="${1#*=}"; shift ;;
+        # nvidia-utils transport: auto (default) walks the source group in
+        # order (Arch archive -> first-party .run -> CachyOS cache); arch |
+        # run | cachyos pins one route. Transport choice only - the hash
+        # gate is identical, and an exact file already in $WORK wins.
+        --utils-source)    UTILS_SOURCE="${2:?missing value for $1}"; shift 2 ;;
+        --utils-source=*)  UTILS_SOURCE="${1#*=}"; shift ;;
         --skip-gsp-check)  SKIP_GSP_CHECK=1; shift ;;
         -h|--help)         usage ;;
         *) die "unknown option: $1 (see --help)" ;;
@@ -436,7 +459,11 @@ for fam in "${FAMILIES[@]}"; do
 done
 if [ "$RUN_TURING_GATE" -eq 1 ]; then check_turing_gate "$GATE_STRICT"; fi
 
-fetch_verify() { # <name> <sha> <url> [url...] -> echoes dest path (logs to stderr)
+fetch_verify() { # <name> <sha> <url> [url...] -> sets FETCH_DEST on success;
+    # returns 1 with FAIL_KIND/FAIL_LAST set on total failure (no die: the
+    # caller decides - single sources die with the verdict, the utils source
+    # group falls through to the next container). Must run in the current
+    # shell so the globals survive - no $(...) capture.
     local dest="$WORK/$1" part="$WORK/$1.part" got pass url
     local name="$1" sha="$2"
     shift 2
@@ -445,7 +472,7 @@ fetch_verify() { # <name> <sha> <url> [url...] -> echoes dest path (logs to stde
     # transport, drop them here, build).
     if [ -f "$dest" ] && [ "$(sha256_of "$dest")" = "$sha" ]; then
         logerr "[ok] $name SHA-256 verified (cached)"
-        printf '%s' "$dest"
+        FETCH_DEST="$dest"
         return 0
     fi
     rm -f "$dest"
@@ -469,7 +496,7 @@ fetch_verify() { # <name> <sha> <url> [url...] -> echoes dest path (logs to stde
                 if [ "$got" = "$sha" ]; then
                     mv -f "$part" "$dest"
                     logerr "[ok] $name SHA-256 verified"
-                    printf '%s' "$dest"
+                    FETCH_DEST="$dest"
                     return 0
                 fi
                 served=1
@@ -485,15 +512,63 @@ fetch_verify() { # <name> <sha> <url> [url...] -> echoes dest path (logs to stde
         done
     done
     rm -f "$part"
-    if [ "$served" -eq 1 ]; then
-        die "download failed for $name: a source answered but did not serve the pinned bytes (sha256 $sha). The pin/URL pairing is broken - please report this. Never substitute another version of the file."
-    fi
-    die "download failed for $name: no transport delivered the file (last: $last).
-This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $WORK/ (sha256 $sha) to build offline."
+    FAIL_KIND="no-transport"; FAIL_LAST="$last"
+    [ "$served" -eq 1 ] && FAIL_KIND="wrong-bytes"
+    return 1
 }
 
-SRC_TAR="$(fetch_verify "$SRC1_NAME" "$SRC1_SHA" "$SRC1_URL")"
-UTILS_ZST="$(fetch_verify "$SRC2_NAME" "$SRC2_SHA" "$SRC2_URL")"
+# Resolve the nvidia-utils source group: automatic fallback, the first
+# container that lands wins (cached file or verified download). Sets
+# UTILS_PATH + UTILS_KIND (pkg -> fw, run -> fw-run). On total failure dies
+# with the all-sources report: every transport, its pinned hash, and the
+# fully-offline option (any ONE of the files).
+resolve_utils() {
+    local entry id kind name sha url
+    case "${UTILS_SOURCE:-auto}" in
+        auto|arch|run|cachyos) ;;
+        *) die "invalid --utils-source '$UTILS_SOURCE' (auto | arch | run | cachyos)" ;;
+    esac
+    for entry in "${UTILS_SOURCES[@]}"; do
+        IFS='|' read -r id kind name sha url <<< "$entry"
+        [ "${UTILS_SOURCE:-auto}" = "auto" ] || [ "$id" = "$UTILS_SOURCE" ] || continue
+        if fetch_verify "$name" "$sha" "$url"; then
+            UTILS_PATH="$FETCH_DEST"
+            UTILS_KIND="$kind"
+            return 0
+        fi
+        log "[fallback] $name unusable ($FAIL_KIND: $FAIL_LAST) - trying the next pinned source"
+    done
+    {
+        echo "ERROR: ALL pinned nvidia-utils sources failed - the GSP firmware container could not be obtained."
+        echo "Every attempt above logs its own verdict (transport failure vs wrong bytes). Sources tried:"
+        [ "${UTILS_SOURCE:-auto}" != "auto" ] && echo "Only '$UTILS_SOURCE' was tried (pinned via --utils-source). Re-run without the flag to try every transport."
+        for entry in "${UTILS_SOURCES[@]}"; do
+            IFS='|' read -r id kind name sha url <<< "$entry"
+            echo "  - $name"
+            echo "      $url"
+            echo "      sha256 $sha"
+        done
+        echo "Options:"
+        echo "  1. Fix the network condition and re-run - a partial download resumes where it died."
+        echo "  2. Go offline: download ANY ONE of the files above by any means (browser, another"
+        echo "     machine, proxy) and drop it into $WORK/ unchanged - the SHA-256 gate accepts it"
+        echo "     offline. All three carry bit-identical GSP firmware."
+        echo "Never substitute a different driver version: the pinned SHA-256 values above are the"
+        echo "only accepted bytes (a newer nvidia-utils, e.g. 615.x, is NOT interchangeable)."
+    } >&2
+    exit 1
+}
+
+if fetch_verify "$SRC1_NAME" "$SRC1_SHA" "$SRC1_URL"; then
+    SRC_TAR="$FETCH_DEST"
+else
+    if [ "$FAIL_KIND" = "wrong-bytes" ]; then
+        die "download failed for $SRC1_NAME: a source answered but did not serve the pinned bytes (sha256 $SRC1_SHA). The pin/URL pairing is broken - please report this. Never substitute another version of the file."
+    fi
+    die "download failed for $SRC1_NAME: no transport delivered the file (last: $FAIL_LAST).
+This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $WORK/ (sha256 $SRC1_SHA) to build offline."
+fi
+resolve_utils
 
 # Remove assets from an earlier run so a root cannot end up as a half-old,
 # half-new mix (e.g. a 40-series v67 payload next to a 20-series booter).
@@ -508,11 +583,20 @@ done
 shopt -u nullglob
 
 # ---------- shared extraction (one pass for the whole build) ----------
-# fw always extracts BOTH GSP ELFs (gsp_ga10x.bin + gsp_tu10x.bin) in a
-# single zst pass, so it runs once no matter how many families build. The
-# scrubber is family-neutral too and shared by the ad102/ga102 branches.
+# fw / fw-run always extract BOTH GSP ELFs (gsp_ga10x.bin + gsp_tu10x.bin)
+# in a single pass, so it runs once no matter how many families build. The
+# subcommand follows whichever source-group container landed: a .pkg.tar.zst
+# goes through fw, the first-party .run through fw-run (same inner hash
+# gate; requires an assets build that advertises fw-run in its usage).
 log "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
-assets_run fw "$UTILS_ZST" "$OUT"
+if [ "$UTILS_KIND" = "run" ]; then
+    if ! "$ASSETS_BIN" 2>&1 | grep -q "fw-run"; then
+        die "the nvidia-utils input is the first-party .run, but this assets build has no fw-run support. Rebuild assets (cargo build -p assets) or supply either .pkg.tar.zst container from the source group instead."
+    fi
+    assets_run fw-run "$UTILS_PATH" "$OUT"
+else
+    assets_run fw "$UTILS_PATH" "$OUT"
+fi
 
 needs_scrub=0
 for fam in "${FAMILIES[@]}"; do
@@ -584,8 +668,9 @@ for fam in "${FAMILIES[@]}"; do
             done
             if [ -z "$blob" ]; then
                 # Same transport + hash gate as the pinned sources above;
-                # dies with its own verdict (transport vs wrong bytes).
-                fetch_verify "$PROVEN_NAME" "$PROVEN_SRC_SHA" "${PROVEN_URLS[@]}" >/dev/null
+                # falls through to the shared not-found die with its own
+                # offline hint when every transport fails.
+                fetch_verify "$PROVEN_NAME" "$PROVEN_SRC_SHA" "${PROVEN_URLS[@]}" || true
                 blob="$WORK/$PROVEN_NAME"
             fi
             [ -f "$blob" ] || die "could not fetch $PROVEN_NAME from any pinned transport; drop the exact file (sha256 $PROVEN_SRC_SHA) into $WORK/ and re-run"

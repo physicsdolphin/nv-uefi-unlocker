@@ -41,6 +41,33 @@ pub mod ga102_610 {
     pub const GSP_TU10X_SHA256: &str =
         "73065619db9ec921d19fc4e519dd04d91a9199b525eaca9b257b89fb8c5ec52c";
 
+    // ---- nvidia-utils source group (issue #212) -------------------------
+    // The CachyOS v3 archive above keeps only a ~3-version rolling window
+    // per package and dropped 610.43.03 on 2026-11-08. The two transports
+    // below are permanent-class and carry BIT-IDENTICAL GSP firmware ELFs
+    // (gsp_ga10x 57237362..., gsp_tu10x 73065619...; all three containers
+    // cross-verified 2026-11-08). The content-addressed gate is the inner
+    // ELF hash pair above - a container is acceptable iff it yields those
+    // exact bytes.
+
+    /// nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst (Arch Linux Archive -
+    /// the official rollback archive; published package versions are never
+    /// purged). Same inner firmware as the CachyOS v3 container.
+    pub const UTILS_PKG_ARCH_SHA256: &str =
+        "c3367ff68632ac7daf6ca50ef7cbdd1cb5d09f7fe0b26125b312c73e52a34cf4";
+    pub const UTILS_PKG_ARCH_URL: &str =
+        "https://archive.archlinux.org/packages/n/nvidia-utils/nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst";
+
+    /// NVIDIA-Linux-x86_64-610.43.03.run (first-party installer; the
+    /// download.nvidia.com XFree86 tree is append-only - driver versions
+    /// from 2008 remain fetchable). Firmware members live at firmware/.
+    pub const UTILS_RUN_SHA256: &str =
+        "45e2d4c134a23c35e50f253a4aa63e7e5e8d17e3d185d4a07c8a58e9612ed392";
+    pub const UTILS_RUN_URL: &str =
+        "https://download.nvidia.com/XFree86/Linux-x86_64/610.43.03/NVIDIA-Linux-x86_64-610.43.03.run";
+    pub const GSP_GA10X_RUN_PATH: &str = "firmware/gsp_ga10x.bin";
+    pub const GSP_TU10X_RUN_PATH: &str = "firmware/gsp_tu10x.bin";
+
     /// Generated-source BINDATA files inside the source archive.
     pub const BINDATA_BOOTER_LOAD: &str = "g_bindata_kgspGetBinArchiveBooterLoadUcode_GA102.c";
     pub const BINDATA_BOOTER_LOAD_SHA256: &str =

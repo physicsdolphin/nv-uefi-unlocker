@@ -40,6 +40,8 @@ fn read_member<R: Read>(archive: &mut tar::Archive<R>, name: &str) -> Result<Vec
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?.to_string_lossy().replace('\\', "/");
+        // makeself tar members are stored with a "./" prefix.
+        let path: &str = path.strip_prefix("./").unwrap_or(&path);
         if path != name {
             continue;
         }
@@ -67,6 +69,51 @@ pub fn extract_member_xz(path: &Path, name: &str) -> Result<Vec<u8>, ArchiveErro
 pub fn extract_member_zst(path: &Path, name: &str) -> Result<Vec<u8>, ArchiveError> {
     let file = File::open(path)?;
     let decoder = zstd::stream::read::Decoder::new(file)?;
+    let mut archive = tar::Archive::new(decoder);
+    read_member(&mut archive, name)
+}
+
+/// Extract one member from the zstd-tar payload embedded in a NVIDIA
+/// makeself 1.6.0-nv `.run` installer (first-party firmware transport,
+/// issue #212). The text header's `skip=` is a LINE number, not a byte
+/// offset: the payload is `tail -n +$skip | zstd -d | tar`, so we advance
+/// past skip-1 newlines and require the zstd frame magic there — anything
+/// else means the layout is not the pinned installer's and we refuse.
+pub fn extract_member_run(path: &Path, name: &str) -> Result<Vec<u8>, ArchiveError> {
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
+
+    let mut head = Vec::new();
+    head.resize(0x800, 0);
+    {
+        let mut file = File::open(path)?;
+        std::io::Read::read_exact(&mut file, &mut head)?;
+    }
+    // "skip=" must match exactly: the header also has skip_decompress=.
+    let skip_line: u64 = String::from_utf8_lossy(&head)
+        .lines()
+        .find_map(|l| l.strip_prefix("skip="))
+        .and_then(|v| v.trim().parse().ok())
+        .filter(|&n| n >= 2)
+        .ok_or_else(|| ArchiveError::MissingMember("makeself skip= header".into()))?;
+
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut line = Vec::new();
+    for _ in 1..skip_line {
+        if reader.read_until(b'\n', &mut line)? == 0 {
+            return Err(ArchiveError::MissingMember("makeself payload".into()));
+        }
+        line.clear();
+    }
+    let payload_start = reader.stream_position()?;
+    let mut magic = [0u8; 4];
+    std::io::Read::read_exact(&mut reader, &mut magic)?;
+    if magic != [0x28, 0xb5, 0x2f, 0xfd] {
+        return Err(ArchiveError::MissingMember(format!(
+            "zstd frame at makeself skip line {skip_line} (offset {payload_start})"
+        )));
+    }
+    reader.seek(SeekFrom::Start(payload_start))?;
+    let decoder = zstd::stream::read::Decoder::new(reader)?;
     let mut archive = tar::Archive::new(decoder);
     read_member(&mut archive, name)
 }

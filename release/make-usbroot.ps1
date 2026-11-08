@@ -7,6 +7,9 @@
 #   .\make-usbroot.ps1                     (localhost: detect this machine's GPUs)
 #   .\make-usbroot.ps1 -Family tu10x -Out E:\
 #   .\make-usbroot.ps1 -Family all         (every RTX 20/30/40 family)
+#   .\make-usbroot.ps1 -UtilsSource run    (pin the nvidia-utils transport:
+#                     auto = Arch archive -> first-party .run -> CachyOS cache,
+#                     first that lands; arch | run | cachyos pins one route)
 #
 # -Family (default localhost):
 #   ad102 | rtx40 | 40   RTX 40 series (Ada)          - no Windows prerequisites
@@ -53,6 +56,14 @@ param(
     [string]$ProvenBlob = "",
     # Build for another machine: skip the host-side Turing GSP check.
     [switch]$SkipGspCheck,
+    # Which pinned nvidia-utils transport to try: auto (default) walks the
+    # source group in order (Arch archive -> first-party .run -> CachyOS
+    # cache); arch | run | cachyos pins one route for a known-good path on
+    # your network. Selects the TRANSPORT only - the hash gate is identical.
+    # The offline path always wins regardless: any ONE exact container file
+    # already in the work dir is accepted as (cached).
+    [ValidateSet("auto", "arch", "run", "cachyos")]
+    [string]$UtilsSource = "auto",
     # Display-class registry key to inspect (override for tests/offline hives).
     [string]$ClassKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}',
     # PnP's bound-device list for the NVIDIA driver (override for tests/offline
@@ -236,9 +247,32 @@ $Sources = @(
         Name = "NVIDIA-kernel-module-source-610.43.03.tar.xz"
         Urls = @("https://download.nvidia.com/XFree86/NVIDIA-kernel-module-source/NVIDIA-kernel-module-source-610.43.03.tar.xz")
         Sha256 = "7E118923C7A23EDC36114D63273A46E3E04E9AF98695A42203E7AC2DFE9FC1DC"
+    }
+)
+
+# The nvidia-utils GSP-firmware input is a SOURCE GROUP (issue #212): any
+# container that yields the pinned inner ELFs is acceptable - the gate is
+# content-addressed (gsp_ga10x 57237362..., gsp_tu10x 73065619...), not
+# container-addressed. The original CachyOS v3 archive keeps only a
+# ~3-version rolling window per package and dropped 610.43.03 on 2026-11-08;
+# it stays last in line for anyone holding a cache of the exact bytes. The
+# Arch Linux Archive (official rollback archive, versions never purged) and
+# the first-party NVIDIA .run (XFree86 tree is append-only) are
+# permanent-class transports; all three verified bit-identical firmware on
+# 2026-11-08. Order: alive-and-permanent first.
+$UtilsSources = @(
+    @{
+        Id = "arch"; Kind = "pkg"; Name = "nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst"
+        Urls = @("https://archive.archlinux.org/packages/n/nvidia-utils/nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst")
+        Sha256 = "C3367FF68632AC7DAF6CA50EF7CBDD1CB5D09F7FE0B26125B312C73E52A34CF4"
     },
     @{
-        Name = "nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
+        Id = "run"; Kind = "run"; Name = "NVIDIA-Linux-x86_64-610.43.03.run"
+        Urls = @("https://download.nvidia.com/XFree86/Linux-x86_64/610.43.03/NVIDIA-Linux-x86_64-610.43.03.run")
+        Sha256 = "45E2D4C134A23C35E50F253A4AA63E7E5E8D17E3D185D4A07C8A58E9612ED392"
+    },
+    @{
+        Id = "cachyos"; Kind = "pkg"; Name = "nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst"
         Urls = @("https://archive.cachyos.org/archive/cachyos-v3/nvidia-utils-610.43.03-1-x86_64_v3.pkg.tar.zst")
         Sha256 = "E17E7C92EEFFA178B0FE1F40EB17A47095F8FC3CE4A77BF115CF5BD5A4DF86E9"
     }
@@ -443,18 +477,17 @@ function Invoke-PinnedFetch {
 
 function Get-PinnedFile {
     # Fetch one pinned input: cached-accept, then every URL over up to three
-    # passes. Two DISTINCT failure verdicts (a transport that never delivered
-    # is not a hash accusation, and a hash mismatch is not flaky network):
-    #   - a source answered but the bytes did not hash to the pin -> refuse,
-    #     never accept a different version of the file;
-    #   - no transport completed -> network/client-side; re-run resumes the
-    #     kept .part, or drop the exact file into the work dir to build
-    #     offline (that path is sanctioned, issue #205).
+    # passes. Returns $true on success, $false on total failure (the caller
+    # decides the report). Two DISTINCT failure verdicts are recorded in
+    # $script:LastPinnedKind ("wrong-bytes" = a source answered but the bytes
+    # did not hash to the pin; "no-transport" = nothing was ever delivered -
+    # not a hash accusation, and a hash mismatch is not flaky network). A
+    # failed transport keeps .part so the next pass or the next run resumes.
     param([string]$Name, [string[]]$Urls, [string]$Sha256, [string]$Dest)
     $part = "$Dest.part"
     if ((Test-Path $Dest) -and (Get-FileHash -Algorithm SHA256 $Dest).Hash -eq $Sha256) {
         Write-Host "[ok] $Name SHA-256 verified (cached)"
-        return
+        return $true
     }
     Remove-Item $Dest -Force -ErrorAction SilentlyContinue
     $servedWrongBytes = $false
@@ -473,7 +506,7 @@ function Get-PinnedFile {
                 if ($hash -eq $Sha256) {
                     Move-Item -Force $part $Dest
                     Write-Host "[ok] $Name SHA-256 verified"
-                    return
+                    return $true
                 }
                 $servedWrongBytes = $true
                 $lastReason = "wrong bytes from $u (sha256 $hash)"
@@ -489,19 +522,62 @@ function Get-PinnedFile {
         }
     }
     Remove-Item $part -Force -ErrorAction SilentlyContinue
-    if ($servedWrongBytes) {
-        throw "download failed for ${Name}: a source answered but did not serve the pinned bytes (sha256 $Sha256). The pin/URL pairing is broken - please report this. Never substitute another version of the file."
+    $script:LastPinnedKind = $(if ($servedWrongBytes) { "wrong-bytes" } else { "no-transport" })
+    $script:LastPinnedReason = $lastReason
+    return $false
+}
+
+function Get-UtilsPackage {
+    # Resolve the nvidia-utils GSP-firmware input from the SOURCE GROUP
+    # above: automatic fallback, first source that lands wins (cached file,
+    # or a verified download). -UtilsSource pins a single route; the offline
+    # cache-accept check inside Get-PinnedFile runs first for every
+    # candidate, so a user-supplied exact file still wins regardless.
+    # Returns @{ Path; Kind }; on total failure throws the all-sources
+    # report so the user sees every transport, its pinned hash and how to
+    # go fully offline (any ONE of the files).
+    $candidates = if ($UtilsSource -eq "auto") { $UtilsSources }
+                  else { $UtilsSources | Where-Object { $_.Id -eq $UtilsSource } }
+    foreach ($s in $candidates) {
+        $dest = Join-Path $Work $s.Name
+        if (Get-PinnedFile -Name $s.Name -Urls $s.Urls -Sha256 $s.Sha256 -Dest $dest) {
+            return @{ Path = $dest; Kind = $s.Kind }
+        }
+        Write-Host ("[fallback] {0} unusable ({1}: {2}) - trying the next pinned source" -f $s.Name, $script:LastPinnedKind, $script:LastPinnedReason)
     }
-    throw "download failed for ${Name}: no transport delivered the file (last: $lastReason).
-This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $($script:Work) (sha256 $Sha256) to build offline."
+    $listing = ($candidates | ForEach-Object {
+        "  - {0}`n      {1}`n      sha256 {2}" -f $_.Name, ($_.Urls -join " ; "), $_.Sha256
+    }) -join "`n"
+    $pinnedNote = $(if ($UtilsSource -ne "auto") {
+        "Only '$UtilsSource' was tried (pinned via -UtilsSource). Re-run without the flag to try every transport."
+    })
+    throw @"
+ALL pinned nvidia-utils sources failed - the GSP firmware container could not be obtained.
+Every attempt above logs its own verdict (transport failure vs wrong bytes). Sources tried:
+$listing
+$pinnedNote
+Options:
+  1. Fix the network condition and re-run - a partial download resumes where it died.
+  2. Go offline: download ANY ONE of the files above by any means (browser, another
+     machine, proxy) and drop it into $Work unchanged - the SHA-256 gate accepts it
+     offline. All three carry bit-identical GSP firmware.
+Never substitute a different driver version: the pinned SHA-256 values above are the
+only accepted bytes (a newer nvidia-utils, e.g. 615.x, is NOT interchangeable).
+"@
 }
 
 foreach ($s in $Sources) {
-    Get-PinnedFile -Name $s.Name -Urls $s.Urls -Sha256 $s.Sha256 -Dest (Join-Path $Work $s.Name)
+    if (-not (Get-PinnedFile -Name $s.Name -Urls $s.Urls -Sha256 $s.Sha256 -Dest (Join-Path $Work $s.Name))) {
+        if ($script:LastPinnedKind -eq "wrong-bytes") {
+            throw "download failed for $($s.Name): a source answered but did not serve the pinned bytes (sha256 $($s.Sha256)). The pin/URL pairing is broken - please report this. Never substitute another version of the file."
+        }
+        throw "download failed for $($s.Name): no transport delivered the file (last: $($script:LastPinnedReason)).
+This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $Work (sha256 $($s.Sha256)) to build offline."
+    }
 }
+$UtilsInput = Get-UtilsPackage
 
 $SrcTar = Join-Path $Work $Sources[0].Name
-$UtilsZst = Join-Path $Work $Sources[1].Name
 
 # Remove assets from an earlier run so a root cannot end up as a half-old,
 # half-new mix (e.g. a 40-series v67 payload next to a 20-series booter).
@@ -510,12 +586,30 @@ Get-ChildItem $Out -File -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item $_.FullName -Force }
 
 # ---------- shared extraction (one pass for the whole build) ----------
-# fw always extracts BOTH GSP ELFs (gsp_ga10x.bin + gsp_tu10x.bin) in a
-# single zst pass, so it runs once no matter how many families build. The
-# scrubber is family-neutral too and shared by the ad102/ga102 branches.
+# fw / fw-run always extract BOTH GSP ELFs (gsp_ga10x.bin + gsp_tu10x.bin)
+# in a single pass, so it runs once no matter how many families build. The
+# subcommand follows whichever source-group container landed: a .pkg.tar.zst
+# goes through fw, the first-party .run through fw-run (same inner hash
+# gate; requires an assets build that advertises fw-run in its usage).
 Write-Host "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
-& $AssetsExe fw $UtilsZst $Out
-if ($LASTEXITCODE) { throw "fw failed" }
+if ($UtilsInput.Kind -eq "run") {
+    # Capability probe: assets prints its usage on stderr with a nonzero
+    # exit, which PS 5.1 + ErrorActionPreference=Stop turns into a
+    # NativeCommandError on `2>&1` - capture under Continue instead.
+    $usageLine = ""
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { $usageLine = (& $AssetsExe 2>&1 | Out-String) } catch { $usageLine = "" }
+    $ErrorActionPreference = $prevEap
+    if ($usageLine -notmatch "fw-run") {
+        throw "the nvidia-utils input is the first-party .run, but this assets build has no fw-run support. Update assets-x86_64-windows.exe (same place you got this script), or supply either .pkg.tar.zst container from the source group instead."
+    }
+    & $AssetsExe fw-run $UtilsInput.Path $Out
+    if ($LASTEXITCODE) { throw "fw-run failed" }
+} else {
+    & $AssetsExe fw $UtilsInput.Path $Out
+    if ($LASTEXITCODE) { throw "fw failed" }
+}
 
 if (@($Families | Where-Object { $_ -ne "tu10x" -and $_ -ne "tu11x" }).Count -gt 0) {
     Write-Host "[extract] SEC2 scrubber (shared: ad102/ga102)"

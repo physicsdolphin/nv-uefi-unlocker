@@ -72,6 +72,32 @@ fn fw(package: &Path, outdir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// First-party transport: extract the pinned GSP firmware from the NVIDIA
+/// makeself .run installer (issue #212). Same inner hash gate as `fw` - the
+/// container differs, the pinned bytes do not.
+fn fw_run(installer: &Path, outdir: &Path) -> Result<(), String> {
+    use assets::manifest::sha256_hex;
+
+    std::fs::create_dir_all(outdir).map_err(|e| e.to_string())?;
+    for (path, pin, out_name) in [
+        (pins::GSP_GA10X_RUN_PATH, pins::GSP_GA10X_SHA256, "gsp_ga10x.bin"),
+        (pins::GSP_TU10X_RUN_PATH, pins::GSP_TU10X_SHA256, "gsp_tu10x.bin"),
+    ] {
+        let gsp = assets::archive::extract_member_run(installer, path).map_err(|e| e.to_string())?;
+        let digest = sha256_hex(&gsp);
+        if digest != pin {
+            return Err(format!("{out_name} SHA-256 mismatch ({digest})"));
+        }
+        std::fs::write(outdir.join(out_name), &gsp).map_err(|e| e.to_string())?;
+        println!("{out_name}: {} bytes, SHA-256 verified (first-party .run)", gsp.len());
+
+        for s in assets::elf::sections(&gsp).map_err(|e| e.to_string())? {
+            println!("  {out_name} section {} size {:#x}", s.name, s.size);
+        }
+    }
+    Ok(())
+}
+
 fn vbios(rom: &Path) -> Result<(), String> {
     use assets::vbios;
 
@@ -374,7 +400,7 @@ fn locate_rom_start(raw: &[u8]) -> usize {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | generate-tu11x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-tu11x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> [tu10x|tu11x] | fw <pkg.tar.zst> <outdir> | gsp-sections <gsp.bin> <outdir> [all | family...] | vbios <rom>>";
+    let usage = "usage: assets <generate [out.bin] | generate-ad102 [out.bin] | generate-tu10x [out.bin] | generate-tu11x [out.bin] | extract <src.tar.xz> <outdir> | extract-ad102 <src.tar.xz> <outdir> | extract-tu10x <src.tar.xz> <outdir> | extract-tu11x <src.tar.xz> <outdir> | extract-scrub <src.tar.xz> <outdir> | slice-proven-rm-boot <gsp_rm_boot_dbg.bin> <outdir> [tu10x|tu11x] | fw <pkg.tar.zst> <outdir> | fw-run <NVIDIA-*.run> <outdir> | gsp-sections <gsp.bin> <outdir> [all | family...] | vbios <rom>>";
     let result = match args.get(1).map(String::as_str) {
         Some("generate") => {
             let out: PathBuf = args
@@ -430,6 +456,10 @@ fn main() {
         },
         Some("fw") => match (args.get(2), args.get(3)) {
             (Some(s), Some(o)) => fw(Path::new(s), Path::new(o)),
+            _ => Err(usage.to_string()),
+        },
+        Some("fw-run") => match (args.get(2), args.get(3)) {
+            (Some(s), Some(o)) => fw_run(Path::new(s), Path::new(o)),
             _ => Err(usage.to_string()),
         },
         Some("extract-tu10x") => match (args.get(2), args.get(3)) {
