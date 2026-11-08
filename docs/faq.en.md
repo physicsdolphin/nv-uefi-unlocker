@@ -508,9 +508,9 @@ The only source is a second-hand user statement quoted in [#145](https://github.
 
 5. **Verify**: `mokutil --sb-state` should report `SecureBoot enabled`; the firmware-level proof is a fresh `loader.log` with the TX banner on the stick.
 
-### Route B: MOK + shim (one machine reported, not reproduced here)
+### Route B: MOK + shim (two machines reported, one a full desktop run)
 
-The firmware verifies only the Microsoft-signed shim; your key takes effect after it through MOK, and the firmware key database is not modified. Basis: one field report in [#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162) (Secure Boot on, v2.1.10, RTX 30 laptop, `ga102`, PK/KEK/db untouched). Its scripts live at [J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp) as a reference implementation and are not vendored here.
+The firmware verifies only the Microsoft-signed shim; your key takes effect past it through MOK, and the firmware key database is not modified. Basis: two field reports — [#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162) (Secure Boot on, v2.1.10, RTX 30 laptop, `ga102`, PK/KEK/db untouched) and [#210](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/210) (2026-11-08, RTX 3080 20GB on an ASUS ROG Z790, official v2.1.10 package plus an added `.sbat` and a self-signed MOK, full chain green through handoff, in-OS `Confirm-SecureBootUEFI=True`, certificate present in `MokListRT`, PK/KEK/db unchanged). The scripts from #162 live at [J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp) as a reference implementation and are not vendored here. What #210 adds over #162 is the reproducible section parameters (step 3) and the countdown-keypress step (step 7); both come from #210 only.
 
 1. Generate `MOK.key` / `MOK.crt` / `MOK.der` with step 0.
 
@@ -520,7 +520,7 @@ The firmware verifies only the Microsoft-signed shim; your key takes effect afte
    objdump -h BOOTX64.EFI | grep -i sbat
    ```
 
-   Output means the section is there - skip to step 4. The v2.1.10 artifact has none (checked here: `.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc`, five sections, no `.sbat`).
+   Output means the section is there - skip to step 4. The v2.1.10 artifact has none (checked here: `.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc`, five sections, no `.sbat`). #210 confirmed the consequence on real hardware: with the section missing, shim answers only `Verification failed: (0x1A) Security Violation`, never reaches MokManager, and explains nothing.
 
 3. **If it is missing, add it.** shim >= 15.3 refuses a second stage without a valid `.sbat` ([Arch Wiki, Secure Boot](https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot), [Gentoo bug 925902](https://bugs.gentoo.org/show_bug.cgi?id=925902)); expect that refusal to be printed by shim rather than by us, and not to name the cause.
 
@@ -538,7 +538,7 @@ The firmware verifies only the Microsoft-signed shim; your key takes effect afte
    objdump -h BOOTX64.grub.efi | grep -i sbat       # .sbat must be listed; SizeOfImage must grow
    ```
 
-   Order matters: add the section to the **unsigned** `BOOTX64.EFI`. If the file you have is already signed, you must re-sign after adding the section.
+   Order matters: add the section to the **unsigned** `BOOTX64.EFI`. If the file you have is already signed, you must re-sign after adding the section. What #210 actually produced on v2.1.10 matches this algorithm (`.sbat` 177 bytes, sections 5 -> 6, `SizeOfImage` `0x68000` -> `0x69000`); any of the three differing means the file you are working on is not that release artifact.
 
 4. **Sign and verify** (name the result `grubx64.efi`; shim looks for that name next to itself):
 
@@ -547,11 +547,13 @@ The firmware verifies only the Microsoft-signed shim; your key takes effect afte
    sbverify --cert MOK.crt grubx64.efi
    ```
 
+   Windows equivalent (what #210 did): `signtool sign -fd SHA256 -f MOK.pfx grubx64.efi`. Afterwards **recompute the Authenticode digest independently** and compare it against the embedded `SpcIndirectDataContent` digest; `signtool verify` alone does not prove the right file went in.
+
 5. **Get shim and MokManager**: `shimx64.efi.signed` and `mmx64.efi` from a distribution's `shim-signed` package. The reporter used shim-signed 15.8; **shim < 15.3 does not do the SBAT check**, and its behaviour is not verified in this repository.
 
 6. **Build the stick, then replace**: run the maker normally first (it produces the seven `ad102` assets and `EFI/BOOT/BOOTX64.EFI`), then replace four files in the stick's `\EFI\BOOT\`: `BOOTX64.EFI` <- shim, `grubx64.efi` <- step 4 output, `mmx64.efi` <- MokManager, `MOK.der` <- your certificate. **Leave the assets at the volume root** (about 85 MB for `ga102`).
 
-7. **First boot**: shim cannot verify the MOK, so MokManager starts -> Enroll key from disk -> `MOK.der` -> one-time password -> confirm Enroll after the reboot. Normal boots then go: shim (Microsoft-signed) -> your signature verified against MOK -> loader -> unlock -> chain back to `bootmgfw`, with Secure Boot on throughout.
+7. **First boot**: shim reports `Verification failed: (0x1A)` (expected, the MOK is not enrolled yet) and then shows `Press any key to perform MOK management` with a **10-second countdown — you must press a key inside it**. If you do not, shim silently continues and the loader never runs, which looks like nothing happened (#210 measured this). In MokManager: Enroll key from disk -> `MOK.der` -> one-time password -> confirm Enroll after the reboot. Normal boots then go: shim (Microsoft-signed) -> your signature verified against MOK -> loader -> unlock -> chain back to `bootmgfw`, with Secure Boot on throughout.
 
 Internal-ESP variant (**not tested by this project, and not recommended**): put those four files in the internal ESP's `\EFI\BOOT\`. The reporter observed that CHAIN-BOOT skips its own `Boot####` and the Windows entry on the same ESP, so it can sit first in BootOrder without looping. Two costs: the README advice is explicit - "[do not copy it to the system ESP](../README.md), and the permanent boot order does not need changing" - and those 85 MB of assets then sit at the root of the Windows ESP; check free space before trying it.
 
@@ -578,7 +580,7 @@ So "Secure Boot is on" is neither sufficient nor the only input, and **nobody ha
 | When it runs | the user boots the stick and runs the transaction | a `ReadyToBoot` callback, same window (before `bootmgfw`), replayed on every boot |
 | TPM / BitLocker | a `db` change moves PCR[7] (if the profile measures it); a self-signed chain changes the measurement of the loaded image | changing the firmware moves **PCR[1]**; with a BitLocker profile that includes [1] the volume cannot unseal and the recovery key is demanded; suspend before flashing |
 | Verification without flashing | - | `load fs0:\NvUnlockDxe.efi` from a UEFI Shell proves the form before you flash anything |
-| Evidence | route B: one machine reported; route A: second-hand | [feasibility document](dxe-driver-ffs-feasibility.md) only, **not verified on hardware** |
+| Evidence | route B: two machines, one a full desktop run with the `.sbat` parameters and the countdown keypress actually executed; route A: second-hand | [feasibility document](dxe-driver-ffs-feasibility.md) only, **not verified on hardware** |
 
 In one line: **both routes disturb a measurement** - self-signing moves the boot chain (PCR[4]/[7] side), FFS moves the firmware (PCR[1] side). Against a client that only reads the Secure Boot state bit, either can work; against a client that requires the stock boot chain or the stock firmware measurements, neither is guaranteed. Anti-cheat rules are vendor policy and change without notice; this document promises nothing either way.
 
@@ -586,11 +588,11 @@ In one line: **both routes disturb a measurement** - self-signing moves the boot
 
 | Item | Evidence | Status |
 | --- | --- | --- |
-| Route B (MOK + shim) | one field report in #162: Secure Boot on, v2.1.10, `ga102` laptop, unlock survives into Windows | one machine; not verified by this project |
-| Release lacks `.sbat` | this project checked the v2.1.10 artifact's section table | verified (artifact level) |
+| Route B (MOK + shim) | #162 laptop report (unlock survives into Windows); **#210 full desktop run**: Secure Boot on, v2.1.10 + `.sbat` + self-signed MOK, whole chain green + `Confirm-SecureBootUEFI=True` + certificate in `MokListRT` + PK/KEK/db untouched | two machines; steps 3/4/7 hard-code #210's measured parameters, not re-run on this project's own hardware |
+| Release lacks `.sbat` | this project checked the v2.1.10 artifact's section table; #210 confirmed on hardware that a missing section yields only `0x1A` from shim | verified (artifact level + one machine) |
 | The `openssl` block in step 0 | executed here (OpenSSL 4.0.3) | verified |
 | Route A (db self-sign) | second-hand statement, no logs, no board model | not reproduced, not executed |
-| Secure Boot on + `ssdiag` | `tools/ssdiag/README.md`: expected to be refused | not measured |
+| Secure Boot on + `ssdiag` | `tools/ssdiag/README.md`: expected to be refused; #210 declined to load it on that basis | not measured (#210 marks it not verified) |
 | Secure Boot on + `diag-unlock.py` | none | not verified |
 | Anti-cheat (Vanguard / ACE) | maintainer statement | not measured |
 | Firmware-resident FFS route | `docs/dxe-driver-ffs-feasibility.md` (design, risk, PCR[1]/BitLocker effects) | not verified on hardware |

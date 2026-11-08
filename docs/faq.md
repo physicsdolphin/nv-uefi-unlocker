@@ -508,9 +508,9 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
 
 5. **验证**：`mokutil --sb-state` 应为 `SecureBoot enabled`；固件真正放行的证据是盘上出现新的 `loader.log` 且含 TX banner。
 
-### 路线 B：MOK + shim（一台机报告，本项目未复现）
+### 路线 B：MOK + shim（两台机报告，其中一台为台式机全流程）
 
-固件只校验微软签名的 shim；你的密钥通过 MOK 在 shim 之后生效，主板密钥库不动。依据是 [#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162) 的一份现场报告（Secure Boot 开启、v2.1.10、RTX 30 笔记本、`ga102`，PK/KEK/db 未动）；其脚本仓 [J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp) 可作参考实现，未 vendor 进本仓库。
+固件只校验微软签名的 shim；你的密钥通过 MOK 在 shim 之后生效，主板密钥库不动。依据是两份现场报告：[#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162)（2026-11 上旬，Secure Boot 开启、v2.1.10、RTX 30 笔记本、`ga102`，PK/KEK/db 未动）与 [#210](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/210)（2026-11-08，RTX 3080 20GB + ASUS ROG Z790，官方 v2.1.10 原包 + 自加 `.sbat` + 自签 MOK，全链绿并交棒，系统内 `Confirm-SecureBootUEFI=True`、`MokListRT` 含证书、PK/KEK/db 不变）；#162 的脚本仓 [J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp) 可作参考实现，未 vendor 进本仓库。#210 相对 #162 的增量是**可复算的补节参数**（第 3 步）与"倒计时必须按键"这一步（第 7 步），两者都只来自 #210。
 
 1. 用第 0 步生成 `MOK.key` / `MOK.crt` / `MOK.der`。
 
@@ -520,7 +520,7 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
    objdump -h BOOTX64.EFI | grep -i sbat
    ```
 
-   有输出就跳到第 4 步。v2.1.10 的发布件**没有**这个节（本项目实测：`.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc` 五节，无 `.sbat`）。
+   有输出就跳到第 4 步。v2.1.10 的发布件**没有**这个节（本项目实测：`.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc` 五节，无 `.sbat`）。#210 在真机上确认了后果：缺节时 shim 只回 `Verification failed: (0x1A) Security Violation`，连 MokManager 都进不去，且不说明原因。
 
 3. **没有就加一个**。shim ≥ 15.3 会拒绝缺少合法 `.sbat` 的第二阶段（[Arch Wiki, Secure Boot](https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot)，[Gentoo bug 925902](https://bugs.gentoo.org/show_bug.cgi?id=925902)）；预期这条拒绝由 shim 打印，而不是由我们打印，且不会说明原因。
 
@@ -538,7 +538,7 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
    objdump -h BOOTX64.grub.efi | grep -i sbat       # 必须列出 .sbat，SizeOfImage 应变大
    ```
 
-   顺序不能反：加节要针对**未签名**的 `BOOTX64.EFI`；若手上已经是签过名的文件，加完节必须重签。
+   顺序不能反：加节要针对**未签名**的 `BOOTX64.EFI`；若手上已经是签过名的文件，加完节必须重签。#210 在 v2.1.10 上实做的结果与此算法一致（`.sbat` 177 字节、节数 5→6、`SizeOfImage` `0x68000→0x69000`），可作为自查对照：三个数任一不符，说明动手的文件不是那版发布件。
 
 4. **签名并验证**（产物名 `grubx64.efi`，shim 默认在自身目录找这个名字）：
 
@@ -547,11 +547,13 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
    sbverify --cert MOK.crt grubx64.efi
    ```
 
+   Windows 侧等价物（#210 实做）：`signtool sign -fd SHA256 -f MOK.pfx grubx64.efi`。签完**独立重算 Authenticode 摘要**，与镜像内嵌 `SpcIndirectDataContent` 的摘要比对；只跑 `signtool verify` 不足以证明嵌进去的就是你这份文件。
+
 5. **取 shim 与 MokManager**：发行版 `shim-signed` 包里的 `shimx64.efi.signed` 与 `mmx64.efi`。报告者用的是 shim-signed 15.8；**shim < 15.3 不做 SBAT 校验**，其行为未在本仓库验证过。
 
 6. **制盘再替换**：先用 maker 正常制盘（会生成 7 个 `ad102` 资产与 `EFI/BOOT/BOOTX64.EFI`），然后在 U 盘的 `\EFI\BOOT\` 里替换成四个文件：`BOOTX64.EFI` ← shim、`grubx64.efi` ← 第 4 步产物、`mmx64.efi` ← MokManager、`MOK.der` ← 你的证书。**资产留在卷根，不要动**（`ga102` 约 85 MB）。
 
-7. **首次引导**：shim 验不到 MOK → 自动进 MokManager → Enroll key from disk → `MOK.der` → 设一次性密码 → 重启确认 Enroll。之后每次引导：shim（微软签）→ 用 MOK 验你的签名 → 启动 loader → 解锁 → 链回 `bootmgfw`，Secure Boot 全程开启。
+7. **首次引导**：shim 报 `Verification failed: (0x1A)` 属于预期（此时 MOK 还没登记），随后出现 `Press any key to perform MOK management` 的 **10 秒倒计时——必须在这个窗口里按键**。不按的话 shim 会静默继续往下走，loader 根本不会被执行，看起来就像"什么都没发生"（#210 实测）。进入 MokManager 后：Enroll key from disk → `MOK.der` → 设一次性密码 → 重启确认 Enroll。之后每次引导：shim（微软签）→ 用 MOK 验你的签名 → 启动 loader → 解锁 → 链回 `bootmgfw`，Secure Boot 全程开启。
 
 内置 ESP 变体（**本项目未验证，也不推荐**）：把上面四个文件放进内置 ESP 的 `\EFI\BOOT\`。报告者观察到 loader 在 CHAIN-BOOT 里会跳过自己的 `Boot####` 与同一 ESP 上的 Windows 项，因此可以排在 BootOrder 首位而不循环。代价有两个：README 的明确建议是「[不要复制到系统 ESP](../README.md)，也不需要调整永久启动顺序」，以及那 85 MB 资产要放在 Windows ESP 的根目录——动手前先看剩余空间。
 
@@ -578,7 +580,7 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 | 生效时窗 | 用户手动从 U 盘进 → 跑事务 | `ReadyToBoot` 回调，与 U 盘同窗口（`bootmgfw` 之前），每次引导自动重放 |
 | TPM / BitLocker | `db` 改动影响 PCR[7]（若 profile 含 [7]）；自签链改变被加载镜像的度量 | 改固件 → **PCR[1] 变**；BitLocker profile 含 [1] 时无法解封，会要求恢复密钥；刷前必须先挂起 |
 | 不刷写的验证捷径 | — | UEFI Shell 里 `load fs0:\NvUnlockDxe.efi`，可先验形态再决定是否刷写 |
-| 证据 | 路线 B 一台机报告；路线 A 二手 | 仅[可行性文档](dxe-driver-ffs-feasibility.md)，**未实机验证** |
+| 证据 | 路线 B 两台机（含一台台式机全流程，`.sbat` 参数与倒计时按键均已实做）；路线 A 二手 | 仅[可行性文档](dxe-driver-ffs-feasibility.md)，**未实机验证** |
 
 一句话：**两条路都改变了某个度量**——自签动的是引导链（PCR[4]/[7] 侧），FFS 动的是固件（PCR[1] 侧）。对「只查 SB 状态位」的客户端，两条都可能有效；对「要求出厂引导链或出厂固件度量」的客户端，两条都不保证。反作弊的判定规则是厂商侧策略，会随时调整，本文不做任何「能过/不能过」的承诺。
 
@@ -586,11 +588,11 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 
 | 项目 | 证据 | 状态 |
 | --- | --- | --- |
-| 路线 B（MOK + shim） | #162 一份现场报告：Secure Boot 开启、v2.1.10、`ga102` 笔记本，解锁存活到 Windows | 一台机；本项目未验证 |
-| 发布件缺 `.sbat` | 本项目核对 v2.1.10 产物节表 | 已验证（产物层） |
+| 路线 B（MOK + shim） | #162 笔记本报告（解锁存活到 Windows）；**#210 台式机全流程**：SB 开启、v2.1.10 + `.sbat` + 自签 MOK，全链绿 + `Confirm-SecureBootUEFI=True` + `MokListRT` 含证书 + PK/KEK/db 不变 | 两台机；第 3/4/7 步按 #210 实做参数写死，本项目未在自有硬件上复跑 |
+| 发布件缺 `.sbat` | 本项目核对 v2.1.10 产物节表；#210 真机确认缺节时 shim 只回 `0x1A` | 已验证（产物层 + 一台真机） |
 | 第 0 步的 `openssl` 命令 | 本项目执行（OpenSSL 4.0.3） | 已验证 |
 | 路线 A（db 自签） | 二手反馈，无日志、无主板型号 | 未复现、未执行 |
-| Secure Boot 开启 + `ssdiag` | `tools/ssdiag/README.md`：expected to be refused | 未实测 |
+| Secure Boot 开启 + `ssdiag` | `tools/ssdiag/README.md`：expected to be refused；#210 据此选择不加载 | 未实测（#210 明确标 not verified） |
 | Secure Boot 开启 + `diag-unlock.py` | 无 | 未验证 |
 | 反作弊（Vanguard / ACE） | 维护者陈述 | 未测量 |
 | 固件内置 FFS 路线 | `docs/dxe-driver-ffs-feasibility.md`（设计、风险、PCR[1]/BitLocker 影响） | 未实机验证 |
