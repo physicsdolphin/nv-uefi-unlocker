@@ -192,7 +192,17 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
     // may have been torn down or left in an intermediate state by the
     // detach/reconnect storm during the transaction (a fresh UEFI shell
     // re-binds and sees everything).
-    reconnect_block_devices("CHAIN");
+    if crate::ultrafast() {
+        // The CHAIN pass connects only never-disconnected devices: the
+        // detach's two disconnects are target-scoped, and NVIDIA display
+        // handles are skipped here by design (native-GOP owns console
+        // restoration). Bench-measured as a 48 ms no-op walk; the EARLY
+        // twin keeps running in every profile - it is the #122
+        // lazy-Fast-Boot mitigation and cannot be skipped.
+        info!("CHAIN: reconnect pass skipped (ultrafast - nothing it binds was ever detached)");
+    } else {
+        reconnect_block_devices("CHAIN");
+    }
     // The reconnect pass no longer stalls unconditionally (that beat moved
     // here as a retry): pay the 300 ms settle only when the first
     // enumeration came up empty - a sign that binding callbacks are still
