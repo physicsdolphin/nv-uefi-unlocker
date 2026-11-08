@@ -819,57 +819,13 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     info!("FWSEC-TU10X: reading PROM at {:#x}", 0x300000);
     let mapped = 1024 * 1024usize;
     let mut rom_words = alloc::vec![0u32; mapped / 4];
-    // Targeted read (mirrors fwsec_ignite): the parser walks BIT + tables +
-    // descriptor inside the first 128 KiB PCIR image region and only
-    // COMPUTES image_off/stored_size - the payload window is fetched as a
-    // pass-B burst when it extends past the prefix. Full 1 MiB fallback on
-    // a None parse; \tx-prom-full.txt forces the old single-burst read.
-    const PREFIX: usize = 128 * 1024;
-    let full = crate::tx::probe_file("\\tx-prom-full.txt");
-    let prefix_chunks = if full { 16 } else { PREFIX / (mapped / 16) };
-    let chunk_words = rom_words.len() / 16;
-    let mut st = uefi::Status::SUCCESS;
-    for (i, chunk) in rom_words.chunks_mut(chunk_words).enumerate().take(prefix_chunks) {
-        st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + (i * chunk_words * 4) as u64, chunk);
-        if st != uefi::Status::SUCCESS {
-            break;
-        }
-        info!("FWSEC-TU10X: PROM read {}%", (i + 1) * 100 / prefix_chunks);
-    }
+    let st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000, rom_words.as_mut());
     if st != uefi::Status::SUCCESS {
         info!("FWSEC-TU10X: PROM bulk read failed {:?}", st);
         return Err(TxError::ENodev);
     }
-    let rom_bytes = |w: &alloc::vec::Vec<u32>| -> &[u8] {
-        unsafe { core::slice::from_raw_parts(w.as_ptr() as *const u8, mapped) }
-    };
-    let mut read_bytes = PREFIX;
-    let mut fw = prom_find_fwsec(rom_bytes(&rom_words), false);
-    if fw.is_none() && !full {
-        info!("FWSEC-TU10X: sparse-prefix parse found no FWSEC_PROD (V2/V3) - falling back to the full 1 MiB read");
-        for (i, chunk) in rom_words.chunks_mut(chunk_words).enumerate().skip(prefix_chunks) {
-            st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + (i * chunk_words * 4) as u64, chunk);
-            if st != uefi::Status::SUCCESS {
-                break;
-            }
-            info!("FWSEC-TU10X: PROM read {}%", (i + 1) * 100 / 16);
-        }
-        if st != uefi::Status::SUCCESS {
-            info!("FWSEC-TU10X: PROM bulk read failed {:?}", st);
-            return Err(TxError::ENodev);
-        }
-        read_bytes = mapped;
-        fw = prom_find_fwsec(rom_bytes(&rom_words), false);
-    }
-    let read_note = if full {
-        alloc::format!("full (\\tx-prom-full.txt)")
-    } else if read_bytes == mapped {
-        alloc::format!("full (sparse-parse fallback)")
-    } else {
-        alloc::format!("targeted {read_bytes:#x} of {mapped:#x}")
-    };
-    info!("FWSEC-TU10X: PROM signature={:#06x} read={read_note}", le16(rom_bytes(&rom_words), 0));
-    let fw = match fw {
+    let rom: &[u8] = unsafe { core::slice::from_raw_parts(rom_words.as_ptr() as *const u8, mapped) };
+    let fw = match prom_find_fwsec(&rom, false) {
         Some(f) => f,
         None => { info!("FWSEC-TU10X: PROM parse found no FWSEC_PROD (V2/V3)"); return Err(TxError::ENodev); }
     };
@@ -893,30 +849,10 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
 
     if (fw.image_off as usize)
         .checked_add(fw.stored_size as usize)
-        .map_or(true, |end| end > mapped)
+        .map_or(true, |end| end > rom.len())
     {
-        info!("FWSEC-TU10X: image window {:#x}+{:#x} outside the staged ROM ({:#x})", fw.image_off, fw.stored_size, mapped);
+        info!("FWSEC-TU10X: image window {:#x}+{:#x} outside the staged ROM ({:#x})", fw.image_off, fw.stored_size, rom.len());
         return Err(TxError::ENodev);
-    }
-    // Pass B: fetch the payload window when it lies outside the sparse
-    // prefix (the parser computed it from the descriptor without reading
-    // the blob bytes) - one MMIO burst, unaligned-safe via a word temp.
-    let win = fw.image_off as usize;
-    let win_len = fw.stored_size as usize;
-    if win + win_len > read_bytes {
-        let mut tmp = alloc::vec![0u32; win_len.div_ceil(4)];
-        let st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + win as u64, &mut tmp);
-        if st != uefi::Status::SUCCESS {
-            info!("FWSEC-TU10X: pass-B payload read failed {:?}", st);
-            return Err(TxError::ENodev);
-        }
-        let rom: &mut [u8] = unsafe {
-            core::slice::from_raw_parts_mut(rom_words.as_ptr() as *mut u8, mapped)
-        };
-        rom[win..win + win_len].copy_from_slice(unsafe {
-            core::slice::from_raw_parts(tmp.as_ptr() as *const u8, win_len)
-        });
-        info!("FWSEC-TU10X: pass-B payload fetch {win:#x}+{win_len:#x} ({} bytes)", win_len);
     }
     // v2.1.8: the FWSEC staging band is LOW by default (issue #74 rounds
     // 15-28: >=4GiB staging is unreachable on TB platforms - the BL's FBIF
@@ -944,7 +880,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     unsafe {
         core::ptr::write_bytes(dma.host, 0, fw.image_size as usize);
         core::ptr::copy_nonoverlapping(
-            rom_words.as_ptr().cast::<u8>().add(fw.image_off as usize),
+            rom.as_ptr().add(fw.image_off as usize),
             dma.host,
             fw.stored_size as usize,
         );
