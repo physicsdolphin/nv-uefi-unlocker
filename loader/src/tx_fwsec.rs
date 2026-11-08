@@ -545,67 +545,30 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
 
     let mapped = 1024 * 1024usize;
     let mut rom_words = alloc::vec![0u32; mapped / 4];
-    let rom: &mut [u8] =
-        unsafe { core::slice::from_raw_parts_mut(rom_words.as_ptr() as *mut u8, mapped) };
-    // Chunked reads with progress commits (issue #170 diag5): the PROM MMIO
-    // stretch is the first unbracketed stretch after "layout ok" - the B85M's
-    // recovered evidence ends exactly there, so every stretch of the FWSEC
-    // section must emit commit points.
-    //
-    // TARGETED READ (2026-11-09): the parser never reads the payload blob -
-    // it walks the BIT header + token/ucode tables + descriptor (all inside
-    // the first 128 KiB PCIR image region on every die observed; the TU106
-    // adjust 0x11600 lands ~0x11E00) and only COMPUTES image_off/stored_size.
-    // So the default path fills the first 128 KiB prefix, parses, and fetches
-    // the payload window [image_off, +stored) as one pass-B read only when it
-    // extends past the prefix. A walk that lands outside the prefix produces
-    // a None parse -> loud log + full 1 MiB fallback (\\tx-prom-full.txt
-    // forces that old path outright). The descriptor/bounds/engine-mask
-    // checks all still run on exactly the same bytes they always saw.
-    const PREFIX: usize = 128 * 1024;
-    let full = crate::tx::probe_file("\\tx-prom-full.txt");
-    let prefix_chunks = if full { 16 } else { PREFIX / (mapped / 16) };
+    // Chunked read with progress commits (issue #170 diag5): the 262k
+    // sequential PROM MMIO reads are the first unbracketed stretch after
+    // "layout ok" - the B85M's recovered evidence ends exactly there, so
+    // every stretch of the FWSEC section must emit commit points. Chunking
+    // is behaviorally identical (same window, same accessor, same order).
     let chunk_words = rom_words.len() / 16;
     let mut st = uefi::Status::SUCCESS;
-    for (i, chunk) in rom_words.chunks_mut(chunk_words).enumerate().take(prefix_chunks) {
+    for (i, chunk) in rom_words.chunks_mut(chunk_words).enumerate() {
         st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + (i * chunk_words * 4) as u64, chunk);
         if st != uefi::Status::SUCCESS {
             break;
         }
-        info!("FWSEC: PROM read {}%", (i + 1) * 100 / prefix_chunks);
+        if (i + 1) % 4 == 0 {
+            info!("FWSEC: PROM read {}%", (i + 1) * 100 / 16);
+        }
     }
     if st != uefi::Status::SUCCESS {
         info!("FWSEC-TRACE: PROM bulk read failed {:?}", st);
         return Err(TxError::ENodev);
     }
-    let mut read_bytes = PREFIX;
-    let mut fw = prom_find_fwsec(rom, false);
-    if fw.is_none() && !full {
-        info!("FWSEC-TRACE: sparse-prefix parse found no FWSEC_PROD V3 - falling back to the full 1 MiB read");
-        for (i, chunk) in rom_words.chunks_mut(chunk_words).enumerate().skip(prefix_chunks) {
-            st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + (i * chunk_words * 4) as u64, chunk);
-            if st != uefi::Status::SUCCESS {
-                break;
-            }
-            info!("FWSEC: PROM read {}%", (i + 1) * 100 / 16);
-        }
-        if st != uefi::Status::SUCCESS {
-            info!("FWSEC-TRACE: PROM bulk read failed {:?}", st);
-            return Err(TxError::ENodev);
-        }
-        read_bytes = mapped;
-        fw = prom_find_fwsec(rom, false);
-    }
-    let read_note = if full {
-        alloc::format!("full (\\tx-prom-full.txt)")
-    } else if read_bytes == mapped {
-        alloc::format!("full (sparse-parse fallback)")
-    } else {
-        alloc::format!("targeted {read_bytes:#x} of {mapped:#x}")
-    };
-    info!("FWSEC: PROM signature={:#06x} read={read_note}", le16(rom, 0));
+    let rom: &[u8] = unsafe { core::slice::from_raw_parts(rom_words.as_ptr() as *const u8, mapped) };
+    info!("FWSEC: PROM bytes={mapped} signature={:#06x}", le16(rom, 0));
 
-    let fw = match fw {
+    let fw = match prom_find_fwsec(&rom, false) {
         Some(f) => f,
         None => { info!("FWSEC-TRACE: PROM parse found no FWSEC_PROD V3"); return Err(TxError::ENodev); }
     };
@@ -637,23 +600,6 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
     {
         info!("FWSEC-TRACE: image window {:#x}+{:#x} outside the staged ROM ({:#x})", fw.image_off, fw.stored_size, rom.len());
         return Err(TxError::ENodev);
-    }
-    // Pass B: the parser computed this window from the descriptor without
-    // reading its bytes - when it lies outside the sparse fill, fetch it
-    // now as one MMIO burst (unaligned-safe via a word-temp buffer).
-    let win = fw.image_off as usize;
-    let win_len = fw.stored_size as usize;
-    if win + win_len > read_bytes {
-        let mut tmp = alloc::vec![0u32; win_len.div_ceil(4)];
-        let st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + win as u64, &mut tmp);
-        if st != uefi::Status::SUCCESS {
-            info!("FWSEC-TRACE: pass-B payload read failed {:?}", st);
-            return Err(TxError::ENodev);
-        }
-        rom[win..win + win_len].copy_from_slice(unsafe {
-            core::slice::from_raw_parts(tmp.as_ptr() as *const u8, win_len)
-        });
-        info!("FWSEC: pass-B payload fetch {win:#x}+{win_len:#x} ({} bytes)", win_len);
     }
     unsafe {
         // Zero the whole block first (rounded tail must be 0), then copy
