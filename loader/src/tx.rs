@@ -108,10 +108,6 @@ pub fn canary_verdict(a: u32, b: u32) -> &'static str {
 /// scratch dying while the AON values are intact says "FLR/SBR-class reset",
 /// both intact says "no reset - the writer was a plain register write".
 pub fn canary_arm(gpu: &TxGpu) {
-    if crate::ultrafast() {
-        info!("CANARY: ultrafast - arm skipped (no-canary semantics folded in)");
-        return;
-    }
     let (pre_a, pre_b) = (gpu.read32_raw(regs::CANARY_A), gpu.read32_raw(regs::CANARY_B));
     let ctrl = gpu.read32_raw(regs::PMC_BOOT_0);
     info!(
@@ -1860,15 +1856,12 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
     let wpr_lo = rd(regs::WPR2_LO);
     // Reset canary: armed after the FLR, so a cleared scratch pair here (with
     // the FEAT values still right) is a reset we did not perform - the case
-    // that points at the platform, not the Windows driver pass. Ultrafast
-    // skips the arm (no-canary semantics folded in), and an unarmed pair
-    // would render as a misleading "cleared" - say "off" instead.
-    let can_field = if crate::ultrafast() {
-        alloc::format!("off(ultrafast)")
-    } else {
-        let (a, b) = (rd(regs::CANARY_A), rd(regs::CANARY_B));
-        alloc::format!("{}({a:#010x}/{b:#010x})", canary_verdict(a, b))
-    };
+    // that points at the platform, not the Windows driver pass. The canary
+    // rides in EVERY profile now (ultrafast included - the pair costs two
+    // writes and two reads); an operator who genuinely wants it gone uses
+    // the explicit \tx-no-canary.txt opt-out.
+    let (a, b) = (rd(regs::CANARY_A), rd(regs::CANARY_B));
+    let can_field = alloc::format!("{}({a:#010x}/{b:#010x})", canary_verdict(a, b));
     let (pmcsr, dstate) = match pci.pm_cap() {
         Some(cap) => {
             let v = pci.pmcsr(cap);
