@@ -1332,9 +1332,27 @@ pub fn verify_execution_tu10x(gpu: &TxGpu, payload_mode: bool, meta: &[u8]) -> R
     // signature, a successful payload ends the boot locked instead of
     // unlocked. ssdiag verdicts on SS0/SS1 for exactly this reason; do the
     // same here and keep PLM logged as the write gate it is.
+    //
+    // TWO proven success shapes (2026-11-08 bench, Z370/TU106 vs #74's
+    // TU102-over-TB4): (A) the payload writes the selectors itself and the
+    // PLM latch reads back LOCKED - this gate was built for that shape;
+    // (B) the payload opens ONLY the PLM and the loader writes the
+    // selectors as host right after (the v2.1.10 flow, every TU106/Z370
+    // success log: "selector write: SS0=0x88888888"). Shape B was locked
+    // out when the verdict started requiring payload-written SS - the
+    // bench run failed EIO with PLM=0xffffffff open and SS at factory,
+    // exactly the shape v2.1.10 unlocks. With the PLM open, the host
+    // selector writes land and their READBACK is the verdict - report Ok
+    // and let tx.rs's write_selector path decide.
     if ss0 != SS0_UNLOCK || ss1 != SS1_UNLOCK {
+        if plm == 0xffff_ffff {
+            info!(
+                "POST-BOOT: PLM open, payload did not write the selectors (ss0={ss0:#x} ss1={ss1:#x} factory) - shape B: the loader writes them next, readback decides"
+            );
+            return Ok(());
+        }
         info!(
-            "POST-BOOT: tu10x selectors not written (ss0={ss0:#x} want {SS0_UNLOCK:#x}, ss1={ss1:#x} want {SS1_UNLOCK:#x}) - the payload's writes did not happen"
+            "POST-BOOT: tu10x selectors not written (ss0={ss0:#x} want {SS0_UNLOCK:#x}, ss1={ss1:#x} want {SS1_UNLOCK:#x}) and PLM still locked - the payload's writes did not happen"
         );
         wpr_desc_rejected_hint(mbox0, meta);
         return Err(TxError::EIO);
