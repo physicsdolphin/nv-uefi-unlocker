@@ -92,6 +92,8 @@ fn main() -> Status {
         0
     };
     set_ultrafast(chainload::boot_volume_has(cstr16!(r"\tx-ultrafast.txt")));
+    logging::set_log_disabled(chainload::boot_volume_has(cstr16!(r"\tx-no-log.txt")));
+    logging::set_console_off(chainload::boot_volume_has(cstr16!(r"\tx-no-console.txt")));
     logging::set_log_commit(commit);
     logging::init(VERSION);
     // Durable (marker) line: separates a completed logger init from the

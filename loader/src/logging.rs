@@ -170,6 +170,10 @@ struct DualLogger {
     quiet: UnsafeCell<bool>,
     // #122/#170 diag: stop mirroring while the console stack is torn down
     console_enabled: UnsafeCell<bool>,
+    // \tx-no-log.txt: no \loader.log this boot - console is the only output
+    log_disabled: UnsafeCell<bool>,
+    // \tx-no-console.txt: no console mirror at all (silent run)
+    console_off: UnsafeCell<bool>,
 }
 
 static LOGGER: DualLogger = DualLogger {
@@ -178,6 +182,8 @@ static LOGGER: DualLogger = DualLogger {
     lines: UnsafeCell::new(0),
     quiet: UnsafeCell::new(false),
     console_enabled: UnsafeCell::new(true),
+    log_disabled: UnsafeCell::new(false),
+    console_off: UnsafeCell::new(false),
 };
 
 // Safety: UEFI applications are single-threaded during boot services.
@@ -263,7 +269,8 @@ impl Log for DualLogger {
         // entirely between detach and reconnect. The file mirror ran first.
         let quiet = unsafe { *self.quiet.get() };
         let console_enabled = unsafe { *self.console_enabled.get() };
-        if console_enabled && (!quiet || console_visible(&line)) {
+        let console_off = unsafe { *self.console_off.get() };
+        if console_enabled && !console_off && (!quiet || console_visible(&line)) {
             if let Ok(s) = CString16::try_from(line.as_str()) {
                 system::with_stdout(|out| {
                     let _ = out.output_string_lossy(&s);
@@ -279,7 +286,13 @@ impl Log for DualLogger {
 /// Replaces `uefi::helpers::init()` (which only installs uefi's own
 /// console-only logger; allocator and panic handler need no init call).
 pub fn init(version: &str) {
-    let file = open_fresh_log();
+    // \tx-no-log.txt: skip the file entirely - console becomes the only
+    // output, which also structurally refuses quiet (see quiet_effective).
+    let file = if log_disabled() {
+        None
+    } else {
+        open_fresh_log()
+    };
     if file.is_none() {
         *unsafe { &mut *LOGGER.file_error_reported.get() } = true;
     }
@@ -290,12 +303,17 @@ pub fn init(version: &str) {
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(log::LevelFilter::Info);
 
-    if file_open() {
+    if log_disabled() {
+        log::info!("LOG: \\tx-no-log.txt present - no file logging this boot (console only; hang forensics are ON THE OPERATOR)");
+    } else if file_open() {
         log::info!("log file {} opened on boot volume", LOG_PATH);
     } else {
         log::info!("log file unavailable (console-only); open failed");
     }
     log::info!("nv-uefi-unloader v{version} (M0 skeleton: read-only)");
+    if console_off() {
+        log::info!("CONSOLE: \\tx-no-console.txt present - console mirror off (fully silent run; combine with the armed marker)");
+    }
 }
 
 /// Close the log file (flush) before chain-loading. Idempotent.
@@ -330,6 +348,36 @@ pub fn is_quiet() -> bool {
 
 fn file_open() -> bool {
     unsafe { (*LOGGER.file.get()).is_some() }
+}
+
+/// `\tx-no-log.txt` speed/privacy knob: never open `\loader.log` this boot.
+/// Set once from main before [`init`]; console becomes the only output and
+/// quiet is structurally refused (its guard sees the file as closed).
+pub fn set_log_disabled(v: bool) {
+    // Safety: single-threaded boot services; called before any logging.
+    unsafe {
+        *LOGGER.log_disabled.get() = v;
+    }
+}
+
+fn log_disabled() -> bool {
+    unsafe { *LOGGER.log_disabled.get() }
+}
+
+/// `\tx-no-console.txt` speed knob: suppress the console mirror entirely
+/// (the GOP text output that costs minutes on slow panels, issue #38).
+/// Set once from main before [`init`]. Invisible run - combine with the
+/// armed marker so the confirm needs no screen.
+pub fn set_console_off(v: bool) {
+    // Safety: single-threaded boot services; called before any logging.
+    unsafe {
+        *LOGGER.console_off.get() = v;
+    }
+}
+
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+fn console_off() -> bool {
+    unsafe { *LOGGER.console_off.get() }
 }
 
 /// Stop mirroring to the console (#122/#170 diag, issue #170).
