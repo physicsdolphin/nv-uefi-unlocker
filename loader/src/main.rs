@@ -237,11 +237,13 @@ fn main() -> Status {
     // (TOTORONG craft) - the screen goes dark from that card's transaction
     // until Windows boots. The log file keeps recording and is the
     // evidence record. Multi-GPU: every supported card runs in order.
-    // P2-7: LoadImage the OS loader before the transaction touches the GPU,
-    // so the post-FLR chain cannot fail on a degraded firmware allocation
-    // landscape (TOTORONG craft, nv_unlock_win 0.2.12 field-verified). Any
-    // preload problem falls back to the legacy post-transaction path. Pure
-    // chain-side behavior (no GPU writes), so it runs in every build.
+    // P2-7: LoadImage the OS loader before the transaction touches the GPU.
+    // OPT-IN since #198 (see chainload::preload_os_loader): the preloaded
+    // image is the one variable that separates every post-handoff freeze
+    // report from the surviving runs, so the default is the legacy
+    // post-transaction chain. The opt-in path keeps the PE header probe and
+    // falls back to the legacy chain on any doubt. Pure chain-side behavior
+    // (no GPU writes), so it exists in every build.
     let preloaded = if let keywait::Confirm::Proceed = confirmed {
         // PR #209 follow-up: with \tx-exit-fw.txt the StartImage never runs,
         // so the pre-transaction USB read would buy nothing - skip it.
@@ -256,11 +258,12 @@ fn main() -> Status {
 
     #[cfg(feature = "tx")]
     if let keywait::Confirm::Proceed = confirmed {
-        // \tx-dry-run.txt (issue #146): skip the transaction entirely. The OS
-        // loader is still preloaded, but this path never reaches an asset
-        // read, so the cache stays EMPTY - the control is "preload residency,
-        // zero GPU writes, no detach, no reconnect", not "full residency".
-        // (Measured: the dry-run log has no TX-ASSET-DIAG line at all.)
+        // \tx-dry-run.txt (issue #146): skip the transaction entirely. Since
+        // preload went opt-in (#198) the residency control is the PAIR
+        // \tx-dry-run.txt + \tx-preload.txt: the loader is resident, but this
+        // path never reaches an asset read, so the cache stays EMPTY - "preload
+        // residency, zero GPU writes, no detach, no reconnect", not "full
+        // residency". (Measured: the dry-run log has no TX-ASSET-DIAG line.)
         if chainload::boot_volume_has(cstr16!(r"\tx-dry-run.txt")) {
             info!("TX-DRY-RUN: \\tx-dry-run.txt present - the GPU transaction is SKIPPED this boot (zero writes, no detach; preload residency control - assets are NOT read on this path, issue #146)");
         } else {

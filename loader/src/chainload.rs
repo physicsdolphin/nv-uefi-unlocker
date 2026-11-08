@@ -972,7 +972,13 @@ fn splice_file_node(base: &DevicePath, path: &CStr16) -> Option<Vec<u8>> {
 // probe right before StartImage (relocation-proof: MZ + e_lfanew -> "PE\0\0",
 // never patched by the loader's relocation pass). Both peers have shipped
 // this shape across many real runs without an image-corruption incident.
-// Opt-out marker: \tx-no-preload.txt keeps the legacy post-transaction path.
+// OPT-IN since the Y9000P freeze matrix (#198): preload present + dirty card
+// died on every tx run while preload + clean card (readonly) and no preload +
+// dirty card (v2.1.5 run-10, which predates this feature) both lived, so the
+// default flipped back to the legacy post-transaction path - the long
+// field-proven baseline. \tx-preload.txt restores the preload for A/B runs;
+// its robustness motive (post-FLR LoadImage on a degraded allocation
+// landscape) is covered by the shared firmware-resolve machinery (#128/#142).
 // ---------------------------------------------------------------------------
 
 /// An OS loader image loaded before the transaction.
@@ -1627,8 +1633,8 @@ fn pe_header_ok(base: usize, size: u64) -> bool {
 /// LoadImage the OS loader now, before the transaction touches the GPU.
 /// None (with a logged reason) keeps the legacy post-transaction chain.
 pub fn preload_os_loader() -> Option<PreloadedOsLoader> {
-    if boot_volume_has(cstr16!(r"\tx-no-preload.txt")) {
-        info!("CHAIN-PRE: \\tx-no-preload.txt present - preload disabled, legacy chain path");
+    if !boot_volume_has(cstr16!(r"\tx-preload.txt")) {
+        info!("CHAIN-PRE: no \\tx-preload.txt - preload is opt-in since #198, legacy chain path");
         return None;
     }
     info!("CHAIN-PRE: pre-transaction loader preload begin");
