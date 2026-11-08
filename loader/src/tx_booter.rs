@@ -1216,7 +1216,7 @@ pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u
 /// Windows driver path is excluded for that boot; an intact state here that
 /// is gone in Windows puts the driver pass back on the hook. Never fails the
 /// transaction - the reconnect itself is already delivered by this point.
-pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
+pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool, tx_relock: bool) {
     let (plm_at, ss0_at, ss1_at, readout_at) = if crate::tx::family_is_turing(family) {
         (TU10X_FEAT_PLM, TU10X_FEAT_SS0, TU10X_FEAT_SS1, TU10X_FEAT_READOUT)
     } else {
@@ -1245,15 +1245,28 @@ pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool) {
         info!("POST-GOP: replay mode - the stock booter never opens the gate, so the booter status stays the verdict");
         return;
     }
-    // The handoff end state is family-specific: on Turing the chain re-locks
-    // the FEAT PLM on purpose before handoff, and the proven end value there
-    // is 0xffffffef with the SS overrides still in place (see the relock
-    // block in tx.rs). Comparing Turing against 0xffffffff reports a false
-    // "NOT intact" on every healthy TU10x run.
-    let (want_plm, want_note) = if crate::tx::family_is_turing(family) {
-        (0xffff_ffef, "tu10x handoff value: gate re-locked, SS values are the payload")
+    // The handoff end state depends on the relock marker, not the family:
+    // the default everywhere is the gate held OPEN (the SS overrides are
+    // the payload; Turing joined the GA10x/Ada open-gate shape after the
+    // 2026-11-08 bench). \tx-relock.txt closes it again - proven end value
+    // on Turing is 0xffffffef with the SS overrides still in place (see
+    // the relock block in tx.rs); the GA10x/Ada relock shape has never
+    // been benched, so there the raw readback is the record and a
+    // mismatch is informational, not a verdict.
+    let (want_plm, want_note) = if tx_relock {
+        if crate::tx::family_is_turing(family) {
+            (
+                0xffff_ffef,
+                "tu10x relock requested (\\tx-relock.txt): gate re-locked, SS values are the payload",
+            )
+        } else {
+            (
+                0xffff_ff8f,
+                "ga10x/ada relock requested (\\tx-relock.txt) - shape never benched, readback is the record",
+            )
+        }
     } else {
-        (0xffff_ffff, "gate held open")
+        (0xffff_ffff, "gate handed off open (default since the 2026-11-08 bench)")
     };
     if plm == want_plm && ss0 == SS0_UNLOCK && ss1 == SS1_UNLOCK {
         info!("POST-GOP: unlock intact after the console rebuild (FEAT_PLM={plm:#x} = {want_note})");

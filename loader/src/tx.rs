@@ -1015,6 +1015,26 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     crate::pci::set_high_staging(high_staging);
     info!("TX: >4GB staging gate: {high_staging} (family {})", assets.family);
 
+    // FEAT gate at handoff. DEFAULT (all families): the gate stays OPEN -
+    // the SS override values are the payload and they are AON, so the open
+    // gate buys the in-OS write surface (ssdiag --reapply) at no cost to
+    // the unlock. The 2026-11-08 TU106 bench closed the old Run A/B
+    // question: PLM open at handoff is healthy end-to-end on the GSP-mode
+    // driver stack (loader -> card's own GOP rebuild -> Windows driver ->
+    // in-OS readback, canary intact, PLM still 0xffffffff in Windows); the
+    // fires-13/14 negative ("PLM open kills the Windows Turing driver")
+    // predates the GSP-mode driver being the only supported Turing path and
+    // did not reproduce (docs/evidence/tu106-1f07/keep-open-2026-11-08/).
+    // GA10x/Ada always shipped gate-open; Turing now joins them.
+    // \tx-relock.txt restores the legacy closing write for all three
+    // families - the GA10x/Ada arm of that marker has never been benched.
+    let tx_relock = probe_file("\\tx-relock.txt");
+    if tx_relock {
+        info!("TX: \\tx-relock.txt present - the FEAT gate gets RELOCKED at handoff (legacy shape)");
+    } else if family_is_turing(assets.family) {
+        info!("TX: FEAT gate stays OPEN at handoff (default since 2026-11-08; \\tx-relock.txt restores the legacy relock)");
+    }
+
     // Resume-entry preflight FIRST, before anything is detached or written:
     // a non-D0 entry means the firmware did not POST this card (sleep/resume
     // or fast-startup handoff), which changes what the Windows driver will
@@ -1425,30 +1445,32 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
                 tb::signature_restore(meta, stock_dma.dev, assets.stock_sig.len() as u64);
                 core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
                 info!("TX: stock signature restored");
-    // TU10x: RE-LOCK the FEAT block PLM before handoff. The 13th/14th fires
-    // proved the Windows Turing driver dies with 0x409650 left at 0xffffffff
-    // (Run A/B), and runs fine with it locked (Run C) - the PLM is only the
-    // WRITE gate; the SS override values are the payload. Open -> write ->
-    // close, then read back: if SS0/SS1 keep the unlock values behind the
-    // re-locked gate, the unlock ships protected; if they revert, the
-    // override is gate-bound and the Turing unlock needs the open state
-    // (which the driver rejects - the CMP references are headless cards
-    // where no display driver ever re-validates this block).
-    if family_is_turing(assets.family) && booter_ok {
+    // Legacy FEAT relock, Turing arm, now marker-gated (\tx-relock.txt) -
+    // the default since the 2026-11-08 keep-open bench is to hand the gate
+    // OPEN (see the gate note at the top of this function). The
+    // fires-13/14 history: Run A/B read the open gate as the Code-43
+    // variable on the then-default non-GSP driver stack; the 2026-11-08
+    // bench did not reproduce it end-to-end on the GSP-mode stack, so the
+    // closing write ships only behind the marker. Turing FEAT lives at
+    // 0x4096xx (cmp50hx lines 294-296). The GA10x/Ada arm of the marker
+    // fires post-FLR instead (see the FLR else-branch below) - never
+    // benched either way, so its readback line is the record.
+    if booter_ok && tx_relock && family_is_turing(assets.family) {
         gpu.pci.bar_write_u32(0, 0x0040_9650 as u64, 0xffff_ff8f);
         let plm_rb = gpu.pci.bar_read_u32(0, 0x0040_9650 as u64);
         let ss0_rb = gpu.pci.bar_read_u32(0, 0x0040_9664 as u64);
         let ss1_rb = gpu.pci.bar_read_u32(0, 0x0040_966c as u64);
         // Once the payload opened the block, bits 5:6 resist host clears:
-        // 0xffffffef is the proven handoff end state (TU106 and TU104
-        // identical); a full 0xffffff8f readback would be the surprise.
+        // 0xffffffef is the proven relock end state there (TU106 and TU104
+        // identical); a full 0xffffff8f readback would be the surprise
+        // (and has been seen on a TU102 22G, SS still unlocked).
         let plm_note = match plm_rb {
             0xffff_ffef => "known-good (bits 5:6 sticky-open)",
             0xffff_ff8f => "fully closed",
             _ => "UNEXPECTED",
         };
         info!(
-            "TU10X PLM relock: plm={plm_rb:#010x} {plm_note} SS0={ss0_rb:#010x} SS1={ss1_rb:#010x} unlock_persist={}",
+            "FEAT PLM relock [tu10x]: plm={plm_rb:#010x} {plm_note} SS0={ss0_rb:#010x} SS1={ss1_rb:#010x} unlock_persist={}",
             ss0_rb == 0x8888_8888 && ss1_rb == 0x8
         );
     }
@@ -1481,6 +1503,20 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         let flr_expect_unlock = payload_mode && booter_ok;
         tb::flr_phase(gpu, assets.family, flr_expect_unlock)?;
         info!("POST-FLR: verified{}", if flr_expect_unlock { " (selectors survive AON)" } else { "" });
+        if payload_mode && booter_ok && tx_relock {
+            // GA10x/Ada arm of \tx-relock.txt: close the gate AFTER the FLR
+            // verdict so the unbenched read-gating question (do SS reads
+            // survive a re-close on these families?) cannot pollute the
+            // AON-survival check above. AON holds across FLR either way;
+            // the readback is the record, shape never benched.
+            gpu.pci.bar_write_u32(0, crate::tx::regs::FEAT_PLM as u64, 0xffff_ff8f);
+            let plm_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_PLM as u64);
+            let ss0_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_SS0 as u64);
+            let ss1_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_SS1 as u64);
+            info!(
+                "FEAT PLM relock [ga10x/ada, post-FLR, shape never benched]: plm={plm_rb:#010x} SS0={ss0_rb:#010x} SS1={ss1_rb:#010x}"
+            );
+        }
     }
 
     // Arm the reset canary here: after the chain's own last reset (the FLR
@@ -1540,7 +1576,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // last state readback before this point predates a driver load. Cheap,
     // read-only, and the only way to tell "the console rebuild re-derived
     // the FEAT block" apart from "the Windows driver pass did".
-    tb::probe_post_console(gpu, &assets.family, payload_mode);
+    tb::probe_post_console(gpu, &assets.family, payload_mode, tx_relock);
 
     // Unwind: release every DMA buffer.
     let _ = booter_dma.release(gpu.pci);
