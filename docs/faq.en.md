@@ -100,6 +100,16 @@ Yes, but as an **expert, at-your-own-risk operation**: the shipped workflow stay
 
 For preparation on a different host, use `-SkipGspCheck` / `--skip-gsp-check`; target GSP prerequisites still apply. Offline Turing archive `gsp_rm_boot_dbg.bin` selection uses `-ProvenBlob` / `--proven-blob`; length/hash validation remains mandatory. Do not substitute versions or bypass failed checks. For Windows PowerShell TLS download failures, the bash maker can run under WSL / Git Bash.
 
+### Where do the pinned downloads come from now? (source group, 2026-11-08)
+
+The `nvidia-utils` GSP-firmware container is fetched from a **source group with automatic fallback** ([#212](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/212): the original CachyOS archive keeps only a ~3-version rolling window per package and dropped the pinned `610.43.03` with an HTTP 404 for everyone):
+
+1. **Arch Linux Archive** (`archive.archlinux.org`, the official rollback archive - published package versions are never purged);
+2. **first-party NVIDIA `.run` installer** (`download.nvidia.com`, XFree86 tree is append-only - driver versions from 2008 remain fetchable; `us/tw/jp.download.nvidia.com` serve the same bytes);
+3. the original **CachyOS v3 container** stays last as an exact-bytes resurrection channel (CF/local caches).
+
+All three were cross-verified to carry **bit-identical GSP firmware** - the gate is content-addressed (pinned SHA-256 of the inner `gsp_ga10x.bin`/`gsp_tu10x.bin` ELFs), not container-addressed. Pin one route with `-UtilsSource arch|run|cachyos` / `--utils-source`; on total failure the report lists every source, its URL and pinned hash. Any pinned file obtained by other means (browser, another machine, proxy) can be dropped into `inputs/` unchanged - hash match accepts it offline. **Never substitute a version**: 610.57/615.x carry different GSP firmware bytes and are not interchangeable with the pinned set.
+
 <a id="turing"></a>
 
 ## Why does Turing need GSP firmware mode?

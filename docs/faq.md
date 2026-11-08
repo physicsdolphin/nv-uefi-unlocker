@@ -103,7 +103,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 
 异机制盘先显式指定 `-Family`（或用 `-Family all`），Turing 检查不适用时可用 `-SkipGspCheck` / `--skip-gsp-check` 跳过制盘机检查，但目标机仍须满足 GSP 前置。离线 Turing 引导归档 `gsp_rm_boot_dbg.bin` 用 `-ProvenBlob` / `--proven-blob` 指定；长度和 hash 校验仍有效。下载或校验失败时不要换版本或绕过检查。Windows PowerShell TLS 下载失败时可用 WSL / Git Bash 运行 bash maker。
 
-**中国大陆网络**（2026-11-01 实测）：`raw.githubusercontent.com` 被阻断，Turing 引导归档的抓取会自动依次回退到 jsDelivr CDN 与代理传输（同一对象，钉定 SHA-256 逐字节把关）；`download.nvidia.com` 与 `archive.cachyos.org` 当前可直连，暂无镜像回退。任何钉定文件都可以离线获得后直接放进 `inputs/`（哈希匹配即接受）——这是官方认可的离线路径。某传输源失效时不要换版本，换源或离线投放皆可。PowerShell 内建 `curl` 别名与下载脚本无关：maker 的 PowerShell 版只用 `Invoke-WebRequest`，bash 版用真实 `curl`/`wget`。
+**中国大陆网络与下载源**（2026-11-08 更新）：`raw.githubusercontent.com` 被阻断，Turing 引导归档的抓取会自动依次回退到 jsDelivr CDN 与代理传输（同一对象，钉定 SHA-256 逐字节把关）。`nvidia-utils` 输入自 2026-11-08 起是**源组自动回退**（[#212](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/212)：CachyOS 归档是每包约三版的滚动窗口，钉定的 610.43.03 已被挤出窗口 404）：**Arch 官方归档（永久，版本不清除）→ 第一方 NVIDIA `.run` 安装器（XFree86 树只增不删，us/tw/jp 多区域节点同字节）→ CachyOS 旧容器（仅作字节缓存还魂通道）**，三者内含的 GSP 固件逐位一致——内容寻址闸只认内层 ELF 的钉定 SHA-256。`-UtilsSource arch|run|cachyos`（bash 版 `--utils-source`）可钉定单一路线；全部失败时报告会列出每个源、其 URL 与钉定哈希。任何钉定文件都可以离线获得后直接放进 `inputs/`（哈希匹配即接受）——这是官方认可的离线路径。某传输源失效时不要换**版本**（610.57/615.x 内含的 GSP 固件与 610.43.03 是不同字节，不可互换），换**源**或离线投放皆可。
 
 <a id="turing"></a>
 
