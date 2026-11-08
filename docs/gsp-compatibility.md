@@ -23,6 +23,13 @@ ROP 触发——**对 GSP 镜像自身的任何校验都在那之后**，而那�
 
 ## 二、实测矩阵（TU106 / Z370，2026-11-08）
 
+**作用域铁律：全部实测都在图灵谱系（`gsp_tu10x`）上**。GSP 按 GPU 世代分发
+（图灵=`gsp_tu10x.bin`；Ampere/Ada=`gsp_ga10x.bin`，Ada 用其中
+`.fwsignature_ad10x` 签名段）——**跨代使用不在本结论范围内，也不应尝试**：
+40 系（AD10x）的兼容下限 = **40 系起家的最早那版 GSP**（Ada 发布驱动世代，
+Windows 522.27 / Linux 525.60.11，需验证其 `fwsignature_ad10x` 在位），
+且 Ada 谱系的版本自由需要自己的台架轮次（机制同源，未实测不外推）。
+
 | GSP 版本 | fwimage_tu10x | 大小 | loader | 结果 |
 |---|---|---|---|---|
 | 525.60.11 | 0x2359FE0 | 37,068,768 B | main(修复后) | ✅ 全链 unlock |
@@ -31,7 +38,7 @@ ROP 触发——**对 GSP 镜像自身的任何校验都在那之后**，而那�
 | 615.78.08 | 0x15D3DC8 | 22,887,880 B | v2.1.10 | ✅ 全链 unlock |
 | 621.01（Windows 驱动仓库） | 0xFE6DD8 | 16,674,264 B | main(修复后) | ✅ 全链 unlock |
 
-尺寸跨度 **16.7–37.1 MB（2.2×）**，全部 layout 吸收、radix 字节精确、
+尺寸跨度 **16.7–37.1 MB（2.2×）**（图灵谱系内），全部 layout 吸收、radix 字节精确、
 `HANDOFF-OUT tu10x:unlock=true`、selector 0x88888888/0x8 落盘、READOUT_1=0x0 全速。
 证据：`docs/evidence/z370-tu106-logcommit/`（525/621 两份完整 unlock log）。
 
