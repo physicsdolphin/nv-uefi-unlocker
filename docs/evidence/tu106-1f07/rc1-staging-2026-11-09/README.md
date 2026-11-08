@@ -23,6 +23,20 @@
 3. **尾部 `0xbadf5040` 四字段**（两臂 209 行均在，native-GOP binding Start=SUCCESS 之后）= 绑定期读窗 artifact，与 11-08 keep-open 轮逐字同形；权威判读 = `tu10x:` 元组 + 系统内 ssdiag（本轮 Arm 2 系统内 PLM OPEN 活体证实）。
 4. 台架工程记录：首轮 HIGH 臂日志因拔盘过快丢失（FAT dirent/USB 盘内缓存；loader init 会删上一轮日志），重跑即复现——**日志须在两轮之间拷走**；不构成构建层回归（同构建 LOW 臂日志完整）。
 
+## 速度阶梯（同机速度栈全开，2026-11-09 收敛于 ~1.9-2.0s 地板）
+
+| 级 | 构建/配置 | loader 起跑 → CHAIN LoadImage | 证据 |
+|---|---|---|---|
+| v2.1.8 代（诊断全开） | 22.1 s | issue #38 基线 | — |
+| v2.1.9（quiet+armed 5s） | 17.2 s | issue #38 | — |
+| rc1（ultrafast+no-console，armed 1s） | 3.2 s | 113→3205ms | `loader-high-staging.log`（当时构建） |
+| rc1（armed `0`） | 2.835 s | 113→2835ms | `loader-armed0-2835ms.log` |
+| + 两处固定 stall 摘除（06f3a14） | 2.033 s | 用户实测 | — |
+| + CHAIN pass skip + 金丝雀回归 ultrafast（2e01833/4f90e2a） | **1.821 s** | 119→1940ms，`CHAIN: reconnect pass skipped` 触发、`canary=intact` 回归 HANDOFF | `loader-allspeeds-1821ms.log` |
+| （尝试后撤销）targeted PROM read | 1.920 s | TU106 walk 超 128KB → 稀疏解析 None → 全量回退，净负 ~45ms | `loader-promfallback-1920ms.log` |
+
+**地板定谳（用户实测 1.9–2.0s 波动）**：剩余大头 = fwimage USB2 读 ~310ms（硬件）、PROM 全量 ~225ms（需 per-die walk-region 逆向立项才可省，撤）、GSP-HALT ~151ms（FRTS scrub 硬件时间）、native-GOP 绑定+console 挂接 ~650ms（显示路径证据本体）。`no-reconnect.txt` 可再省 ~650ms 但以显示路径验证为代价（DDC-CI 一类会碎），不作为速度手段。
+
 ## 关联
 
 - release: v2.1.12-rc1（pre-release）；实现 e2217b2；sim t34–t39。
