@@ -1,4 +1,4 @@
-# Z370/TU106 log-commit ladder bench evidence (2026-11-08)
+# Z170-A/TU106 log-commit ladder bench evidence (2026-11-08)
 
 `loader-log-first-main-run.log` = the FIRST main-loader run with any log
 at all (log-commit=0 flush-only, 17,716 bytes): the ladder fix verified
