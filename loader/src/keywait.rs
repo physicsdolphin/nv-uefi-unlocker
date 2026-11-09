@@ -97,8 +97,9 @@ impl Repeat {
 /// 1. 复位 ConIn(不做扩展自检;很多固件返回 UNSUPPORTED,仅记录);
 /// 2. 丢弃已缓冲的按键(上限 64 个,不会被持续上报的设备卡死);
 /// 3. 调用 `between`(USB 设备在第一次读取控制台之后才出现,见 usbreset);
-/// 4. 健康路径短路:排空为 0 且第一次轮询立即安静 => 立刻返回(约一次 50 ms);
-/// 5. 否则进入安静窗口:连续 QUIET_MS 没有按键即结束,最长 MAX_SETTLE_MS。
+/// 4. 安静窗口:排空为 0 时只需连续 FAST_QUIET_MS(300 ms)安静即结束,看到过按键
+///    后需要连续 QUIET_MS(1 s);最长 MAX_SETTLE_MS。不能只看第一次轮询:实测
+///    被持续上报的键在第一次轮询之后约 50 ms 才开始(见 PR 讨论)。
 ///    窗口内同一键值连续出现 >= 3 次(无安静间隙)=> 判定为幽灵键,本次启动
 ///    抑制该键值(Esc 除外),并在控制台提示。其余键的含义不变:
 ///    Space/Enter 仍然确认,其他键仍然中止,超时仍然中止。
@@ -107,6 +108,7 @@ pub fn settle_input_once(between: impl FnOnce()) {
     const MAX_DRAIN: u32 = 64;
     const POLL_MS: u64 = 50;
     const QUIET_MS: u64 = 1000;
+    const FAST_QUIET_MS: u64 = 300;
     const MAX_SETTLE_MS: u64 = 4000;
 
     match system::with_stdin(|stdin| stdin.reset(false)) {
@@ -134,21 +136,16 @@ pub fn settle_input_once(between: impl FnOnce()) {
 
     between();
 
-    // 健康路径:没有任何缓冲键,且第一次轮询立即安静,不付出安静窗口的 1 s。
-    let first = poll_key();
-    if drained == 0 && first.is_none() {
-        info!("INPUT-SETTLE: input quiet, no settle window needed");
-        return;
-    }
-
-    let mut pending = first;
+    // 健康路径只付出 FAST_QUIET_MS;一旦看到按键就改用完整的 QUIET_MS。
+    let mut need = if drained == 0 { FAST_QUIET_MS } else { QUIET_MS };
     let (mut waited, mut quiet, mut keys) = (0u64, 0u64, 0u32);
     rep.quiet();
-    while waited < MAX_SETTLE_MS && quiet < QUIET_MS {
-        match pending.take().or_else(poll_key) {
+    while waited < MAX_SETTLE_MS && quiet < need {
+        match poll_key() {
             Some(key) => {
                 keys += 1;
                 quiet = 0;
+                need = QUIET_MS;
                 if keys <= 3 {
                     info!("INPUT-SETTLE: settle: discarded key {key:?} at +{waited} ms");
                 }
@@ -165,7 +162,7 @@ pub fn settle_input_once(between: impl FnOnce()) {
         boot::stall(Duration::from_millis(POLL_MS));
         waited += POLL_MS;
     }
-    if quiet < QUIET_MS {
+    if quiet < need {
         info!("INPUT-SETTLE: input still busy after {waited} ms but no key value repeated - key semantics unchanged");
     }
     info!(
