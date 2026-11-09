@@ -405,6 +405,8 @@ bash release/make-usbroot.sh --family 40 \
   [电玩帮](https://www.vgover.com/news/243692)（ZH） ·
   [夢想數位工坊](https://dreamdigi.tw/35957-2/)（ZH-HK） ·
   [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh)（ZH） ·
+  [小萝卜の博客「在NVIDIA显卡上解锁FP16算力」](https://www.milobo.moe/2026/1966/)（ZH，个人实践记录） ·
+  [bailu974「Secure Boot 笔记本实操记录」](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)（ZH，卡键补丁 + Insyde 按文件信任 + ESP 驻留部署） ·
   [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/)（ID） ·
   [Silicon Report](https://www.siliconreport.com/open-source-uefi-tool-unlocks-nvidia-gpu-tensor-performance)（EN） ·
   [Kantan.News](https://kantan.news/news/new-uefi-tool-removes-ai-speed-limitation-on-nvidia-graphics-cards)（EN） ·

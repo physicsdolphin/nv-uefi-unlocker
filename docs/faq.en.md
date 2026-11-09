@@ -12,6 +12,7 @@
 - [Does the unlock survive Windows sleep? (S3 / Modern Standby)](#sleep)
 - [Does the unlock survive a Thunderbolt 3/4 / USB4 handoff?](#thunderbolt)
 - [Does it work with Secure Boot on? (self-signing)](#secureboot)
+- [A ghost key aborts the confirm countdown (stuck keys)](#ghost-key)
 - [How do I check or repair the unlock in the OS?](#ssdiag)
 - [The pmxdrv.sys security model and trade-off (required disclosure)](#pmxdrv)
 - [An antivirus flags the download - what now?](#av-fp)
@@ -439,6 +440,8 @@ First, what this is not: it is not a way around Secure Boot. The boot chain is s
 Three limits; without them the steps below set the wrong expectation:
 
 - **Self-signing does not fix `ssdiag`.** `pmxdrv.sys` is an Intel/COMODO cross-signed driver from 2018 with no Microsoft root; `tools/ssdiag/README.md` says the load is **expected** to be refused, and its three carve-outs (OS upgraded from Windows <= 1607, Secure Boot off, signing certificate issued before 2015-07-29) cannot apply to a leaf certificate issued 2018-10-24. So with Secure Boot on, in-OS read-back comes from `HANDOFF-OUT` in `loader.log`. `tools/diag-unlock.py` on Linux is a zero-driver path, but **nobody has verified it with Secure Boot on**. `ssdiag --reapply` still needs Secure Boot off for one boot.
+
+  **One counter-datapoint (2026-11-09, [bailu974's record](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot))**: on an Insyde laptop (COLORFIRE MEOW R15 24) with Secure Boot on, `ssdiag` printed this pre-written warning **but the driver actually loaded** - the tail shows `driver service removed` and the `0x823xxx` MMIO readings are real (without the driver those values cannot be read). The mechanism is unknown (that machine's DSE / vulnerable-driver-blocklist state was not captured); **the default expectation is still refusal** - but treat the warning as a hint, not a verdict: check for the trailing `driver service removed` and complete register readings before concluding anything, and when reporting, say whether your SB-on machine loaded or refused. Either answer moves this row.
 - **Anti-cheat is not guaranteed.** Self-signing leaves the Secure Boot state bit on; the maintainer states that Vanguard (LoL) checks that bit, and **anti-cheat itself was not tested by anyone** (the reporter this section leans on says so explicitly). ACE-family clients validate the TPM/PCR[7] chain, and a self-signed chain measures differently from the stock boot (see [what each route costs in measurements](#secureboot-vs-ffs) below).
 - **Re-sign every build**: a signature dies if one byte changes afterwards; the `*.bin` assets are not PE images and need no signing.
 
@@ -452,18 +455,19 @@ Suspend-BitLocker -RebootCount 1
 
 One report used this and saw no prompt; that is one machine, not a guarantee for other configurations.
 
-### Choosing between the two routes
+### Choosing between the three routes
 
-| | Route A: sign into `db` | Route B: MOK + shim |
-| --- | --- | --- |
-| What changes | one more certificate in the firmware `db` | firmware key database untouched; the key lives in the stick's MOK |
-| Worst case | PK cleared and the vendor PK cannot be restored on this board -> Secure Boot cannot be turned on again | boot fails; delete the files from the stick and you are back to stock |
-| After a firmware update / CMOS reset | `db` may be reset, re-append needed | unaffected (the MOK is on the stick) |
-| Availability | the board's Key Management must be editable | a Microsoft-signed shim (`shim-signed` package of any distribution) |
+| | Route A: sign into `db` | Route B: MOK + shim | Route C: firmware per-file trust |
+| --- | --- | --- | --- |
+| What changes | one more certificate in the firmware `db` | firmware key database untouched; the key lives in the stick's MOK | one file entry in a firmware-private trust list (PK/KEK/db untouched; on that machine not even `db` is exposed) |
+| Worst case | PK cleared and the vendor PK cannot be restored on this board -> Secure Boot cannot be turned on again | boot fails; delete the files from the stick and you are back to stock | boot fails; delete the files from the stick and you are back to stock; the trust entry remains but trusts only your file |
+| After a firmware update / CMOS reset | `db` may be reset, re-append needed | unaffected (the MOK is on the stick) | untested (if it is hash-bound, a firmware update probably means re-adding) |
+| Availability | the board's Key Management must be editable | a Microsoft-signed shim (`shim-signed` package of any distribution) | the firmware page has `Select a UEFI file as trusted for execution` (some Insyde machines; most do not) |
+| Certificates / keys | required (step 0) | required (step 0) | **none at all** |
 
-**A board whose Key Management is not editable has route B as its only option.**
+**A board whose Key Management is not editable: first look for route C's menu entry - it is the cheapest path when present; otherwise route B is the only option.**
 
-### Step 0: keys (both routes)
+### Step 0: keys (routes A/B; route C needs no keys at all)
 
 Linux or WSL. Packages: Debian/Ubuntu `sbsigntool binutils mokutil`, Fedora `sbsigntools binutils mokutil`, Arch `sbsigntools binutils mokutil`; route A also needs `efitools` (or `sbctl`), route B also needs `shim-signed` / `shim-x64`. On Windows do this inside WSL; signing can also use `signtool` (route A step 1 only).
 
@@ -561,7 +565,19 @@ The firmware verifies only the Microsoft-signed shim; your key takes effect past
 
 7. **First boot**: shim reports `Verification failed: (0x1A)` (expected, the MOK is not enrolled yet) and then shows `Press any key to perform MOK management` with a **10-second countdown — you must press a key inside it**. If you do not, shim silently continues and the loader never runs, which looks like nothing happened (#210 measured this). In MokManager: Enroll key from disk -> `MOK.der` -> one-time password -> confirm Enroll after the reboot. Normal boots then go: shim (Microsoft-signed) -> your signature verified against MOK -> loader -> unlock -> chain back to `bootmgfw`, with Secure Boot on throughout.
 
-Internal-ESP variant (**not tested by this project, and not recommended**): put those four files in the internal ESP's `\EFI\BOOT\`. The reporter observed that CHAIN-BOOT skips its own `Boot####` and the Windows entry on the same ESP, so it can sit first in BootOrder without looping. Two costs: the README advice is explicit - "[do not copy it to the system ESP](../README.md), and the permanent boot order does not need changing" - and those 85 MB of assets then sit at the root of the Windows ESP; check free space before trying it.
+Internal-ESP variant (**not recommended by this project; two field records exist, both self-declared risk-taking deviations**): put the four files on the internal ESP and skip the stick on every boot. Shape 1 (#162's reporter): files in `\EFI\BOOT\`, first in BootOrder - CHAIN-BOOT skips its own `Boot####` and the Windows entry on the same ESP, so it does not loop. Shape 2 ([bailu974's record](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot), 2026-11-09): that Insyde firmware **refuses to create new `BootXXXX` variables** (`SetFirmwareEnvironmentVariableEx` returns `err=87`, while rewriting existing ones works), so the reporter rewrote `Boot0000` (the Windows Boot Manager entry) to point at `\EFI\nvunlock\BOOTX64.EFI`, keeping a copy of the original entry in `Boot2001` as the fallback; the assets sit at the ESP root (the loader reads assets only from the root of its own volume, never subdirectories; the 84 MB needs ESP headroom). Shared costs: the README advice is explicit - "[do not copy it to the system ESP](../README.md), and the permanent boot order does not need changing" - and rewriting `Boot0000` or the ESP can leave the machine unbootable; back up first and confirm you can reach BIOS recovery. Both reporters shipped backup/rollback scripts with their records.
+
+### Route C: the firmware's per-file trust (one machine reported, not reproduced here)
+
+Some Insyde firmwares offer **`Select a UEFI file as trusted for execution`** on the `Administrator Secure Boot` page: the firmware adds the named `.efi` file to its own trust list, **touching no PK/KEK/db and needing no certificate at all** (all of step 0 drops out). Basis: [bailu974's record](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot) (COLORFIRE MEOW R15 24, Insyde `1.07.11COLO1`) - add the trust entry, set `Enforce Secure Boot` back to Enabled, the stick's loader is admitted, the whole chain runs, and `Confirm-SecureBootUEFI` reports on.
+
+Practical points and pitfalls (all from that record):
+
+1. **First check your firmware even has the entry** - without it this route does not exist (do not clear PK to make it exist; that is route A's risk territory). Note that `Erase all Secure Boot Settings` / `Restore Secure Boot to Factory Settings` on those pages are **immediately executed actions, not toggles**; do not select them.
+2. The trust is **very likely bound per file hash**: on that machine the firmware does not expose `db`/`dbx` through the standard variables at all (reads return `ERROR_ENVVAR_NOT_FOUND`), so the list lives in private NVRAM. **After replacing `BOOTX64.EFI` you must re-add the trust entry.**
+3. BitLocker precondition: that machine's C: is unencrypted, so no recovery prompt appeared; if your OS volume is protected, suspend BitLocker before changing Secure Boot state (see [before you start](#before-you-start-bitlocker)).
+4. `bootmgfw.efi` is Microsoft-signed, so Windows still boots with enforcement on; the worst case is "our loader is refused", not "the system cannot boot".
+5. Evidence tier: one machine, self-reported, not reproduced by this project; and the binary that record trusted was a **locally patched build** (see [ghost keys](#ghost-key)), not a release artifact. The trust UI should admit an unmodified release binary the same way, but nobody has tested that.
 
 <a id="secureboot-vs-ffs"></a>
 
@@ -602,10 +618,34 @@ In one line: **both routes disturb a measurement** - self-signing moves the boot
 | Secure Boot on + `diag-unlock.py` | none | not verified |
 | Anti-cheat (Vanguard / ACE) | maintainer statement | not measured |
 | Firmware-resident FFS route | `docs/dxe-driver-ffs-feasibility.md` (design, risk, PCR[1]/BitLocker effects) | not verified on hardware |
+| Route C (per-file trust) | [bailu974's record](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot): Insyde file trust + Enforce, whole chain ran | one machine; not reproduced here |
+| `ssdiag` loading successfully with Secure Boot on | same record: the pre-set warning prints but the driver loads, MMIO readings complete | one-machine counterexample; mechanism unknown, refusal remains the default expectation |
+| Internal ESP + rewriting `Boot0000` (firmware refuses new `BootXXXX`, `err=87`) | same record: `Boot2001` fallback + backup scripts | one machine; deviates from the README discipline, self-declared risk |
 
 If you run either route, reporting the **board model**, whether `ssdiag` was refused, whether BitLocker asked for the recovery key, and whether `diag-unlock.py` can read the block with Secure Boot on moves one row forward each.
 
 <a id="ssdiag"></a>
+
+<a id="ghost-key"></a>
+
+### A ghost key aborts the confirm countdown (stuck keys)
+
+Symptom: nobody touches the keyboard, but the loader prints `CONFIRM: key Printable('\u{3}') ... ABORT` (or any other key value) and aborts; the `\i_know_what_i_am_doing.txt` armed countdown gets interrupted the same way. Something in the firmware stage is **repeatedly reporting a phantom key**. Three confirmed instances:
+
+| Key | Source device | Machine |
+| --- | --- | --- |
+| `0x1A` | a physically stuck Z key (EC) | Alienware m18 R1 ([#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110)) |
+| `0x03` (Ctrl+C) | the EC synthesising the key during firmware boot | COLORFIRE MEOW R15 24 ([bailu974's record](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot), with a v2.1.10 patch diff) |
+| `Special(LEFT)` | a **USB mouse**'s boot-keyboard interface reporting continuously ([PR #220](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/220), Legion 5 Pro 16ACH6H) |
+
+Two self-help routes, both bound by one discipline - **ignore only the exact key value you observed; do not touch Space/Enter/timeout semantics** (these windows are the gatekeepers of the zero-write guarantee):
+
+1. **A local patch ignoring that key value**: `patches/nv-uefi-unlocker-v2.1.10-stuck-key.patch` in bailu974's repo is the template (the abort windows in `wait_confirm` / `wait_confirm_armed` / tx_prep become immune to the observed byte, everything else unchanged). #110 took the same approach.
+2. **The "settle + ESC-only" route from [PR #220](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/220)** (under review, not merged): drain the input and wait for a quiet window before CONFIRM opens; if the input never goes quiet, the countdown degrades to ESC-only-abort - a safe direction, because ESC can never proceed, so a phantom key can at most be ignored and can never "press once to unlock".
+
+How to identify it: unplug the other USB devices one at a time and bisect (#220's phantom came from the mouse; unplugging silenced it); if the key value in the ABORT line matches a physical key, replace that keyboard first.
+
+**A BitLocker finding that rides along (#220, important)**: on a machine with BitLocker TPM-bound to PCR 0,2,4,11, **an aborted boot and an unlocked boot differ in boot-chain behaviour** (the aborted run skips the second native-GOP driver load) -> PCR[2] measures differently -> Windows asks for the recovery key (event 24707, `MismatchedPcr=2`); warm boots are unaffected. This is the first field record of a **behavioural** boot-chain difference (not a Secure Boot state change) tripping a PCR mismatch: on machines whose TPM profile includes PCR[2], either keep every boot on the same path (all unlocked or all aborted) or suspend protection first. This FAQ previously covered only PCR[7] (Secure Boot state) and PCR[1] (FFS flashing).
 
 ## Can a 50-series (RTX 50 / Blackwell) card be unlocked?
 
@@ -710,6 +750,20 @@ Check in this order and stop at the first hit:
 2. **Secure Boot is still on.** Toggling "Other OS" is not enough on most boards: go to Key Management, delete all PK/KEK/db keys, reboot, and verify `Confirm-SecureBootUEFI` returns `False`.
 3. **You entered through a non-`UEFI:` entry (CSM).** Pick the `UEFI:`-prefixed entry and turn Fast Boot off.
 4. Still no `loader.log` with all of the above correct: try another USB port (prefer a rear onboard one) and another stick; if it still fails, report the board model and BIOS version.
+
+### There is a `loader.log`, but it is 0 bytes
+
+**Do not infer the death point from the byte count.** On a number of firmwares (measured repeatedly on AMI/Insyde boards) `Flush()` does **not** commit the FAT directory entry - only `Close` does. So on those boards "file created, 0 bytes" means **this log was never Closed**, not that execution stopped at some line: dying at the confirmation prompt, dying in the preparation stage, or even finishing the transaction without reaching the teardown all look identical.
+
+- [#170](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/170): a full disk image parsed by BPB, scanning the FAT cluster chain, recovered two complete 261-line logs from a file that read as 0 bytes - the transaction had actually passed detach, AUTH-SCAN, the scrubber and the WPR2 layout while the screen had already frozen. That is what retired the "hangs at DETACH" reading.
+- [#198](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/198): a newer build that commits the directory entry at creation had its **reopen fail** on such firmware, so the logger degraded to console-only for the whole run and the file stayed empty, while the older build on the same machine (single handle, `Flush`, one `Close` at handoff) wrote 47-56 KB normally.
+
+So the order of work is:
+
+1. **Do not try to fix it with `\tx-flush-lines.txt`** - that knob changes flush cadence, not who commits the directory entry.
+2. Run a build that `Close`s at every commit point (`2.1.11-diag3` onwards; `diag4/diag5` instrument the ignition stages too), and the log will stop at the real last line.
+3. If you already have a 0-byte file, recover the body from a full disk image with the cluster scan in #170; when the body only ever existed on the console, a screen photo or serial capture is evidence too.
+4. When reporting, include the build version and SHA - the same "0 bytes" means different things on old and new builds.
 
 Failures that happen after the stick boots and logs are transaction problems - see [recovery](#recovery).
 

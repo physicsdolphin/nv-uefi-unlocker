@@ -19,7 +19,7 @@
 | F3 | chenc222（#62） | RTX 2080，TU104-400，`10de:1e87`，`90.04.0B.00.A5`（原厂 PROM 落盘证实） | 8192 MiB | B760 Intel UEFI（非 CSM）；无核显独显直连；Above4G on（BAR1@`0x400000000`）、ReBAR off、VT-d off | Win + 621.01 / GSP 620.67.01 | v2.1.1/2.1.5/2.1.6 + 8 轮单变量；A–F 轮用 v2.1.7-tu102-diag 与 PR #67 head `cdc634076`（自编 `1aa5651153e82fcc…`） | 默认 + C-load + #67 开关 | 8 轮全 `0x91`（含断电冷启、staging 强制 768MiB `0x3000b000`）；A/B/C 轮（C-load、+PTIMER+host-probe、v67-direct-ss）仍 `0x91`/`exci=0x00900100`。**D/E 轮（搬安全段基址 0x100→0x200 / BOOTVEC 直入）首次改变异常类**：`exci=0x00a00100`、`mbox0=0x31`；F 轮（secure=false）→ `exci=0x50aa2863`、DMEM 完全未动。布局与成功 2080S 逐位相同 | #62 |
 | F4 | ProxVirtualZone（#62 尾） | RTX 2080 SUPER，TU104-450，**`10de:1e81`（与 #14 成功卡同 device ID）**，subsystem `13a1:10de` | 8192 MiB | R9 3900X + MSI MPG X570 | Win11 | 自编译 `c52e8ea`（v2.1.6 谱系） | 默认 + C-load（有效/无效 marker）+ 全套诊断，共 4 轮 | 一致失败：`mailbox0=0x0B`、`exci=0x00900100`、`tu10x_unlock=false`。**同 ID 跨机器分裂的直接实证** | #62 |
 
-另类（非 0x91 族，单列）：**#55**（维护者自试）Z370+10700K（核显开）+2080S 独显单屏、Win10 GSP 610——解锁成功但交棒黑屏 + Windows 蓝屏 `APC_INDEX_MISMATCH`；TU10X PLM relock 只回 `0xffffffef`（差 bit4）。归"交棒完整性"问题（#35/#61 谱系），与本矩阵的 booter 拒收族不同病。
+另类（非 0x91 族，单列）：**#55**（维护者自试）Z370+10700K（核显开）+2080S 独显单屏、Win10 GSP 610——解锁成功但交棒黑屏 + Windows 蓝屏 `APC_INDEX_MISMATCH`；TU10X PLM relock 只回 `0xffffffef`（差 bit4）。归"交棒完整性"问题（#35/#61 谱系），与本矩阵的 booter 拒收族不同病。**（2026-11-09 结案：native-GOP 默认化后维护者实测黑屏/蓝屏均消，虚拟显示器形态一并修复；`0xffffffef` relock 经 #74/#191 确认为 known-good——已入 [csm-compat](csm-compat.md) 失败形态清单 (c)）**
 
 ### A1-S 成功侧
 
