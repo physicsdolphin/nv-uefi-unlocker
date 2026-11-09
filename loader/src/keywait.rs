@@ -1,8 +1,9 @@
 //! Single-key confirmation with timeout (TOTORONG interaction pattern).
 
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use log::info;
-use uefi::proto::console::text::Key;
+use uefi::proto::console::text::{Key, ScanCode};
 use uefi::{boot, system};
 
 pub enum KeyOrTimeout {
@@ -24,7 +25,70 @@ pub enum Confirm {
 /// interleave read-only work with the abort window.
 pub fn poll_key() -> Option<Key> {
     let key = system::with_stdin(|stdin| stdin.read_key());
-    key.ok().flatten()
+    let key = key.ok().flatten()?;
+    if ESC_ONLY.load(Ordering::Relaxed) && !matches!(key, Key::Special(ScanCode::ESCAPE)) {
+        return None;
+    }
+    Some(key)
+}
+
+/// 倒计时开始前输入一直没有安静下来(某个键被持续上报,例如带键盘接口的
+/// 鼠标/接收器)时置位。此后只有 Esc 算按键,其余键被忽略,否则武装倒计时
+/// 会被这个"卡住的键"立刻中止。
+static ESC_ONLY: AtomicBool = AtomicBool::new(false);
+
+/// CONFIRM 阶段之前只运行一次(此时还没有任何中止窗口):
+/// 1. 复位 ConIn(不做扩展自检;很多固件返回 UNSUPPORTED,仅记录);
+/// 2. 丢弃已缓冲的按键(上限 64 个,不会被持续上报的设备卡死);
+/// 3. 调用 `between`(USB 设备在第一次读取控制台之后才出现,见 usbreset);
+/// 4. 安静窗口:连续 QUIET_MS 没有按键即结束,最长 MAX_SETTLE_MS。窗口内的键
+///    全部丢弃。窗口结束时输入仍未安静 => 进入 ESC-ONLY。
+/// 日志只记录前 3 个被丢弃的键,避免被持续上报的键刷满日志。
+pub fn settle_input_once(between: impl FnOnce()) {
+    const MAX_DRAIN: u32 = 64;
+    const POLL_MS: u64 = 50;
+    const QUIET_MS: u64 = 1000;
+    const MAX_SETTLE_MS: u64 = 4000;
+
+    match system::with_stdin(|stdin| stdin.reset(false)) {
+        Ok(()) => info!("INPUT-SETTLE: ConIn reset ok"),
+        Err(e) => info!("INPUT-SETTLE: ConIn reset failed: {:?} (continuing)", e.status()),
+    }
+    let mut drained = 0u32;
+    while drained < MAX_DRAIN {
+        match poll_key() {
+            Some(key) => {
+                drained += 1;
+                if drained <= 3 {
+                    info!("INPUT-SETTLE: discarded buffered key {key:?}");
+                }
+            }
+            None => break,
+        }
+    }
+    info!("INPUT-SETTLE: drained {drained} buffered key(s)");
+
+    between();
+
+    let (mut waited, mut quiet, mut keys) = (0u64, 0u64, 0u32);
+    while waited < MAX_SETTLE_MS && quiet < QUIET_MS {
+        if let Some(key) = poll_key() {
+            keys += 1;
+            quiet = 0;
+            if keys <= 3 {
+                info!("INPUT-SETTLE: settle: discarded key {key:?} at +{waited} ms");
+            }
+        } else {
+            quiet += POLL_MS;
+        }
+        boot::stall(Duration::from_millis(POLL_MS));
+        waited += POLL_MS;
+    }
+    if quiet < QUIET_MS {
+        ESC_ONLY.store(true, Ordering::Relaxed);
+        info!("INPUT-SETTLE: input never went quiet (stuck/streaming key) - countdown abort is now ESC-ONLY, other keys are ignored");
+    }
+    info!("INPUT-SETTLE: settle done after {waited} ms, discarded {keys} key(s), quiet {quiet} ms");
 }
 
 /// Poll the console input roughly every 50 ms.
