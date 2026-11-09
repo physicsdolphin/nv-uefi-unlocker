@@ -29,7 +29,7 @@
 
 **v2.1.9 起的盲区修复**：`DIAG *-OPENERS` 行现在携带驱动镜像 base+size 指纹（`tx_detach.rs::log_openers`），detach 前/重连后都能看出是 BiosVideo 还是 vendor GOP 在管 GPU。
 
-**同一次重建送走的另外两种失败形态**（现场记录，不在本文矩阵内）。两者同一机制：强制的 `DisconnectController`/`ConnectController` 返回时把显示引擎留在 FLR 后的状态、没有重跑链路训练与模式设置，系统接过一条半死的管线。(a) **多屏 / 特定输出口**：解锁后在本卡的特定接口或多于一个显示器上引导黑屏、其后的 Windows 会话也是坏的——[#105](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/105)，重建在同一批布局上（三屏、非主口单屏、热插拔）全部消除。(b) **笔记本内屏亮度（DDC-CI）**：解锁后内屏背光黑掉、亮度控制失灵，见于部分拯救者 SKU（一台 R7000 2024 实证，v2.1.10 修复；背光/DDC-CI 通道正走在被重连留在未训练态的这条内屏链路上）。本卡自己的 GOP 驱动做完整初始化（含链路训练），所以一次重建把三样都消掉。范围照此限定：退回 `\tx-reconnect-legacy.txt` 应预期这两种形态复现。
+**同一次重建送走的另外三种失败形态**（现场记录，不在本文矩阵内）。三者同一机制：强制的 `DisconnectController`/`ConnectController` 返回时把显示引擎留在 FLR 后的状态、没有重跑链路训练与模式设置，系统接过一条半死的管线。(a) **多屏 / 特定输出口**：解锁后在本卡的特定接口或多于一个显示器上引导黑屏、其后的 Windows 会话也是坏的——[#105](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/105)，重建在同一批布局上（三屏、非主口单屏、热插拔）全部消除。(b) **笔记本内屏亮度（DDC-CI）**：解锁后内屏背光黑掉、亮度控制失灵，见于部分拯救者 SKU（一台 R7000 2024 实证，v2.1.10 修复；背光/DDC-CI 通道正走在被重连留在未训练态的这条内屏链路上）。(c) **交棒蓝屏 + 虚拟显示器**：Z370 + 2080 SUPER（TU104 `1e81`，核显开、独显单屏、Win10 GSP）在 v2.1.9 时期交棒黑屏、进 Windows 约 42 s 起 `APC_INDEX_MISMATCH` 蓝屏循环（[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)，当时归"交棒完整性" #35/#61 谱系）——2026-11-09 维护者本机自测新版（native-GOP 默认化）：黑屏与蓝屏均不再出现，且**本机虚拟显示器（软件虚拟显示适配器）形态也被同一重建修掉**；帖内另一悬置读数（relock `0xffffffef`）经 #74/#191 确认为 known-good。本卡自己的 GOP 驱动做完整初始化（含链路训练），所以一次重建把四样都消掉。范围照此限定：退回 `\tx-reconnect-legacy.txt` 应预期这三种形态复现。
 
 ## 2. 路径一：native-GOP 显式恢复（`\tx-native-gop.txt`，tx 构建）
 
