@@ -62,6 +62,14 @@ pub struct Faults {
     /// Host-side meta page corruption (buffer-side bug): 0x89, but the
     /// fallback gate must NOT fire - no retry can fix our own memory.
     pub meta_magic_corrupt: bool,
+    /// 1e93 field falsification (2026-11-09, issue #156): after one
+    /// completed booter run (halt + sanitize) an engine reset no longer
+    /// hands the FBIF write surface back - falcon_dma_unblock writes
+    /// TRANSCFG0=0x115/DMACTL=0x0 and reads back 0x114/0x80, deterministic
+    /// EIO. Only a function-level FLR returns the engine to cold. The
+    /// loader's fallback must therefore FLR + re-ignite FWSEC, not just
+    /// re-fire through the reset dance.
+    pub fbif_write_dead_after_run: bool,
 }
 
 /// Payload return-path shape (canonical falcon_hs `wait_plm` split).
@@ -129,6 +137,12 @@ pub struct Transaction<'a> {
     dma_frees: usize,
     bme_set: bool,
     bme_was_dirty: bool,
+    // Completed booter runs (halt seen, verdict whatever it is) - drives the
+    // fbif_write_dead_after_run teeth (second fire needs a prior FLR).
+    booter_runs: u32,
+    // Set by the fallback's FLR modeling: the FBIF write surface is cold
+    // again and a second fire may proceed on a fbif-dead platform.
+    fbif_restored: bool,
     // Execution evidence as READ, never recomputed from Faults: the Report has to
     // describe the model's state, not the switches the test constructed.
     last_marker: Option<u32>,
@@ -156,6 +170,8 @@ impl<'a> Transaction<'a> {
             last_plm: None,
             fwsec_done: false,
             booter_done: false,
+            booter_runs: 0,
+            fbif_restored: false,
             dma_allocs: 0,
             dma_frees: 0,
             bme_set: false,
@@ -312,11 +328,13 @@ impl<'a> Transaction<'a> {
         // device read is the meta page; on a platform that cannot deliver
         // >=4GiB DMA reads that compare fails (mailbox0 = 0x89, the GA
         // plaintext second-magic-compare status) while the HOST view of the
-        // page stays intact. The loader retries ONCE in the LOW band - no
-        // FLR, nothing unlocked yet, and the fire below re-runs the reset
-        // dance itself. Mirror classes must NOT retry: the sub-4GB read lock
-        // (#16) fails a different status (0x91) on LOW, and a corrupt host
-        // page is a buffer-side bug no retry fixes.
+        // page stays intact. The loader retries ONCE in the LOW band through
+        // a function-level FLR + FWSEC re-ignition + the fire - NOT a plain
+        // re-fire: on the real machines (1e93, issue #156, 2026-11-09) the
+        // engine reset alone cannot restore the FBIF write surface after a
+        // completed run. Mirror classes must NOT retry: the sub-4GB read
+        // lock (#16) fails a different status (0x91) on LOW, and a corrupt
+        // host page is a buffer-side bug no retry fixes.
         if self.payload && self.shape == PayloadShape::AdaTriad {
             let corrupt = self.faults.meta_magic_corrupt;
             let dead_high = self.staging_high
@@ -336,17 +354,32 @@ impl<'a> Transaction<'a> {
                 let cpuctl = self.gpu.read(regs::SEC2_CPUCTL);
                 self.last_marker = Some(mbox0);
                 self.last_cpuctl = Some(cpuctl);
+                // Run 1 is complete (halt + sanitize happened, verdict
+                // whatever it is) - the FBIF surface is now write-dead on a
+                // fbif_write_dead_after_run platform.
+                self.booter_runs += 1;
                 // The loader's fallback gate: 0x89 + intact host magic + high
                 // band staged + one shot only.
                 if code == 0x89 && !corrupt && self.staging_high && !self.staging_fallback_used {
                     self.staging_fallback_used = true;
                     self.staging_high = false;
                     self.note(format!(
-                        "STAGING-FALLBACK: {why} - one retry in the LOW band (no FLR: nothing unlocked yet)"
+                        "STAGING-FALLBACK: {why} - one retry after a function-level FLR + FWSEC re-ignition, LOW band"
                     ));
                     if self.faults.both_bands_unreachable {
                         return Err(PhaseError::new("verify",
                             "STAGING-FALLBACK: LOW-band retry also undelivered (both bands unreachable, #57 analog)"));
+                    }
+                    // The 1e93 vehicle (issue #156, 2026-11-09): the plain
+                    // engine-reset re-fire cannot stick - the loader FLRs
+                    // (wiping WPR2) and re-ignites FWSEC before the fire.
+                    if self.faults.fbif_write_dead_after_run {
+                        self.gpu.force_write(regs::WPR2_LO, 0);
+                        self.gpu.force_write(regs::WPR2_HI, 0);
+                        self.fwsec_done = false;
+                        self.fwsec()?;
+                        self.fbif_restored = true;
+                        self.note("STAGING-FALLBACK: FLR + FWSEC re-ignition done (1e93 vehicle) - re-firing in the LOW band");
                     }
                     // Fall through: the fire below is attempt 2, LOW band.
                 } else {
@@ -355,6 +388,14 @@ impl<'a> Transaction<'a> {
                     )));
                 }
             }
+        }
+        // FBIF teeth (1e93): a second fire on a platform whose FBIF write
+        // surface died with the first run must refuse unless the fallback's
+        // FLR modeling restored it. Removing the FLR step from the fallback
+        // makes exactly this branch fire (the reporter's bare-run EIO shape).
+        if self.faults.fbif_write_dead_after_run && self.booter_runs >= 1 && !self.fbif_restored {
+            return Err(PhaseError::new("booter",
+                "FALCON-UNBLOCK: FBIF writes do not stick after a booter run (1e93) - the fire surface needs a function-level FLR"));
         }
         // Reset SEC2 with propagation semantics; assert then wait.
         self.gpu.write(regs::SEC2_RESET, 1);

@@ -529,3 +529,37 @@ fn t39_healthy_high_staging_never_enters_fallback() {
     assert!(report.unwind_clean && report.selectors_written);
     assert!(!tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")));
 }
+
+/// The 1e93 falsification (2026-11-09, issue #156): after one completed
+/// booter run an engine reset cannot restore the FBIF write surface (the
+/// reporter's bare rc1 run died EIO at falcon_dma_unblock with the trio
+/// reading back dirty), so the fallback's retry vehicle is FLR + FWSEC
+/// re-ignition + fire. The platform fault models the dead write surface;
+/// the transaction must recover through the FLR vehicle, not despite it.
+#[test]
+fn t40_fbif_dead_after_run_flr_retry_recovers() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults {
+            high_band_unreachable: true,
+            fbif_write_dead_after_run: true,
+            ..Default::default()
+        },
+    );
+    tx.staging_high = true;
+    let report = tx.run().expect("the FLR + FWSEC re-ignition retry must carry the boot");
+    assert!(report.unwind_clean && report.selectors_written);
+    // The one-shot gate line fires once; the FLR-vehicle completion line is
+    // the second STAGING-FALLBACK line (the real loader logs several).
+    let gate_hits = tx
+        .log()
+        .iter()
+        .filter(|l| l.contains(">=4GiB staging read undelivered"))
+        .count();
+    assert_eq!(gate_hits, 1, "the gate must fire exactly once, got {gate_hits}");
+    assert!(
+        tx.log().iter().any(|l| l.contains("FLR + FWSEC re-ignition done")),
+        "the 1e93 vehicle (FLR + FWSEC re-ignition) must be on the log"
+    );
+}

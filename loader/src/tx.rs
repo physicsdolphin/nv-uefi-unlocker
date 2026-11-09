@@ -1390,14 +1390,27 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // still carries the intact magic has exactly one meaning on the GA
     // plaintext code table (0x2784 = second magic compare failed): our write
     // landed in DRAM and SEC2's >=4GiB DMA read of it did not deliver - the
-    // unreachable-high staging band. Retry ONCE in the LOW band through the
-    // same allocation path \tx-low-staging.txt forces. No FLR: the PLM never
-    // opened and zero payload writes happened, so there is no state to
-    // protect, and booter_fire_direct performs its own B-reset before the
-    // portal reload. Everything the booter DMA-reads moves (meta, signature,
-    // radix+RM image, boot image); the booter IMAGE is portal-copied and
-    // stays. The mirror class never enters here: the sub-4GB read lock fails
-    // a different status (0x91, issues #16/#57) or succeeds outright, and a
+    // unreachable-high staging band.
+    //
+    // Retry vehicle (1e93 field falsification, 2026-11-09, issues #156): the
+    // original vehicle - same-run LOW re-stage + a plain re-fire through
+    // booter_fire_direct's engine reset - is DEAD on the machines this gate
+    // exists for. After one completed booter run (halt + sanitize) the engine
+    // reset no longer hands the FBIF write surface back: falcon_dma_unblock
+    // writes TRANSCFG0=0x115/DMACTL=0x0 and reads back 0x114/0x80 -
+    // deterministic EIO at the unblock, before the portal reload is reached
+    // (the reporter's three-row FBIF table). The retry is therefore a
+    // FUNCTION-LEVEL FLR (cold engine, cold FBIF) + a full FWSEC
+    // re-ignition (the FLR wipes WPR2) + the LOW-band re-stage + the fire.
+    // Nothing is unlocked at this point - the PLM never opened and zero
+    // payload writes happened - so the FLR has no state to destroy (the
+    // Turing FEAT PLM sits at factory and FLR resets it to the same).
+    // payload_mode=false on the flr mechanics: the selectors are still at
+    // factory and flr_phase's payload verdicts (SS==unlock) must not fire.
+    // Everything the booter DMA-reads moves (meta, signature, radix+RM
+    // image, boot image); the booter IMAGE is portal-copied and stays. The
+    // mirror class never enters here: the sub-4GB read lock fails a
+    // different status (0x91, issues #16/#57) or succeeds outright, and a
     // corrupt host page is a buffer-side bug no retry can fix.
     if !booter_ok && !force_continue
         && family_is_turing(assets.family) && payload_mode && !vram_fb
@@ -1407,8 +1420,28 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             let magic_ok = u64::from_le_bytes(meta_view[0..8].try_into().expect("meta is 256B"))
                 == tb::WPR_META_MAGIC;
             if mbox0 == 0x89 && magic_ok {
-                info!("STAGING-FALLBACK: booter 0x89 with host meta magic intact = the >=4GiB staging read did not deliver (issues #74/#156/#191 class) - one retry in the LOW band; no FLR (nothing unlocked yet, the fire does its own B-reset)");
+                info!("STAGING-FALLBACK: booter 0x89 with host meta magic intact = the >=4GiB staging read did not deliver (issues #74/#156/#191 class) - one retry after a function-level FLR + FWSEC re-ignition, LOW band");
                 crate::pci::set_high_staging(false);
+                // FLR first: the whole function back to power-on defaults -
+                // that includes the FBIF domain the first run left write-dead.
+                if let Err(e) = tb::flr_phase(gpu, &assets.family, false) {
+                    info!("STAGING-FALLBACK: FLR failed ({e:?}) - canonical failure path follows");
+                    return Err(TxError::EIO);
+                }
+                info!("STAGING-FALLBACK: FLR done (cold engine, WPR2 wiped) - FWSEC re-ignition follows");
+                // The FLR tore WPR2 down; the booter stage needs it back.
+                let bl = match assets.bl.as_ref() {
+                    Some(b) => b,
+                    None => {
+                        info!("STAGING-FALLBACK: \\sec2_bl_tu10x.bin unavailable - cannot re-ignite FWSEC");
+                        return Err(TxError::ENodev);
+                    }
+                };
+                if let Err(e) = crate::tx_fwsec::fwsec_ignite_tu10x(gpu, &layout, bl) {
+                    info!("STAGING-FALLBACK: FWSEC re-ignition failed ({e:?}) - canonical failure path follows");
+                    return Err(TxError::EIO);
+                }
+                info!("STAGING-FALLBACK: FWSEC re-ignited, WPR2 re-verified - re-staging in the LOW band");
                 let sig2 = gpu.pci.dma_alloc(sig_size.max(4096));
                 let meta2 = gpu.pci.dma_alloc(tb::WPR_META_SIZE);
                 let boot2 = gpu.pci.dma_alloc(assets.gsp_boot.len());
