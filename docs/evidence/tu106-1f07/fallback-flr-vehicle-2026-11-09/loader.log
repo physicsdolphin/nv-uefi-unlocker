@@ -1,0 +1,229 @@
+[    121ms] INFO : loader::logging: log file \loader.log opened on boot volume
+[    128ms] INFO : loader::logging: nv-uefi-unlocker v2.1.12-rc1 (tx builds carry the gated transaction; readonly = console output only)
+[    128ms] INFO : loader::logging: CONSOLE: \tx-no-console.txt present - console mirror off (fully silent run; combine with the armed marker)
+[    128ms] INFO : loader: BOOT: logger init returned, main continuing
+[    128ms] INFO : loader: ULTRAFAST: \tx-ultrafast.txt present - diagnostic probes skipped; quiet + no-canary + marker-only flush folded in; verdict readbacks unchanged
+[    128ms] INFO : loader: BOOT: diag7 log-commit=0 (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)
+[    132ms] INFO : loader: QUIET: quiet profile on (\tx-quiet.txt or \tx-ultrafast.txt) - console shows verdict lines only; every line still lands in \loader.log
+[    132ms] INFO : loader: WATCHDOG: disabled
+[    132ms] INFO : loader::banner: ==================================================
+[    132ms] INFO : loader::banner:  nv-uefi-unlocker v2.1.12-rc1 (built Mon 2026-11-09 16:28:44 +08:00)
+[    132ms] INFO : loader::banner:  ** TX BUILD: CONTAINS GPU-WRITE PATHS **
+[    135ms] INFO : loader::banner: PROMPT: armed \i_know_what_i_am_doing.txt = 5s auto-run, any key aborts; multi-GPU: all supported cards in order, \tx-select-bdf.txt (bb:dd.f) pins one; failure = no retry (next card still runs)
+[    135ms] INFO : loader::banner: ==================================================
+[    135ms] INFO : loader::banner: PHASE: CONFIRM
+[    139ms] INFO : loader::chainload: EARLY: reconnect pass over 23 PciIo handles (NVIDIA display skipped)
+[    139ms] INFO : loader::chainload: EARLY: reconnect skipped on NVIDIA display Handle(0x3a1cf218)
+[    280ms] INFO : loader::chainload: EARLY: reconnect pass done
+[    285ms] INFO : loader: FLUSH: ultrafast - count-based flush off (stage-marker lines only)
+[    288ms] INFO : loader: CONFIRM: \i_know_what_i_am_doing.txt present - ARMED: 0s countdown auto-runs, ANY key aborts
+[    288ms] INFO : loader::tx_prep: PREP: enumerate begin
+[    288ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[    292ms] INFO : loader::pci: ENUMERATE: 23 PciIo handles
+[    297ms] INFO : loader::tx_prep: PREP: gop-probe begin
+[    297ms] INFO : loader::tx_prep: GOP-PROBE: ultrafast - skipped
+[    302ms] INFO : loader::tx_prep: PREP: sample begin
+[    302ms] INFO : loader::tx_prep: SAMPLE: ultrafast - skipped
+[    307ms] INFO : loader::tx_prep: PREP: select begin
+[    311ms] INFO : loader::tx: TX-ASSET-DIAG: \tx-select-bdf.txt absent
+[    319ms] INFO : loader::tx_prep: PREP: assets begin
+[    322ms] INFO : loader::tx: TX-ASSET-DIAG: \booter_load_tu10x.bin loaded 59224/59224 bytes
+[    327ms] INFO : loader::tx: TX-ASSET-DIAG: \gsp_boot_desc_tu10x.bin loaded 76/76 bytes
+[    332ms] INFO : loader::tx: TX-ASSET-DIAG: \gsp_boot_tu10x.bin loaded 24576/24576 bytes
+[    644ms] INFO : loader::tx: TX-ASSET-DIAG: \fwimage_tu10x.bin loaded 37068768/37068768 bytes
+[    653ms] INFO : loader::tx: TX-ASSET-DIAG: \fwsignature_tu10x.bin loaded 4096/4096 bytes
+[    656ms] INFO : loader::tx: TX-ASSET-DIAG: \usbroot\v67-direct-ss.bin fs open failed ACCESS_DENIED
+[    656ms] INFO : loader::tx: TX-ASSET-DIAG: \v67-direct-ss.bin absent
+[    661ms] INFO : loader::tx: TX-ASSET-DIAG: \v67-tu10x-four-plm.bin loaded 64000/64000 bytes
+[    666ms] INFO : loader::tx: TX-ASSET-DIAG: \sec2_bl_tu10x.bin loaded 768/768 bytes
+[    673ms] INFO : loader::tx_prep: CONFIRM: 0s armed countdown elapsed - PROCEED (marker file opted in)
+[    678ms] INFO : loader::chainload: CHAIN-PRE: no \tx-preload.txt - preload is opt-in since #198, legacy chain path
+[    684ms] INFO : loader::tx: TX-ROOT-DIR: ultrafast - skipped (stick-content dump is diagnostic-only)
+[    684ms] INFO : loader: TX: ===== target 1/1: 10de:1f07 @ 0000:01:00.0 =====
+[    684ms] INFO : loader: TX: device 10de:1f07 -> asset family 'tu10x'
+[    688ms] INFO : loader: TX: V67 present - unlock mode (family-specific write chain)
+[    688ms] INFO : loader::tx: TX: BEGIN (phases: detach claim pre-flr scrub gfw layout fwsec booter verify selectors restore flr)
+[    698ms] INFO : loader::tx: TX: >4GB staging gate: true (family tu10x)
+[    701ms] INFO : loader::tx: TX: FEAT gate stays OPEN at handoff (default since 2026-11-08; \tx-relock.txt restores the legacy relock)
+[    704ms] INFO : loader::tx_detach: PM: entry PMCSR=0x0008 state=D0 (cap@0x60)
+[    704ms] INFO : loader::tx_detach: PM: D0 verified (PMCSR=0x0008)
+[    704ms] INFO : loader::tx_detach: DETACH: staged console/driver detach begin (TOTORONG craft)
+[    704ms] INFO : loader::tx_detach: DIAG topology: ultrafast - skipped (opener/openers dumps are diagnostic-only)
+[    704ms] INFO : loader::tx_detach: DETACH: pre-claim attributes raw=0x300 (VGA legacy subset 0x0 = 0x001C mask; 0x0300 alone means IO|MEM decode with no legacy VGA routing)
+[    707ms] INFO : loader::tx_detach: DETACH: stage GOP handle Handle(0x3a0b1f18) protocols 6
+[    707ms] INFO : loader::tx_detach: DETACH: console mirror MUTED until reconnect
+[    712ms] INFO : loader::tx_detach: DETACH: GOP disconnect status Ok(()) protocols 6 -> 4
+[    712ms] INFO : loader::tx_detach: DETACH: PCI disconnect status Ok(()) protocols 6 -> 4
+[    712ms] INFO : loader::tx_detach: DIAG topology: ultrafast - skipped (opener/openers dumps are diagnostic-only)
+[    712ms] INFO : loader::tx_detach: DETACH: PciIo EXCLUSIVE claimed
+[    712ms] INFO : loader::tx_detach: DETACH: Attributes(Enable) no-op (cmd=0x0000) - raw COMMAND write
+[    712ms] INFO : loader::tx_detach: DETACH: raw COMMAND write result cmd=0x0007
+[    712ms] INFO : loader::tx_detach: DETACH: config baseline (vendor=0x10de dev=0x1f07 cmd=0x0007 - MEM=true BME=true)
+[    712ms] INFO : loader::tx: TX: detach+claim ok
+[    715ms] INFO : loader::tx: PRE-FLR: disabled (no \pre-flr-on.txt) - kernel-matching flow
+[    720ms] INFO : loader::tx: AUTH-SCAN: ultrafast - skipped (pre-ignition differential probe is diagnostic-only)
+[    724ms] INFO : loader::tx: TX-tu10x: scrubber step skipped (not part of the proven Turing chain; BSI handoff state logged above)
+[    724ms] INFO : loader::tx_fwsec: layout inputs: fb_mib=0xbadf5040 vga=0x00000001 mmu_plm=0xbadf5040 mmu_lo=0x00100000 mmu_hi=0x01effff0 image=0x2359fe0 boot=0x6000
+[    724ms] INFO : loader::tx_fwsec: layout: LOCAL_MEMORY_RANGE 0x00000208 decoded usable FB = 8192 MiB (ecc=false) - driver source
+[    724ms] INFO : loader::tx_fwsec: layout: MMU_PLM PLM-locked on Turing (0xbadf5040) - skipping the lock-bit sanity check (lo/hi window remains the layout input)
+[    724ms] INFO : loader::tx_fwsec: layout mmu: lock ignored (high address is not the FB top)
+[    724ms] INFO : loader::tx_fwsec: layout: fb=0x200000000 vga=0x1fff00000 frts=0x1ffe00000 wpr=[0x1f8100000,0x1fff00000]
+[    724ms] INFO : loader::tx: TX: layout ok (frts=0x1ffe00000)
+[    724ms] INFO : loader::tx: TX-tu10x: entry WPR2 lo=0x1ffffe00 hi=0x0 (cold) - FWSEC will be fired by the loader [fwsec=ran]
+[    724ms] INFO : loader::tx_fwsec: FWSEC-TU10X: BSI_SCRATCH15=0x202001bf handoff=1 (DONE=3)
+[    724ms] INFO : loader::tx_fwsec: FWSEC-TU10X: reading PROM at 0x300000
+[    949ms] INFO : loader::tx_fwsec: FWSEC-TU10X: imem ns 0..0x300 + sec 0x300+0x9300 dmem 0x410 @img 0x9600 iface@0xdc stored=0x9a10
+[    953ms] INFO : loader::pci: MEMMAP: 0x100000000-0x140000000 (1024 MiB) type=CONVENTIONAL attr=MemoryAttribute(UNCACHEABLE | WRITE_COMBINE | WRITE_THROUGH | WRITE_BACK)
+[    953ms] INFO : loader::pci: MEMMAP: 0x140000000-0x140075000 (0 MiB) type=LOADER_CODE attr=MemoryAttribute(UNCACHEABLE | WRITE_COMBINE | WRITE_THROUGH | WRITE_BACK)
+[    953ms] INFO : loader::pci: MEMMAP: 0x140075000-0x1080000000 (62463 MiB) type=CONVENTIONAL attr=MemoryAttribute(UNCACHEABLE | WRITE_COMBINE | WRITE_THROUGH | WRITE_BACK)
+[    953ms] INFO : loader::pci: MEMMAP: 0x3f000000-0x80000000 (1040 MiB) type=RESERVED attr=MemoryAttribute(0x0)
+[    953ms] INFO : loader::pci: MEMMAP: 0xe0000000-0xf0000000 (256 MiB) type=MMIO attr=MemoryAttribute(RUNTIME)
+[    953ms] INFO : loader::pci: MEMMAP: 0xfe000000-0xfe011000 (0 MiB) type=MMIO attr=MemoryAttribute(UNCACHEABLE | RUNTIME)
+[    953ms] INFO : loader::pci: MEMMAP: 0xfec00000-0xfec01000 (0 MiB) type=MMIO attr=MemoryAttribute(UNCACHEABLE | RUNTIME)
+[    953ms] INFO : loader::pci: MEMMAP: 0xfee00000-0xfee01000 (0 MiB) type=MMIO attr=MemoryAttribute(UNCACHEABLE | WRITE_THROUGH | WRITE_BACK | WRITE_PROTECT | RUNTIME)
+[    953ms] INFO : loader::pci: MEMMAP: 0xff000000-0x100000000 (16 MiB) type=MMIO attr=MemoryAttribute(UNCACHEABLE | WRITE_THROUGH | WRITE_BACK | WRITE_PROTECT | RUNTIME)
+[    953ms] INFO : loader::pci: MEMMAP: 2 conventional descriptors above 4GB
+[    953ms] INFO : loader::pci: DMA alloc: family not gated for >4GB staging - legacy PciIo path
+[    953ms] INFO : loader::pci: DMA alloc: 10 pages memtype=EfiBootServicesData dev=0x3a05b000 [LOW] (PciIo)
+[    953ms] INFO : loader::tx_fwsec: FWSEC-TU10X: staging allocated in the LOW band by default (dev=0x3a05b000) - >=4GiB is unreachable on some platforms (issue #74); \tx-fwsec-high-staging.txt restores high
+[    953ms] INFO : loader::tx_fwsec: FWSEC mapper patched: frts=0x1ffe00000 cmd@0x3d0
+[    960ms] INFO : loader::tx: Falcon reset begin: base=0x110000 switch_to_falcon=false
+[    961ms] INFO : loader::tx: poll timeout tolerated: reg=0x1100f4 mask=0x80000000 expected=0x80000000 budget_us=1000
+[    961ms] INFO : loader::tx: Falcon pre-reset timeout tolerated per HW bug 3419321
+[    971ms] INFO : loader::tx: Falcon reset done: base=0x110000 hwcfg=0x7f7 chip=0x166000a1
+[    971ms] INFO : loader::tx_fwsec: FWSEC-TU10X: GSP reset done: rm=0x166000a1 cpuctl=0x00000010 chip=0x166000a1
+[    971ms] INFO : loader::tx_fwsec: FWSEC-TU10X: FBIF trans4=0x00000015 dmactl cleared (vram_staging=false)
+[    971ms] INFO : loader::tx_portal: PORTAL: DMEM loaded - 84 bytes at dest=0x0
+[    971ms] INFO : loader::tx_fwsec: FWSEC-TU10X: BL at IMEM dst=0xfe00 (hwcfg 256 blocks), BOOTVEC=0xfd00  <== dst != 0xfd00 (BL link addr; a 256-block IMEM puts it at 0xfe00 - normal, seen on every TU106/TU102 success too)
+[    971ms] INFO : loader::tx_portal: PORTAL: IMEM loaded - 2 blocks, 512 bytes, dest=0xfe00 va=0xfd00 secure=false
+[    971ms] INFO : loader::tx_fwsec: FWSEC-TU10X: STARTCPU, polling WPR2 up (5s budget)...
+[    974ms] INFO : loader::tx_fwsec: FWSEC-TU10X: *** WPR2 UP lo=0x1ffe000 hi=0x1ffee00 after 3ms ***
+[   1132ms] INFO : loader::tx_fwsec: FWSEC-TU10X: GSP-HALT gate: CPUCTL 0x00000000 -> halted=true after 151ms (exact WPR2 lo=0x1ffe000 hi=0x1ffee00)
+[   1136ms] INFO : loader::tx_fwsec: FWSEC-TU10X: FWSEC result (kernel shape): MAILBOX0=0x00000000 MAILBOX1=0x00000000 scratch0e=0x00000000 frts_err=0x0000
+[   1136ms] INFO : loader::tx_fwsec: FWSEC-TU10X: WPR2 verified (FRTS at 0x1ffe00000) [GSP-HALT gate]
+[   1136ms] INFO : loader::tx: TX: fwsec ok (WPR2 verified)
+[   1136ms] INFO : loader::tx: TX: tu10x BL topology pinned: size 0x6000 code@0x1800 data@0x800 manifest@0x0
+[   1136ms] INFO : loader::tx: TX: booter bundle ok (image 59136 sigs 16)
+[   1139ms] INFO : loader::pci: DMA alloc: 15 pages memtype=EfiBootServicesData HIGH dev=0x100000000 (descriptor 0x100000000+0x40000000)
+[   1142ms] INFO : loader::pci: DMA alloc: 16 pages memtype=EfiBootServicesData HIGH dev=0x10000f000 (descriptor 0x10000f000+0x3fff1000)
+[   1148ms] INFO : loader::pci: DMA alloc: 1 pages memtype=EfiBootServicesData HIGH dev=0x10001f000 (descriptor 0x10001f000+0x3ffe1000)
+[   1151ms] INFO : loader::pci: DMA alloc: 1 pages memtype=EfiBootServicesData HIGH dev=0x100020000 (descriptor 0x100020000+0x3ffe0000)
+[   1154ms] INFO : loader::pci: DMA alloc: 6 pages memtype=EfiBootServicesData HIGH dev=0x100021000 (descriptor 0x100021000+0x3ffdf000)
+[   1154ms] INFO : loader::tx: TX: booter sig fuse_ver=0 (payload_mode=true)
+[   1157ms] INFO : loader::pci: DMA alloc: 9070 pages memtype=EfiBootServicesData HIGH dev=0x100027000 (descriptor 0x100027000+0x3ffd9000)
+[   1162ms] INFO : loader::tx_booter: radix: leaves=9050 tables=20 level0=0x100027000
+[   1162ms] INFO : loader::tx_booter: WprMeta tu10x driver-exact heap: off=0x1f7100000 size=0x6900000 wpr_start=0x1f7000000 flags=0x1 (deploy marker: driver formula vs 40HX dmesg 0x1f7900000+0x6900000)
+[   1162ms] INFO : loader::tx: TX: WprMeta published (payload_mode=true)
+[   1162ms] INFO : loader::pci: DMA-PATH[before-bridge-bme]: gpu loc=Some((0, 1, 0, 0)) command=0x0007 status=0x0010 devctl=0x2910 (cap 0x78)
+[   1162ms] INFO : loader::pci: DMA-PATH[before-bridge-bme]: bridge 8086:1901 loc=Some((0, 0, 1, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/1/1 bridgectl=0x0010
+[   1162ms] INFO : loader::pci: DMA-PATH[before-bridge-bme]: bridge 8086:a167 loc=Some((0, 0, 27, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/2/2 bridgectl=0x0010
+[   1162ms] INFO : loader::pci: DMA-PATH[before-bridge-bme]: bridge 8086:a110 loc=Some((0, 0, 28, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/3/3 bridgectl=0x0010
+[   1162ms] INFO : loader::pci: DMA-PATH[before-bridge-bme]: bridge 8086:a112 loc=Some((0, 0, 28, 2)) command=0x0007 status=0x0010 pri/sec/sub=0/4/5 bridgectl=0x0010
+[   1162ms] INFO : loader::pci: DMA-PATH[before-bridge-bme]: bridge 8086:a115 loc=Some((0, 0, 28, 5)) command=0x0007 status=0x0010 pri/sec/sub=0/6/6 bridgectl=0x0010
+[   1162ms] INFO : loader::pci: DMA-PATH[before-bridge-bme]: bridge 8086:a118 loc=Some((0, 0, 29, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/7/7 bridgectl=0x0010
+[   1171ms] INFO : loader::pci: BRIDGE-BME: Some((0, 0, 1, 0)) already has bus master (command=0x0007)
+[   1171ms] INFO : loader::pci: DMA-PATH[after-bridge-bme]: gpu loc=Some((0, 1, 0, 0)) command=0x0007 status=0x0010 devctl=0x2910 (cap 0x78)
+[   1171ms] INFO : loader::pci: DMA-PATH[after-bridge-bme]: bridge 8086:1901 loc=Some((0, 0, 1, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/1/1 bridgectl=0x0010
+[   1171ms] INFO : loader::pci: DMA-PATH[after-bridge-bme]: bridge 8086:a167 loc=Some((0, 0, 27, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/2/2 bridgectl=0x0010
+[   1171ms] INFO : loader::pci: DMA-PATH[after-bridge-bme]: bridge 8086:a110 loc=Some((0, 0, 28, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/3/3 bridgectl=0x0010
+[   1171ms] INFO : loader::pci: DMA-PATH[after-bridge-bme]: bridge 8086:a112 loc=Some((0, 0, 28, 2)) command=0x0007 status=0x0010 pri/sec/sub=0/4/5 bridgectl=0x0010
+[   1171ms] INFO : loader::pci: DMA-PATH[after-bridge-bme]: bridge 8086:a115 loc=Some((0, 0, 28, 5)) command=0x0007 status=0x0010 pri/sec/sub=0/6/6 bridgectl=0x0010
+[   1171ms] INFO : loader::pci: DMA-PATH[after-bridge-bme]: bridge 8086:a118 loc=Some((0, 0, 29, 0)) command=0x0007 status=0x0010 pri/sec/sub=0/7/7 bridgectl=0x0010
+[   1176ms] INFO : loader::tx: Falcon reset begin: base=0x840000 switch_to_falcon=false
+[   1177ms] INFO : loader::tx: poll timeout tolerated: reg=0x8400f4 mask=0x80000000 expected=0x80000000 budget_us=1000
+[   1177ms] INFO : loader::tx: Falcon pre-reset timeout tolerated per HW bug 3419321
+[   1187ms] INFO : loader::tx: Falcon reset done: base=0x840000 hwcfg=0x7f7 chip=0x166000a1
+[   1187ms] INFO : loader::tx: FALCON-UNBLOCK: FBIF_CTL=0x00000190 TRANSCFG0=0x00000115 DMACTL=0x00000000 (want ctl bit7=1, trans&7=5, dmactl=0)
+[   1187ms] INFO : loader::tx_portal: PORTAL: IMEM loaded - 1 blocks, 256 bytes, dest=0x0 va=0x0 secure=false
+[   1189ms] INFO : loader::tx: TX-ASSET-DIAG: \tx-sec-base.txt absent
+[   1193ms] INFO : loader::tx_booter: BOOTER-PLACE: ns 0x0+0x100 -> dest 0 tag 0x0 | sec 0x100+0x8400 -> dest 0x100 tag 0x100 (default dest 0x100, tag==dest: true, override: false) | bootvec 0x0 (ns stub)
+[   1194ms] INFO : loader::tx_portal: PORTAL: IMEM loaded - 132 blocks, 33792 bytes, dest=0x100 va=0x100 secure=true
+[   1195ms] INFO : loader::tx_portal: PORTAL: DMEM loaded - 25088 bytes at dest=0x0
+[   1195ms] INFO : loader::tx_booter: BOOTER-AUDIT: ns readback MATCH (fnv 0016580a21)
+[   1195ms] INFO : loader::tx_booter: BOOTER-AUDIT: sec first mismatch at va 0x100: got 0xdead5ec1
+[   1204ms] INFO : loader::tx_booter: BOOTER-AUDIT: sec readback MISMATCH (fnv 0056bc76c5, 8400 bytes walked) - Turing secure pages return the scrub pattern on NS reads (field-proven on success machines); not a verdict, ns/dmem lines are
+[   1204ms] INFO : loader::tx_booter: BOOTER-AUDIT: dmem readback MATCH (fnv 00dfde6ac5)
+[   1204ms] INFO : loader::tx_booter: BOOTER-DIRECT: fire meta dev=0x10001f000 mbox0=0x0001f000 mbox1=0x00000001
+[   1209ms] INFO : loader::tx_booter: BOOTER-DIRECT start-probe: pre=0x00000010 imm=0x00000000 +5ms=0x00000000
+[   1209ms] INFO : loader::tx_booter: BOOTER-DIRECT: mbox live @sample 0: mbox0=0x00000031 mbox1=0x00000001
+[   1209ms] INFO : loader::tx_booter: BOOTER-DIRECT: sanitize reached DMEM[0x600] at sample 0 - no payload landed before it
+[   1209ms] INFO : loader::tx_booter: BOOTER-DIRECT: mid-run sampler verdict: dma_landed=false sanitized_only=true
+[   1244ms] INFO : loader::tx_booter: BOOTER-DIRECT: halted, mailbox0=0x0 mailbox1=0x1 exci=0x00900100
+[   1251ms] INFO : loader::tx_booter: BOOTER: EXCI decode: EXPC=0x100 EXCAUSE=0x9 (INV_INS) - also seen in successful runs, not a verdict by itself
+[   1251ms] INFO : loader::tx_booter: BOOTER: mailbox0 verdict: 0x0 - secure-stage success status (replay chains also end here)
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: post-halt SEC2 FBIF TRANSCFG0=0x00000114 CTL=0x00000190 (fire-time 0x115/0x190)
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: DMEM[0x0600] = 0xdead5ec2
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: DMEM[0x6140] = 0xdead5ec2
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: DMEM[0xff38] = 0xdead5ec2
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: DMEM[0xff4c] = 0xdead5ec2
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: DMEM[0xff50] = 0xdead5ec2
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: DMEM[0x0200] = 0xdead5ec2
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: DMEM verdict: signature DMA never landed - the 0x4a7 fill check is V67-SPECIFIC: in replay mode, or when sanitize wins the race to the sample point, this is NOT a rejection signal (#14/#90 field-proven false negatives; #90's PLM opened and selectors landed with this exact verdict)
+[   1251ms] INFO : loader::tx_booter: BOOTER-DIRECT: verdict deferred to POST-BOOT (mailbox0 may be input carrier or status code)
+[   1251ms] INFO : loader::tx: TX: booter fired
+[   1251ms] INFO : loader::tx_booter: POST-BOOT: FEAT_PLM=0xffffffff SS0=0x11000 SS1=0x1 (Turing 0x4096xx block)
+[   1251ms] INFO : loader::tx_booter: POST-BOOT: FACTORY FEAT_READOUT_1=0x00400080 (0 = full speed; badf5040 = PLM still closed)
+[   1251ms] INFO : loader::tx_booter: POST-BOOT: SEC2 MAILBOX0=0x00000000 WPR2_HI=0x0
+[   1251ms] INFO : loader::tx_booter: POST-BOOT: PLM open, payload did not write the selectors (ss0=0x11000 ss1=0x1 factory) - shape B: the loader writes them next, readback decides
+[   1251ms] INFO : loader::tx: TX: execution verified
+[   1254ms] INFO : loader::tx_booter: selector read: SS0=0x11000 expected_unlock=0x88888888
+[   1254ms] INFO : loader::tx_booter: selector write: SS0=0x88888888
+[   1254ms] INFO : loader::tx_booter: selector read: SS1=0x1 expected_unlock=0x8
+[   1254ms] INFO : loader::tx_booter: selector write: SS1=0x8
+[   1254ms] INFO : loader::tx: SELECTOR RESULT: SS0=0x88888888 SS1=0x8
+[   1259ms] INFO : loader::tx: TU10X FEAT sweep: ultrafast - skipped (quadruple still in HANDOFF-OUT)
+[   1263ms] INFO : loader::tx: TX: stock signature restored
+[   1263ms] INFO : loader::tx: TX-tu10x: FLR skipped (Turing FEAT PLM does not survive FLR - the unlock ships as-is; booter sanitize was the cleanup)
+[   1270ms] INFO : loader::tx: CANARY-PRE: a=0x00000000 b=0x00000000 ctrl_pmc_boot_0=0x166000a1 (as found before any write)
+[   1273ms] INFO : loader::tx: CANARY-SET: a=0x0164c0de b=0x0165cafe readback ok (armed after the last reset in the chain)
+[   1278ms] INFO : loader::gop_native: NATIVE-GOP: recovery begin (default console rebuild)
+[   1280ms] INFO : loader::tx: TX-ASSET-DIAG: \tx-native-gop.txt absent
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: marker present but empty/unreadable (size-0 is the documented form) - using the card's own shadowed ROM
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: acquiring the card's own shadowed ROM (PciIo RomImage/RomSize)
+[   1285ms] INFO : loader::pci: NATIVE-GOP: PciIo RomImage slots raw: ptr=0x3a18b018 RomSize=131072 (0x20000)
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: shadowed ROM acquired (131072 bytes) - copying
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: shadowed ROM copied (131072 bytes)
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: source = PciIo RomImage (131072 bytes)
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: ROM chain walk begin (131072 bytes)
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: EFI image at 0xea00 len 0x11600, compression=1 payload 70727 -> 135824 bytes
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: EFI_DECOMPRESS_PROTOCOL located - GetInfo next
+[   1285ms] INFO : loader::gop_native: NATIVE-GOP: GetInfo ok (dst=135824 scratch=13376) - decompressing
+[   1286ms] INFO : loader::gop_native: NATIVE-GOP: firmware decompress ok (135824 bytes)
+[   1286ms] INFO : loader::gop_native: NATIVE-GOP: PE ok: machine=0x8664 subsystem=11 SizeOfImage=0x20a40 entry=0x2448
+[   1286ms] INFO : loader::gop_native: NATIVE-GOP: LoadImage (135824 bytes PE32+)
+[   1286ms] INFO : loader::gop_native: NATIVE-GOP: LoadImage ok (Handle(0x3a0e2258)) - StartImage next
+[   1286ms] INFO : loader::gop_native: NATIVE-GOP: GOP driver started
+[   1286ms] INFO : loader::gop_native: NATIVE-GOP: unique binding Handle(0x3a0e2258) version=0x50009 - Supported next
+[   1286ms] INFO : loader::gop_native: NATIVE-GOP: binding Supported=SUCCESS
+[   1406ms] INFO : loader::gop_native: NATIVE-GOP: binding Start=SUCCESS
+[   1406ms] INFO : loader::gop_native: NATIVE-GOP: probe 0: GOP handle Handle(0x3a0abf18) path 36 bytes belongs_to_target=true
+[   1406ms] INFO : loader::gop_native: NATIVE-GOP: verified GOP child Handle(0x3a0abf18) (3840x2160) after 0 probe(s)
+[   1935ms] INFO : loader::gop_native: NATIVE-GOP: console rebound to the native GOP child
+[   1935ms] INFO : loader::gop_native: NATIVE-GOP: pre-claim VGA subset empty (raw=0x300) - chain-2 cannot engage on this board; IO|MEMORY-only (0x300) is the usual shape, not proof of no legacy-VGA conflict
+[   1935ms] INFO : loader::gop_native: NATIVE-GOP: IO|MEM decode Enable=SUCCESS
+[   1935ms] INFO : loader::gop_native: NATIVE-GOP: BME cleared for handoff (0x0007 -> 0x0003)
+[   1935ms] INFO : loader::gop_native: NATIVE-GOP: complete (display path verified)
+[   1935ms] INFO : loader::tx_detach: VGA-RESTORE: pre-claim VGA subset empty (raw=0x300) - chain-2 cannot engage on this board; IO|MEMORY-only (0x300) is the usual shape, not proof of no legacy-VGA conflict
+[   1935ms] INFO : loader::tx: CONSOLE: mirror re-enabled after reconnect
+[   1935ms] INFO : loader::tx: FINAL: transaction complete, all DMA released
+[   1942ms] INFO : loader: SELECTOR RESULT: transaction complete
+[   1947ms] INFO : loader::tx: HANDOFF-OUT: ss0=0xbadf5040 ss1=0xbadf5040 readout1=0xbadf5040 feat_plm=0xbadf5040 wpr2_lo=0x01f70000 wpr2_hi=0x0 canary=intact(0x0164c0de/0x0165cafe) pmcsr=0x0008 dstate=D0 | tu10x: plm=0xffffffff ss0=0x88888888 ss1=0x00000008 readout=0x00000000 | tu10x:unlock=true ga/ada:ss0_unlock=false ss1_unlock=false plm_open=false
+[   1951ms] INFO : loader: TX: multi-GPU pass complete (1 target(s): 1 attempted, 0 skipped - per-card verdicts above)
+[   1951ms] INFO : loader::chainload: PHASE: CHAIN
+[   1960ms] INFO : loader::tx: TX-ASSET-CACHE: cleared 11 entries, 37221508 bytes handed back to the firmware allocator
+[   1960ms] INFO : loader::chainload: CHAIN-MEMMAP: ultrafast - skipped (low-memory forensics dump)
+[   1964ms] INFO : loader::chainload: CHAIN-BOOT: BootOrder 5 entries
+[   1964ms] INFO : loader::chainload: CHAIN-BOOT: [0] Boot0001: attrs=0x1 desc="^UEFI OS" path= hd(part3,sig2:57e4e6a029c1c9458ae90088f7e39d91) file:"\EFI\BOOT\BOOTX64.EFI" END
+[   1965ms] INFO : loader::chainload: CHAIN-BOOT: [1] Boot0000: attrs=0x9 desc="tWindows Boot Manager" path= hd(part1,sig2:c1908b28d826c04bbb969cc03997723e) file:"\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI" END  <WINDOWS>
+[   1966ms] INFO : loader::chainload: CHAIN-BOOT: [2] Boot0002: attrs=0x1 desc="UEFI:CD/DVD Drive" path= node(0x05,0x01,9) END
+[   1966ms] INFO : loader::chainload: CHAIN-BOOT: [3] Boot0003: attrs=0x1 desc="UEFI:Removable Device" path= node(0x05,0x01,9) END
+[   1967ms] INFO : loader::chainload: CHAIN-BOOT: [4] Boot0004: attrs=0x1 desc="UEFI:Network Device" path= node(0x05,0x01,9) END
+[   1967ms] INFO : loader::chainload: CHAIN-BOOT: firmware's first Windows target = [1] Boot0000
+[   1967ms] INFO : loader::chainload: CHAIN: reconnect pass skipped (ultrafast - nothing it binds was ever detached)
+[   1967ms] INFO : loader::chainload: CHAIN: 7 SimpleFileSystem handles
+[   1977ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: 5 entries, self=Boot0001
+[   1977ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [0] Boot0001 is this boot (self) - skipped
+[   1978ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [1] Boot0000 short-form HD option hd(part1,sig288b90c1-26d8-4bc0-bb96-9cc03997723e) - matching partition identity (firmware BmExpandPartitionDevicePath)
+[   1978ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [1] Boot0000 short-form HD identity match on Handle(0x3a427e98) (vol=hd(part1,sig288b90c1-26d8-4bc0-bb96-9cc03997723e)) - not by path alignment
+[   1979ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [1] Boot0000 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI' on the firmware's volume - chaining its choice
+[   1979ms] INFO : loader::chainload: CHAIN: LoadImage (FromDevicePath)
