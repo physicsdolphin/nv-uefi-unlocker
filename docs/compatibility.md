@@ -49,7 +49,7 @@
 | AD107 | 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1 | ✅ 28a0/2882；🟢 28e1 · [详情](#device-2) |
 | AD107 | 4050 Laptop **28a1** | ✅ 28a1 · [详情](#device-3) |
 | AD106 | 4060Ti 2803 / 4060Ti 16G 2805 / 4060 **2808** | ✅ 2803/2805；🟢 2808 · [详情](#device-4) |
-| AD106 | 4070 Laptop **2820**（魔改卡同 ID）/ **2860** | 🟡 2820；✅ 2860（全链+同引导 ssdiag，无 A/B，[#202](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/202)）· [详情](#device-5) |
+| AD106 | 4070 Laptop **2820**（魔改卡同 ID）/ **2860** | ✅ 2820（#10 路由修复案：v2.1.0 修复后同卡成功确认——B 站评论+GPU-Z 截图，无修复后 log/ssdiag/A/B，证据 `docs/evidence/2820-4070m-modded/`）；✅ 2860（全链+同引导 ssdiag，无 A/B，[#202](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/202)）· [详情](#device-5) |
 | AD104 | 4070Ti 2782 / 4070S 2783 / 4070 2786 / 4060Ti **2788**（AD104 刷新版）/ 4080 Laptop **27a0 / 27e0**；ES：AC AD104 20GB **2785** | ✅ 2783 / 2782（解锁模式）；其余保留上游层级 · [详情](#device-6) |
 | AD103 | 4080S 2702 / 4080 2704 / 4070TiS 2705 / **4070 2709** / 4090M **2757 / 2717** | ✅ 2702/2704/2705/2709/2757（2702 另含 32GB 魔改 + HVCI ON 正面点 [#204](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/204)）；🟢 2717 · [详情](#device-7) |
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**；ES：TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689；🟢 2685/2681/26af · [详情](#device-8) |
@@ -101,7 +101,7 @@
 
 ### AD106 · 4070 Laptop 2820 / 2860
 
-`2820` 为官方 4070 Laptop ID（魔改卡复用同 ID）：家族路由和资产可用，EFI 实机结果待验证。魔改卡反馈需包含原卡型号、VBIOS 与完整 `loader.log`。来源：[#10](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/10)。
+`2820` 为官方 4070 Laptop ID（魔改卡复用同 ID）：**✅ 按修复覆盖计支持（维护者裁定 2026-11-10）**——[#10](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/10) 路由缺失 bug（v0.2.0 实机 log：`no asset family mapping - skipping`，已归档 `docs/evidence/2820-4070m-modded/`）经 v2.1.0 路由表修复，同卡修复后成功确认（B 站评论 + GPU-Z 截图；**无修复后 loader.log、无系统内 ssdiag、无性能 A/B，层级局限如实保留**）。魔改卡反馈仍应包含原卡型号、VBIOS 与完整 `loader.log`。
 
 `2860` 为同卡的另一官方 ID，经 open-gpu-kernel-modules 兼容列表与 pci.ids 双源复核（2026-11-02）；运行时白名单段 `0x2600..=0x28ff` 全覆盖，无需改动即可运行。**2026-11-07 首个实机记录（[#202](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/202)，ASUS TUF Gaming F16 FX607JIR，i9-14900HX，BIOS `FX607JIR.314`，8 GiB，VBIOS `95.06.34.00.4e`，Win 26H1 28000.3365，驱动 621.14，SB off；官方 v2.1.10 原包，`BOOTX64`/资产逐级 SHA-256 过）**：路由 ad102、payload 载入、FWSEC WPR2 验证、booter 点火与执行验证、SS0/SS1 写读 `0x88888888`/`0x8`、POST-FLR AON 存活、native-GOP 重建并验证显示、FINAL 全 DMA 释放、交棒 `HANDOFF-OUT` 三布尔全对；同一次引导内 ssdiag 0.6.4 读回 PLM `0xffffffff (OPEN)` 与 `VERDICT [ada]: UNLOCKED`。**限制如实**：无锁定态 A/B（无性能数字）、睡眠/断电持久性未测、MUX/CSM 未记录；EFI 侧链路 Gen4 x8、ssdiag 快照 Gen3 x8，ReBAR BAR1 8192 MiB。魔改卡（`2820`）反馈仍需包含原卡型号、VBIOS 与完整 `loader.log`。来源：[#10](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/10)、[#202](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/202)。
 

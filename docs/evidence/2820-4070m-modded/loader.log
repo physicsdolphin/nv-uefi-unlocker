@@ -1,0 +1,133 @@
+[INFO ] loader::logging: log file \loader.log opened on boot volume
+[INFO ] loader::logging: nv-uefi-unloader v0.2.0 (M0 skeleton: read-only)
+[INFO ] loader::banner: ==================================================
+[INFO ] loader::banner:  nv-uefi-unlocker v0.2.0 (built 2026/10/27 �ܶ� 15:56:23.39)
+[INFO ] loader::banner:  ** TX BUILD: CONTAINS GPU-WRITE PATHS **
+[INFO ] loader::banner:  transaction: claim->gfw->fwsec->booter->selectors->flr
+[INFO ] loader::banner:  30s no-key = ABORT to Windows; failure = no retry
+[INFO ] loader::banner: ==================================================
+[INFO ] loader::banner: PHASE: CONFIRM
+[INFO ] loader: CONFIRM: key Printable(',') pressed, proceeding
+[INFO ] loader::pci: PHASE: ENUMERATE (read-only)
+[INFO ] loader::pci: ENUMERATE: 31 PciIo handles
+[INFO ] loader::pci: PCI 0000:00:00.0 8086:a702 class 000600
+[INFO ] loader::pci: PCI 0000:00:01.0 8086:a70d class 000604
+[INFO ] loader::pci: PCI 0000:01:00.0 1002:1478 class 000604
+[INFO ] loader::pci: PCI 0000:02:00.0 1002:1479 class 000604
+[INFO ] loader::pci: PCI 0000:03:00.0 1002:7550 class 000300
+[INFO ] loader::pci: PCI 0000:03:00.1 1002:ab40 class 000403
+[INFO ] loader::pci: PCI 0000:00:02.0 8086:a788 class 000380
+[INFO ] loader::pci: PCI 0000:00:06.0 8086:a74d class 000604
+[INFO ] loader::pci: PCI 0000:04:00.0 1987:5015 class 000108
+[INFO ] loader::pci: PCI 0000:00:08.0 8086:a74f class 000880
+[INFO ] loader::pci: PCI 0000:00:0a.0 8086:a77d class 001180
+[INFO ] loader::pci: PCI 0000:00:14.0 8086:7ae0 class 000c03
+[INFO ] loader::pci: PCI 0000:00:14.2 8086:7aa7 class 000500
+[INFO ] loader::pci: PCI 0000:00:16.0 8086:7ae8 class 000780
+[INFO ] loader::pci: PCI 0000:00:17.0 8086:7ae2 class 000106
+[INFO ] loader::pci: PCI 0000:00:1a.0 8086:7ac8 class 000604
+[INFO ] loader::pci: PCI 0000:05:00.0 1e4b:1202 class 000108
+[INFO ] loader::pci: PCI 0000:00:1c.0 8086:7ab8 class 000604
+[INFO ] loader::pci: PCI 0000:00:1c.1 8086:7ab9 class 000604
+[INFO ] loader::pci: PCI 0000:07:00.0 14c3:7922 class 000280
+[INFO ] loader::pci: PCI 0000:00:1c.2 8086:7aba class 000604
+[INFO ] loader::pci: PCI 0000:08:00.0 8086:15f3 class 000200
+[INFO ] loader::pci: PCI 0000:00:1c.4 8086:7abc class 000604
+[INFO ] loader::pci: PCI 0000:09:00.0 10de:2820 class 000300
+[INFO ] loader::pci: NVIDIA GPU? 0000:09:00.0 device 2820
+[INFO ] loader::pci:   BAR0 32-bit mem base 0x81000000
+[INFO ] loader::pci:   BAR1 64-bit mem base 0x0000006420000000
+[INFO ] loader::pci:   BAR3 64-bit mem base 0x0000006430000000
+[INFO ] loader::pci:   BAR5 io base 0x3000
+[INFO ] loader::pci:   cap 0x01 @0x60
+[INFO ] loader::pci:   cap 0x05 @0x68
+[INFO ] loader::pci:   PCIe cap @0x78: DEVCAP 0x17e88de1 (FLR yes) LINKCAP 0x00456884
+[INFO ] loader::pci:   cap 0x09 @0xb4
+[INFO ] loader::pci:   ext cap 0x0002 @0x0100
+[INFO ] loader::pci:   ext cap 0x0018 @0x0250
+[INFO ] loader::pci:   ext cap 0x001e @0x0258
+[INFO ] loader::pci:   ext cap 0x0004 @0x0128
+[INFO ] loader::pci:   ext cap 0x0001 @0x0420
+[INFO ] loader::pci:   ext cap 0x000b @0x0600
+[INFO ] loader::pci:   ext cap 0x0019 @0x0900
+[INFO ] loader::pci:   ReBAR cap @0x0bb0: 0 resizable BAR(s)
+[INFO ] loader::pci:   ext cap 0x0026 @0x0c1c
+[INFO ] loader::pci:   ext cap 0x0027 @0x0d00
+[INFO ] loader::pci:   ext cap 0x0025 @0x0e00
+[INFO ] loader::pci: PCI 0000:09:00.1 10de:22bd class 000403
+[INFO ] loader::pci: NVIDIA fn 0000:09:00.1 device 22bd
+[INFO ] loader::pci:   BAR0 32-bit mem base 0x82080000
+[INFO ] loader::pci:   cap 0x01 @0x60
+[INFO ] loader::pci:   cap 0x05 @0x68
+[INFO ] loader::pci:   PCIe cap @0x78: DEVCAP 0x07e88de1 (FLR yes) LINKCAP 0x00456884
+[INFO ] loader::pci:   ext cap 0x0001 @0x0100
+[INFO ] loader::pci:   ext cap 0x0025 @0x0160
+[INFO ] loader::pci: PCI 0000:00:1d.0 8086:7ab0 class 000604
+[INFO ] loader::pci: PCI 0000:0a:00.0 8086:2522 class 000108
+[INFO ] loader::pci: PCI 0000:00:1f.0 8086:7a84 class 000601
+[INFO ] loader::pci: PCI 0000:00:1f.3 8086:7ad0 class 000403
+[INFO ] loader::pci: PCI 0000:00:1f.4 8086:7aa3 class 000c05
+[INFO ] loader::pci: PCI 0000:00:1f.5 8086:7aa4 class 000c80
+[INFO ] loader::gop: PHASE: GOP-PROBE (read-only)
+[INFO ] loader::gop: GOP-PROBE: 1 GOP handles
+[INFO ] loader::gop: GOP handle Handle(0x6a5ba518): 1920x1080 Bgr
+[INFO ] loader::sample: PHASE: SAMPLE (M1 read-only cold state)
+[INFO ] loader::sample: SAMPLE: GPU 10de:2820 @ 0000:09:00.0
+[INFO ] loader::sample: SAMPLE PMC_BOOT_0 chip-id = 0x196000a1 [ok]
+[INFO ] loader::sample: SAMPLE FB_SIZE_MIB 0x1183a4 = 0x00001ffc [ok]
+[INFO ] loader::sample: SAMPLE VGA_WORKSPACE 0x625f04 = 0x00000001 [ok]
+[INFO ] loader::sample: SAMPLE GFW_PLM 0x118128 = 0x00008b8f [ok]
+[INFO ] loader::sample: SAMPLE GFW_SCRATCH 0x118234 = 0x000003ff [ok]
+[INFO ] loader::sample: SAMPLE GSP_CPUCTL 0x110100 = 0x00000010 [ok]
+[INFO ] loader::sample: SAMPLE PGC6_BSI_SCRATCH15 0x1180fc = 0x201001bf [ok]
+[INFO ] loader::sample: SAMPLE MMU_PLM 0x1fa7c8 = 0x0045cb8f [ok]
+[INFO ] loader::sample: SAMPLE MMU_LOCK_LO 0x1fa82c = 0x00100000 [ok]
+[INFO ] loader::sample: SAMPLE MMU_LOCK_HI 0x1fa830 = 0x01efbff0 [ok]
+[INFO ] loader::sample: SAMPLE WPR2_LO 0x1fa824 = 0x1ffffe00 [ok]
+[INFO ] loader::sample: SAMPLE WPR2_HI 0x1fa828 = 0x00000000 [ok]
+[INFO ] loader::sample: SAMPLE SEC2_CPUCTL 0x840100 = 0xbadf5620 [BADF_VARIANT]
+[INFO ] loader::sample: SAMPLE FUSE_OPT_FEAT_OVR_DISABLE 0x8203f0 = 0x00000000 [ok]
+[INFO ] loader::sample: SAMPLE FUSE_VER 0x824140 = 0x00000001 [ok]
+[INFO ] loader::sample: SAMPLE FUSE_VER_DECODE 0x8241c0 = 0x00000001 [ok]
+[INFO ] loader::sample: SAMPLE AD1xx CYA 0x88724 = 0x00000028 [ok]
+[INFO ] loader::sample: SAMPLE AD1xx CFG 0x88dcc = 0x80000002 [ok]
+[INFO ] loader::sample: SAMPLE AD1xx XVE_PLM 0x88ff4 = 0xffffff8f [ok]
+[INFO ] loader::sample: SAMPLE AD1xx BAR1_CAP_MIRROR 0x88bbc = 0x00001c00 [ok]
+[INFO ] loader::sample: SAMPLE ADA WPR_PLM 0x1fa7c4 = 0x0004cb8f [ok]
+[INFO ] loader::sample: SAMPLE ADA WPRCFG_PLM 0x1fa7cc = 0x0004cb8f [ok]
+[INFO ] loader::sample: SAMPLE ADA FBPA_PLM 0x9a0148 = 0xffffff0f [ok]
+[INFO ] loader::sample: SAMPLE TU10x FEAT_PLM 0x409650 = 0xbadf5040 [PRIV_VIOLATION]
+[INFO ] loader::sample: SAMPLE TU10x FEAT_SS0 0x409664 = 0xbadf5040 [PRIV_VIOLATION]
+[INFO ] loader::sample: SAMPLE FEAT sweep 0x823800-0x82382f+0x823b00 (dword stride): 13 ok / 0 badf / 0 all-ones / 0 read-errors
+[INFO ] loader::sample: SAMPLE FEAT 0x823800 = 0xffffff8f [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823804 = 0xffffff8f [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823808 = 0x01100182 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x82380c = 0x00888888 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823810 = 0x00aaaaaa [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823814 = 0x00000233 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823818 = 0x00410080 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x82381c = 0x55613166 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823820 = 0x00000007 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823824 = 0x00000000 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823828 = 0x00000001 [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x82382c = 0x0000000a [ok]
+[INFO ] loader::sample: SAMPLE FEAT 0x823b00 = 0x00004b8f [ok]
+[INFO ] loader::sample: SAMPLE FEAT_READOUT_1 = 0x00410080 (0 = no compute throttle active)
+[INFO ] loader::sample: SAMPLE PSTRAPS SET0 0x101000 = 0x00400080 [ok] / SET1 0x10100c = 0x02013000 [ok]
+[INFO ] loader::sample: SAMPLE PSTRAPS decode: BAR1 index 0 = 64MiB  BAR0 index 0 (16MiB<<idx)  BAR3=2xBAR0  override_en=0 (0 = ROM straps win on reset)
+[INFO ] loader::sample: SAMPLE NV_PROM first 0x10000 bytes: crc32 0x0cfcc044, magic 0xeb7eaa55
+[INFO ] loader::sample: SAMPLE complete (read-only, nothing restored because nothing touched)
+[INFO ] loader::tx: TX-ROOT-DIR: ? size=4096
+[INFO ] loader::tx: TX-ROOT-DIR:   size=4096
+[INFO ] loader::tx: TX-ROOT-DIR:   size=36864
+[INFO ] loader::tx: TX-ROOT-DIR:   size=84
+[INFO ] loader::tx: TX-ROOT-DIR:   size=8264
+[INFO ] loader::tx: TX-ROOT-DIR:   size=64000
+[INFO ] loader::tx: TX-ROOT-DIR:   size=57672
+[INFO ] loader::tx: TX-ROOT-DIR:   size=84226048
+[INFO ] loader::tx: TX-ROOT-DIR:  size=8132
+[INFO ] loader: TX: device 10de:2820 has no asset family mapping - skipping
+[INFO ] loader::chainload: PHASE: CHAIN
+[INFO ] loader::chainload: CHAIN: 10 SimpleFileSystem handles
+[INFO ] loader::chainload: CHAIN: loader found on Handle(0x6a029f98): \EFI\Microsoft\Boot\bootmgfw.efi
+[INFO ] loader::chainload: CHAIN: LoadImage (FromDevicePath)
