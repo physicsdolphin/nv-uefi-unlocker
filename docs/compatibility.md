@@ -82,6 +82,7 @@
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1
 
 `28a0` 全链与 Windows 性能验证通过（两份独立报告：[#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50) 极光15 与 [#136](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/136) 耀世15Pro——后者为 **v2.1.9 首份同脚本匹配 A/B 全精度谱**：FP16 +81%/BF16 +80%/TF32 +79%/FP8 +85%，FP32/显存/时钟三对照持平，第二套基准交叉差 2%；140 W 薄轻机身下绝对值低 13–15% 属散热包络，每 MHz 效率与 #119 对齐）；`2882` 一手 Windows 实测通过（Win10 22H2 + B760M AMI，首次冷启动即成功，matched A/B：FP16 +57% / BF16 +63% / FP8 +47%，FP16-acc/FP32/INT8 三对照平坦，数值与 ada2882 canary 逐位对齐；解锁后时钟反降 2250MHz 仍 +1.5×——power-wall 限与 4090 侧信道一致）；`28e1` 保留上游硅验证层级。来源：[#50](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/50)、[#124](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/124)、[#136](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/136)。
+`28a0` 第三平台（[bailu974 记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)，2026-11-08/09）：COLORFIRE MEOW R15 24 / Ryzen 7 7435H / Insyde `1.07.11COLO1`，驱动 576.88（旧驱动跑通）；**Secure Boot 开启**——用该 Insyde 固件的 `Select a UEFI file as trusted for execution`（按文件信任，PK/KEK/db 未动，FAQ 路线 C 首例）；**ESP 驻留**（固件拒建新 `BootXXXX` 回 `err=87`，改写 `Boot0000` + `Boot2001` 兜底，首例）；本地补丁免疫 EC 合成的 `0x03` 幽灵键（卡键家族第二例，FAQ 幽灵按键节）；8192³ BF16 27.20→40.94（+50.5%）/FP16 +49.8%/FP32 平，ssdiag `UNLOCKED`；**附带反例：SB 开启下 ssdiag 的 pmxdrv 实际加载成功**（与"必然被拒"的默认预期矛盾，机理未知，见 FAQ）。
 
 <a id="device-3"></a>
 

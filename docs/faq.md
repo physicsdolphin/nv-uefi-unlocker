@@ -12,6 +12,7 @@
 - [Windows 睡眠后解锁还在吗？（S3 / S0ix 现代待机）](#sleep)
 - [雷电 3/4/USB4 eGPU 能保留解锁吗？](#thunderbolt)
 - [Secure Boot 开着能用吗？（自签）](#secureboot)
+- [确认倒计时被“幽灵按键”中止（卡键）](#ghost-key)
 - [怎样在系统内检查或修复解锁？](#ssdiag)
 - [pmxdrv.sys 的安全模型与权衡（必读披露）](#pmxdrv)
 - [杀毒软件报毒怎么办？](#av-fp)
@@ -438,6 +439,8 @@ Turing 的交棒自 2026-11-08 起默认**门开**（与 Ampere/Ada 一致；TU1
 三条边界，不看清就会对后面的步骤产生错误预期：
 
 - **自签不解决 `ssdiag`**。`pmxdrv.sys` 是 Intel/COMODO 2018 交叉签名、没有微软根，`tools/ssdiag/README.md` 的原话是 load is **expected** to be refused；它列的三个豁免（≤1607 升级来的系统 / Secure Boot 关闭 / 签名证书早于 2015-07-29）在这张 2018-10-24 签发的叶证书上都不成立。所以 SB 常开时，系统内读回走 `loader.log` 的 `HANDOFF-OUT`。Linux 侧 `tools/diag-unlock.py` 是零驱动路径，但**没有人在 Secure Boot 开启状态下验证过它**。要 `ssdiag --reapply` 修回锁，仍需临时关一次 SB。
+
+  **一个反例数据点（2026-11-09，[bailu974 的记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)）**：一台 Insyde 笔记本（COLORFIRE MEOW R15 24）在 Secure Boot 开启下，`ssdiag` 打印了这条预置警告，**但驱动实际加载成功**——末尾有 `driver service removed`，且 `0x823xxx` 的 MMIO 读数完整（读不出这些值就说明驱动没在）。机理未知（该机的 DSE/漏洞驱动 blocklist 状态未采集），**默认预期仍是"被拒"**，但请把这条警告当作提示而非判词：看末尾的 `driver service removed` 与寄存器读数是否完整再下结论，回报时请附上你的结果是"加载成功"还是"被拒"——这能把上表往任一方向推。
 - **反作弊不保证**。自签不改 Secure Boot 的状态位；据维护者陈述 Vanguard（LoL）看的就是这个状态位，而**反作弊本身没有任何一方实测过**（本条目所依据的报告者也明确写了未测）。ACE 系校验 TPM/PCR[7] 链式记录，自签链的度量与原厂引导不同，不保证通过（机制与「刷进固件」的对比见下文[两条路的度量代价](#secureboot-vs-ffs)）。
 - **换版本必须重签**：签名后改一个字节即失效；`*.bin` 资产不参与 PE 校验，不需要签。
 
@@ -451,18 +454,19 @@ Suspend-BitLocker -RebootCount 1
 
 有一份报告用这条命令后未出现提示——那是一个机位的结果，不构成对其他配置的保证。
 
-### 两条路怎么选
+### 三条路怎么选
 
-| | 路线 A：签进 db | 路线 B：MOK + shim |
-| --- | --- | --- |
-| 改动范围 | 固件 `db` 里多一张证书 | 固件密钥库不动，密钥放在 U 盘的 MOK |
-| 最坏结果 | 清 PK 且该板无法恢复厂商 PK → Secure Boot 长期开不起来 | 引导失败，删掉 U 盘上的文件即回原状 |
-| 固件升级 / 清 CMOS 之后 | `db` 可能被重置，需重新追加 | 不受影响（MOK 在盘上） |
-| 可用前提 | 该板 Key Management 可编辑 | 有微软签名的 shim（任意发行版的 `shim-signed` 包） |
+| | 路线 A：签进 db | 路线 B：MOK + shim | 路线 C：固件按文件信任 |
+| --- | --- | --- | --- |
+| 改动范围 | 固件 `db` 里多一张证书 | 固件密钥库不动，密钥放在 U 盘的 MOK | 固件私有信任列表多一个文件条目（PK/KEK/db 不动，多数机器连 db 都不暴露） |
+| 最坏结果 | 清 PK 且该板无法恢复厂商 PK → Secure Boot 长期开不起来 | 引导失败，删掉 U 盘上的文件即回原状 | 引导失败，删掉 U 盘上的文件即回原状；信任条目残留但只信任你的文件 |
+| 固件升级 / 清 CMOS 之后 | `db` 可能被重置，需重新追加 | 不受影响（MOK 在盘上） | 未测（按文件哈希绑定的话，固件更新后多半要重新加） |
+| 可用前提 | 该板 Key Management 可编辑 | 有微软签名的 shim（任意发行版的 `shim-signed` 包） | 固件页面里有 `Select a UEFI file as trusted for execution`（部分 Insyde 机型有，多数机器没有） |
+| 证书/密钥 | 需要（第 0 步） | 需要（第 0 步） | **完全不需要** |
 
-**Key Management 不可编辑的板子只有路线 B 可选。**
+**Key Management 不可编辑的板子：先看有没有路线 C 的那个菜单项，有就是最省事的路；没有则只有路线 B 可选。**
 
-### 第 0 步：生成密钥（两条路共用）
+### 第 0 步：生成密钥（路线 A/B 共用；路线 C 不需要任何密钥）
 
 需要 Linux 或 WSL。工具包：Debian/Ubuntu `sbsigntool binutils mokutil`，Fedora `sbsigntools binutils mokutil`，Arch `sbsigntools binutils mokutil`；路线 A 另需 `efitools`（或者 `sbctl`），路线 B 另需 `shim-signed` / `shim-x64`。Windows 上只能在 WSL 里做，签名也可换用 `signtool`（仅路线 A 第 1 步）。
 
@@ -560,7 +564,19 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
 
 7. **首次引导**：shim 报 `Verification failed: (0x1A)` 属于预期（此时 MOK 还没登记），随后出现 `Press any key to perform MOK management` 的 **10 秒倒计时——必须在这个窗口里按键**。不按的话 shim 会静默继续往下走，loader 根本不会被执行，看起来就像"什么都没发生"（#210 实测）。进入 MokManager 后：Enroll key from disk → `MOK.der` → 设一次性密码 → 重启确认 Enroll。之后每次引导：shim（微软签）→ 用 MOK 验你的签名 → 启动 loader → 解锁 → 链回 `bootmgfw`，Secure Boot 全程开启。
 
-内置 ESP 变体（**本项目未验证，也不推荐**）：把上面四个文件放进内置 ESP 的 `\EFI\BOOT\`。报告者观察到 loader 在 CHAIN-BOOT 里会跳过自己的 `Boot####` 与同一 ESP 上的 Windows 项，因此可以排在 BootOrder 首位而不循环。代价有两个：README 的明确建议是「[不要复制到系统 ESP](../README.md)，也不需要调整永久启动顺序」，以及那 85 MB 资产要放在 Windows ESP 的根目录——动手前先看剩余空间。
+内置 ESP 变体（**本项目不推荐；现有两份现场记录，都属于用户自担风险的偏离**）：把四个文件放进内置 ESP，免掉每次插 U 盘。变体 1（#162 报告者）：文件放 `\EFI\BOOT\`、排在 BootOrder 首位——loader 在 CHAIN-BOOT 里会跳过自己的 `Boot####` 与同一 ESP 上的 Windows 项，不循环。变体 2（[bailu974 的记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)，2026-11-09）：那块 Insyde 固件**拒绝新建 `BootXXXX`**（`SetFirmwareEnvironmentVariableEx` 回 `err=87`，但改写已有项放行），于是改写 `Boot0000`（Windows Boot Manager 项）指向 `\EFI\nvunlock\BOOTX64.EFI`，并把原始项备份到 `Boot2001` 兜底；资产摊在 ESP 根（loader 只从自己所在卷的根读资产，不看子目录，84 MB 需 ESP 有余量）。共同代价：README 的明确建议是「[不要复制到系统 ESP](../README.md)」，改 `Boot0000`/改 ESP 都可能让机器起不来——动手前先备份、确认能进 BIOS 恢复；两份记录的作者都自报了备份与回滚脚本。
+
+### 路线 C：固件自带的按文件信任（一台机记录，本项目未复现）
+
+部分 Insyde 固件的 `Administrator Secure Boot` 页面提供 **`Select a UEFI file as trusted for execution`**：直接把指定的 `.efi` 文件加进固件信任列表，**不动 PK/KEK/db、不需要任何证书**（第 0 步整段跳过）。依据是 [bailu974 的记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)（COLORFIRE MEOW R15 24，Insyde `1.07.11COLO1`）：加信任 → `Enforce Secure Boot` 改回 Enabled → U 盘 loader 被放行，全链跑完，`Confirm-SecureBootUEFI` 为开。
+
+操作要点与坑（全部来自该记录）：
+
+1. **先确认你的固件有这一项**——没有的话这条路不存在（不要为此去清 PK；那属于路线 A 的风险范畴）。页面里的 `Erase all Secure Boot Settings` / `Restore Secure Boot to Factory Settings` 是**立即执行的操作项**，不是开关，别点。
+2. 信任**很可能是按文件哈希绑的**：该机固件连 `db`/`dbx` 都不通过标准变量暴露（读回 `ERROR_ENVVAR_NOT_FOUND`），信任列表存在私有 NVRAM 区。**换掉 `BOOTX64.EFI` 之后必须回 BIOS 重新加一次信任**。
+3. BitLocker 先决：该机 C: 未加密所以没有弹恢复密钥；若你的盘开着 BitLocker，改 Secure Boot 状态前先挂起保护（见上文[动手之前](#动手之前bitlocker)）。
+4. `bootmgfw.efi` 有微软签名，Enforce 之后 Windows 照常启动；最坏结果是「我们的 loader 被拒」，不是「系统起不来」。
+5. 证据等级：一台机、记录者自报、未由本项目复现；且该记录里被信任的是**改过的本地构建**（见[卡键](#幽灵按键)一节）而非发布件——信任 UI 对原版发布件应同样可用，但没人测过。
 
 <a id="secureboot-vs-ffs"></a>
 
@@ -601,10 +617,34 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 | Secure Boot 开启 + `diag-unlock.py` | 无 | 未验证 |
 | 反作弊（Vanguard / ACE） | 维护者陈述 | 未测量 |
 | 固件内置 FFS 路线 | `docs/dxe-driver-ffs-feasibility.md`（设计、风险、PCR[1]/BitLocker 影响） | 未实机验证 |
+| 路线 C（按文件信任） | [bailu974 记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)：Insyde 文件信任 + Enforce，全链跑通 | 一台机；本项目未复现 |
+| `ssdiag` 在 SB 开启下加载成功 | 同上记录：预置警告打印但驱动加载、MMIO 读数完整 | 一台机反例；机理未知，默认预期仍是被拒 |
+| 内置 ESP + 改写 `Boot0000`（固件拒建新 `BootXXXX`，`err=87`） | 同上记录：`Boot2001` 兜底 + 备份脚本 | 一台机；偏离 README 纪律，自担风险 |
 
 跑了任一条路，欢迎回报**主板型号**、**`ssdiag` 是否被拒**、**BitLocker 是否弹过恢复密钥**、**`diag-unlock.py` 在 SB 开启下是否可读**——这四项各自能把上面的行往前推一格。
 
 <a id="ssdiag"></a>
+
+<a id="ghost-key"></a>
+
+## 确认倒计时被“幽灵按键”中止（卡键）
+
+症状：没人碰键盘，loader 却打出 `CONFIRM: key Printable('\u{3}') ... ABORT`（或任意其他键值）并中止；`i_know_what_i_am_doing.txt` 的武装倒计时同样被打断。这是**固件阶段有设备在持续上报假按键**，已确认三例：
+
+| 键值 | 来源设备 | 机型 |
+| --- | --- | --- |
+| `0x1A` | 卡死的 Z 键（EC） | Alienware m18 R1（[#110](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/110)） |
+| `0x03`（Ctrl+C） | EC 在固件阶段持续合成 | COLORFIRE MEOW R15 24（[bailu974 记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)，含 v2.1.10 补丁 diff） |
+| `Special(LEFT)` | **USB 鼠标**的 boot-keyboard 接口持续上报（[PR #220](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/220)，Legion 5 Pro 16ACH6H） |
+
+自助方法两件，都要守一条纪律——**只忽略你实际观测到的那个键值，空格/回车/超时的语义一个都不能动**（这些窗口是零写保证的守门人）：
+
+1. **本地补丁忽略该键值**：bailu974 仓库的 `patches/nv-uefi-unlocker-v2.1.10-stuck-key.patch` 是范例（`wait_confirm`/`wait_confirm_armed`/tx_prep 的中止窗口里对观测字节免疫，其余语义不变）。#110 同思路。
+2. **PR #220 的“settle + ESC-only”路线**（评审中，未合并）：CONFIRM 打开前先排空输入并等安静窗；若输入永不安静则倒计时降级为“仅 Esc 可中止”——方向安全，因为 Esc 永远不可能推进事务，假键最多被忽略、绝不可能“按一下就解锁”。
+
+判别方法：把 U 盘上其他 USB 设备逐个拔掉二分（#220 的假键来自鼠标，拔掉即安静）；确认中止行里的键值与某颗实体键对得上则先换键盘。
+
+**BitLocker 附带发现（#220 报告，重要）**：TPM 绑定 PCR 0,2,4,11 的 BitLocker 机器上，**中止轮与解锁轮的引导链行为不同**（中止轮跳过了第二次 native-GOP 驱动加载）→ PCR[2] 度量不一致 → Windows 弹恢复密钥（事件 24707 `MismatchedPcr=2`），温启动不受影响。这是首条“引导链**行为差异**（而非 SB 状态变化）触发 PCR 度量失配”的现场记录：在 BitLocker TPM 绑定含 PCR[2] 的机器上，要么每次引导保持同一路径（都解锁或都中止），要么先挂起保护。FAQ 此前只覆盖 PCR[7]（SB 状态）与 PCR[1]（FFS 刷写）。
 
 ## 50 系（RTX 50 / Blackwell）能解锁吗？
 

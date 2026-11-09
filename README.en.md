@@ -430,6 +430,8 @@ repository.
   [DreamDigi](https://dreamdigi.tw/35957-2/) (ZH-HK) ·
   [AHAN](https://news.ahan.net/article/55430) (ZH) ·
   [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh) (ZH) ·
+  [Xiaoluobo blog "Unlocking FP16 compute on NVIDIA GPUs"](https://www.milobo.moe/2026/1966/) (ZH, personal practice write-up) ·
+  [bailu974 "Secure Boot laptop practice record"](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot) (ZH, stuck-key patch + Insyde per-file trust + ESP-resident deployment) ·
   [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/) (ID) ·
   [Silicon Report](https://www.siliconreport.com/open-source-uefi-tool-unlocks-nvidia-gpu-tensor-performance)(EN) ·
   [Kantan.News](https://kantan.news/news/new-uefi-tool-removes-ai-speed-limitation-on-nvidia-graphics-cards)(EN) ·
