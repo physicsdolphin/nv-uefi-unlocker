@@ -7,7 +7,7 @@
 //! 不复位主控制器,不碰其他设备。只在中止倒计时打开之前运行一次。
 //! 每个 USB 接口会记录一行 `USB-INV`,用于确定是哪个设备在上报按键。
 //! 注意:对带键盘接口的鼠标,端口复位不一定能消除被持续上报的键
-//! (已在一台设备上观察到);此时由 settle_input_once 的 ESC-ONLY 兜底。
+//! (已在一台设备上观察到);此时由 settle_input_once 的"幽灵键抑制"兜底。
 
 use alloc::vec::Vec;
 use core::time::Duration;
