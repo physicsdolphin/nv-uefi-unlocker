@@ -44,6 +44,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// wait becomes a short countdown that auto-proceeds, any key aborts. The
 /// first marker line may set the countdown seconds (0..=30, default 5;
 /// 0 = no wait, PROCEED as soon as the read-only prep finishes).
+const IGNORE_KEY_MARKER: &CStr16 = cstr16!(r"\tx-ignore-key.txt");
 const ARMED_MARKER: &CStr16 = cstr16!(r"\i_know_what_i_am_doing.txt");
 /// Issue #38: verdict-lines-only console output. Some iGPU GOPs render
 /// ~1 line/s, so the full console mirror cost minutes per run; the log
@@ -164,6 +165,13 @@ fn main() -> Status {
         // Explicit cadence marker wins; ultrafast only supplies a default.
         logging::set_flush_every_lines(0);
         info!("FLUSH: ultrafast - count-based flush off (stage-marker lines only)");
+    }
+
+    // Optional phantom-key filter (stuck EC/USB keys): the value printed by an
+    // ABORT line goes into \tx-ignore-key.txt, one per line. Loaded before any
+    // abort window opens; Esc stays usable.
+    if let Some(content) = chainload::boot_volume_read(IGNORE_KEY_MARKER) {
+        keywait::load_ignore_keys(&content);
     }
 
     // Phase: CONFIRM. TX builds: ONLY Space or Enter proceeds - timeout or
