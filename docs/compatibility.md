@@ -55,7 +55,7 @@
 | AD102 | 4090 2684 / 4090D 2685 / 4070TiS **2689**；ES：TITAN Ada **2681** / PG137 **26af** | ✅ 2684/2689；🟢 2685/2681/26af · [详情](#device-8) |
 | GA102 | 3090 Ti 2203 / 3090 2204 / **3080 2206** / 3080 12GB **220a** / **3080 LHR 2216** / 3080 Ti **2208** / CMP 90HX **220d**；ES：3090 **222b** / 3080 **222f** / 3080 Ti 20GB **2205** / 3070 Ti **2207**（0x2200..=0x223f 全段放行） | ✅ 2206/2216（另含 VM/VFIO，#135；2206 另有 20GB 魔改 Z890+WSL2，D#163；**2206 20GB 另有 Z790/ROG 安全启动开启 + shim/MOK 自签闭环 [#210]，及 Z690/ReBAR 32 GiB 活窗 + ssdiag `UNLOCKED` 的 D#211**）/2204（#159 全绿+哈希 A/B；D#96 双卡系统侧；D#176 X99；D#181 X870E；D#203 Z790M/AMI 全绿+三档功耗墙（无锁定基线）；**TB3 eGPU 维护者实测：进系统保留**）/2208（B 站 opus；**Dell OEM `1028:389d` + ASRock X570 Steel Legend，本机构建 v2.1.10，EFI 读回 + Windows CUDA 试用通过；追加评论补跨引导 A/B：FP16 66.6→114.3/110.4、BF16 1.79×、TF32 1.77×、FP32 平**，[D#196](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/196)）/2203（3090 Ti，X570 GAMING X，免 marker 全绿+输出哈希 A/B，#195）；其余全段放行 · [详情](#device-9) |
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
-| GA103 | 3060 Ti **2414**（GA103 桌面变体 die） | 🟡 2414：#157 C1 挂死案（v2.1.9），v2.1.10 native-GOP 默认修复族覆盖，无修复后复测回帖 · [详情](#device-10b) |
+| GA103 | 3060 Ti **2414**（GA103 桌面变体 die） | ✅ 2414（#157 C1 挂死案经 v2.1.10 native-GOP 默认修复族覆盖——修复本体 Z170 四轮 + #133 单变量已验；无修复后复测回帖，按修复覆盖计支持）· [详情](#device-10b) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489（3060 Ti 联想 OEM 桌面：**首个逐精度锁定态 A/B**，FP16 1.86×/按钟 1.96×、FP32 对照平，#199）/2482（3070 Ti 桌面 B860M：进 Windows 保留、TF32 2.20×，#194）；⚠️ 2484 仅 EFI；雷电形态禁 `Usb4DeviceRouter` 后 Windows 可保留（两栈实测，代价=坞 USB 失效），桌面 X570 形态 #164 分类中 · [详情](#device-11) |
 | GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
 | GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限；**2520 为笔记本，观测到 GC6/D3cold 唤醒后、驱动 bind 前回锁，#126**）；**2503 经 [#206](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/206) 与 3090 同盘双卡全绿（无系统内读回：HANDOFF 读回 + 80 组匹配负载 A/B）**；🟢 其余；**2560（Y9000X 12G 显存改装机，v2.1.9 全链 + ssdiag `UNLOCKED`，post-only GEMM FP16 45.54 / BF16 44.23 / FP32 5.64，[D#150](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/150)）** · [详情](#device-13) |
@@ -155,7 +155,7 @@
 
 ### GA103 · 3060 Ti 2414
 
-单例为 C1（console 归属）家族挂死案：[#157](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/157)（单 GPU、无核显 CPU，v2.1.9 递归 `ConnectController` 黑屏挂死；Z390——**GA103 die 首个实机 ID**）。v2.1.10 起 native-GOP console 重建成为默认、挂死调用退出默认路径，该修复族已由 Z170 四轮 + [#133](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/133) CSM Disabled 单变量验证覆盖；本 ID 无修复后复测回帖，按"bug 数据点 + 修复族覆盖"收录，无性能 A/B。
+单例为 C1（console 归属）家族挂死案：[#157](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/157)（单 GPU、无核显 CPU，v2.1.9 递归 `ConnectController` 黑屏挂死；Z390——**GA103 die 首个实机 ID**）。v2.1.10 起 native-GOP console 重建成为默认、挂死调用退出默认路径，该修复族已由 Z170 四轮 + [#133](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/133) CSM Disabled 单变量验证覆盖；本 ID 无修复后复测回帖、无性能 A/B——**按修复覆盖计 ✅ 支持**（维护者裁定，2026-11-10：bug 数据点被已实机验证的修复族覆盖即计支持，历史失败形态与修复依据如实保留在上）。
 
 <a id="device-11"></a>
 
