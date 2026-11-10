@@ -2750,11 +2750,22 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
     }
     let mut off: u32 = 0x100;
     let mut found = false;
+    let mut ff_stop: Option<u32> = None;
     let mut pcie_off: Option<u32> = None;
     for _ in 0..48 {
+        // An SR-IOV VF's extended space (vfio-pci guest, e.g. geforce-sriov)
+        // reads all-FF: cid=0xffff carries next=0xfff, which would step off to
+        // 0xfff and read a u32 straddling the one mapped page - silent access
+        // violation, nothing printed past the ranges block. Bare metal never
+        // hits it (real chains end with next < 0x100 or cid == 0). Treat all-FF
+        // as a terminator and keep every read inside [0x100, 0xffc].
         let hdr = rd(off);
         let cid = (hdr & 0xffff) as u16;
         if cid == 0 {
+            break;
+        }
+        if cid == 0xffff {
+            ff_stop = Some(off);
             break;
         }
         let next = (hdr >> 20) & 0xfff;
@@ -2803,9 +2814,17 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
         if next < 0x100 {
             break;
         }
+        if next > 0xffc {
+            ff_stop = Some(next);
+            break;
+        }
         off = next;
     }
-    if !found {
+    if let Some(w) = ff_stop {
+        println!(
+            "config-space ReBAR (bus {bus} dev {dev} fn {func}): extended config reads all-FF at {w:#06x} - SR-IOV VF / virtualized function, extended caps unreadable here"
+        );
+    } else if !found {
         println!(
             "config-space ReBAR (bus {bus} dev {dev} fn {func}): no 0x15 capability - card does not advertise resizable BAR (A4G/ReBAR board settings cannot resize this card's BAR1)"
         );
@@ -3914,6 +3933,26 @@ SSDIAG_COLOR=force pins on.",
         let base = va as *const u8;
         let rd = |off: u32| unsafe { (base.add(off as usize) as *const u32).read_volatile() };
         let wr = |off: u32, v: u32| unsafe { (base.add(off as usize) as *mut u32).write_volatile(v) };
+
+        // SR-IOV VF shape (geforce-sriov / vfio-pci guests): the window serves
+        // a synthetic chipset id on BOOT0 and hard-wired zeros on every other
+        // page. Reads succeed but carry no state - the badf encoder lives on
+        // the PF's PRI and the VF window has none - so "(closed (non-standard))"
+        // below would be a fill artifact and a known-family VERDICT void.
+        // First seen on a geforce-sriov RTXA6000-8Q guest over a host 3090
+        // (BOOT0 0x1fa52a02, die 0x1fa - no known die segment; docs/evidence/
+        // sriov-vf-guest-2230/). Probes span four banks to keep the bare-metal
+        // false-positive risk at zero (a bound driver leaves WPR2 HI != 0 and
+        // FUSE_VER != 0 on real silicon).
+        let zero_fill = [0x00118128u32, 0x001fa828, 0x00840100, 0x00823804, 0x00824140]
+            .iter()
+            .all(|&off| rd(off) == 0);
+        if zero_fill {
+            println!(
+                "NOTE: register window reads flat-zero behind a non-zero BOOT0 ({}) - virtualized / SR-IOV VF window: values below are fill, not silicon state",
+                hx32(boot0)
+            );
+        }
 
         let Some((fam_name, regs)) = family_of(boot0) else {
             println!("PMC_BOOT_0={} - NVIDIA-class but unknown die; diagnosis-only pass (FEAT addresses unmapped for this family)", hx32(boot0));

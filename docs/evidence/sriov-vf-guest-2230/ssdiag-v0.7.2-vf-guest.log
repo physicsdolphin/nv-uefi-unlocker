@@ -1,0 +1,117 @@
+1 NVIDIA GPU function(s) discovered
+===== GPU 1/1: PCI\VEN_10DE&DEV_2230&SUBSYS_150110DE&REV_A1\5&2490727a&0&8008F0 =====
+ranges:
+  0x80000000-0x81ffffff (32 MiB)
+  0x82000000-0x8203ffff (0 MiB)
+  0x383800000000-0x38380fffffff (256 MiB)
+config-space ReBAR (bus 6 dev 16 fn 0): extended config reads all-FF at 0x0100 - SR-IOV VF / virtualized function, extended caps unreadable here
+config-space link caps: no PCIe capability (0x10) found in the chain - skipped
+POWER: card config space unreadable (no answer / no PM capability)
+POWER: root port 05:01.0 VEN_1B36&DEV_0001 PMCSR unreadable - skipped
+BAR0: 0x80000000
+PMC_BOOT_0=0x1fa52a02 - NVIDIA-class but unknown die; diagnosis-only pass (FEAT addresses unmapped for this family)
+--- core/debug block ---
+PMC_BOOT_0             = 0x1fa52a02
+PSTRAPS_SET0           = 0x00000000
+PSTRAPS_SET1           = 0x00000000
+FB_SIZE_MIB            = 0x00000000
+GFW_PLM                = 0x00000000
+GFW_SCRATCH            = 0x00000000
+BSI_SCRATCH15          = 0x00000000
+VGA_WORKSPACE          = 0x00000000
+WPR2_LO                = 0x00000000
+WPR2_HI                = 0x00000000
+MMU_PLM                = 0x00000000
+MMU_LOCK_LO            = 0x00000000
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000000
+GSP_EXCI               = 0x00000000
+SEC2_CPUCTL            = 0x00000000
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00000000
+FUSE_VER_DECODE        = 0x00000000
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0x00000000 (closed (non-standard))
+  turing 0x4096xx      SS0       = 0x00000000 [. . . . . . . .]
+  turing 0x4096xx      READOUT   = 0x00000000 [full speed]
+  turing 0x4096xx      SS1       = 0x00000000 [.]
+  0x823xxx amp/ada/gb  PLM       = 0x00000000 (closed (non-standard))
+  0x823xxx amp/ada/gb  SS0       = 0x00000000 [. . . . . . . .]
+  0x823xxx amp/ada/gb  SS1       = 0x00000000 [.]
+  0x823xxx amp/ada/gb  READOUT_1 = 0x00000000 [full speed]
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0x00000000 (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0x00000000 (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0x00000000 (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0x00000000
+  ad1x 64g-bar1   AD1X_CFG               = 0x00000000
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0x00000000 (closed (non-standard))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0x00000000
+  ada fuse/tpc    FUSE_CTRL              = 0x00000000
+  ada fuse/tpc    FUSE_ADDR              = 0x00000000
+  ada fuse/tpc    FUSE_REG_50            = 0x00000000
+  ada fuse/tpc    FUSE_REG_54            = 0x00000000
+  ada fuse/tpc    FUSE_DEBUGCTRL         = 0x00000000
+  ada fuse/tpc    DISABLE_FUSE_PROG      = 0x00000000
+  ada fuse/tpc    OPT_GPC_DISABLE        = 0x00000000
+  ada fuse/tpc    OPT_GPC_DEFECTIVE      = 0x00000000
+  ada fuse/tpc    CTRL_OPT_9C8           = 0x00000000
+--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---
+  LNKCAP             = 0x00000000
+  LNKCTL_LNKSTA      = 0x00000000
+  LNKCAP2            = 0x00000000
+  LNKCTL2_LNKSTA2    = 0x00000000
+  PRIV_MISC_1        = 0x00000000
+  VSEC_DEVICE        = 0x00000000
+  VSEC_HIERARCHY     = 0x00000000
+  XVE_OVR_LTSSM      = 0x00000000
+  XVE_B_PLM          = 0x00000000 (closed (non-standard))
+  XVE_D0_PLM         = 0x00000000 (closed (non-standard))
+  XVE_D4_PLM         = 0x00000000 (closed (non-standard))
+  XVE_D8_PLM         = 0x00000000 (closed (non-standard))
+  XVE_C_PLM          = 0x00000000 (closed (non-standard))
+  LINK_CONFIG_0      = 0x00000000
+  PL_LINK_RATE       = 0x00000000
+  CYA_0_DISG2        = 0x00000000
+  XP3G_STATUS0       = 0x00000000
+  XP3G_STATUS3       = 0x00000000
+  XP3G_OVR0          = 0x00000000
+  XP3G_OVR3          = 0x00000000
+  XP3G_VAL0          = 0x00000000
+  XP3G_VAL3          = 0x00000000
+  XP3G_PLM0          = 0x00000000 (closed (non-standard))
+  XP3G_PLM4          = 0x00000000
+  XP3G_PLM8          = 0x00000000
+  XP3G_PLMC          = 0x00000000
+  OPT_GPC_DISABLE    = 0x00000000
+  OPT_MAGIC          = 0x00000000
+  OPT_GEN23          = 0x00000000
+  OPT_GEN3           = 0x00000000
+  L2_CANDIDATE       = 0x00000000
+  L2_SW_MASK         = 0x00000000
+  L2_EFF_MASK        = 0x00000000
+      GA100_SM_OVR 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+     GA100_SM_STAT 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+--- ampere/ada FEAT sweep (M1 cluster) ---
+                         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+                   value 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0x00000000  0x008200d4=0x00000000
+  0x008200d8=0x00000000  0x008200dc=0x00000000
+  0x008200e0=0x00000000  0x008200e4=0x00000000
+  0x008200e8=0x00000000  0x008200ec=0x00000000
+  0x008200f0=0x00000000  0x008200f4=0x00000000
+  0x008200fc=0x00000000  0x00823800=0x00000000
+  0x00823804=0x00000000  0x00823b00=0x00000000
+  0x009a0008=0x00000000  0x009a000c=0x00000000
+  0x009a0148=0x00000000  0x009a014c=0x00000000
+  0x009a0168=0x00000000  0x009a03f0=0x00000000
+  0x009a0554=0x00000000  0x009a0bfc=0x00000000
+  0x00100b10=0x00000000  0x00100b38=0x00000000
+  0x00100b84=0x00000000  0x00100b9c=0x00000000
+FUSE_OPT_FEATURE_OVR   = 0x00000000
+FUSE_VER               = 0x00000000
+driver service removed (remove-when-done)

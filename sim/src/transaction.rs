@@ -288,6 +288,15 @@ impl<'a> Transaction<'a> {
 
     /// FWSEC BOOT_WITH_LOADER ignition; installs WPR2 in the fake.
     fn fwsec(&mut self) -> Result<(u32, u32), PhaseError> {
+        // Bus-master guard (rc2 field, issue #156): the FWSEC BL fetches its
+        // staged image through sysmem DMA - with the device's BME cleared
+        // the fetch silently never completes (core running CPUCTL=0x0, no
+        // EXCI, no mailbox, WPR2 never up). The cold fire has BME from the
+        // claim; a post-FLR retry must re-arm it first.
+        if !self.bme_set {
+            return Err(PhaseError::new("fwsec",
+                "GPU bus master is off - the FWSEC BL sysmem DMA fetch would wedge (issue #156 rc2 field)"));
+        }
         self.alloc_dma_page()?;
         let want = (0x1fff_fe00u32, 0x0400_0000u32);
         let install = if self.faults.wpr2_mismatch {
@@ -376,7 +385,19 @@ impl<'a> Transaction<'a> {
                     if self.faults.fbif_write_dead_after_run {
                         self.gpu.force_write(regs::WPR2_LO, 0);
                         self.gpu.force_write(regs::WPR2_HI, 0);
+                        // The FLR drops the device's bus-master enable (the
+                        // loader's flr_phase restores command WITHOUT BME by
+                        // design). The FWSEC BL fetches its staged image via
+                        // sysmem DMA and wedges forever without it (rc2
+                        // field, issue #156, 2026-11-10: CPUCTL 0x0 core
+                        // running, no EXCI, no mailbox, WPR2 never up).
+                        self.bme_set = false;
                         self.fwsec_done = false;
+                        // Re-arm bus master - the fix under test. Removing
+                        // this line makes fwsec() below fail with the field
+                        // wedge signature.
+                        self.bme_set = true;
+                        self.note("STAGING-FALLBACK: GPU BME re-armed for the FWSEC BL sysmem DMA fetch");
                         self.fwsec()?;
                         self.fbif_restored = true;
                         self.note("STAGING-FALLBACK: FLR + FWSEC re-ignition done (1e93 vehicle) - re-firing in the LOW band");

@@ -74,7 +74,8 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | --- | --- |
 | `tx-require-d0.txt` | 入口非 D0 时中止，不进行 GPU 写入或复位 |
 | `tx-select-bdf.txt` | 内容为 `bb:dd.f` 或 `dddd:bb:dd.f`，仅处理匹配的卡；解析失败或目标缺失时不选其他卡 |
-| `tx-ignore-key.txt` | 幽灵键过滤:每行一个键,`#` 起注释,写法与 ABORT 日志行一致(`Special(LEFT)`、`Printable('z')`),或 `0x1A` / `scan 0x04`。列出的键在所有按键等待中视为未按下(CONFIRM、武装倒计时、链式加载选择器)。**Esc 永远不能被忽略。** 最多 8 项;无法解析的行会记录并跳过。卡键(EC 合成键、带键盘接口的 USB 鼠标/接收器)的免重编译方案:从自己的 `loader.log` 读出键值写入此文件 |
+| `input-reset.txt` | CONFIRM 前的可选"按设备"USB 端口复位：每行 `usb VVVV:PPPP`（十六进制 VID:PID，`#` 起注释）。列出的设备在位时调用一次 UsbPortReset 并等 1.5s 重枚举——对付固件 USB 栈一起来就持续上报幽灵键的设备（带键盘接口的 USB 鼠标/接收器）；端口复位对部分设备无效（已实测），此时由 INPUT-SETTLE 的幽灵键抑制兜底。伴随每个 USB 接口一行 `USB-INV` 枚举，用于定位是谁在报键 |
+| `tx-ignore-key.txt` | 幽灵键过滤:每行一个键,`#` 起注释,写法与 ABORT 日志行一致(`Special(LEFT)`、`Printable('z')`),或 `0x1A` / `scan 0x104`。列出的键在所有按键等待中视为未按下(CONFIRM、武装倒计时、链式加载选择器)。**Esc 永远不能被忽略。** 最多 8 项;无法解析的行会记录并跳过。卡键(EC 合成键、带键盘接口的 USB 鼠标/接收器)的免重编译方案:从自己的 `loader.log` 读出键值写入此文件 |
 | `chain-target.txt` | 第一个非空、非 `#` 行指定优先 EFI 路径，逐卷查找；找不到时记录日志并回退默认顺序。**固件 BootOrder 里有跨盘残留引导项时先看这条**：默认解析会按 BootOrder 取到别的盘上的旧 loader（[#204](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/204) 实例是另一块盘的 `\EFI\ubuntu\shimx64.efi`，事务全绿但链到 Linux），首行写 `\EFI\Microsoft\Boot\bootmgfw.efi` 即可钉死本机链载目标 |
 | `tx-preload.txt` | 启用预驱动预载链回（P2-7，TOTORONG 工艺）：事务前 LoadImage OS loader，交棒尾 PE 探针通过后直接 StartImage。**默认自 2026-11-09 起不预载**，走事务后固件 BootOrder 解析的旧链载路径——[#198](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/198) 九格矩阵：预载+脏卡与每一轮交棒后 logo 硬挂死逐一对应，而预载+干净卡（readonly）与无预载+脏卡（v2.1.5 run-10，无此特性）都活，默认回到久经田野的基线；预载原有的"FLR 后分配面退化时链载失败"鲁棒性动机已由固件 BootOrder 解析链（#128/#142）覆盖。需复现旧行为做 A/B 时加此标记；旧 `\tx-no-preload.txt` 退役，存在不再有任何效果 |
 | `no-reconnect.txt` | 跳过目标 GPU 的 GOP 重连，适用于事务后重连卡死或复位 |
@@ -378,6 +379,7 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 - **FLR 不掉、掉电掉**：解锁写活在 AON（常开岛），事务内 FLR 后选择器存活是设计判据；但 AON 不活过失电——所以"重启进不了系统就丢"和"睡眠唤醒丢"可以是同一件事。
 - **门与选择器要分开判**：唤醒后 Ampere/Ada 常见形态是 FEAT 门仍开、SS 值回厂——跑 [系统内检查](#ssdiag)确认后用 `ssdiag --reapply` 写回即可，不必重跑 U 盘；若门已锁或设备不可读，说明 rail 确实掉了，需重跑 U 盘事务。**全机断电路径（S4 休眠 / 快速启动）必然门锁**：AON 岛不活过失电，此时 `--reapply` 会以 `REFUSED: gate closed` 拒绝——这是正确判读不是工具故障，唯一恢复 = 重跑 U 盘事务（D#129 用户侧实证）。Turing 的 ssdiag 保持只读（其 SS 覆盖值在驱动加载后持久，devinit 重推导行为不同）。
 - **不想让它掉**：台式机可在 BIOS/驱动侧避免空闲掉电；笔记本 S0ix 机器可关掉"现代待机"（部分固件提供）或接受唤醒后 reapply。Linux 侧对应配置见 [RTD3 节](#linux)。
+- **台式机"便利与持久解锁兼得"的推荐配方**（[#137](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/137)，`1e89` 实测）：关闭自动 **S3 睡眠**（"睡眠=从不"——空闲 S3 会静默抹掉解锁：canary cleared、选择器回厂），改用 **休眠（S4）**——并把解锁 loader 保留在引导路径上（U 盘 BootOrder 靠前，或内置分区配方）。休眠的下一次上电就是一次正常固件引导，loader 会在 bootmgfw 碰 hiberfile 之前重放解锁：会话原样恢复且卡已解锁。每次引导都重放解锁是设计本身，休眠把这个设计变成了功能。
 
 <a id="thunderbolt"></a>
 
@@ -691,6 +693,19 @@ ssdiag --reapply
 
 ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊卡。内嵌的 `pmxdrv.sys` 经校验，以自有 `SSDIAG_PMXDRV` 服务临时加载，退出时清理；若 nvoc 等已有可用设备则借用。部署驱动通常需要管理员。其安全模型与权衡单独成节：[pmxdrv.sys 的安全模型与权衡](#pmxdrv)。更多寄存器范围及驱动说明见 [ssdiag 文档](../tools/ssdiag/README.md)。
 
+<a id="vgpu-vf-guest"></a>
+
+## vGPU / SR-IOV VF guest（如 geforce-sriov）里跑 ssdiag，读数能信吗？
+
+**不能作为宿主卡的解锁判据。** vGPU 分两型：SR-IOV VF 直通（[geforce-sriov](https://github.com/noon-at-cgn/geforce-sriov) 类栈）里 guest 拿到的是**虚拟化寄存器窗**——MMIO 是真硬件访问，但按 per-VF 过滤路由；mdev / GPU-PV 型（vgpu_unlock 世系、Hyper-V GPU-PV）则连真 MMIO 都没有，BAR 访问被 hypervisor trap 后转给宿主 mediator。首个现场样本（宿主 RTX 3090 Linux + 上游 gpu-unlock 解锁 + geforce-sriov，guest 见 `10de:2230`「RTXA6000-8Q」）测得的 VF 窗形态（[证据与解码](evidence/sriov-vf-guest-2230/findings.md)）：
+
+- **扩展配置空间全 FF**（0x0100 起即 all-FF）：ReBAR/link 探针自动跳过（<0.7.2 在此静默崩溃，0.7.2 修复）；
+- **除 `PMC_BOOT_0` 外全部寄存器硬线回 0**：不是 badf——badf 编码器在 PF 的 PRI 上，VF 窗没有。FECS/PLM 属 PF 裸 PRI 状态，guest 里没有可读投影；`closed (non-standard)` 标签是填充效应，不是门状态。0.7.3 起对这种形态打印 `NOTE: ... virtualized / SR-IOV VF window`；
+- **BOOT0 与设备 ID 都是固件合成的 profile 身份**：`0x1fa52a02`（die 段 0x1fa，无已知 die 段）；guest 枚举的 "RTX A6000" 不是宿主那块 3090 硅的身份——伪装两层：宿主 identity hook 放出 A6000 profile，PF 固件再把该身份投进 guest；
+- **有效的 VM 数据点只有 VFIO/DDA 整卡直通**（[#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135) 先例，guest 拿真 PF MMIO）。
+
+要验证宿主卡的解锁状态，探测点在**宿主**：Linux 宿主跑上游 gpu-unlock 的验证路径或 `tools/diag-unlock.py`；Windows 裸机跑 ssdiag。guest 里读出什么都不构成宿主证据。
+
 <a id="pmxdrv"></a>
 
 ## pmxdrv.sys 的安全模型与权衡（必读披露）
@@ -724,7 +739,7 @@ ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊�
 
 判定与处置：
 
-1. **先核对 hash**——zip 与每个成员都在 `SHA256SUMS.txt` 里，`ssdiag` 的 hash 同时钉死在二进制内、运行时自校验。hash 对得上就排除"下载被换包"。
+1. **先核对 hash**——**校验分两层**：zip 本体不在 `SHA256SUMS.txt` 里（sums 盖的是解压后的成员文件），zip 用 release 页的 GitHub 资产 digest 校验，解压后逐成员对 `SHA256SUMS.txt`；`ssdiag` 的 hash 同时钉死在二进制内、运行时自校验。hash 对得上就排除"下载被换包"。（两层各管各的口径由 [D#223](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/223) 实测澄清，本行旧表述"zip 在 sums 里"有误已修。）
 2. **主包照用**——解锁本体（`BOOTX64.EFI` + 生成脚本 + `assets`）不因这条误报受任何影响，跳过 `ssdiag` 也能完成解锁与验证（EFI 读回、GEMM 哈希、`nvidia-smi`）。
 3. **要用 `ssdiag` 就放行**——它是绿色免装工具，不留服务、退出即删，把下载的文件或目录加进 Defender 排除即可；报 `Generic`/`!ml` 名的都按误报处理，只有报出具体木马家族名才值得复查。
 

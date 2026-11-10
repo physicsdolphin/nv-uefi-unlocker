@@ -23,7 +23,7 @@
 | 有 GB20x booter 吗？ | **公开不存在。** `kgspGetBinArchiveBooterLoadUcode` 只为 TU102/TU116/GA100/GA102/AD102 开分支，其余落共享 fallback；开放模块里该 fallback 是 NULL 桩，真实映像只在闭源 `nv-kernel.o` |
 | debug 镜像能当后门吗？ | **不能。** GB202 debug/prod FMC 的 `UCODE_IMAGE`/`UCODE_HASH` 逐字节相同（密文也一样），只有 96 B `UCODE_SIG` 不同，且**没有多签名槽表**可降级 |
 | 解 FMC 呢？ | 失败且已穷尽一条路线：MD5-IV 置换族 `16!` 全搜 × 两种容器 × 五种模式，零命中；换用真实 RISC-V 码评分器后仍无键 |
-| 还开着什么？ | ①suspend/resume 信任面（SR 状态 205.875 MiB/卡，熵 7.9998）；②FSP/FMC 解析器（host 输入按对齐/精确值/边界/认证四类检查，heap 有 11 档 lever）；③每 SM selector（只探过全局 FEAT 块） |
+| 还开着什么？ | ①suspend/resume 信任面（SR 状态 205.875 MiB/卡，熵 7.9998）；②FSP/FMC 解析器（host 输入按对齐/精确值/边界/认证四类检查，heap 有 11 档 lever）；③每 SM selector（只探过全局 FEAT 块；GB206 TPC floorsweeping 的跨卡只读对照采集已开——[D#216](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/216)：5060 Laptop `2d59` 实测 13 TPC/26 SM，征集桌面 5060 Ti `2d04` 同协议六值样本，Linux 只读采集器与贡献指南在其链接仓库） |
 | 本项目能做什么？ | 只读：efi SAMPLE、ssdiag、diag-unlock 都已覆盖该块（本轮）。事务：不能跑，等待 PL3 执行原语 |
 
 ## 1. 钳制与门：与 Ada 同形，但读出的不是 Ada 语义
