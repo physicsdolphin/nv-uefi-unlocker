@@ -2750,11 +2750,22 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
     }
     let mut off: u32 = 0x100;
     let mut found = false;
+    let mut ff_stop: Option<u32> = None;
     let mut pcie_off: Option<u32> = None;
     for _ in 0..48 {
+        // An SR-IOV VF's extended space (vfio-pci guest, e.g. geforce-sriov)
+        // reads all-FF: cid=0xffff carries next=0xfff, which would step off to
+        // 0xfff and read a u32 straddling the one mapped page - silent access
+        // violation, nothing printed past the ranges block. Bare metal never
+        // hits it (real chains end with next < 0x100 or cid == 0). Treat all-FF
+        // as a terminator and keep every read inside [0x100, 0xffc].
         let hdr = rd(off);
         let cid = (hdr & 0xffff) as u16;
         if cid == 0 {
+            break;
+        }
+        if cid == 0xffff {
+            ff_stop = Some(off);
             break;
         }
         let next = (hdr >> 20) & 0xfff;
@@ -2803,9 +2814,17 @@ fn print_config_rebar(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>
         if next < 0x100 {
             break;
         }
+        if next > 0xffc {
+            ff_stop = Some(next);
+            break;
+        }
         off = next;
     }
-    if !found {
+    if let Some(w) = ff_stop {
+        println!(
+            "config-space ReBAR (bus {bus} dev {dev} fn {func}): extended config reads all-FF at {w:#06x} - SR-IOV VF / virtualized function, extended caps unreadable here"
+        );
+    } else if !found {
         println!(
             "config-space ReBAR (bus {bus} dev {dev} fn {func}): no 0x15 capability - card does not advertise resizable BAR (A4G/ReBAR board settings cannot resize this card's BAR1)"
         );
