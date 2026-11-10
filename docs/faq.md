@@ -377,6 +377,7 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 - **FLR 不掉、掉电掉**：解锁写活在 AON（常开岛），事务内 FLR 后选择器存活是设计判据；但 AON 不活过失电——所以"重启进不了系统就丢"和"睡眠唤醒丢"可以是同一件事。
 - **门与选择器要分开判**：唤醒后 Ampere/Ada 常见形态是 FEAT 门仍开、SS 值回厂——跑 [系统内检查](#ssdiag)确认后用 `ssdiag --reapply` 写回即可，不必重跑 U 盘；若门已锁或设备不可读，说明 rail 确实掉了，需重跑 U 盘事务。**全机断电路径（S4 休眠 / 快速启动）必然门锁**：AON 岛不活过失电，此时 `--reapply` 会以 `REFUSED: gate closed` 拒绝——这是正确判读不是工具故障，唯一恢复 = 重跑 U 盘事务（D#129 用户侧实证）。Turing 的 ssdiag 保持只读（其 SS 覆盖值在驱动加载后持久，devinit 重推导行为不同）。
 - **不想让它掉**：台式机可在 BIOS/驱动侧避免空闲掉电；笔记本 S0ix 机器可关掉"现代待机"（部分固件提供）或接受唤醒后 reapply。Linux 侧对应配置见 [RTD3 节](#linux)。
+- **台式机"便利与持久解锁兼得"的推荐配方**（[#137](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/137)，`1e89` 实测）：关闭自动 **S3 睡眠**（"睡眠=从不"——空闲 S3 会静默抹掉解锁：canary cleared、选择器回厂），改用 **休眠（S4）**——并把解锁 loader 保留在引导路径上（U 盘 BootOrder 靠前，或内置分区配方）。休眠的下一次上电就是一次正常固件引导，loader 会在 bootmgfw 碰 hiberfile 之前重放解锁：会话原样恢复且卡已解锁。每次引导都重放解锁是设计本身，休眠把这个设计变成了功能。
 
 <a id="thunderbolt"></a>
 
