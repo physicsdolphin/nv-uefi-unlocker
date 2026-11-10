@@ -143,7 +143,7 @@ Turing 的 `gsp_boot_tu10x.bin` 是 proven GspRmBoot 归档的前 `0x6000` 字�
 
 固件可能只初始化负责显示的 GPU；本工具不能通过 ACPI `_PS0` / PR3 给完全断电的 dGPU 上电。非 D0 入口会触发 PM 预检，请求 D0 并读回确认；`tx-require-d0.txt` 可改为直接中止。
 
-**混合输出"无收益"族的实证绕法（#171→[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)，2026-11-10）**：神舟 TX9 3070M（`249d`，混合输出/非独显直连）曾"进系统无解锁、算力无提升"（[#171](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/171)，已关）；**加 HDMI 欺诈器（dummy plug）+ 系统内"复制显示器"模式**后，同机 armed 自动跑全链绿、系统内 ssdiag 判 `UNLOCKED (override values live)`（PLM OPEN/SS 双值/READOUT 满速/canary intact）——欺诈器让混合平台把 dGPU 当作"有显示活动"，给上表"混合输出"行一个已验证的解法。该记录无性能 A/B 与睡眠持久性数据；另注：3070M（Ampere）无需 Turing 的 GSP 注册表前置，开了也无害。
+**混合输出"无收益"族的机理与实证绕法（#171→[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)，2026-11-10）**：神舟 TX9 3070M（`249d`，混合输出/非独显直连）曾"进系统无解锁、算力无提升"（[#171](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/171)，已关）。**机理**：混合模式下进系统后厂商电源管理把 dGPU 置入 ACPI D3（甲族 AON 复位/断电路径），易失的解锁态随之被抹——另有独立用户同形印证（"混合模式把解锁状态抹了，改独显直连就好了"，B 站评论，弱证据仅作旁证）。**实证绕法 = HDMI 欺诈器（dummy plug）+ 系统内"复制显示器"模式**：让平台把 dGPU 当作"有显示活动"从而不停电；该法由报告者在维护者的 D3 诊断下自行猜想并本机验证成功（armed 全链绿 + ssdiag `UNLOCKED (override values live)`）。**硬前提：至少一个视频口原生从独显出线**——全部视频口都从 iGPU 出线的机器用不了这招，只能改独显直连（BIOS/MUX 有该项时）；两样都没有则此路不通。欺诈器本身是一次性小开销（十几元档，通用配件），对混合本用户完全可行。该记录无性能 A/B 与睡眠持久性数据；另注：3070M（Ampere）无需 Turing 的 GSP 注册表前置，开了也无害。
 
 **笔记本内屏与亮度（DDC-CI）**：部分笔记本上，旧版固件重连会在解锁后把内屏链路留在未训练状态——背光直接黑、DDC-CI 亮度控制失灵（一台拯救者 R7000 2024 实证；旧路径首次尝试即复现，v2.1.10 在同一台机上修复）。v2.1.10 起默认的 native-GOP 重建会重新 `StartImage` 本卡原厂 GOP 驱动，进系统前重跑一次链路训练，自动消除该故障。这类机器上退回 `tx-reconnect-legacy.txt` 会让它复现。
 
