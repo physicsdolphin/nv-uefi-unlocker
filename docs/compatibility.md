@@ -57,7 +57,7 @@
 | GA103M | 3080 Ti Laptop **2420** | ✅ 2420 · [详情](#device-10) |
 | GA103 | 3060 Ti **2414**（GA103 桌面变体 die） | ✅ 2414（#157 C1 挂死案经 v2.1.10 native-GOP 默认修复族覆盖——修复本体 Z170 四轮 + #133 单变量已验；无修复后复测回帖，按修复覆盖计支持）· [详情](#device-10b) |
 | GA104 | 3070 Ti **2482** / 3070 2484–248c / 3060 Ti **2489** / 3060 **24c7** 等（0x24xx 全段放行） | ✅ 2489（3060 Ti 联想 OEM 桌面：**首个逐精度锁定态 A/B**，FP16 1.86×/按钟 1.96×、FP32 对照平，#199）/2482（3070 Ti 桌面 B860M：进 Windows 保留、TF32 2.20×，#194）；⚠️ 2484 仅 EFI；雷电形态禁 `Usb4DeviceRouter` 后 Windows 可保留（两栈实测，代价=坞 USB 失效），桌面 X570 形态 #164 分类中 · [详情](#device-11) |
-| GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外 · [详情](#device-12) |
+| GA104M | 3070 Laptop **249d** | ✅ 249d；混合输出有例外（HDMI 欺诈器+复制模式绕法首证 [#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)） · [详情](#device-12) |
 | GA106（含 M） | 3060 2501–2509 / 3050 8GB **2507** / 3060 Laptop 2560 等（0x25xx 全段放行） | ✅ 2504/2520（2504 含 H61/Ivy Bridge 最老平台下限；**2520 为笔记本，观测到 GC6/D3cold 唤醒后、驱动 bind 前回锁，#126**）；**2503 经 [#206](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/206) 与 3090 同盘双卡全绿（无系统内读回：HANDOFF 读回 + 80 组匹配负载 A/B）**；🟢 其余；**2560（Y9000X 12G 显存改装机，v2.1.9 全链 + ssdiag `UNLOCKED`，post-only GEMM FP16 45.54 / BF16 44.23 / FP32 5.64，[D#150](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/150)）** · [详情](#device-13) |
 | GA107 | 3050 8GB **2582** / 3050 4GB 2583 / 3050 6GB 2584 / RTX 2050 **25a9/25ad** / MX570 25a6 / 3050 Laptop 25a2 / **3050 Laptop 6GB 25ac** / **3050 Laptop 25e2** / **3050 Ti Laptop 25a0** 等 | ✅ **25ad（RTX 2050 Laptop，首个 in-OS 实测 GA107）**；✅ **25ac（3050 6GB Laptop，MUXless；驱动 init 存活、S3/S5 清除，#188）**；✅ **25e2（3050 Laptop，Dell；ssdiag 判 UNLOCKED，无 A/B 与持久性数据，#172）**；⚠️ 25a0（Linux 观测：链路全绿但本机驱动 init 重推导；同族 25ad Windows 持久——变量未切开）；🟢 其余 · [详情](#device-14) |
 | **TU106** | **RTX 2070 1f07 / 2060 Super 1f06 / 2060 12GB 1f03 / 2070 Laptop 1f14**；其余：2070 Rev.A1 早期 1f02 / 2060 1f08 / 2060 12GB QS 1f42、1f47 / 2070M 1f10、1f50 / 2060M 1f11、1f12、**1f15（独显直连载板 ✅ / MUXless 回锁）**、1f51、1f55 / 2070M MQ-Refresh 1f14、1f54 / Quadro RTX 3000M 1f36、1f76 / CMP 40HX **1f0b** / GTX 1660S（TU106 版）1f09 / GTX 1650（TU106 版）1f0a / 裸 TU106 1f04、TU106M 1f2e | ✅ 1f07/1f06/1f03/1f14；🟢 其余 · [详情](#device-15) |
@@ -171,7 +171,7 @@
 
 ### GA104M · 3070 Laptop 249d
 
-独显直连下通过全链及 Windows 性能验证；无 MUX 的混合输出平台存在进入系统后无收益的反馈，需核对系统侧读回。来源：[#28](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/28)、[#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6)。
+独显直连下通过全链及 Windows 性能验证；无 MUX 的混合输出平台存在进入系统后无收益的反馈，需核对系统侧读回。来源：[#28](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/28)、[#6](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/6)。**混合输出族首个 in-OS 破解样本（#171→[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)，2026-11-10）**：同报告者的神舟 TX9（`249d`，混合输出/非独显直连）曾"进系统无解锁"（[#171](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/171)，已关）；**加 HDMI 欺诈器+系统内复制显示器模式**后 armed 自动跑全链绿（实际构建 v2.1.11-diag2，模板误写 2.1.10：`wait_plm` 首读即开=#6/#11/#37 竞态由 claim guard 判成功、SS0 `0x2217012`→`0x88888888`/SS1 `0x3`→`0x8` 写读、POST-FLR 选择器存活、canary intact、POST-GOP 读回全绿、HANDOFF 三布尔全对；另带 `\tx-acpi-dump` 转储），系统内 ssdiag `VERDICT [ampere]: UNLOCKED (override values live)`+`CANARY: intact + SS live`。绕法机理=欺诈器让混合平台把 dGPU 当作"有显示活动"（已入 FAQ 显示节）；**缺**性能 A/B 与睡眠持久性；GSP 注册表前置被报告者开启——Ampere 无此必要、无害。来源补：[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)。
 
 <a id="device-13"></a>
 
