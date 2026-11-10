@@ -3934,6 +3934,26 @@ SSDIAG_COLOR=force pins on.",
         let rd = |off: u32| unsafe { (base.add(off as usize) as *const u32).read_volatile() };
         let wr = |off: u32, v: u32| unsafe { (base.add(off as usize) as *mut u32).write_volatile(v) };
 
+        // SR-IOV VF shape (geforce-sriov / vfio-pci guests): the window serves
+        // a synthetic chipset id on BOOT0 and hard-wired zeros on every other
+        // page. Reads succeed but carry no state - the badf encoder lives on
+        // the PF's PRI and the VF window has none - so "(closed (non-standard))"
+        // below would be a fill artifact and a known-family VERDICT void.
+        // First seen on a geforce-sriov RTXA6000-8Q guest over a host 3090
+        // (BOOT0 0x1fa52a02, die 0x1fa - no known die segment; docs/evidence/
+        // sriov-vf-guest-2230/). Probes span four banks to keep the bare-metal
+        // false-positive risk at zero (a bound driver leaves WPR2 HI != 0 and
+        // FUSE_VER != 0 on real silicon).
+        let zero_fill = [0x00118128u32, 0x001fa828, 0x00840100, 0x00823804, 0x00824140]
+            .iter()
+            .all(|&off| rd(off) == 0);
+        if zero_fill {
+            println!(
+                "NOTE: register window reads flat-zero behind a non-zero BOOT0 ({}) - virtualized / SR-IOV VF window: values below are fill, not silicon state",
+                hx32(boot0)
+            );
+        }
+
         let Some((fam_name, regs)) = family_of(boot0) else {
             println!("PMC_BOOT_0={} - NVIDIA-class but unknown die; diagnosis-only pass (FEAT addresses unmapped for this family)", hx32(boot0));
             dump_debug(&rd, "unknown");
