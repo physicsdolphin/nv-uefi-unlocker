@@ -690,6 +690,19 @@ ssdiag --reapply
 
 ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊卡。内嵌的 `pmxdrv.sys` 经校验，以自有 `SSDIAG_PMXDRV` 服务临时加载，退出时清理；若 nvoc 等已有可用设备则借用。部署驱动通常需要管理员。其安全模型与权衡单独成节：[pmxdrv.sys 的安全模型与权衡](#pmxdrv)。更多寄存器范围及驱动说明见 [ssdiag 文档](../tools/ssdiag/README.md)。
 
+<a id="vgpu-vf-guest"></a>
+
+## vGPU / SR-IOV VF guest（如 geforce-sriov）里跑 ssdiag，读数能信吗？
+
+**不能作为宿主卡的解锁判据。** vGPU 分两型：SR-IOV VF 直通（[geforce-sriov](https://github.com/noon-at-cgn/geforce-sriov) 类栈）里 guest 拿到的是**虚拟化寄存器窗**——MMIO 是真硬件访问，但按 per-VF 过滤路由；mdev / GPU-PV 型（vgpu_unlock 世系、Hyper-V GPU-PV）则连真 MMIO 都没有，BAR 访问被 hypervisor trap 后转给宿主 mediator。首个现场样本（宿主 RTX 3090 Linux + 上游 gpu-unlock 解锁 + geforce-sriov，guest 见 `10de:2230`「RTXA6000-8Q」）测得的 VF 窗形态（[证据与解码](evidence/sriov-vf-guest-2230/findings.md)）：
+
+- **扩展配置空间全 FF**（0x0100 起即 all-FF）：ReBAR/link 探针自动跳过（<0.7.2 在此静默崩溃，0.7.2 修复）；
+- **除 `PMC_BOOT_0` 外全部寄存器硬线回 0**：不是 badf——badf 编码器在 PF 的 PRI 上，VF 窗没有。FECS/PLM 属 PF 裸 PRI 状态，guest 里没有可读投影；`closed (non-standard)` 标签是填充效应，不是门状态。0.7.3 起对这种形态打印 `NOTE: ... virtualized / SR-IOV VF window`；
+- **BOOT0 与设备 ID 都是固件合成的 profile 身份**：`0x1fa52a02`（die 段 0x1fa，无已知 die 段）；guest 枚举的 "RTX A6000" 不是宿主那块 3090 硅的身份——伪装两层：宿主 identity hook 放出 A6000 profile，PF 固件再把该身份投进 guest；
+- **有效的 VM 数据点只有 VFIO/DDA 整卡直通**（[#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135) 先例，guest 拿真 PF MMIO）。
+
+要验证宿主卡的解锁状态，探测点在**宿主**：Linux 宿主跑上游 gpu-unlock 的验证路径或 `tools/diag-unlock.py`；Windows 裸机跑 ssdiag。guest 里读出什么都不构成宿主证据。
+
 <a id="pmxdrv"></a>
 
 ## pmxdrv.sys 的安全模型与权衡（必读披露）

@@ -691,6 +691,19 @@ For no gain after handoff, use these read-back patterns to guide diagnosis. Conf
 
 ssdiag discovers BAR0 from the OS and accepts no manually supplied physical base; it wakes parked GPUs as needed. Its embedded, verified `pmxdrv.sys` uses a temporary `SSDIAG_PMXDRV` service with cleanup on exit, or borrows an existing device such as nvoc's. Driver deployment normally needs administrator privileges. Its security model and trade-off have their own section: [The pmxdrv.sys security model and trade-off](#pmxdrv). See the [ssdiag reference](../tools/ssdiag/README.md) for the register surface and driver details.
 
+<a id="vgpu-vf-guest"></a>
+
+## Can I trust ssdiag readings inside a vGPU / SR-IOV VF guest (e.g. geforce-sriov)?
+
+**No — they are not evidence of the host card's unlock state.** vGPU comes in two forms: in SR-IOV VF passthrough ([geforce-sriov](https://github.com/noon-at-cgn/geforce-sriov)-class stacks) the guest gets a **virtualized register window** — the MMIO is real hardware access, but routed through per-VF filtering; in mdev / GPU-PV forms (vgpu_unlock lineage, Hyper-V GPU-PV) the guest has no real MMIO at all — BAR accesses are trapped by the hypervisor and forwarded to the host mediator. The first field sample (host RTX 3090 Linux + upstream gpu-unlock + geforce-sriov; the guest sees `10de:2230` "RTXA6000-8Q") established the VF window shape ([evidence and decode](evidence/sriov-vf-guest-2230/findings.md)):
+
+- **Extended config space is all-FF** (from 0x0100): the ReBAR/link probes skip automatically (builds <0.7.2 crashed silently here; fixed in 0.7.2);
+- **Every register except `PMC_BOOT_0` reads hard-wired zeros**: not badf — the badf encoder lives on the PF's PRI and the VF window has none. FECS/PLM are PF-side raw PRI state with no readable projection in the guest; `closed (non-standard)` labels are fill artifacts, not gate state. 0.7.3 prints a `NOTE: ... virtualized / SR-IOV VF window` line for this shape;
+- **BOOT0 and the device ID are firmware-authored profile identity**: `0x1fa52a02` (die segment 0x1fa, no known die segment); the guest's "RTX A6000" enumeration is not the host 3090 silicon — the disguise is two-layer: the host identity hook offers the A6000 profile, then the PF firmware projects that identity into the guest;
+- **The only valid VM datapoint class is full-device VFIO/DDA passthrough** ([#135](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/135), where the guest gets real PF MMIO).
+
+To verify the host card's unlock state, probe on the **host**: the upstream gpu-unlock verification path or `tools/diag-unlock.py` on a Linux host; ssdiag on bare-metal Windows. Nothing read inside the guest constitutes host evidence.
+
 <a id="pmxdrv"></a>
 
 ## The pmxdrv.sys security model and trade-off (required disclosure)
