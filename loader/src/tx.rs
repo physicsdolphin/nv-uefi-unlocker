@@ -1429,6 +1429,23 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
                     return Err(TxError::EIO);
                 }
                 info!("STAGING-FALLBACK: FLR done (cold engine, WPR2 wiped) - FWSEC re-ignition follows");
+                // Re-arm the GPU's bus-master bit before the re-ignition
+                // (1e93 rc2 field, issue #156): flr_phase restores command
+                // WITHOUT BME by design - correct for the main chain's
+                // handoff, fatal for a retry, because the FWSEC BL fetches
+                // its staged image through sysmem DMA. First fire works
+                // (claim set cmd=0x0007), retry wedges: core launches
+                // (CPUCTL leaves HALTED, reads 0x0) but the DMA fetch never
+                // completes - no EXCI, no mailbox, WPR2 never up.
+                let cmd_pre = gpu.pci.config_read_u16(0x04);
+                gpu.pci.cfg_write_u16(0x04, cmd_pre | 0x0004);
+                let cmd_rb = gpu.pci.config_read_u16(0x04);
+                info!(
+                    "STAGING-FALLBACK: GPU BME re-armed (cmd={cmd_pre:#06x} -> {cmd_rb:#06x}) - the FWSEC BL sysmem DMA fetch needs bus master"
+                );
+                if cmd_rb & 0x0004 == 0 {
+                    info!("STAGING-FALLBACK: BME did not stick - the re-ignition below will wedge at the BL DMA fetch");
+                }
                 // The FLR tore WPR2 down; the booter stage needs it back.
                 let bl = match assets.bl.as_ref() {
                     Some(b) => b,

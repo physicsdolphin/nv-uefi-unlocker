@@ -948,6 +948,12 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     } else {
         gpu.write32(GSP + 0x100, 1 << 1);
     }
+    // Immediate post-START discriminator (1e93 rc2 field ask, issue #156):
+    // START write dropped -> CPUCTL still reads HALTED (0x10); core launched
+    // -> the START bit clears and HALTED drops. Splits "the write never
+    // stuck" from "the core is running but wedged" in one line.
+    let cpuctl_post = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x100) as u64);
+    info!("FWSEC-TU10X: STARTCPU post-START CPUCTL={cpuctl_post:#010x} (pre={cpuctl_pre:#010x}; 0x0 = core launched, 0x10 = START did not stick)");
     info!("FWSEC-TU10X: STARTCPU, polling WPR2 up (5s budget)...");
     let mut up = false;
     let (mut wpr_lo, mut wpr_hi) = (0u32, 0u32);
