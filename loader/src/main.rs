@@ -46,6 +46,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// first marker line may set the countdown seconds (0..=30, default 5;
 /// 0 = no wait, PROCEED as soon as the read-only prep finishes).
 const ARMED_MARKER: &CStr16 = cstr16!(r"\i_know_what_i_am_doing.txt");
+/// Phantom-key ignore list (one key per line, written as an ABORT line
+/// prints it). Loaded before the input settle so it covers every key wait.
+const IGNORE_KEY_MARKER: &CStr16 = cstr16!(r"\tx-ignore-key.txt");
 /// Issue #38: verdict-lines-only console output. Some iGPU GOPs render
 /// ~1 line/s, so the full console mirror cost minutes per run; the log
 /// file always records everything either way.
@@ -180,6 +183,11 @@ fn main() -> Status {
     // prep interleaved (enumerate / GOP probe / sample / select / asset
     // reads into the tx.rs read-through cache): the first GPU touch still
     // happens only after PROCEED, and aborting mid-prep writes nothing.
+    // Optional phantom-key ignore list; loaded before any key is read so the
+    // settle below and every later wait already honour it. Esc stays usable.
+    if let Some(content) = chainload::boot_volume_read(IGNORE_KEY_MARKER) {
+        keywait::load_ignore_keys(&content);
+    }
     // CONFIRM 之前一次性处理输入:复位/排空/(可选)USB 端口复位/安静窗口。
     // 此时还没有中止窗口,被持续上报的键(如鼠标的键盘接口)不会中止倒计时。
     let usb_list = chainload::boot_volume_read(INPUT_RESET_MARKER).map(|c| usbreset::parse(&c));

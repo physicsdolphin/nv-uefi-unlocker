@@ -27,7 +27,13 @@ pub enum Confirm {
 pub fn poll_key() -> Option<Key> {
     let key = system::with_stdin(|stdin| stdin.read_key());
     let key = key.ok().flatten()?;
-    if is_suppressed(key_code(key)) {
+    let code = key_code(key);
+    // `	x-ignore-key.txt` zuerst (Benutzerkonfiguration), dann die
+    // boot-lokale Unterdrückung; ein Wert in beiden Tabellen zählt als ignoriert.
+    if is_ignored(code) {
+        return None;
+    }
+    if is_suppressed(code) {
         SWALLOWED.fetch_add(1, Ordering::Relaxed);
         return None;
     }
@@ -51,6 +57,152 @@ static SWALLOWED: AtomicU32 = AtomicU32::new(0);
 
 fn is_suppressed(code: u32) -> bool {
     SUPPRESSED.iter().any(|s| s.load(Ordering::Relaxed) == code)
+}
+
+const MAX_IGNORED: usize = 8;
+/// `\tx-ignore-key.txt` 用户配置的忽略键值(最多 MAX_IGNORED 个);
+/// 与上面逐次启动检测出的 SUPPRESSED 表相互独立。
+static IGNORED: [AtomicU32; MAX_IGNORED] = [const { AtomicU32::new(NO_KEY) }; MAX_IGNORED];
+
+fn is_ignored(code: u32) -> bool {
+    IGNORED.iter().any(|s| s.load(Ordering::Relaxed) == code)
+}
+
+/// uefi 0.41 `ScanCode` 的全部具名变体 `(Debug 名, 扫描码)`。用常量构造,
+/// 因此按名称匹配时无需构造任何枚举值(也就不会产生无名变体)。
+/// sim/src/keygate.rs 镜像此表并固定数值。
+const SCAN_NAMES: &[(&str, u16)] = &[
+    ("UP", ScanCode::UP.0),
+    ("DOWN", ScanCode::DOWN.0),
+    ("RIGHT", ScanCode::RIGHT.0),
+    ("LEFT", ScanCode::LEFT.0),
+    ("HOME", ScanCode::HOME.0),
+    ("END", ScanCode::END.0),
+    ("INSERT", ScanCode::INSERT.0),
+    ("DELETE", ScanCode::DELETE.0),
+    ("PAGE_UP", ScanCode::PAGE_UP.0),
+    ("PAGE_DOWN", ScanCode::PAGE_DOWN.0),
+    ("FUNCTION_1", ScanCode::FUNCTION_1.0),
+    ("FUNCTION_2", ScanCode::FUNCTION_2.0),
+    ("FUNCTION_3", ScanCode::FUNCTION_3.0),
+    ("FUNCTION_4", ScanCode::FUNCTION_4.0),
+    ("FUNCTION_5", ScanCode::FUNCTION_5.0),
+    ("FUNCTION_6", ScanCode::FUNCTION_6.0),
+    ("FUNCTION_7", ScanCode::FUNCTION_7.0),
+    ("FUNCTION_8", ScanCode::FUNCTION_8.0),
+    ("FUNCTION_9", ScanCode::FUNCTION_9.0),
+    ("FUNCTION_10", ScanCode::FUNCTION_10.0),
+    ("FUNCTION_11", ScanCode::FUNCTION_11.0),
+    ("FUNCTION_12", ScanCode::FUNCTION_12.0),
+    ("ESCAPE", ScanCode::ESCAPE.0),
+    ("FUNCTION_13", ScanCode::FUNCTION_13.0),
+    ("FUNCTION_14", ScanCode::FUNCTION_14.0),
+    ("FUNCTION_15", ScanCode::FUNCTION_15.0),
+    ("FUNCTION_16", ScanCode::FUNCTION_16.0),
+    ("FUNCTION_17", ScanCode::FUNCTION_17.0),
+    ("FUNCTION_18", ScanCode::FUNCTION_18.0),
+    ("FUNCTION_19", ScanCode::FUNCTION_19.0),
+    ("FUNCTION_20", ScanCode::FUNCTION_20.0),
+    ("FUNCTION_21", ScanCode::FUNCTION_21.0),
+    ("FUNCTION_22", ScanCode::FUNCTION_22.0),
+    ("FUNCTION_23", ScanCode::FUNCTION_23.0),
+    ("FUNCTION_24", ScanCode::FUNCTION_24.0),
+    ("MUTE", ScanCode::MUTE.0),
+    ("VOLUME_UP", ScanCode::VOLUME_UP.0),
+    ("VOLUME_DOWN", ScanCode::VOLUME_DOWN.0),
+    ("BRIGHTNESS_UP", ScanCode::BRIGHTNESS_UP.0),
+    ("BRIGHTNESS_DOWN", ScanCode::BRIGHTNESS_DOWN.0),
+    ("SUSPEND", ScanCode::SUSPEND.0),
+    ("HIBERNATE", ScanCode::HIBERNATE.0),
+    ("TOGGLE_DISPLAY", ScanCode::TOGGLE_DISPLAY.0),
+    ("RECOVERY", ScanCode::RECOVERY.0),
+    ("EJECT", ScanCode::EJECT.0),
+];
+
+/// 解析 `tx-ignore-key.txt` 的一行,返回键值编码。接受 ABORT 日志行里打印的写法:
+///   `Special(LEFT)`          (按名称查 SCAN_NAMES,不构造枚举值)
+///   `Special(ScanCode(n))`   (无名扫描码,n 为十进制或 0x 十六进制)
+///   `Printable('z')`、`'\u{1a}'`
+///   `0x1A` / `26`            (Printable 码元)
+///   `scan 0x104`             (Special 扫描码,任意 u16)
+fn parse_key_line(line: &str) -> Option<u32> {
+    let t = line.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(name) = t.strip_prefix("Special(").and_then(|r| r.strip_suffix(')')) {
+        if let Some(n) = name
+            .strip_prefix("ScanCode(")
+            .and_then(|r| r.strip_suffix(')'))
+        {
+            return parse_num(n.trim())
+                .filter(|&n| n <= 0xFFFF)
+                .map(|n| 0x1_0000 | n);
+        }
+        return SCAN_NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, sc)| 0x1_0000 | u32::from(sc));
+    }
+    if let Some(rest) = t.strip_prefix("scan") {
+        return parse_num(rest.trim())
+            .filter(|&n| n <= 0xFFFF)
+            .map(|n| 0x1_0000 | n);
+    }
+    let inner = t
+        .strip_prefix("Printable(")
+        .and_then(|r| r.strip_suffix(')'))
+        .unwrap_or(t);
+    if let Some(q) = inner.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')) {
+        if let Some(h) = q.strip_prefix("\\u{").and_then(|r| r.strip_suffix('}')) {
+            return u32::from_str_radix(h, 16).ok().filter(|&n| n <= 0xFFFF);
+        }
+        let mut it = q.chars();
+        return match (it.next(), it.next()) {
+            (Some(c), None) if (c as u32) <= 0xFFFF => Some(c as u32),
+            _ => None,
+        };
+    }
+    parse_num(inner).filter(|&n| n <= 0xFFFF)
+}
+
+fn parse_num(t: &str) -> Option<u32> {
+    match t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        Some(h) => u32::from_str_radix(h, 16).ok(),
+        None => t.parse().ok(),
+    }
+}
+
+/// 加载 `\tx-ignore-key.txt`(每行一个键,`#` 起注释;坏行记录后跳过)。
+pub fn load_ignore_keys(content: &[u8]) {
+    let Ok(text) = core::str::from_utf8(content) else {
+        info!("KEYS: tx-ignore-key.txt is not UTF-8 - ignored");
+        return;
+    };
+    let esc = 0x1_0000 | u32::from(ScanCode::ESCAPE.0);
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some(code) = parse_key_line(line) else {
+            info!("KEYS: tx-ignore-key.txt line '{line}' not understood - skipped");
+            continue;
+        };
+        if code == esc {
+            info!("KEYS: tx-ignore-key.txt '{line}' is Esc - never ignorable, skipped");
+            continue;
+        }
+        let added = IGNORED.iter().any(|s| {
+            s.compare_exchange(NO_KEY, code, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+        });
+        if added {
+            info!("KEYS: tx-ignore-key.txt - ignoring '{line}' (treated as not pressed)");
+        } else {
+            info!("KEYS: tx-ignore-key.txt - more than {MAX_IGNORED} entries, '{line}' dropped");
+        }
+    }
 }
 
 /// 抑制一个键值。Esc 永远不可被抑制:被按住的真人按键与幽灵键

@@ -147,6 +147,7 @@ const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "PHASE", "SELECTOR", "HANDOFF", // stage boundaries
     "RESULT", "FINAL", "TX:", "CHAIN", "QUIET", // verdicts
     "INPUT-SETTLE", // phantom-key suppression notice (stuck-key class)
+    "KEYS:", // \tx-ignore-key.txt load result (phantom-key ignore list)
 ];
 
 /// Pure matcher for [`CONSOLE_QUIET_MARKERS`]; the sim mirror
