@@ -1,0 +1,25 @@
+
+FriendlyName       : Microsoft Remote Display Adapter
+Status             : Unknown
+Problem            : CM_PROB_PHANTOM
+ProblemDescription : 
+InstanceId         : SWD\REMOTEDISPLAYENUM\RDPIDD_INDIRECTDISPLAY&SESSIONID_0001
+
+FriendlyName       : NVIDIA GeForce RTX 3060
+Status             : OK
+Problem            : CM_PROB_NONE
+ProblemDescription : 
+InstanceId         : PCI\VEN_10DE&DEV_2504&SUBSYS_40721458&REV_A1\4&1C1C94C&0&0010
+
+FriendlyName       : NVIDIA Quadro M2000
+Status             : Unknown
+Problem            : CM_PROB_PHANTOM
+ProblemDescription : 
+InstanceId         : PCI\VEN_10DE&DEV_1430&SUBSYS_11901028&REV_A1\4&1C1C94C&0&0010
+
+FriendlyName       : NVIDIA GeForce RTX 3060
+Status             : OK
+Problem            : CM_PROB_NONE
+ProblemDescription : 
+InstanceId         : PCI\VEN_10DE&DEV_2504&SUBSYS_88181043&REV_A1\4&4FCAF60&0&0018
+
