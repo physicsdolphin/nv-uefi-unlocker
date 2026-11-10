@@ -74,6 +74,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | --- | --- |
 | `tx-require-d0.txt` | 入口非 D0 时中止，不进行 GPU 写入或复位 |
 | `tx-select-bdf.txt` | 内容为 `bb:dd.f` 或 `dddd:bb:dd.f`，仅处理匹配的卡；解析失败或目标缺失时不选其他卡 |
+| `input-reset.txt` | CONFIRM 前的可选"按设备"USB 端口复位：每行 `usb VVVV:PPPP`（十六进制 VID:PID，`#` 起注释）。列出的设备在位时调用一次 UsbPortReset 并等 1.5s 重枚举——对付固件 USB 栈一起来就持续上报幽灵键的设备（带键盘接口的 USB 鼠标/接收器）；端口复位对部分设备无效（已实测），此时由 INPUT-SETTLE 的幽灵键抑制兜底。伴随每个 USB 接口一行 `USB-INV` 枚举，用于定位是谁在报键 |
 | `chain-target.txt` | 第一个非空、非 `#` 行指定优先 EFI 路径，逐卷查找；找不到时记录日志并回退默认顺序。**固件 BootOrder 里有跨盘残留引导项时先看这条**：默认解析会按 BootOrder 取到别的盘上的旧 loader（[#204](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/204) 实例是另一块盘的 `\EFI\ubuntu\shimx64.efi`，事务全绿但链到 Linux），首行写 `\EFI\Microsoft\Boot\bootmgfw.efi` 即可钉死本机链载目标 |
 | `tx-preload.txt` | 启用预驱动预载链回（P2-7，TOTORONG 工艺）：事务前 LoadImage OS loader，交棒尾 PE 探针通过后直接 StartImage。**默认自 2026-11-09 起不预载**，走事务后固件 BootOrder 解析的旧链载路径——[#198](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/198) 九格矩阵：预载+脏卡与每一轮交棒后 logo 硬挂死逐一对应，而预载+干净卡（readonly）与无预载+脏卡（v2.1.5 run-10，无此特性）都活，默认回到久经田野的基线；预载原有的"FLR 后分配面退化时链载失败"鲁棒性动机已由固件 BootOrder 解析链（#128/#142）覆盖。需复现旧行为做 A/B 时加此标记；旧 `\tx-no-preload.txt` 退役，存在不再有任何效果 |
 | `no-reconnect.txt` | 跳过目标 GPU 的 GOP 重连，适用于事务后重连卡死或复位 |
