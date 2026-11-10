@@ -736,7 +736,7 @@ ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊�
 
 判定与处置：
 
-1. **先核对 hash**——zip 与每个成员都在 `SHA256SUMS.txt` 里，`ssdiag` 的 hash 同时钉死在二进制内、运行时自校验。hash 对得上就排除"下载被换包"。
+1. **先核对 hash**——**校验分两层**：zip 本体不在 `SHA256SUMS.txt` 里（sums 盖的是解压后的成员文件），zip 用 release 页的 GitHub 资产 digest 校验，解压后逐成员对 `SHA256SUMS.txt`；`ssdiag` 的 hash 同时钉死在二进制内、运行时自校验。hash 对得上就排除"下载被换包"。（两层各管各的口径由 [D#223](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/223) 实测澄清，本行旧表述"zip 在 sums 里"有误已修。）
 2. **主包照用**——解锁本体（`BOOTX64.EFI` + 生成脚本 + `assets`）不因这条误报受任何影响，跳过 `ssdiag` 也能完成解锁与验证（EFI 读回、GEMM 哈希、`nvidia-smi`）。
 3. **要用 `ssdiag` 就放行**——它是绿色免装工具，不留服务、退出即删，把下载的文件或目录加进 Defender 排除即可；报 `Generic`/`!ml` 名的都按误报处理，只有报出具体木马家族名才值得复查。
 

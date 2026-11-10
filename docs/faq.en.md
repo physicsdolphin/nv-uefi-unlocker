@@ -737,7 +737,7 @@ The shape of the detection is itself the evidence. `ssdiag` is an unsigned Rust 
 
 How to judge and what to do:
 
-1. **Check the hashes first** - the zip and every member are in `SHA256SUMS.txt`, and `ssdiag`'s hash is additionally pinned inside the binary and self-verified at run time. Matching hashes rule out a swapped download.
+1. **Check the hashes first** - **verification is two-layer**: the zip itself is not in `SHA256SUMS.txt` (the sums cover the extracted member files); verify the zip against GitHub's asset digest on the release page, then match each extracted member against `SHA256SUMS.txt`; `ssdiag`'s hash is additionally pinned inside the binary and self-verified at run time. Matching hashes rule out a swapped download. (The two-layer scope was clarified in the field by [D#223](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/223); the earlier wording "the zip is in the sums" here was wrong and has been fixed.)
 2. **Keep using the main package** - the unlock itself (`BOOTX64.EFI` + generator scripts + `assets`) is unaffected by this false positive; you can skip `ssdiag` and still unlock and verify (EFI read-back, GEMM hashes, `nvidia-smi`).
 3. **If you want `ssdiag`, allow it** - it is a portable tool with no installation, no leftover service (stopped and deleted on exit); add the file or its folder to the Defender exclusions. Treat `Generic` / `!ml` names as false positives; only a concrete trojan-family name is worth a second look.
 
