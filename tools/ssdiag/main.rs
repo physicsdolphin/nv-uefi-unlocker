@@ -1,4 +1,9 @@
-//! ssdiag v0.7.4 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.5 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.5 moves the GR topology anchor (0x409604) out of the turing gate to
+//! every family - three-point calibrated (TU104 KO 0x06030005, TU106 2070
+//! 0x08040003, TU106 1e93 0x08040006: byte3 = die GPC slots, byte0 = active
+//! GPC count) - making it the open-questions #19 polarity discriminator on
+//! Ampere (GA106 byte0 4 = masks bit=off, 7 = bit=on).
 //! v0.7.4 adds the GA100 VFI dictionary round (reading-notes 2026-11-11),
 //! three read-only sections in one build: (1) the kate-land/ga100vfi
 //! dictionary - fuse-controller core, the 17 row0/1 security aliases, the
@@ -3994,7 +3999,6 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                 println!();
             }
         }
-        println!("  GR_TOPO_409604         = {} (TU104 KO anchor: 5 GPC/3 ROP = 0x06030005)", hx32(rd(0x0040_9604)));
     }
     println!("--- turing mirror probe (0x820xxx vs -0x800000 vs -0x7FF000; open-questions #13) ---");
     println!("  {:<24} {:>13} {:>13} {:>13}", "word", "0x820xxx", "-0x800000", "-0x7FF000");
@@ -4009,6 +4013,16 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     }
     println!("  note: mirror == primary means a bit-23 alias (both addresses valid); mirror badf while");
     println!("  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks");
+    // GR topology anchor, every family (open-questions #19): byte3 = die GPC
+    // slots, byte0 = active GPC count - three-point calibrated (TU104 KO
+    // 0x06030005 = 5 active/3 ROP; TU106 2070 0x08040003 = 3 active, loader
+    // m3 attempt13; TU106 1e93 0x08040006 = 6 active, issue191 loader log).
+    // On Ampere it is the OQ#19 polarity discriminator: GA106 byte0 4 ->
+    // the TPC masks read bit=off, byte0 7 -> bit=on.
+    let gr = rd(0x0040_9604);
+    let b3 = (gr >> 24) & 0xff;
+    let b0 = gr & 0xff;
+    println!("  GR_TOPO_409604         = {} (byte3 GPC-slots {b3} / byte0 active-GPC {b0}; anchors 06030005/08040003/08040006)", hx32(gr));
 }
 
 // ---------------------------------------------------------------- stage timing

@@ -987,8 +987,6 @@ def report(bar, tag="", devpath=None):
                     b = badf_bucket(v)
                     cells.append(f"{v:#010x}" + (f" [{b}]" if b else ""))
                 print(f"  {label:<10} [{chunk:>2}] " + " ".join(cells))
-        print(f"  GR_TOPO_409604         = {bar.rd(0x0040_9604):#010x}"
-              " (TU104 KO anchor: 5 GPC/3 ROP = 0x06030005)")
     print("  --- turing mirror probe (0x820xxx vs -0x800000 vs -0x7FF000; open-questions #13) ---")
     print("  {:<24} {:>13} {:>13} {:>13}".format("word", "0x820xxx", "-0x800000", "-0x7FF000"))
     for name, off in GA100_MIRROR_WORDS:
@@ -1000,6 +998,15 @@ def report(bar, tag="", devpath=None):
         print(f"  {name:<24} " + " ".join(f"{c:>13}" for c in cells))
     print("  note: mirror == primary means a bit-23 alias (both addresses valid); mirror badf while")
     print("  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks")
+    # GR topology anchor, every family (open-questions #19): byte3 = die GPC
+    # slots, byte0 = active GPC count - three-point calibrated (TU104 KO
+    # 06030005, TU106 2070 08040003, TU106 1e93 08040006). On Ampere it is
+    # the OQ#19 polarity discriminator (GA106 byte0 4 -> masks bit=off,
+    # 7 -> bit=on).
+    gr = bar.rd(0x0040_9604)
+    print(f"  GR_TOPO_409604         = {gr:#010x}"
+          f" (byte3 GPC-slots {(gr >> 24) & 0xff} / byte0 active-GPC {gr & 0xff};"
+          " anchors 06030005/08040003/08040006)")
     for i in range(0, len(PLM_SURVEY), 4):
         row = PLM_SURVEY[i:i+4]
         print("  " + "  ".join(f"{o:#09x}={bar.rd(o):#010x}" for o in row))
