@@ -300,3 +300,4 @@ pub mod radix;
 pub mod transaction;
 pub mod gsp_version_swap;
 pub mod booter_diag;
+pub mod gop_order;

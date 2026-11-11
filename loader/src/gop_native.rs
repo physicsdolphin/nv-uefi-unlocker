@@ -211,6 +211,12 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
 
     if console_rebound {
         info!("NATIVE-GOP: complete (display path verified)");
+        // Issue #228: the verified console child is the YOUNGEST GOP handle
+        // (the rebuild replaced the POST-time child), so every first-pick
+        // consumer (grub gfxterm, Linux efistub, bootmgr BGA) lands on an
+        // older headless competitor. Dump is unconditional read-only; the
+        // reorder/hide surgeries are marker-gated inside.
+        crate::gop_order::after_console_rebound(child);
     } else {
         info!("NATIVE-GOP: complete (STRUCTURAL: console left to bootmgfw - display recovery NOT verified)");
     }
@@ -439,10 +445,23 @@ fn verify_gop_child(pci_handle: Handle) -> Result<Handle, &'static str> {
             let child_path = device_path_bytes(gop).unwrap_or_default();
             let belongs = path_belongs_to(&parent, &child_path);
             if belongs || attempt == 0 {
+                // Issue #228: LocateHandleBuffer order is creation order and
+                // every boot-graphics consumer picks the first handle, so the
+                // position + EDID presence (sink proof) of every child are
+                // first-class evidence. First card's probe logs the stock
+                // order; the console card's post-rebuild probe logs the
+                // flipped order - before/after in one unlock run.
+                let edid = crate::gop_order::edid_size(gop);
+                let edid_note = match edid {
+                    Some(n) => alloc::format!(" yes({n}B)"),
+                    None => " no".to_string(),
+                };
                 info!(
-                    "NATIVE-GOP: probe {attempt}: GOP handle {:?} path {} bytes belongs_to_target={belongs}",
+                    "NATIVE-GOP: probe {attempt}: GOP handle {:?} idx {i}/{} path {} bytes belongs_to_target={belongs} edid={}",
                     gop,
-                    child_path.len()
+                    handles.len(),
+                    child_path.len(),
+                    edid_note
                 );
                 if !belongs && child_path.len() >= 4 {
                     let n = child_path.len().min(40);
