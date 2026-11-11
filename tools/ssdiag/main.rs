@@ -1,4 +1,29 @@
-//! ssdiag v0.7.1 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.4 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.4 adds the GA100 VFI dictionary round (reading-notes 2026-11-11),
+//! three read-only sections in one build: (1) the kate-land/ga100vfi
+//! dictionary - fuse-controller core, the 17 row0/1 security aliases, the
+//! fused SM_SPEED_SELECT family, STATUS_OPT_* effective words - probed on
+//! every die at the GA100 offsets; (2) the Turing mirror probe (16 words x
+//! {0x820xxx, -0x800000, -0x7FF000}) that settled where the option VALUES
+//! live on TU106: -0x7FF000 is the real bank (#187/TU104), 0x820xxx decodes
+//! a control-agreeing surface with empty option slots; (3) for turing dies
+//! the whole dictionary printed a second time at the shifted base, plus the
+//! GR-topology 0x409604 cross-check anchor. The alias table carries
+//! FEATURE_FUSES_OVR_DIS (FFDO, 0x8203f0 primary / 0x213f0 shifted).
+//! Coverage completion (2026-11-12, same version): the repo's option map
+//! holds 672 words and the first pass swept 29 - the fuse-side
+//! _DISABLE/_DEFECTIVE pairs, the _CP shadow family (volatile
+//! floorsweep-reversal candidates), the TPC per-GPC disable/reconfig/
+//! defective words and the PCIE devid/magic words are now swept too
+//! (~120/672; the ~550 GA100-specific blocks stay excluded by design).
+//! v0.7.1 widens the inventory block: physical RAM total + per-module
+//! the kate-land/ga100vfi fuse-controller map is cross-family shared IP
+//! (0x8203f0 identical on GA100 and TU106), so the controller core, the 17
+//! row0/1 security aliases behind the goldilocks glitch state, the fused
+//! SM_SPEED_SELECT family and the STATUS_OPT_* effective words (scalars +
+//! PES/ROP_L2/TPC arrays) are probed read-only on every die. badf5040 =
+//! word exists behind a PLM; ffffffff/badf1100 = not decoded here - the
+//! per-die existence answer IS the experiment (open question #SBFE).
 //! v0.7.1 widens the inventory block: physical RAM total + per-module
 //! SMBIOS Type 17 rows (slot / capacity / MT/s, no serials), disk models
 //! with volumes and partition offsets (unelevated volume extents), and the
@@ -477,6 +502,16 @@ fn gate_word(v: Option<u32>) -> &'static str {
     }
 }
 
+/// gate_word, colored: OFF = green (nothing gates the probe here), ON = red,
+/// unknown = yellow. Platform-block polish (2026-11-12 user feedback).
+fn gate_word_c(v: Option<u32>) -> String {
+    match v {
+        Some(0) => green("OFF"),
+        Some(_) => red("ON"),
+        None => yellow(gate_word(v)),
+    }
+}
+
 /// The platform gates that decide whether the pinned pmxdrv can load at all,
 /// plus what installing it looks like from the outside. All values are
 /// readable without the driver, so this runs before anything is deployed -
@@ -497,17 +532,18 @@ fn preflight() {
     let blocklist = hklm_dword(CI_CONFIG, "VulnerableDriverBlocklistEnable");
     let hvci = hklm_dword(HVCI_SCENARIO, "Enabled");
     let secure_boot = hklm_dword(SECUREBOOT_STATE, "UEFISecureBootEnabled");
-    println!("PLATFORM: vulnerable-driver blocklist = {}", gate_word(blocklist));
-    println!("PLATFORM: core isolation (HVCI)       = {}", gate_word(hvci));
+    println!("PLATFORM: vulnerable-driver blocklist = {}", gate_word_c(blocklist));
+    println!("PLATFORM: core isolation (HVCI)       = {}", gate_word_c(hvci));
     match hvci_runtime() {
         Some(true) => println!(
-            "PLATFORM: HVCI runtime (CodeIntegrity) = RUNNING - MmMapIoSpace on arbitrary{} physical ranges is refused by the kernel",
+            "PLATFORM: HVCI runtime (CodeIntegrity) = {} - MmMapIoSpace on arbitrary{} physical ranges is refused by the kernel",
+            red("RUNNING"),
             ""
         ),
-        Some(false) => println!("PLATFORM: HVCI runtime (CodeIntegrity) = clear"),
-        None => println!("PLATFORM: HVCI runtime (CodeIntegrity) = unknown (query refused)"),
+        Some(false) => println!("PLATFORM: HVCI runtime (CodeIntegrity) = {}", green("clear")),
+        None => println!("PLATFORM: HVCI runtime (CodeIntegrity) = {}", yellow("unknown (query refused)")),
     }
-    println!("PLATFORM: Secure Boot                 = {}", gate_word(secure_boot));
+    println!("PLATFORM: Secure Boot                 = {}", gate_word_c(secure_boot));
     if secure_boot == Some(1) {
         println!(
             "{}",
@@ -3262,6 +3298,234 @@ const OPT_FUSE_ROWS: [(&str, u32); 7] = [
 const GA100_SM_OVR_BASE: u32 = 0x0082_0A40;
 const GA100_SM_STATUS_BASE: u32 = 0x0082_0C38;
 
+/// GA100 VFI dictionary round (docs/reading-notes.md "GA100 电压故障注入
+/// (VFI) 考据", 2026-11-11). kate-land/ga100vfi published the GA100
+/// fuse-controller map and the block is cross-family shared IP - the
+/// published `NV_FUSE_OPT_FEATURE_FUSES_OVERRIDE_DISABLE` sits at 0x8203f0
+/// exactly like our TU106 PRIV_ROWS word, and the SM_SPEED_SELECT offsets
+/// match BLACKWELL_ROWS bit-for-bit - so the whole dictionary is a Rosetta
+/// probe for consumer dies. badf5040 = word exists behind a PLM; a plain
+/// value = read it with GA100 semantics; 0xffffffff/badf1100 = not decoded
+/// here (the AD10x fuse-PLM relocation precedent says absence != relocated
+/// never). `NV_FUSE_OPT_` prefix dropped throughout.
+const GA100_FUSECTL_ROWS: [(&str, u32); 13] = [
+    ("FUSECTRL", 0x0082_0000),
+    ("FUSEADDR", 0x0082_0004),
+    ("EN_SW_OVERRIDE", 0x0082_0040),
+    ("FUSEDEBUG", 0x0082_0060),
+    ("CRC_STATUS", 0x0082_0070),
+    ("ENABLE_FUSE_PROG_STAT", 0x0082_0078),
+    ("DISABLE_FUSE_PROG_STAT", 0x0082_007C),
+    ("DISABLE_SW_OVR_STAT", 0x0082_0084),
+    ("FUSEWDATA_PLM", 0x0082_00F4),
+    ("FUSECTRL_PLM", 0x0082_00F8),
+    ("FUSEOPT_PLM", 0x0082_00FC),
+    ("RING_GLOBAL_CTL", 0x0012_0060),
+    ("RING_RESET_PLM", 0x0012_00A0),
+];
+/// The 17 row0/1-derived security aliases behind the "goldilocks" glitch
+/// state (glitch-loop/EXAMPLES.md) plus the two words the write route needs
+/// (SECURE_FUSE_WDATA_WR_SECURE is the last PLM the GA100VFI chain clears;
+/// DEVID_SW_OVERRIDE_DIS gates the PCI ID override). FEATURE_FUSES_OVERRIDE
+/// _DISABLE is already probed as PRIV_ROWS FUSE_OPT_FEATURE_OVR (0x8203f0,
+/// the identity that started this round).
+const GA100_SEC_ALIAS_ROWS: [(&str, u32); 20] = [
+    ("DEBUG_FEAT_SW_OVR_EN", 0x0082_0148),
+    ("IST_DEBUG_FA", 0x0082_0158),
+    ("PRIV_SEC_EN", 0x0082_0434),
+    ("SECURE_PRI_SRC_ISO_EN", 0x0082_0410),
+    ("PRIVKEY_ACC_DIS", 0x0082_0324),
+    ("FEATURE_FUSES_OVR_DIS", 0x0082_03F0),
+    ("SFK_ACC_DIS", 0x0082_05A8),
+    ("SECURE_PMU_DEBUG_DIS", 0x0082_0640),
+    ("SECURE_SECENG_DEBUG_DIS", 0x0082_063C),
+    ("SECURE_NVDEC_DEBUG_DIS", 0x0082_0644),
+    ("SECURE_MINION_DEBUG_DIS", 0x0082_06FC),
+    ("SECURE_GSP_DEBUG_DIS", 0x0082_074C),
+    ("HDCP_RAM_ACCESS_DIS", 0x0082_07F4),
+    ("DEBUG_SW_OVR_EN", 0x0082_0E20),
+    ("XV2CLK_RETIME_DIS", 0x0082_1064),
+    ("SECURE_FUSE_RESENSE_DIS", 0x0082_1058),
+    ("SECURED_BURN_FEAT_EN", 0x0082_1108),
+    ("SECURE_XUSB_DEBUG_DIS", 0x0082_0B98),
+    ("SECURE_FUSE_WDATA_WR_SEC", 0x0082_048C),
+    ("DEVID_SW_OVR_DIS", 0x0082_0584),
+];
+/// Fused per-op-class SM speed selects - the fuse-level siblings of our
+/// runtime SS0/SS1 (`FEAT_OVR_SM_SPD`): same segmentation semantics, two
+/// implementation layers. Offsets identical to BLACKWELL_ROWS FUSE_SS_*;
+/// this table prints for every die so Turing/Ampere/Ada get the answer too.
+const GA100_SPEED_SEL_ROWS: [(&str, u32); 9] = [
+    ("SM_SPEED_SELECT_DP", 0x0082_0224),
+    ("SM_SPEED_SELECT_FFMA", 0x0082_059C),
+    ("SM_SPEED_SELECT_FMLA16", 0x0082_07D4),
+    ("SM_SPEED_SELECT_FMLA32", 0x0082_07D8),
+    ("SM_SPEED_SELECT_IMLA0", 0x0082_07DC),
+    ("SM_SPEED_SELECT_IMLA1", 0x0082_07E0),
+    ("SM_SPEED_SELECT_IMLA2", 0x0082_07E4),
+    ("SM_SPEED_SELECT_IMLA3", 0x0082_07E8),
+    ("SM_SPEED_SELECT_IMLA4", 0x0082_07EC),
+];
+/// STATUS_OPT_* effective-value scalars (the words the GA100VFI loop
+/// monitors for glitch-state classification). Arrays print as bases below.
+const GA100_STATUS_OPT_ROWS: [(&str, u32); 20] = [
+    ("STAT_HALF_FBPA", 0x0082_0C00),
+    ("STAT_DISPLAY", 0x0082_0C04),
+    ("STAT_DISP_HEAD", 0x0082_0C08),
+    ("STAT_NVJPG", 0x0082_0C0C),
+    ("STAT_HALF_LTC", 0x0082_0C10),
+    ("STAT_FBIO", 0x0082_0C14),
+    ("STAT_FBPA", 0x0082_0C18),
+    ("STAT_GPC", 0x0082_0C1C),
+    ("STAT_PERLINK", 0x0082_0C20),
+    ("STAT_NVDEC", 0x0082_0C24),
+    ("STAT_SEC", 0x0082_0C28),
+    ("STAT_PCIE_LANE", 0x0082_0C2C),
+    ("STAT_SPARE_FS", 0x0082_0C30),
+    ("STAT_FB_CONFIG", 0x0082_0C34),
+    ("STAT_FBP", 0x0082_0D38),
+    ("STAT_NVENC", 0x0082_0D68),
+    ("STAT_GC6_ISLAND", 0x0082_0D6C),
+    ("STAT_NVLINK", 0x0082_0DB8),
+    ("STAT_SYS_PIPE", 0x0082_0E30),
+    ("STAT_OFA", 0x0082_0E34),
+];
+/// STATUS_OPT_* arrays (GA100 16 PES words, 16 ROP/L2 words, 32 per-GPC TPC
+/// mask words). TPC words 0..7 sit on dump_tpc's STATUS base - that section
+/// only runs for ampere/ada, this one covers every die, which is the point.
+const GA100_PES_STATUS_BASE: u32 = 0x0082_0DBC;
+const GA100_ROP_L2_STATUS_BASE: u32 = 0x0082_0D70;
+const GA100_TPC_STATUS_BASE: u32 = 0x0082_0C38;
+
+/// Turing mirror probe (open-questions #13 Turing arm + reading-notes §10).
+/// TU104 field data (#187) put the option-status bank at 0x021xxx
+/// (-0x7FF000 from the GA10x/GA100 layout) and derived the controller words
+/// at 0x020xxx (-0x800000); the v0.7.4 dictionary round then decoded the
+/// same words AT 0x820xxx on TU106 (13 plain + 112 badf5040, zero absent).
+/// Alias (PRI decode ignoring bit 23), per-die layout, or two live banks -
+/// one run, three addresses per word, settles it. On GA10x/Ada the mirror
+/// columns should read badf (the control). 16 words x 3 addresses, ordered
+/// by primary offset.
+const GA100_MIRROR_WORDS: [(&str, u32); 16] = [
+    ("FUSECTRL", 0x0082_0000),
+    ("EN_SW_OVERRIDE", 0x0082_0040),
+    ("FUSEDEBUG", 0x0082_0060),
+    ("CRC_STATUS", 0x0082_0070),
+    ("FUSEWDATA_PLM", 0x0082_00F4),
+    ("FUSECTRL_PLM", 0x0082_00F8),
+    ("FUSEOPT_PLM", 0x0082_00FC),
+    ("DEBUG_FEAT_SW_OVR_EN", 0x0082_0148),
+    ("SM_SPEED_SELECT_DP", 0x0082_0224),
+    ("PRIVKEY_ACC_DIS", 0x0082_0324),
+    ("OPT_GPC_DISABLE", 0x0082_0350),
+    ("WDATA_WR_SECURE", 0x0082_048C),
+    ("OPT_GPC_DEFECTIVE", 0x0082_05C4),
+    ("STAT_GPC", 0x0082_0C1C),
+    ("STAT_TPC_GPC0", 0x0082_0C38),
+    ("SBFE", 0x0082_1108),
+];
+
+/// Coverage-completion round (2026-11-12, same pinned v0.7.4): the first
+/// dictionary pass swept 29 of the 672 published option words - the status
+/// and core maps were 100% covered, the option map was not. These tables add
+/// the segmentation carriers: the fuse-side _DISABLE/_DEFECTIVE pairs (the
+/// words the STATUS_OPT_* values project from and the FF-burn targets of the
+/// GA100VFI chain), the _CP shadow layer (the soft-disable copies - the GA100
+/// 170hx-rir-tool precedent has them volatile-writable after EN_SW_OVERRIDE;
+/// open-questions #13 Ada arm), and the PCIe/devid words. Excluded on
+/// purpose: ~550 GA100-specific blocks (XUSB/AZA audio/ADCS/clock trees/
+/// Tegra legacy/FPF spares at 0x8242xx) - low cross-die value. HALF_FBPA/
+/// HALF_LTC are _ENABLE polarity (1=on). GPC pair skipped (already probed
+/// as OPT_GPC_DISABLE/DEFECTIVE in the mirror and OPT_FUSE tables).
+const GA100_OPT_DIS_ROWS: [(&str, u32); 34] = [
+    ("FBIO_DISABLE", 0x0082_036C),
+    ("FBIO_DEFECTIVE", 0x0082_05D4),
+    ("FBPA_DISABLE", 0x0082_0368),
+    ("FBPA_DEFECTIVE", 0x0082_05D0),
+    ("FBP_DISABLE", 0x0082_0364),
+    ("FBP_DEFECTIVE", 0x0082_05CC),
+    ("PES_DISABLE", 0x0082_0690),
+    ("PES_DEFECTIVE", 0x0082_0698),
+    ("ROP_L2_DISABLE", 0x0082_02C4),
+    ("ROP_L2_DEFECTIVE", 0x0082_05E8),
+    ("NVDEC_DISABLE", 0x0082_0378),
+    ("NVDEC_DEFECTIVE", 0x0082_05E0),
+    ("NVENC_DISABLE", 0x0082_0414),
+    ("NVENC_DEFECTIVE", 0x0082_05DC),
+    ("NVJPG_DISABLE", 0x0082_0370),
+    ("NVJPG_DEFECTIVE", 0x0082_05BC),
+    ("OFA_DISABLE", 0x0082_02D8),
+    ("OFA_DEFECTIVE", 0x0082_02F0),
+    ("NVLINK_DISABLE", 0x0082_0684),
+    ("NVLINK_DEFECTIVE", 0x0082_068C),
+    ("SYS_PIPE_DISABLE", 0x0082_03A4),
+    ("SYS_PIPE_DEFECTIVE", 0x0082_03AC),
+    ("DISPLAY_DISABLE", 0x0082_037C),
+    ("DISPLAY_DEFECTIVE", 0x0082_05D8),
+    ("DISP_HEAD_DISABLE", 0x0082_0418),
+    ("PCIE_LANE_DISABLE", 0x0082_0394),
+    ("PCIE_LANE_DEFECTIVE", 0x0082_05E4),
+    ("PERLINK_DISABLE", 0x0082_07F0),
+    ("SEC_DISABLE", 0x0082_04FC),
+    ("GC6_ISLAND_DISABLE", 0x0082_0568),
+    ("HALF_FBPA_ENABLE", 0x0082_049C),
+    ("HALF_LTC_ENABLE", 0x0082_060C),
+    ("FB_CONFIG", 0x0082_0328),
+    ("GEN3_SPEED_DISABLE", 0x0082_0250),
+];
+const GA100_DEVID_ROWS: [(&str, u32); 6] = [
+    ("PCIE_DEVIDA", 0x0082_04D8),
+    ("PCIE_DEVIDB", 0x0082_056C),
+    ("PCIE_MAGIC_A", 0x0082_0558),
+    ("PCIE_MAGIC_B", 0x0082_0518),
+    ("PCIE_MAGIC_C", 0x0082_051C),
+    ("PCIE_MAGIC_D", 0x0082_0520),
+];
+/// Per-GPC TPC fuse words: DISABLE contiguous 0x820760+4g, RECONFIG
+/// contiguous 0x820788+4g, DEFECTIVE scattered (printed one by one).
+const GA100_TPC_DISABLE_BASE: u32 = 0x0082_0760;
+const GA100_TPC_RECONFIG_BASE: u32 = 0x0082_0788;
+const GA100_TPC_DEF_ROWS: [(&str, u32); 8] = [
+    ("TPC_GPC0_DEFECTIVE", 0x0082_05C8),
+    ("TPC_GPC1_DEFECTIVE", 0x0082_0508),
+    ("TPC_GPC2_DEFECTIVE", 0x0082_050C),
+    ("TPC_GPC3_DEFECTIVE", 0x0082_0514),
+    ("TPC_GPC4_DEFECTIVE", 0x0082_0564),
+    ("TPC_GPC5_DEFECTIVE", 0x0082_05AC),
+    ("TPC_GPC6_DEFECTIVE", 0x0082_0B84),
+    ("TPC_GPC7_DEFECTIVE", 0x0082_0B80),
+];
+/// The _CP shadow family (24 on GA100): soft-disable copies behind
+/// EN_SW_OVERRIDE - the volatile floorsweep-reversal candidates (OQ#13).
+/// FB_CONFIG appears twice across the tables (pair table + CP anchor) - the
+/// second read is the consistency check.
+const GA100_CP_ROWS: [(&str, u32); 24] = [
+    ("FBP_DISABLE_CP", 0x0082_0234),
+    ("GPC_DISABLE_CP", 0x0082_022C),
+    ("TPC_GPC0_DISABLE_CP", 0x0082_0230),
+    ("TPC_GPC1_DISABLE_CP", 0x0082_0504),
+    ("TPC_GPC2_DISABLE_CP", 0x0082_05F4),
+    ("TPC_GPC3_DISABLE_CP", 0x0082_05A0),
+    ("TPC_GPC4_DISABLE_CP", 0x0082_04C4),
+    ("TPC_GPC5_DISABLE_CP", 0x0082_04CC),
+    ("TPC_GPC6_DISABLE_CP", 0x0082_0B8C),
+    ("TPC_GPC7_DISABLE_CP", 0x0082_0B88),
+    ("FBIO_DISABLE_CP", 0x0082_0460),
+    ("FBPA_DISABLE_CP", 0x0082_0454),
+    ("NVDEC_DISABLE_CP", 0x0082_0458),
+    ("NVENC_DISABLE_CP", 0x0082_045C),
+    ("NVJPG_DISABLE_CP", 0x0082_0488),
+    ("ROP_L2_DISABLE_CP", 0x0082_02E4),
+    ("OFA_DISABLE_CP", 0x0082_02EC),
+    ("PCIE_LANE_DISABLE_CP", 0x0082_0248),
+    ("DISPLAY_DISABLE_CP", 0x0082_024C),
+    ("DISP_HEAD_DISABLE_CP", 0x0082_0450),
+    ("SYS_PIPE_DISABLE_CP", 0x0082_03A8),
+    ("PES_DISABLE_CP", 0x0082_0694),
+    ("NVLINK_DISABLE_CP", 0x0082_0688),
+    ("FB_CONFIG_CP_ANCHOR", 0x0082_0328),
+];
+
 fn badf_bucket(v: u32) -> Option<&'static str> {
     if v >> 16 != 0xBADF {
         return None;
@@ -3342,6 +3606,17 @@ fn decode_plm(v: u32) -> &'static str {
         0xFFFF_FB8F => "closed (PL3-only writes)",
         0xFFFF_FFEF => "closed (relock+drift)",
         _ => "closed (non-standard)",
+    }
+}
+
+/// decode_plm, colored: OPEN green, stock-closed plain (the shipped state,
+/// nothing to alarm about), every other closed form red. Platform polish
+/// (2026-11-12 user feedback: the fuse-dictionary PLM notes read flat).
+fn paint_plm(v: u32) -> String {
+    match decode_plm(v) {
+        "OPEN" => format!(" ({})", green("OPEN")),
+        "closed (stock)" => format!(" ({})", decode_plm(v)),
+        other => format!(" ({})", red(other)),
     }
 }
 
@@ -3539,7 +3814,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         for (name, off) in regs {
             let v = rd(*off);
             let note = match *name {
-                n if n.ends_with("PLM") => format!(" ({})", decode_plm(v)),
+                n if n.ends_with("PLM") => format!("{}", paint_plm(v)),
                 _ => match badf_bucket(v) {
                     Some(b) => format!(" [{}]", red(b)),
                     None => String::new(),
@@ -3559,7 +3834,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     {
         let v = rd(*off);
         let note = match *name {
-            n if n.ends_with("_PLM") || n.ends_with("PLM0") => format!(" ({})", decode_plm(v)),
+            n if n.ends_with("_PLM") || n.ends_with("PLM0") => format!("{}", paint_plm(v)),
             _ => match badf_bucket(v) {
                 Some(b) => format!(" [{}]", red(b)),
                 None => String::new(),
@@ -3572,24 +3847,24 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     print!("{: >18}", "  GA100_SM_OVR");
     for gpc in 0..8u32 {
         let v = rd(GA100_SM_OVR_BASE + gpc * 4);
-        let b = badf_bucket(v).map(|b| format!("({b})")).unwrap_or_default();
+        let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
         print!(" {}{}", hx32(v), b);
     }
     println!();
     print!("{: >18}", "  GA100_SM_STAT");
     for gpc in 0..8u32 {
         let v = rd(GA100_SM_STATUS_BASE + gpc * 4);
-        let b = badf_bucket(v).map(|b| format!("({b})")).unwrap_or_default();
+        let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
         print!(" {}{}", hx32(v), b);
     }
     println!();
     println!("--- ampere/ada FEAT sweep (M1 cluster) ---");
-    print!("{: >24}", "");
+    print!("{: >8}", "");
     for off in AMPADA_SWEEP {
         print!(" {}{}", paint("96", "0x"), paint("93", &format!("{off:08x}")));
     }
     println!();
-    print!("{: >24}", "value");
+    print!("{: >8}", "value");
     for off in AMPADA_SWEEP {
         print!(" {}", hx32(rd(off)));
     }
@@ -3617,6 +3892,123 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         let note = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
         println!("{name:<22} = {}{note}", hx32(v));
     }
+    println!("--- ga100 vfi dictionary (kate-land/ga100vfi; read-only, cross-die probe) ---");
+    for (label, regs) in [
+        ("fusectl", &GA100_FUSECTL_ROWS[..]),
+        ("sec-alias", &GA100_SEC_ALIAS_ROWS[..]),
+        ("speed-sel", &GA100_SPEED_SEL_ROWS[..]),
+        ("status-opt", &GA100_STATUS_OPT_ROWS[..]),
+        ("opt-dis", &GA100_OPT_DIS_ROWS[..]),
+        ("devid", &GA100_DEVID_ROWS[..]),
+        ("tpc-def", &GA100_TPC_DEF_ROWS[..]),
+        ("cp-shadow", &GA100_CP_ROWS[..]),
+    ] {
+        for (name, off) in regs {
+            let v = rd(*off);
+            let note = if name.ends_with("PLM") {
+                format!("{}", paint_plm(v))
+            } else {
+                match badf_bucket(v) {
+                    Some(b) => format!(" [{}]", red(b)),
+                    None => String::new(),
+                }
+            };
+            println!("  {label:<10} {name:<26} = {}{note}", hx32(v));
+        }
+    }
+    // STATUS_OPT arrays, 8 dwords per line, badf-bucketed inline (GA100_SM
+    // bank idiom). The whole block is the per-die existence answer.
+    for (label, base, count) in [
+        ("PES_GPC", GA100_PES_STATUS_BASE, 16u32),
+        ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16u32),
+        ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
+        ("TPC_DIS", GA100_TPC_DISABLE_BASE, 8u32),
+        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 8u32),
+    ] {
+        for chunk in (0..count).step_by(8) {
+            print!("  {label:<10} [{chunk:>2}]");
+            for i in chunk..(chunk + 8).min(count) {
+                let v = rd(base + i * 4);
+                let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
+                print!(" {}{}", hx32(v), b);
+            }
+            println!();
+        }
+    }
+    println!("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,");
+    println!("  plain value = read it with GA100 semantics, ffffffff/badf1100 = not decoded here (AD10x fuse-PLM relocation precedent)");
+    if fam == "turing" {
+        // Mirror-round verdict: on TU106 the GA100-layout option VALUES live at
+        // -0x7FF000 (the #187/TU104 bank), while 0x820xxx decodes a surface whose
+        // control/PLM words agree but option words read zero or badf. Print the
+        // whole dictionary once more at the shifted base - that is where the
+        // real bits are on this family. GR topology 0x409604 rides along as the
+        // independent cross-check anchor (TU104 KO: 5 active GPCs read 0x06030005).
+        println!("--- turing fuse bank (ga100 dictionary at -0x7FF000; #13 / cold-values TU104) ---");
+        // The shift is defined only inside the 0x82xxxx option bank. Rows
+        // outside it - the two PRI-ring words at 0x1200xx - must NOT be
+        // shifted: 0x120060 - 0x7FF000 underflows u32, a release build wraps
+        // silently (no overflow checks), and the volatile load lands ~4 GiB
+        // past the 16 MiB mapping into unassigned PCI space - which froze
+        // the Z170 bench on 2026-11-11. They are already printed flat in
+        // the dictionary section above.
+        let t = |off: u32| rd(off - 0x7FF_000);
+        for (label, regs) in [
+            ("fusectl", &GA100_FUSECTL_ROWS[..]),
+            ("sec-alias", &GA100_SEC_ALIAS_ROWS[..]),
+            ("speed-sel", &GA100_SPEED_SEL_ROWS[..]),
+            ("status-opt", &GA100_STATUS_OPT_ROWS[..]),
+            ("opt-dis", &GA100_OPT_DIS_ROWS[..]),
+            ("devid", &GA100_DEVID_ROWS[..]),
+            ("tpc-def", &GA100_TPC_DEF_ROWS[..]),
+            ("cp-shadow", &GA100_CP_ROWS[..]),
+        ] {
+            for (name, off) in regs {
+                if *off < 0x800_000 {
+                    continue; // not an option-bank row (the two RING words)
+                }
+                let v = t(*off);
+                let note = if name.ends_with("PLM") {
+                    format!("{}", paint_plm(v))
+                } else {
+                    match badf_bucket(v) {
+                        Some(b) => format!(" [{}]", red(b)),
+                        None => String::new(),
+                    }
+                };
+                println!("  {label:<10} {name:<26} = {}{note}", hx32(v));
+            }
+        }
+        for (label, base, count) in [
+            ("PES_GPC", GA100_PES_STATUS_BASE, 16u32),
+            ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16u32),
+            ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
+        ] {
+            for chunk in (0..count).step_by(8) {
+                print!("  {label:<10} [{chunk:>2}]");
+                for i in chunk..(chunk + 8).min(count) {
+                    let v = t(base + i * 4);
+                    let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
+                    print!(" {}{}", hx32(v), b);
+                }
+                println!();
+            }
+        }
+        println!("  GR_TOPO_409604         = {} (TU104 KO anchor: 5 GPC/3 ROP = 0x06030005)", hx32(rd(0x0040_9604)));
+    }
+    println!("--- turing mirror probe (0x820xxx vs -0x800000 vs -0x7FF000; open-questions #13) ---");
+    println!("  {:<24} {:>13} {:>13} {:>13}", "word", "0x820xxx", "-0x800000", "-0x7FF000");
+    for (name, off) in GA100_MIRROR_WORDS {
+        print!("  {name:<24}");
+        for base in [0u32, 0x800_000, 0x7FF_000] {
+            let v = if base == 0 { rd(off) } else { rd(off - base) };
+            let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
+            print!(" {:>10}{}", hx32(v), b);
+        }
+        println!();
+    }
+    println!("  note: mirror == primary means a bit-23 alias (both addresses valid); mirror badf while");
+    println!("  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks");
 }
 
 // ---------------------------------------------------------------- stage timing
@@ -3931,8 +4323,27 @@ SSDIAG_COLOR=force pins on.",
         }
 
         let base = va as *const u8;
-        let rd = |off: u32| unsafe { (base.add(off as usize) as *const u32).read_volatile() };
-        let wr = |off: u32, v: u32| unsafe { (base.add(off as usize) as *mut u32).write_volatile(v) };
+        // Host-side last-resort net: every table offset lives inside the
+        // 16 MiB BAR0 aperture (PAGES=4096 in walk_candidates), so anything
+        // at or past that bound is an arithmetic bug upstream - e.g. a
+        // shifted-base subtraction underflowing u32, which release builds
+        // wrap silently and then volatile-load ~4 GiB past the mapping
+        // (froze the Z170 bench on 2026-11-11 reading unassigned PCI space).
+        // Answer all-ones instead of touching the bus: a data point, not a
+        // stalled host. The same net guards wr - an out-of-aperture write
+        // would corrupt foreign physical pages.
+        let rd = |off: u32| unsafe {
+            if off >= 0x0100_0000 {
+                0xFFFF_FFFF
+            } else {
+                (base.add(off as usize) as *const u32).read_volatile()
+            }
+        };
+        let wr = |off: u32, v: u32| unsafe {
+            if off < 0x0100_0000 {
+                (base.add(off as usize) as *mut u32).write_volatile(v)
+            }
+        };
 
         // SR-IOV VF shape (geforce-sriov / vfio-pci guests): the window serves
         // a synthetic chipset id on BOOT0 and hard-wired zeros on every other
@@ -4173,6 +4584,23 @@ mod tests {
             _ => 0,
         };
         dump_tpc(&rd);
+    }
+
+    #[test]
+    fn turing_dump_renders_without_panicking() {
+        // Walks every turing-gated section: the FEAT cluster, the GA100
+        // dictionary, the -0x7FF000 shifted bank and the mirror probe. The
+        // 2026-11-11 Z170 freeze lived exactly here - shifting the two
+        // PRI-ring rows (0x1200xx, not option-bank rows) underflowed u32 and
+        // a release build volatile-loaded ~4 GiB past the BAR0 mapping.
+        // Debug builds panic on that overflow; this test is the net.
+        let rd = |off: u32| match off {
+            0x0040_9650 => 0xFFFF_FFFF,
+            0x0040_9664 => 0x8888_8888,
+            0x0040_966C => 8,
+            _ => 0,
+        };
+        dump_debug(&rd, "turing");
     }
 
     #[test]

@@ -1,0 +1,25 @@
+1 NVIDIA GPU function(s) discovered
+===== GPU 1/1: PCI\VEN_10DE&DEV_1F07&SUBSYS_86711043&REV_A1\4&23b96b75&0&0008 =====
+[v0.7.4 round, Z170-A bench, unlocked state, driver 621.01 GSP mode, canary intact]
+[sections identical to ssdiag-v074-ga100vfi-dict.log except the mirror below - full log in that file]
+--- turing mirror probe (0x820xxx vs -0x800000 vs -0x7FF000; open-questions #13) ---
+  word                          0x820xxx     -0x800000     -0x7FF000
+  FUSECTRL                 0x40040000 0xbadf5040(PRIV_VIOLATION) 0xc0040000
+  EN_SW_OVERRIDE           0x00000000 0x20000000 0x00000000
+  FUSEDEBUG                0x00000000 0x00000000 0x00000000
+  CRC_STATUS               0xbadf5040(PRIV_VIOLATION) 0xbadf5040(PRIV_VIOLATION) 0xbadf5040(PRIV_VIOLATION)
+  FUSEWDATA_PLM            0xffffff8f 0x00010000 0xffffff8f
+  FUSECTRL_PLM             0xffffffff 0x00000000 0xffffffff
+  FUSEOPT_PLM              0xffffffff 0x71058113 0xffffffff
+  DEBUG_FEAT_SW_OVR_EN     0x00000000 0xff000000 0x00000001
+  SM_SPEED_SELECT_DP       0x00000000 0x22582245 0x00000000
+  PRIVKEY_ACC_DIS          0x00000000 0xffffff8f 0x00000004
+  OPT_GPC_DISABLE          0xbadf5040(PRIV_VIOLATION) 0xbadf5040(PRIV_VIOLATION) 0x00000000
+  WDATA_WR_SECURE          0xbadf5040(PRIV_VIOLATION) 0x00000000 0x00000001
+  OPT_GPC_DEFECTIVE        0xbadf5040(PRIV_VIOLATION) 0xbadf5108(BADF) 0x00000000
+  STAT_GPC                 0xbadf5040(PRIV_VIOLATION) 0xbadf5040(PRIV_VIOLATION) 0x00000038
+  STAT_TPC_GPC0            0xbadf5040(PRIV_VIOLATION) 0xbadf5040(PRIV_VIOLATION) 0x00000000
+  SBFE                     0xbadf5040(PRIV_VIOLATION) 0x0000007f 0xbadf1100(UNDECODED)
+VERDICT [turing]: UNLOCKED (override values live)
+CANARY: intact + SS live - no reset, nothing rewrote the state after handoff
+driver service removed (remove-when-done)

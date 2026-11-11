@@ -1,0 +1,28 @@
+[v0.7.4 final consolidated build, Z170-A bench, unlocked state, driver 621.01 GSP mode, canary intact]
+[PARTIAL LOG: the exe terminated silently a few seconds after printing FUSEOPT_PLM
+(user report: process died, host unaffected - an access violation on unmapped user
+VA, not a bus stall; the earlier "machine freeze" reading was wrong). Root cause
+(tool bug, fixed same day): the turing shifted-bank section subtracted 0x7FF000
+from the two PRI-ring rows (0x120060/0x1200A0) which are NOT option-bank rows;
+0x120060 - 0x7FF000 underflowed u32, the release build wrapped silently, and the
+read landed ~4 GiB past the 16 MiB user mapping. Read-only round: no writes
+occurred. The re-run with the fixed build completed normally: see
+ssdiag-v074-ga100vfi-full.log.]
+[Sections before the turing fuse bank matched ssdiag-v074-ga100vfi-dict.log plus
+FEATURE_FUSES_OVR_DIS = 0xbadf5040 [PRIV_VIOLATION] in the sec-alias block.]
+--- turing fuse bank (ga100 dictionary at -0x7FF000; #13 / cold-values TU104) ---
+  fusectl    FUSECTRL                   = 0xc0040000
+  fusectl    FUSEADDR                   = 0x000000ff
+  fusectl    EN_SW_OVERRIDE             = 0x00000000
+  fusectl    FUSEDEBUG                  = 0x00000000
+  fusectl    CRC_STATUS                 = 0xbadf5040 [PRIV_VIOLATION]
+  fusectl    ENABLE_FUSE_PROG_STAT      = 0xbadf5040 [PRIV_VIOLATION]
+  fusectl    DISABLE_FUSE_PROG_STAT     = 0xbadf5040 [PRIV_VIOLATION]
+  fusectl    DISABLE_SW_OVR_STAT        = 0xbadf5040 [PRIV_VIOLATION]
+  fusectl    FUSEWDATA_PLM              = 0xffffff8f (closed (stock))
+  fusectl    FUSECTRL_PLM               = 0xffffffff (OPEN)
+  fusectl    FUSEOPT_PLM                = 0xffffffff (OPEN)
+[--- FROZE HERE (RING_GLOBAL_CTL, shifted address underflow) ---]
+[Recovered data points unique to the shifted face:
+  FUSEADDR = 0x000000ff (flat face reads 0x00000000) - nonzero content, meaning open;
+  FUSECTRL = 0xc0040000 re-confirmed; PLM trio re-confirmed 8f/ff/ff.]
