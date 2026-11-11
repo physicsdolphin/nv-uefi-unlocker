@@ -15,19 +15,21 @@
 //! [card4, ASPEED] stock vs the flipped order after the rebuild; journal
 //! ast-fbcon + live nvidia fb1; X99 single-GPU control unaffected.
 //!
-//! Two opt-in knobs, both refused unless ALL gates pass (read-only):
+//! Two surgeries, both refused unless ALL gates pass (read-only):
 //!   1. the verified console child is enumerated exactly once,
 //!   2. it carries EDID (Discovered or Active, >=128 bytes) - sink proof,
 //!   3. the flip is in place (it is not already first),
 //!   4. every competitor is EDID-less, on a DIFFERENT PCI controller than
 //!      the console child, and (hide only) not matched by refusal rules.
-//! Surgery:
-//!   \tx-gop-reorder.txt - the competitor's controller drivers are stopped
-//!     and restarted (parent-level disconnect + NON-recursive reconnect);
-//!     the fresh child appends to the tail, so the verified console child
+//! Default since the #228 bench (2026-11-12, healthy-machine negative
+//! control: console-already-first = Noop, zero writes):
+//!   reorder - the competitor's controller drivers are stopped and
+//!     restarted (parent-level disconnect + NON-recursive reconnect); the
+//!     fresh child appends to the tail, so the verified console child
 //!     becomes first while the competitor keeps working;
 //!   \tx-gop-hide.txt - hard exclusion: listed BDFs (bb:dd.f / dddd:bb:dd.f)
-//!     or vendor:device (vvvv:dddd) get disconnected without recreate.
+//!     or vendor:device (vvvv:dddd) get disconnected without recreate;
+//!   \tx-gop-no-reorder.txt - opts the reorder out (dump stays).
 //! Readback after every write; ANY gate failure = loud log + no write
 //! ("a wrong reconnect is worse than none", ordering edition). Scope note:
 //! this fixes the in-session chain (unlock -> handoff -> OS, the replay
@@ -274,9 +276,18 @@ pub fn after_console_rebound(console_child: Handle) {
         run_hide(console_child, &handles, &text);
         return;
     }
-    if crate::tx::probe_file("\\tx-gop-reorder.txt") {
-        run_reorder(console_child, &handles);
+    // Default ON since the #228 bench (2026-11-12): the healthy-machine
+    // negative control confirmed the zero-write path (console child already
+    // first = Noop), and the demote path only ever runs on the actual flip
+    // with EDID sink proof on the console child - "start with the display
+    // output the machine itself chose" is the boot-native semantics.
+    // \tx-gop-no-reorder.txt opts out; the legacy enable marker
+    // \tx-gop-reorder.txt is still accepted and is now a no-op.
+    if crate::tx::probe_file("\\tx-gop-no-reorder.txt") {
+        info!("GOP-REORDER: \\tx-gop-no-reorder.txt present - ordering surgery skipped (opt-out)");
+        return;
     }
+    run_reorder(console_child, &handles);
 }
 
 fn run_hide(console_child: Handle, handles: &[Handle], raw: &str) {

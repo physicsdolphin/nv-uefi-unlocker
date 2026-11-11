@@ -86,8 +86,10 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-gop-disconnect.txt` | 诊断开关：断开所有 GOP 句柄（含 iGPU）而非仅目标卡。**不要当提速手段用**——console 静默后无增益，且他卡 console 被杀后 loader 不会恢复它（依赖 bootmgfw 重建，存在 Code 12 风险形态，见 issue #35） |
 | `tx-reconnect-legacy.txt`（tx 构建） | **退出阀**：恢复旧版重连路径（递归 ConnectController + PR#13 自动非递归逻辑）。默认已改为 native-GOP console 重建（本卡影子 ROM 原厂 GOP），仅当新版在你的板上有异常时使用 |
 | `tx-native-gop.txt`（tx 构建） | **可选 pin**：native-GOP 已是默认行为，此 marker 不再是启用开关；首行写卷上 GOP 模块路径可指定用该模块替代本卡影子 ROM（兼容包形态），空/缺省=影子 ROM |
-| `tx-gop-reorder.txt`（tx 构建） | **opt-in（issue #228）**：native-GOP 重建后，已验证 console child 是**最新创建**的 GOP 句柄，而 grub gfxterm / Linux efistub / bootmgr 都取**第一个** GOP（sink 盲）——多卡+无头 BMC 类拓扑上句柄序翻转后它们会画到无头头上。此旋钮在 console 重建成功后把 EDID-less 竞争者 child Disconnect 后重建（新句柄追加队尾），让 console child 排第一；竞争者功能保留。四道门全绿才写：verified child 枚举在位 + child 带 EDID（sink 证明）+ 翻转在位 + 竞争者无 EDID 且非 console 卡自身；任一失败=响亮日志+零写入，术后读回。**范围=in-session 链**（每靴重放解锁→交棒→OS）；暖启动句柄序由固件重建，不在此旋钮管辖 |
-| `tx-gop-hide.txt`（tx 构建） | **opt-in 手动兜底（issue #228）**：每行一个 BDF（`bb:dd.f` 或 `dddd:bb:dd.f`）或 vendor:device（`vvvv:dddd`），对应 GOP child 直接 Disconnect（不重建）。拒绝条件：清单命中 console 卡自身（兄弟头规则，**整单拒执行**）、无可解析行（拒绝猜）、术后读回失败响亮上报。与 `tx-gop-reorder.txt` 互斥：hide 先执行，reorder 不再跑 |
+| GOP 句柄序重排（**默认开启**，tx 构建，issue #228） | native-GOP 重建后 console 卡的 child 是**最新创建**的 GOP 句柄（排队尾），而 grub gfxterm / Linux efistub / bootmgr 都取**第一个** GOP（sink 盲）——多卡+无头 BMC 类拓扑上句柄序翻转后启动图形画到无头头上（#228 C621E 实证：grub/plymouth 全盲、Windows 登录才被驱动拉回）。console 重建成功后自动把 EDID-less 竞争者控制器驱动停/启一轮（新 child 追加队尾）让 console child 居首，竞争者功能保留。**四道门全绿才写**：verified child 枚举在位 + 带 EDID（sink 证明）+ 翻转在位 + 竞争者无 EDID 且非 console 卡自身；任一失败=响亮日志+零写入，术后读回。健康机负控实证：console 已居首=Noop 零写入。**范围=in-session 链**（每靴重放解锁→交棒→OS）；暖启动句柄序由固件重建自决 |
+| `tx-gop-no-reorder.txt`（tx 构建） | **退出阀**：跳过默认的 GOP 句柄序重排（GOP-ORDER dump 仍落日志）；仅当默认行为在你的板上有异常时使用 |
+| `tx-gop-reorder.txt`（tx 构建） | 旧启用 marker：重排已默认化，此 marker 仍被接受但为**空操作**（保持 stick 兼容，可删除） |
+| `tx-gop-hide.txt`（tx 构建） | **手动兜底**：每行一个 BDF（`bb:dd.f` 或 `dddd:bb:dd.f`）或 vendor:device（`vvvv:dddd`），对应 GOP child 直接 Disconnect（不重建）。拒绝条件：清单命中 console 卡自身（兄弟头规则，**整单拒执行**）、无可解析行（拒绝猜）、术后读回失败响亮上报。与默认重排互斥：hide 先执行 |
 | `i_know_what_i_am_doing.txt` | 5 秒倒计时后自动运行，任意键中止；文件存在即启用，内容忽略 |
 | `tx-no-canary.txt` | 整组跳过复位金丝雀的读写（A/B 对照；见[回锁章](#relock)） |
 | `tx-relock.txt`（tx 构建） | **退出阀**：交棒前把 FEAT PLM 锁回 `0xffffff8f`（三代通用）。默认自 2026-11-08 起三代都门开交棒（Turing 加入 Ampere/Ada 的开门形态；TU106 bench 端到端坐实门开无害且系统内写入面开放，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`）。Turing 臂实测回锁值 `0xffffffef`/`0xffffff8f` 随板方差；Ampere/Ada 臂（FLR 判定后重锁）未上过 bench |
