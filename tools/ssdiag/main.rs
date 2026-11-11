@@ -1,4 +1,12 @@
-//! ssdiag v0.7.5 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.6 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.6 fixes two inventory bugs field-caught on a Huananzhi X99-F8D dual
+//! E5-2699v3: the CPU line counted only the calling thread's processor group
+//! (GetNativeSystemInfo is group-scoped - 8 threads shown on a 72-thread
+//! box; now GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)), and the SMBIOS
+//! Type 17 ConfiguredMemoryClockSpeed was read at 0x21 - one past the spec's
+//! 0x20 - stitching 0x08 + a string byte into "29704 MT/s" on DDR4-2133
+//! (most boards' short Type 17 records never reached the misaligned read;
+//! offset fixed, plausibility gate kept).
 //! v0.7.5 moves the GR topology anchor (0x409604) out of the turing gate to
 //! every family - three-point calibrated (TU104 KO 0x06030005, TU106 2070
 //! 0x08040003, TU106 1e93 0x08040006: byte3 = die GPC slots, byte0 = active
@@ -228,6 +236,7 @@ mod win {
             total_free: *mut u64,
         ) -> i32;
         pub fn GetNativeSystemInfo(info: *mut SystemInfo) -> i32;
+        pub fn GetActiveProcessorCount(GroupNumber: u16) -> u32;
     }
 
     /// Field layout matches winnt.h SYSTEM_INFO for x64 (ULONG_PTR fields
@@ -874,7 +883,15 @@ fn cpu_topology() -> Option<String> {
         processor_revision: 0,
     };
     unsafe { win::GetNativeSystemInfo((&mut si as *mut win::SystemInfo).cast()) };
-    let logical = si.num_processors;
+    // GetNativeSystemInfo.num_processors is scoped to the CALLING thread's
+    // processor group (Win7+ splits >64-thread sockets into groups: a dual
+    // E5-2699v3 is 36+36, and one group is not the machine). The inventory
+    // line must be the whole box - GetActiveProcessorCount(ALL_PROCESSOR_
+    // GROUPS) sums every group. Field-observed (Huananzhi X99-F8D, 2026-11-12):
+    // the group-scoped count printed 8 threads on a 72-thread box.
+    const ALL_PROCESSOR_GROUPS: u16 = 0xFFFF;
+    let all: u32 = unsafe { win::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) };
+    let logical = if all > si.num_processors { all } else { si.num_processors };
     if logical == 0 {
         return None;
     }
@@ -967,12 +984,19 @@ fn ram_summary() -> (Option<u32>, Vec<String>) {
             };
             if let Some(mib) = mib {
                 let sp = u16::from_le_bytes(data[off + 0x15..off + 0x17].try_into().unwrap());
-                // The same board writes ConfiguredMemorySpeed = 10 (MT/s -
-                // impossible; junk placeholder) while Speed holds the real
-                // 2720. Trust the configured value only when it is physically
-                // plausible; everything real is >= 200 MT/s.
-                let cs = if len >= 0x23 {
-                    u16::from_le_bytes(data[off + 0x21..off + 0x23].try_into().unwrap())
+                // ConfiguredMemoryClockSpeed lives at 0x20 (SMBIOS 2.6+). A
+                // first cut read it at 0x21 - off by one - so the byte pair
+                // became [hi(cfg), lo(next field)]: on the Huananzhi X99-F8D
+                // (Type 17 len 0x22) that strung together 0x08 + 't' of the
+                // following string block = 0x7408 = "29704 MT/s" on a DDR4-
+                // 2133 box, while most boards' short Type 17 records never
+                // reached the misaligned read and rode the correct Speed
+                // @0x15. The same board writes ConfiguredMemorySpeed = 10
+                // (MT/s - impossible; junk placeholder) while Speed holds the
+                // real rate: trust the configured value only when it is
+                // physically plausible; everything real is >= 200 MT/s.
+                let cs = if len >= 0x22 {
+                    u16::from_le_bytes(data[off + 0x20..off + 0x22].try_into().unwrap())
                 } else {
                     0
                 };
