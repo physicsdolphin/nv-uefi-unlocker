@@ -325,7 +325,7 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 3. **事后修复**：门仍开时 `ssdiag --reapply` / `diag-unlock.py --reapply` 写回选择器；门已锁只能重放。
 4. **报告时带齐证据**：`loader.log` 的 `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` 三行（含 `CANARY` 与 `wpr2_lo`）、系统内读回值（用带 `CANARY:` 判定行的 `ssdiag` 0.6.5+）、`powercfg /a`、设备电源状态与事件日志。缺这些只能反复猜。
 5. **把平台属性化**：确认某平台有 `_PR3` 且 rail 真断，就按平台属性登记，而不是当驱动缺陷追。
-6. **给 dGPU 制造引用**：在 dGPU 直连的接口上接一台外接显示器再冷启。Linux 社区的经验说法是"接在 NVIDIA 一侧的显示器会挡住 D3cold"（轶事）；若丢锁随之消失，就支持"无人引用 → 被同步成关闭"这条假说。
+6. **给 dGPU 制造引用**：在 dGPU 直连的接口上接一台外接显示器再冷启。Linux 社区的经验说法是"接在 NVIDIA 一侧的显示器会挡住 D3cold"（轶事）；若丢锁随之消失，就支持"无人引用 → 被同步成关闭"这条假说。**Windows 侧程序级引用已实证（[D#229](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/229)，2026-11-11）**：常驻持有 CUDA context + 每 5 s 真 kernel 提交（计划任务 SYSTEM 开机自启）即可阻止 RTD3 park——`nvidia-smi` 仍 P8/1.5 W 不抬功耗、混合拓扑零改动不接显示器，同引导 6/6 采样近 12 min 全 `HELD`（对照无保活 ~2 min 空闲即被抹）；边界如实：未做停保活因果对照、Modern Standby/合盖未测、"交棒→驱动接管"空窗用户态无解。Linux 侧等价物=关 RTD3（[一键脚本](#linux)）。
 
 <a id="relock-148"></a>
 
