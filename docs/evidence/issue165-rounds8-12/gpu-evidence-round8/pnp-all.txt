@@ -1,0 +1,145 @@
+
+Class                       : Display
+FriendlyName                : NVIDIA GeForce RTX 3060
+InstanceId                  : PCI\VEN_10DE&DEV_2504&SUBSYS_40721458&REV_A1\4&1C1C94C&0&0010
+Problem                     : CM_PROB_NORMAL_CONFLICT
+ConfigManagerErrorCode      : CM_PROB_NORMAL_CONFLICT
+ProblemDescription          : 
+Caption                     : NVIDIA GeForce RTX 3060
+Description                 : NVIDIA GeForce RTX 3060
+InstallDate                 : 
+Name                        : NVIDIA GeForce RTX 3060
+Status                      : Error
+Availability                : 
+ConfigManagerUserConfig     : False
+CreationClassName           : Win32_PnPEntity
+DeviceID                    : PCI\VEN_10DE&DEV_2504&SUBSYS_40721458&REV_A1\4&1C1C94C&0&0010
+ErrorCleared                : 
+ErrorDescription            : 
+LastErrorCode               : 
+PNPDeviceID                 : PCI\VEN_10DE&DEV_2504&SUBSYS_40721458&REV_A1\4&1C1C94C&0&0010
+PowerManagementCapabilities : 
+PowerManagementSupported    : 
+StatusInfo                  : 
+SystemCreationClassName     : Win32_ComputerSystem
+SystemName                  : BIGGIE
+ClassGuid                   : {4d36e968-e325-11ce-bfc1-08002be10318}
+CompatibleID                : {PCI\VEN_10DE&DEV_2504&REV_A1, PCI\VEN_10DE&DEV_2504, PCI\VEN_10DE&CC_030000, PCI\VEN_10DE&CC_0300…}
+HardwareID                  : {PCI\VEN_10DE&DEV_2504&SUBSYS_40721458&REV_A1, PCI\VEN_10DE&DEV_2504&SUBSYS_40721458, PCI\VEN_10DE&DEV_2504&CC_030000, PCI\VEN_10DE&DEV_2504&CC_0300}
+Manufacturer                : NVIDIA
+PNPClass                    : Display
+Present                     : True
+Service                     : nvlddmkm
+PSComputerName              : 
+CimClass                    : ROOT/cimv2:Win32_PnPEntity
+CimInstanceProperties       : {Caption, Description, InstallDate, Name…}
+CimSystemProperties         : Microsoft.Management.Infrastructure.CimSystemProperties
+
+Class                       : System
+FriendlyName                : High Definition Audio Controller
+InstanceId                  : PCI\VEN_10DE&DEV_228E&SUBSYS_88181043&REV_A1\4&4FCAF60&0&0118
+Problem                     : CM_PROB_NONE
+ConfigManagerErrorCode      : CM_PROB_NONE
+ProblemDescription          : 
+Caption                     : High Definition Audio Controller
+Description                 : High Definition Audio Controller
+InstallDate                 : 
+Name                        : High Definition Audio Controller
+Status                      : OK
+Availability                : 
+ConfigManagerUserConfig     : False
+CreationClassName           : Win32_PnPEntity
+DeviceID                    : PCI\VEN_10DE&DEV_228E&SUBSYS_88181043&REV_A1\4&4FCAF60&0&0118
+ErrorCleared                : 
+ErrorDescription            : 
+LastErrorCode               : 
+PNPDeviceID                 : PCI\VEN_10DE&DEV_228E&SUBSYS_88181043&REV_A1\4&4FCAF60&0&0118
+PowerManagementCapabilities : 
+PowerManagementSupported    : 
+StatusInfo                  : 
+SystemCreationClassName     : Win32_ComputerSystem
+SystemName                  : BIGGIE
+ClassGuid                   : {4d36e97d-e325-11ce-bfc1-08002be10318}
+CompatibleID                : {PCI\VEN_10DE&DEV_228E&REV_A1, PCI\VEN_10DE&DEV_228E, PCI\VEN_10DE&CC_040300, PCI\VEN_10DE&CC_0403…}
+HardwareID                  : {PCI\VEN_10DE&DEV_228E&SUBSYS_88181043&REV_A1, PCI\VEN_10DE&DEV_228E&SUBSYS_88181043, PCI\VEN_10DE&DEV_228E&CC_040300, PCI\VEN_10DE&DEV_228E&CC_0403}
+Manufacturer                : Microsoft
+PNPClass                    : System
+Present                     : True
+Service                     : HDAudBus
+PSComputerName              : 
+CimClass                    : ROOT/cimv2:Win32_PnPEntity
+CimInstanceProperties       : {Caption, Description, InstallDate, Name…}
+CimSystemProperties         : Microsoft.Management.Infrastructure.CimSystemProperties
+
+Class                       : System
+FriendlyName                : High Definition Audio Controller
+InstanceId                  : PCI\VEN_10DE&DEV_228E&SUBSYS_40721458&REV_A1\4&1C1C94C&0&0110
+Problem                     : CM_PROB_NONE
+ConfigManagerErrorCode      : CM_PROB_NONE
+ProblemDescription          : 
+Caption                     : High Definition Audio Controller
+Description                 : High Definition Audio Controller
+InstallDate                 : 
+Name                        : High Definition Audio Controller
+Status                      : OK
+Availability                : 
+ConfigManagerUserConfig     : False
+CreationClassName           : Win32_PnPEntity
+DeviceID                    : PCI\VEN_10DE&DEV_228E&SUBSYS_40721458&REV_A1\4&1C1C94C&0&0110
+ErrorCleared                : 
+ErrorDescription            : 
+LastErrorCode               : 
+PNPDeviceID                 : PCI\VEN_10DE&DEV_228E&SUBSYS_40721458&REV_A1\4&1C1C94C&0&0110
+PowerManagementCapabilities : 
+PowerManagementSupported    : 
+StatusInfo                  : 
+SystemCreationClassName     : Win32_ComputerSystem
+SystemName                  : BIGGIE
+ClassGuid                   : {4d36e97d-e325-11ce-bfc1-08002be10318}
+CompatibleID                : {PCI\VEN_10DE&DEV_228E&REV_A1, PCI\VEN_10DE&DEV_228E, PCI\VEN_10DE&CC_040300, PCI\VEN_10DE&CC_0403…}
+HardwareID                  : {PCI\VEN_10DE&DEV_228E&SUBSYS_40721458&REV_A1, PCI\VEN_10DE&DEV_228E&SUBSYS_40721458, PCI\VEN_10DE&DEV_228E&CC_040300, PCI\VEN_10DE&DEV_228E&CC_0403}
+Manufacturer                : Microsoft
+PNPClass                    : System
+Present                     : True
+Service                     : HDAudBus
+PSComputerName              : 
+CimClass                    : ROOT/cimv2:Win32_PnPEntity
+CimInstanceProperties       : {Caption, Description, InstallDate, Name…}
+CimSystemProperties         : Microsoft.Management.Infrastructure.CimSystemProperties
+
+Class                       : Display
+FriendlyName                : NVIDIA GeForce RTX 3060
+InstanceId                  : PCI\VEN_10DE&DEV_2504&SUBSYS_88181043&REV_A1\4&4FCAF60&0&0018
+Problem                     : CM_PROB_NONE
+ConfigManagerErrorCode      : CM_PROB_NONE
+ProblemDescription          : 
+Caption                     : NVIDIA GeForce RTX 3060
+Description                 : NVIDIA GeForce RTX 3060
+InstallDate                 : 
+Name                        : NVIDIA GeForce RTX 3060
+Status                      : OK
+Availability                : 
+ConfigManagerUserConfig     : False
+CreationClassName           : Win32_PnPEntity
+DeviceID                    : PCI\VEN_10DE&DEV_2504&SUBSYS_88181043&REV_A1\4&4FCAF60&0&0018
+ErrorCleared                : 
+ErrorDescription            : 
+LastErrorCode               : 
+PNPDeviceID                 : PCI\VEN_10DE&DEV_2504&SUBSYS_88181043&REV_A1\4&4FCAF60&0&0018
+PowerManagementCapabilities : 
+PowerManagementSupported    : 
+StatusInfo                  : 
+SystemCreationClassName     : Win32_ComputerSystem
+SystemName                  : BIGGIE
+ClassGuid                   : {4d36e968-e325-11ce-bfc1-08002be10318}
+CompatibleID                : {PCI\VEN_10DE&DEV_2504&REV_A1, PCI\VEN_10DE&DEV_2504, PCI\VEN_10DE&CC_030000, PCI\VEN_10DE&CC_0300…}
+HardwareID                  : {PCI\VEN_10DE&DEV_2504&SUBSYS_88181043&REV_A1, PCI\VEN_10DE&DEV_2504&SUBSYS_88181043, PCI\VEN_10DE&DEV_2504&CC_030000, PCI\VEN_10DE&DEV_2504&CC_0300}
+Manufacturer                : NVIDIA
+PNPClass                    : Display
+Present                     : True
+Service                     : nvlddmkm
+PSComputerName              : 
+CimClass                    : ROOT/cimv2:Win32_PnPEntity
+CimInstanceProperties       : {Caption, Description, InstallDate, Name…}
+CimSystemProperties         : Microsoft.Management.Infrastructure.CimSystemProperties
+
