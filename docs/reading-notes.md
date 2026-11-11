@@ -630,6 +630,56 @@ boot-static=出厂值）。0x820xxx = Ampere 真 bank（AD10x/GA10x 惯例）：
 **四层阶梯按族修订**：L2（SBFE）GA100=1 锁、GA102=0 开（待 stock 样本
 钉死）、TU106=槽缺——门槛阶梯是**逐族结构**，不是统一深度。
 
+### 6e. GA106 stock 对照轮（2026-11-12，2504/3060 12GB，ssdiag-v074-ga106-stock-dict.log）
+
+**对照判别闭合**：stock（PLM=8f 关、SS0=厂值、canary cleared、从未过链）
+下 `SECURED_BURN_FEAT_EN=0` 与 `EN_SW_OVERRIDE=1` **原样复现**——§6d 的
+"解锁/我方驱动侧产物"假说死刑，**stock Ampere 姿态=SBFE 0 + ENSWO 1**
+（GA102=GA106 两 die 一致）。L2 门 GA102/GA106 消费线默认开升格为定论
+（判别器一词闭合）；剩余熔丝写阻断=WDATA 端口（8f+WR_SECURE=1+DSOV=1）
+不变。附带价值：这是**首个 legacy 驱动模式（EnableGpuFirmware 未设）的
+Ampere 词典样本**（3090 那张是 GSP 模式），WPR2_LO/HI=0x1ffffe00/0 =
+OQ#7 冷窗口默认态 ✓（无 GSP-RM 在跑）。
+
+**stock GA106 FEAT 簇首读**（#70/#71 那批解锁时没有厂值）：FEAT_SS0=
+**0x10210040**（[. r4 . . r1 r2 . r1]，无 override 位）、SS1=0x3（DP=r3）、
+READOUT_1=0x00400080（gapped 解码：imla0=0 fmla16=0 fmla32=1 ffma=4
+imla1..3=0 imla4=1 DP=0）。熔丝 speed-sel 与 READOUT 互证（fmla32=1↔1、
+imla4=1↔1）。**#70/#71 的 FP16 1.80× 算术候选闭合**：SS0 nibble1=r4
+（fmla16 位域，视字段序）→ 解锁清 0，1/1.80≈0.556=code-4 速率——厂值
+钳制签名与实测增益首次对上（需 theoretical-uplift 交叉核对）。SS0 字段序
+存疑：nibble1=4 而 READOUT ffma=4/fmla16=0——nibble 序或与 READOUT 错位
+（fmla16/ffma 互换），待 GA10x 解码口径核。
+
+**TPC 双掩码首次同卡齐现**：TPC_GPC0_DEFECTIVE=**0x08**（本轮全套数据
+唯一非零 defect 词）——GPC0 的 TPC3=真缺陷；STATUS=0x28（TPC3+TPC5）；
+TPC_GPC0_DISABLE=0x08（熔丝禁用词承载缺陷位）、TPC_GPC0_DISABLE_CP=
+0x08（CP 影子同步镜像）。结构：**TPC3/GPC0=缺陷（disable 词+defect 位
+双载），TPC5/GPC0-2 与整 GPC3-6=纯分段（无 disable 词载体，STATUS 独载）**
+——kate 博客的 _DISABLE/_DEFECTIVE 双掩码结构在消费硅首次实证，且分段
+切法（同 TPC5 跨 GPC+整 GPC）与 TU104 KO 的"配置切割"形态同族。
+
+**几何极性疑问（新开）**：28 TPC 活 × bit=off 读法 ≠ 28 SM（3060），
+bit=on 恰=28——但 GA102 的 82 SM 强制 bit=off（41 TPC×2）；同族两 die
+极性矛盾，或 GA106 的 TPC:SM 映射/缺席编码不同（GA106 GPC6=0x3f/GPC7=
+0x00 vs GA102 GPC7=badf）。判别器=GR 拓扑锚（0x409604 现为 turing 门，
+下轮放全族）+第二张 GA106。显存侧同疑：STAT_FBIO=STAT_FBP=**0x38**、
+ROP_L2_FBP[3..5]=3——FBP 掩码↔ROP 数组内部自洽（3/4/5），192-bit 的
+3060 需要 FBP 字段宽/恒置位假设再核（GA106 若 3-FBP die：bit0-2 字段+
+bit3-5 恒置=TU104 模式，但恒置段只有 3 位与 TU106 的 4 位不同宽）。
+
+**新活值**：L2_CANDIDATE(0x821200)=**0x81**（GA102=0、TU106=badf）——
+aajax L2 禁用掩码层在 GA106 承载真实切片切割（L2_EFF=0x81、SW=0）。
+FEAT 扩展词跨 die 分类：0x82380c=0x888888/0x823810=0x2aaaaa/0x823814=
+0x233 三 die 恒同=常量非速率掩码；**0x823808（GA106=0x281/GA102=0x380）
+与 0x823824（1/0）=逐 die 字段**——真正的 SKU 状态候选。镜像 −0x800000
+列的"die 无关"要弱化：SM_SPEED_DP=0x22582245 3/3 恒同，但 CRC（0x14710
+vs 0x4001ad50）与 DEBUG_FEAT（GA106=badf5720!）逐 die 异——混合面。
+−0x7FF000 第三面：WDATA=0x39、0xffffffcf 与 GA102 同值，SBFE=badf1100
+三 die 恒同。杂项：XP3G_PLM0=0xffffff8f（TU106 OPEN 仍是孤例✓）；
+0x9a0168=0x82006bcf（含 0x8200 的怪值，GA102/TU106=0xffffffcf，记录）；
+GFW_PLM=0x8b8f=Ampere 形（Turing=0xffffff8f）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读
