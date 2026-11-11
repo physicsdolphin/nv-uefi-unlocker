@@ -693,6 +693,7 @@ For no gain after handoff, use these read-back patterns to guide diagnosis. Conf
 | Gate remains open, selectors return to stock | devinit rewriting overrides (see [relock mechanisms](#relock)) |
 | Rewritten selectors with Code 43 or driver resets | Failed driver initialization and recovery |
 | Effective selectors but low performance | Clocks, power wall and workload |
+| Card shows Code 12 (`CM_PROB_NORMAL_CONFLICT`) in Device Manager while loader/`HANDOFF-OUT` are all green | A boot-time Windows resource-arbitration artifact ([#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165), closed after twelve rounds: the condition is multiple cards present + the first-position card being the unlocked one; A4G / devnode residue / card identity / footprint change all excluded). **Self-remedy: disable -> re-enable the conflicted card in Device Manager** — the arbitration re-trigger fixes it, and the PnP reload takes no FLR so the unlock survives intact ([#196](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/196), the same operation's second use); or preventively unlock the second-position card in multi-card setups |
 
 ssdiag discovers BAR0 from the OS and accepts no manually supplied physical base; it wakes parked GPUs as needed. Its embedded, verified `pmxdrv.sys` uses a temporary `SSDIAG_PMXDRV` service with cleanup on exit, or borrows an existing device such as nvoc's. Driver deployment normally needs administrator privileges. Its security model and trade-off have their own section: [The pmxdrv.sys security model and trade-off](#pmxdrv). See the [ssdiag reference](../tools/ssdiag/README.md) for the register surface and driver details.
 
@@ -828,6 +829,20 @@ If the log stops at `RECONNECT: ConnectController ... begin`, or the platform re
 For Turing `0x91` or a GSP-handoff bug-check after EFI success, see the [compatibility matrix](compatibility.en.md#device-16). Not every black screen is a GOP problem. Evidence: [AMI report](ad106-asus-z790-windows-unlock.md), [X470 record](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70).
 
 **A failed transaction can leave the screen black while the machine is alive.** The `native-GOP` rebuild runs on the success path only; a failure path just unwinds (stock signature -> FLR -> chainload) and does not rebuild the console it disconnected. Field case ([#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191)): after the failing HIGH-staging round the system still booted, SSH worked, the driver and desktop were fine — only the internal panel stayed dark. On a single-display laptop treat that picture as "black but alive": give it time, confirm over SSH or an external screen, or power off and start over; do not pull the stick mid-boot just because the screen is black.
+
+
+### Legacy/MBR system disk: nothing to chain -> the MBR2GPT migration recipe ([#122](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/122) P3, measured)
+
+The chain target must be an **ESP on a UEFI+GPT system disk**; a Legacy/MBR-installed system disk has no ESP and the chain phase ends `NOT_FOUND` (the loader transaction itself can be fully green - #122 rc1 was exactly that shape: `unlock=true` but `chainload NOT_FOUND`). This is not a loader limitation: chainloading is, by construction, finding `bootmgfw.efi` on an ESP.
+
+**Migration recipe (measured end-to-end by the #122 reporter)**:
+
+1. Dry-run first from an admin prompt: `mbr2gpt /validate /allowFullOS` - only then `/convert` (hard prerequisites: <=3 primary partitions on the system disk, BitLocker suspended, Windows 1703+; the conversion repurposes one primary partition as the ESP and stages `bootmgfw`);
+2. Switch the firmware from Legacy/CSM to pure UEFI boot (CSM off); Secure Boot off (OS Type=Other OS - required by the unsigned loader);
+3. Clear the now-dead Legacy HD entries from the firmware BootOrder so nothing dead ranks above the stick/Windows;
+4. Re-run with a v2.1.11+ stick - the chain phase should find the new ESP via Pass 0/0.5.
+
+**Two boundary facts from the same run**: (1) the loader boot media does NOT need GPT - rc2 booted from a FAT32 partition on an MBR data disk via the firmware's automatic "UEFI OS" entry; only the chain **target** (the Windows system disk) needs GPT+ESP. (2) With pure UEFI the oldest AMI board in the matrix (Z97-K) ran the full chain - firmware capability is verifiable locally beforehand (if it can run the EFI loader from a FAT32 volume, it can UEFI-boot).
 
 ### Unlocked, then a CUDA error as soon as load hits? Drop the overclock and the undervolt first
 

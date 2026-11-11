@@ -692,6 +692,7 @@ ssdiag --reapply
 | 门仍开，选择器恢复出厂值 | devinit 重写覆盖值（见 [回锁机制](#relock)） |
 | 选择器被重写，同时出现 Code 43 或驱动复位 | 驱动初始化失败及恢复路径 |
 | 选择器仍有效但性能低 | 频率、功耗墙与工作负载 |
+| 卡在设备管理器报 Code 12（`CM_PROB_NORMAL_CONFLICT`），loader/`HANDOFF-OUT` 全绿 | 开机时刻的资源仲裁 artifact（[#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165) 十二轮定谳：条件=多卡在场+第一枚举位卡被解锁；A4G/devnode 残留/卡身份/足印改变均已排除）。**自救：设备管理器把冲突卡禁用→启用**——仲裁重触发即愈，且 PnP 重载不走 FLR，解锁态原样保留（[#196](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/196) 同操作的第二用途）；或预防性地解锁第二枚举位卡（多卡时） |
 
 ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊卡。内嵌的 `pmxdrv.sys` 经校验，以自有 `SSDIAG_PMXDRV` 服务临时加载，退出时清理；若 nvoc 等已有可用设备则借用。部署驱动通常需要管理员。其安全模型与权衡单独成节：[pmxdrv.sys 的安全模型与权衡](#pmxdrv)。更多寄存器范围及驱动说明见 [ssdiag 文档](../tools/ssdiag/README.md)。
 
@@ -798,6 +799,19 @@ CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI'
 ```
 
 出现 `identity match` 且全程没有 `volume scan fallback`，即解析器采用了固件的选择。只有旧版构建才需要手改 BCD；v2.1.10+ 上的变通可以还原。`CHAIN-BOOT:` dump 会打印完整 `BootOrder`、逐项解码设备路径，并给每个卷打 `hd(partN,<guid>)` 标签，选错一次引导即可看见。
+
+### Legacy/MBR 系统盘：chain 无目标 → MBR2GPT 迁移配方（[#122](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/122) P3 实测）
+
+链载目标必须是 **UEFI+GPT 系统盘上的 ESP**；Legacy/MBR 安装的系统盘没有 ESP，chain 段以 `NOT_FOUND` 结束（loader 事务本身可以全绿——#122 rc1 即此形态：`unlock=true` 但 `chainload NOT_FOUND`）。这不是 loader 可绕的限制：链载机制的本质就是找到 ESP 上的 `bootmgfw.efi`。
+
+**迁移配方（#122 报告者 eway800 实测跑通）**：
+
+1. 管理员命令行先干跑：`mbr2gpt /validate /allowFullOS`——通过再 `/convert`（硬前置：系统盘 ≤3 个主分区、BitLocker 先挂起、Windows 1703+；转换会征用一块主分区变 ESP 并配置好 `bootmgfw`）；
+2. 固件从 Legacy/CSM 切到纯 UEFI 启动（CSM off）；Secure Boot 关（OS Type=Other OS，unsigned loader 必要条件）；
+3. 清理固件 BootOrder 里因转换而失效的 Legacy HD 死条目，别让它排在 U 盘/Windows 前面；
+4. 用 v2.1.11+ 的 maker/U 盘重跑——chain 段应能按 Pass 0/0.5 找到新 ESP。
+
+**两条边界事实**（同一实测）：①**loader 引导介质本身不需要 GPT**——rc2 从一块 MBR 数据盘的 FAT32 分区经固件自动 "UEFI OS" 条目引导成功；需要 GPT+ESP 的只有**链载目标**（Windows 系统盘）。②切换到纯 UEFI 后老 AMI 板（Z97-K，最老 AMI 台架）全链跑通——固件能力在本机先验（能从 FAT32 卷跑 EFI loader 即具备 UEFI 引导能力）。
 
 <a id="handoff"></a>
 
