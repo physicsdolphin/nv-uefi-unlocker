@@ -1,0 +1,69 @@
+[assets] ./target/release/assets.exe
+[gate] Turing family selected - checking host GSP firmware mode
+  Turing adapter 0:  NVIDIA GeForce RTX 2070 (0x1f07) on this host
+[ok] GSP firmware running (nvidia-smi reports a firmware version)
+[ok] host Turing adapter in GSP firmware mode
+[ok] NVIDIA-kernel-module-source-610.43.03.tar.xz SHA-256 verified (cached)
+[local] GSP from the installed driver: /c/Windows/System32/DriverStore/FileRepository/nv_dispi.inf_amd64_20f49c6eb5c9b39b (badge mode, version pin waived)
+[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)
+[extract] BADGE MODE: GSP from the local installed driver (/c/Windows/System32/DriverStore/FileRepository/nv_dispi.inf_amd64_20f49c6eb5c9b39b) - version pin waived (525-621 measured compatible)
+[ok] gsp_ga10x.bin + gsp_tu10x.bin staged from the local driver (format gate = per-family gsp-sections)
+[warn] TU11x route (GTX 16 series / CMP 30HX) is RE-derived and NOT
+[warn] field-proven (issue #151): die-keyed TU116 booter archive + the
+[warn] TU102 frame table with the park word re-anchored (0x7EA4 -> 0x7E9A).
+[warn] Read-back is the only verdict; a clean failure is an expected outcome.
+[extract] TU116/TU117 booter (BOOT_DIRECT, die-keyed) / shared Turing BL
+  [assets] extract-tu11x ./inputs/NVIDIA-kernel-module-source-610.43.03.tar.xz .relcheck/ev/usbroot-16
+TU116 derived booter_load_tu11x.bin: 58968 bytes, SHA-256 verified
+TU116 derived gsp_boot_desc_tu11x.bin: 76 bytes, SHA-256 verified
+TU116 derived sec2_bl_tu11x.bin: 768 bytes, SHA-256 verified
+[extract] fwimage / fwsignature sections (tu10x ELF: tu11x)
+  [assets] gsp-sections .relcheck/ev/usbroot-16/gsp_tu10x.bin .relcheck/ev/usbroot-16 tu11x
+skipped fwsignature_ga100: outside the RTX 20-40 export scope
+fwsignature_tu11x.bin: 4096 bytes
+skipped fwsignature_tu10x: outside the RTX 20-40 export scope
+fwimage_tu11x.bin: 16674264 bytes (same image)
+[generate] V67 TU11x payload (RE-derived, unproven)
+  [assets] generate-tu11x .relcheck/ev/usbroot-16/v67-tu11x-four-plm.bin
+wrote .relcheck/ev/usbroot-16/v67-tu11x-four-plm.bin (64000 bytes, SHA-256 verified; RE-derived, not field-proven - issue #151)
+[ok] proven GspRmBoot archive SHA-256 verified (131072 bytes)
+[slice] first 0x6000 bytes -> gsp_boot_tu11x.bin
+  [assets] slice-proven-rm-boot /d/git-repo/nv-uefi-unlocker/release/gsp_rm_boot_dbg.bin .relcheck/ev/usbroot-16 tu11x
+gsp_boot_tu11x.bin: 24576 bytes, SHA-256 verified (proven BL slice, fired on TU106 2026-10-27; Turing-shared)
+[ok] gsp_boot_tu11x.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)
+  booter_load_tu11x.bin             58968 bytes
+  gsp_boot_desc_tu11x.bin              76 bytes
+  gsp_boot_tu11x.bin                24576 bytes
+  fwimage_tu11x.bin              16674264 bytes
+  fwsignature_tu11x.bin              4096 bytes
+  sec2_bl_tu11x.bin                   768 bytes
+  v67-tu11x-four-plm.bin            64000 bytes
+  BOOTX64.EFI                      236544 bytes
+  EFI/BOOT/BOOTX64.EFI             236544 bytes
+
+DONE (tu11x). The stick root must receive the layout; for example:
+  cp -a ".relcheck/ev/usbroot-16"/. /media/$USER/<stick>/      # or: sudo cp -a ".relcheck/ev/usbroot-16"/. /mnt/<mount>/
+Or re-run with --out <mountpoint> to write a mounted stick directly.
+The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, do not flatten it.
+Format hint (Linux): sudo mkfs.fat -F 32 /dev/sdXN   # wipes the stick!
+Unlock mode requires the v67-*.bin payload for the target card's family
+(v67-tu11x-four-plm.bin); removing it switches the EFI into replay/diagnostic
+mode for that family.
+
+Turing reminder: the TARGET machine must run GSP-RM firmware mode and
+the unlock session must follow a RESTART - a hibernate resume does not
+re-initialize the driver (gsp-gate.txt on the stick records this build).
+Linux targets: GSP is on by default with 545+ drivers; also check the
+README Linux note - RTD3 (DynamicPowerManagement) erases the unlock
+after handoff (issue #9).
+
+[install] generated layout: 11 files, 16.5 MB
+[install] lsblk not found - install-target probe skipped
+[install] no install target was picked (none found, or both offers declined).
+[install]   Internal (persistent) install: add a data FAT32 partition on an
+[install]     INTERNAL (non-USB) disk - NOT the EFI system partition, NOT any
+[install]     /boot volume (gparted/fdisk: shrink a volume, add a FAT32 one;
+[install]     500 MB is ample). This tool never creates, resizes or reformats
+[install]     partitions - it only copies files into an existing one.
+[install]   USB install: any stick keeping at least 16.5 MB free on a
+[install]     FAT32 partition; the files are added alongside its contents.

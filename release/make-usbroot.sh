@@ -12,12 +12,14 @@
 #   ./make-usbroot.sh --family all             (every RTX 20/30/40 family)
 #
 # Options (1:1 with the PowerShell twin's parameters):
-#   --family F        ad102 | ga102 | tu10x | all | localhost
-#                     (aliases rtx40/40, rtx30/30, rtx20/20; default localhost)
+#   --family F        ad102 | ga102 | tu10x | tu11x | all | localhost
+#                     (aliases rtx40/40, rtx30/30, rtx20/20, rtx16/16;
+#                     default localhost)
 #                     localhost = enumerate the NVIDIA GPUs in THIS machine
 #                     (nvidia-smi, else lspci) and build exactly the families
-#                     found there; dies when no RTX 20/30/40 card is present.
-#                     all = build all three 20-40 series families on one stick.
+#                     found there; dies when no RTX 20/30/40/16 card is present.
+#                     all = build all three 20-40 series families on one stick
+#                     (tu11x excluded - explicit opt-in only).
 #   --out DIR         output root (default ./usbroot)
 #   --work DIR        download/verify work dir (default ./inputs)
 #   --assets PATH     assets pipeline binary. Resolution order: this flag /
@@ -32,13 +34,16 @@
 #                     cachyos | local to pin one route. Hash gate identical
 #                     for downloads; local is badge mode.
 #   --skip-gsp-check  build for another machine: skip the host Turing GSP check
+#   --no-install-prompt  skip the post-build install-target offer
+#   --install-to MP   copy the layout into an EXISTING mounted FAT32 partition
+#                     without asking (same eligibility checks as the probe)
 #   -h | --help       this text
 #
 # Family notes (same as make-usbroot.ps1):
 #   ad102  RTX 40 series (Ada)          - no host prerequisites
 #   ga102  RTX 30 series (Ampere)       - kmod-verified upstream, no silicon
 #                                         evidence for this EFI path yet
-#   tu10x  RTX 20 / 16 series (Turing)  - REQUIRES GSP-RM firmware mode on the
+#   tu10x  RTX 20 series (Turing)       - REQUIRES GSP-RM firmware mode on the
 #                     TARGET machine; the legacy path TDR-loops on the
 #                     unlocked card. On Linux the proprietary driver 545+
 #                     runs GSP-RM by default on Turing and newer (no
@@ -48,6 +53,11 @@
 #                     old, or NVreg_EnableGpuFirmware=0 forced in a modprobe
 #                     config. Building for a DIFFERENT machine? Pass
 #                     --skip-gsp-check.
+#   tu11x  GTX 16 series (TU116/117)    - EXPERIMENTAL, same GSP gate.
+#                     RE-derived route (issue #151): die-keyed TU116 booter
+#                     archive + the TU102 frame table with the park word
+#                     re-anchored (0x7EA4 -> 0x7E9A). NOT field-proven;
+#                     read-back is the only verdict. Not part of --family all.
 #   all    tu10x + ga102 + ad102 payloads on one stick. The Turing GSP gate
 #                     runs in lenient mode: still warns when a LOCAL Turing
 #                     card sits in legacy mode, but is silent when this host
@@ -71,6 +81,10 @@ ASSETS_BIN="${ASSETS_BIN:-}"
 BOOT_EFI=""
 PROVEN_BLOB=""
 SKIP_GSP_CHECK=0
+# Post-build install offer (see the PowerShell twin's data-safety contract):
+# probe EXISTING FAT32 partitions and offer to copy the layout into one.
+NO_INSTALL_PROMPT=0
+INSTALL_TO=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # Windows-hosted bash (Git Bash/MSYS) can run .exe pipelines, not Linux ELF;
@@ -179,6 +193,9 @@ while [ $# -gt 0 ]; do
         --utils-source)    UTILS_SOURCE="${2:?missing value for $1}"; shift 2 ;;
         --utils-source=*)  UTILS_SOURCE="${1#*=}"; shift ;;
         --skip-gsp-check)  SKIP_GSP_CHECK=1; shift ;;
+        --no-install-prompt) NO_INSTALL_PROMPT=1; shift ;;
+        --install-to)      INSTALL_TO="${2:?missing value for $1}"; shift 2 ;;
+        --install-to=*)    INSTALL_TO="${1#*=}"; shift ;;
         -h|--help)         usage ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -189,7 +206,12 @@ FAMILY="${FAMILY,,}"
 # ---------- device id -> build family (same ranges as loader/src/main.rs) ----------
 family_of_dev() { # $1 = device id accepted by $(( )); echoes family or nothing
     local dv=$(( "$1" ))
-    if   (( dv >= 0x1E02 && dv <= 0x1FFF )) || (( dv >= 0x2182 && dv <= 0x21D1 )); then echo "tu10x"
+    # Same split as the PowerShell twin's Get-UnlockFamily: tu10x is the
+    # TU102/TU104/TU106 desktop range; 0x1F81..0x1FFF (TU116) and
+    # 0x2182..0x21D1 (mobile TU117 + 21xx variants) are the 16-series ->
+    # tu11x route (RE-derived, issue #151). Family 20 never produces tu11x.
+    if   (( dv >= 0x1E02 && dv <= 0x1F80 )); then echo "tu10x"
+    elif (( dv >= 0x1F81 && dv <= 0x1FFF )) || (( dv >= 0x2182 && dv <= 0x21D1 )); then echo "tu11x"
     elif (( dv >= 0x2200 && dv <= 0x22FF )) || (( dv >= 0x2400 && dv <= 0x25FF )); then echo "ga102"
     elif (( dv >= 0x2600 && dv <= 0x28FF )); then echo "ad102"
     fi
@@ -197,7 +219,7 @@ family_of_dev() { # $1 = device id accepted by $(( )); echoes family or nothing
 
 # ---------- localhost: enumerate THIS machine's NVIDIA GPUs ----------
 detect_local_families() { # echoes the build families found here, one per line
-    local rows="" dev fam line name has_tu=0 has_ga=0 has_ad=0
+    local rows="" dev fam line name has_tu=0 has_tu11=0 has_ga=0 has_ad=0
     if have nvidia-smi; then
         # pci.device_id prints device+vendor concatenated ("0x1F0710DE"):
         # strip 0x, keep the FIRST 4 hex digits (the device id).
@@ -230,11 +252,13 @@ detect_local_families() { # echoes the build families found here, one per line
         logerr "[localhost] 10de:$dev -> $fam (${name:-unknown device})"
         case "$fam" in
             tu10x) has_tu=1 ;;
+            tu11x) has_tu11=1 ;;
             ga102) has_ga=1 ;;
             ad102) has_ad=1 ;;
         esac
     done <<< "$rows"
     [ "$has_tu" -eq 1 ] && echo "tu10x"
+    [ "$has_tu11" -eq 1 ] && echo "tu11x"
     [ "$has_ga" -eq 1 ] && echo "ga102"
     [ "$has_ad" -eq 1 ] && echo "ad102"
     return 0
@@ -247,6 +271,7 @@ case "$FAMILY" in
     ad102|rtx40|40) FAMILIES=(ad102) ;;
     ga102|rtx30|30) FAMILIES=(ga102) ;;
     tu10x|rtx20|20) FAMILIES=(tu10x) ;;
+    tu11x|rtx16|16) FAMILIES=(tu11x) ;;
     all)
         # One stick with every 20-40 series family. May target a machine
         # other than this one, so the Turing GSP gate runs lenient below.
@@ -258,13 +283,13 @@ case "$FAMILY" in
             FAMILIES+=("$fam")
         done < <(detect_local_families)
         if [ "${#FAMILIES[@]}" -eq 0 ]; then
-            die "localhost: no supported NVIDIA adapter (RTX 20/30/40 series) found on
-this machine. Use an explicit --family (ad102 | ga102 | tu10x) or --family all."
+            die "localhost: no supported NVIDIA adapter (RTX 20/30/40/16 series) found on
+this machine. Use an explicit --family (ad102 | ga102 | tu10x | tu11x) or --family all."
         fi
         log "[localhost] building for: ${FAMILIES[*]}"
         log "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): python3 tools/diag-unlock.py --inventory"
         ;;
-    *) die "unknown family: $FAMILY (ad102 | ga102 | tu10x | all | localhost)" ;;
+    *) die "unknown family: $FAMILY (ad102 | ga102 | tu10x | tu11x | all | localhost)" ;;
 esac
 
 # ---------- tools ----------
@@ -458,7 +483,7 @@ rtd3_notice
 # legacy-mode local card), lenient for --family all (may target another box).
 RUN_TURING_GATE=0
 for fam in "${FAMILIES[@]}"; do
-    if [ "$fam" = "tu10x" ]; then RUN_TURING_GATE=1; fi
+    if [ "$fam" = "tu10x" ] || [ "$fam" = "tu11x" ]; then RUN_TURING_GATE=1; fi
 done
 if [ "$RUN_TURING_GATE" -eq 1 ]; then check_turing_gate "$GATE_STRICT"; fi
 
@@ -538,8 +563,18 @@ resolve_utils() {
     # the highest version wins. In auto mode this leads; downloads follow.
     if { [ "${UTILS_SOURCE:-auto}" = "auto" ] || [ "${UTILS_SOURCE:-auto}" = "local" ]; }; then
         local fwdir=""
-        fwdir=$(for d in /usr/lib/firmware/nvidia/* /lib/firmware/nvidia/*                     /run/current-system/firmware/nvidia/* /var/run/current-system/firmware/nvidia/*; do
-            [ -f "$d/gsp_tu10x.bin" ] && [ -f "$d/gsp_ga10x.bin" ] && echo "$d"
+        # The extra globs cover Windows-hosted bash: the MSYS/WSL mapped
+        # DriverStore carries the same split gsp_*.bin ELFs as a Linux
+        # nvidia-utils install (Git Bash: /c/..., WSL: /mnt/c/...) - on a
+        # real Linux box they simply do not exist and the glob stays a
+        # literal the -f test rejects. This is what keeps --family working
+        # on a Windows host without a download.
+        # NB the `if` form is load-bearing: a `&& echo` chain leaves the
+        # loop's exit status nonzero when the LAST glob does not match,
+        # and pipefail + set -e then kills the whole script silently
+        # (the assignment fails) before any download is attempted.
+        fwdir=$(for d in /usr/lib/firmware/nvidia/* /lib/firmware/nvidia/*                     /run/current-system/firmware/nvidia/* /var/run/current-system/firmware/nvidia/*                     /c/Windows/System32/DriverStore/FileRepository/nv*inf_amd64_*                     /mnt/c/Windows/System32/DriverStore/FileRepository/nv*inf_amd64_*; do
+            if [ -f "$d/gsp_tu10x.bin" ] && [ -f "$d/gsp_ga10x.bin" ]; then echo "$d"; fi
         done | sort -V | tail -n1)
         if [ -n "$fwdir" ]; then
             UTILS_PATH="$fwdir"
@@ -547,7 +582,7 @@ resolve_utils() {
             log "[local] GSP from the installed driver: $fwdir (badge mode, version pin waived)"
             return 0
         fi
-        log "[local] no installed-driver GSP found (/usr/lib|/lib|/run/current-system)/firmware/nvidia/*/gsp_*.bin absent)"
+        log "[local] no installed-driver GSP found (/usr/lib|/lib|/run/current-system)/firmware/nvidia/*/gsp_*.bin and the Windows DriverStore are all absent)"
         [ "${UTILS_SOURCE:-auto}" = "local" ] && die "--utils-source local: no installed-driver GSP found"
     fi
     for entry in "${UTILS_SOURCES[@]}"; do
@@ -630,7 +665,9 @@ fi
 
 needs_scrub=0
 for fam in "${FAMILIES[@]}"; do
-    if [ "$fam" != "tu10x" ]; then needs_scrub=1; fi
+    # Same exclusion set as the PowerShell twin: the Turing families
+    # (tu10x AND tu11x) run no scrubber step in the proven chain.
+    if [ "$fam" != "tu10x" ] && [ "$fam" != "tu11x" ]; then needs_scrub=1; fi
 done
 if [ "$needs_scrub" -eq 1 ]; then
     log "[extract] SEC2 scrubber (shared: ad102/ga102)"
@@ -641,14 +678,87 @@ fi
 expected=()
 unlock_files=()
 ga10x_sections_done=0
+
+# gsp-sections exports fwimage_<fam>.bin + fwsignature_<fam>.bin per wanted
+# signature family. The .fwimage section is family-neutral (the same tens of
+# MB get rewritten for every exported name), so only the families this build
+# serves are requested - the ga10x ELF carries ga100/ga10x/ad10x signatures,
+# the tu10x ELF tu10x/tu11x/ga100. The loader looks families up by device
+# family name, hence the ad10x->ad102 / ga10x->ga102 copies below.
+GA_SIG_FAMILIES=""
+TU_SIG_FAMILIES=""
+for fam in "${FAMILIES[@]}"; do
+    case "$fam" in
+        ga102) GA_SIG_FAMILIES="$GA_SIG_FAMILIES ga10x" ;;
+        ad102) GA_SIG_FAMILIES="$GA_SIG_FAMILIES ad10x" ;;
+        tu10x) TU_SIG_FAMILIES="$TU_SIG_FAMILIES tu10x" ;;
+        tu11x) TU_SIG_FAMILIES="$TU_SIG_FAMILIES tu11x" ;;
+    esac
+done
+# shellcheck disable=SC2086  # controlled single-word tokens, word-split on purpose
+GA_SIG_FAMILIES="${GA_SIG_FAMILIES# }"
+TU_SIG_FAMILIES="${TU_SIG_FAMILIES# }"
+
+# Resolve the proven GspRmBoot archive (Turing-shared, tu10x AND tu11x use
+# the same pinned bytes): explicit path, next to this script, reference
+# checkout, work dir, then the pinned URL. Sets PROVEN_BLOB_PATH.
+resolve_proven_blob() {
+    PROVEN_BLOB_PATH=""
+    local cand
+    for cand in "$PROVEN_BLOB" \
+                "$SCRIPT_DIR/$PROVEN_NAME" \
+                "$SCRIPT_DIR/../reference/cmp50hx-unlock/efi-unlock/blobs/$PROVEN_NAME" \
+                "$WORK/$PROVEN_NAME"; do
+        if [ -n "$cand" ] && [ -f "$cand" ]; then PROVEN_BLOB_PATH="$cand"; return 0; fi
+    done
+    # Same transport + hash gate as the pinned sources above; falls through
+    # to the not-found die with its own offline hint when every transport
+    # fails.
+    fetch_verify "$PROVEN_NAME" "$PROVEN_SRC_SHA" "${PROVEN_URLS[@]}" || true
+    PROVEN_BLOB_PATH="$WORK/$PROVEN_NAME"
+}
+
+# Slice + byte-pin check for one Turing family's gsp_boot_<fam>.bin. The
+# proven slice is byte-pinned: exactly 0x6000 bytes, de676bae... A 4 KiB v4
+# BINDATA image or the GSP ELF's first 0x6000 (c76c43b1...) must never ship.
+proven_slice() { # $1 = family
+    local fam="$1" len hash
+    resolve_proven_blob
+    local blob="$PROVEN_BLOB_PATH"
+    [ -f "$blob" ] || die "could not fetch $PROVEN_NAME from any pinned transport; drop the exact file (sha256 $PROVEN_SRC_SHA) into $WORK/ and re-run"
+    hash="$(sha256_of "$blob")"
+    [ "$hash" = "$PROVEN_SRC_SHA" ] || die "proven GspRmBoot blob mismatch: got $hash want $PROVEN_SRC_SHA ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
+    log "[ok] proven GspRmBoot archive SHA-256 verified ($(size_of "$blob") bytes)"
+    log "[slice] first 0x6000 bytes -> gsp_boot_$fam.bin"
+    assets_run slice-proven-rm-boot "$blob" "$OUT" "$fam"
+    len="$(size_of "$OUT/gsp_boot_$fam.bin")"
+    [ "$len" -eq "$PROVEN_SLICE_LEN" ] || die "gsp_boot_$fam.bin is $len bytes, want $PROVEN_SLICE_LEN (0x6000): trimmed proven GspRmBoot slice only"
+    hash="$(sha256_of "$OUT/gsp_boot_$fam.bin")"
+    [ "$hash" = "$PROVEN_SLICE_SHA" ] || die "gsp_boot_$fam.bin hash $hash != pinned $PROVEN_SLICE_SHA"
+    log "[ok] gsp_boot_$fam.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
+}
+
+write_gate_record() { # $1 = family line for gsp-gate.txt
+    {
+        echo "nv-uefi-unlocker Turing GSP gate"
+        echo "time: $(date -Is)"
+        echo "host: $(hostname)"
+        echo "family: $1"
+        echo "gate: $GSP_GATE_STATUS"
+        echo "adapters:"
+        if [ -n "$ADAPTER_LINES" ]; then printf '%s\n' "$ADAPTER_LINES"; else echo "  (none detected on this host)"; fi
+    } > "$OUT/gsp-gate.txt"
+}
+
 for fam in "${FAMILIES[@]}"; do
     case "$fam" in
         ad102)
             log "[extract] AD102 booter / GSP boot"
             assets_run extract-ad102 "$SRC_TAR" "$OUT"
             if [ "$ga10x_sections_done" -eq 0 ]; then
-                log "[extract] fwimage / fwsignature sections (ga10x ELF)"
-                assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT"
+                log "[extract] fwimage / fwsignature sections (ga10x ELF: $GA_SIG_FAMILIES)"
+                # shellcheck disable=SC2086  # controlled single-word tokens
+                assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT" $GA_SIG_FAMILIES
                 ga10x_sections_done=1
             fi
             log "[generate] V67 AD102 four-write payload"
@@ -666,8 +776,9 @@ for fam in "${FAMILIES[@]}"; do
             log "[extract] GA102 booter / GSP boot"
             assets_run extract "$SRC_TAR" "$OUT"
             if [ "$ga10x_sections_done" -eq 0 ]; then
-                log "[extract] fwimage / fwsignature sections (ga10x ELF)"
-                assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT"
+                log "[extract] fwimage / fwsignature sections (ga10x ELF: $GA_SIG_FAMILIES)"
+                # shellcheck disable=SC2086  # controlled single-word tokens
+                assets_run gsp-sections "$OUT/gsp_ga10x.bin" "$OUT" $GA_SIG_FAMILIES
                 ga10x_sections_done=1
             fi
             log "[generate] V67 GA102 payload"
@@ -682,63 +793,57 @@ for fam in "${FAMILIES[@]}"; do
         tu10x)
             log "[extract] TU102 booter (BOOT_DIRECT) / generic BL"
             assets_run extract-tu10x "$SRC_TAR" "$OUT"
-            log "[extract] fwimage / fwsignature sections (tu10x ELF)"
-            assets_run gsp-sections "$OUT/gsp_tu10x.bin" "$OUT"
+            log "[extract] fwimage / fwsignature sections (tu10x ELF: $TU_SIG_FAMILIES)"
+            # shellcheck disable=SC2086  # controlled single-word tokens
+            assets_run gsp-sections "$OUT/gsp_tu10x.bin" "$OUT" $TU_SIG_FAMILIES
             log "[generate] V67 TU10x payload"
             assets_run generate-tu10x "$OUT/v67-tu10x-four-plm.bin"
 
-            # Resolve the proven GspRmBoot archive: explicit path, next to this
-            # script, reference checkout, work dir, then the pinned URL.
-            blob=""
-            for cand in "$PROVEN_BLOB" \
-                        "$SCRIPT_DIR/$PROVEN_NAME" \
-                        "$SCRIPT_DIR/../reference/cmp50hx-unlock/efi-unlock/blobs/$PROVEN_NAME" \
-                        "$WORK/$PROVEN_NAME"; do
-                if [ -n "$cand" ] && [ -f "$cand" ]; then blob="$cand"; break; fi
-            done
-            if [ -z "$blob" ]; then
-                # Same transport + hash gate as the pinned sources above;
-                # falls through to the shared not-found die with its own
-                # offline hint when every transport fails.
-                fetch_verify "$PROVEN_NAME" "$PROVEN_SRC_SHA" "${PROVEN_URLS[@]}" || true
-                blob="$WORK/$PROVEN_NAME"
-            fi
-            [ -f "$blob" ] || die "could not fetch $PROVEN_NAME from any pinned transport; drop the exact file (sha256 $PROVEN_SRC_SHA) into $WORK/ and re-run"
-            blob_hash="$(sha256_of "$blob")"
-            [ "$blob_hash" = "$PROVEN_SRC_SHA" ] || die "proven GspRmBoot blob mismatch: got $blob_hash want $PROVEN_SRC_SHA ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
-            log "[ok] proven GspRmBoot archive SHA-256 verified ($(size_of "$blob") bytes)"
-            log "[slice] first 0x6000 bytes -> gsp_boot_tu10x.bin"
-            assets_run slice-proven-rm-boot "$blob" "$OUT"
-
-            # The proven slice is byte-pinned: exactly 0x6000 bytes, de676bae... A
-            # 4 KiB v4 BINDATA image or the GSP ELF's first 0x6000 (c76c43b1...)
-            # must never ship.
-            boot_out="$OUT/gsp_boot_tu10x.bin"
-            len="$(size_of "$boot_out")"
-            [ "$len" -eq "$PROVEN_SLICE_LEN" ] || die "gsp_boot_tu10x.bin is $len bytes, want $PROVEN_SLICE_LEN (0x6000): trimmed proven GspRmBoot slice only"
-            boot_hash="$(sha256_of "$boot_out")"
-            [ "$boot_hash" = "$PROVEN_SLICE_SHA" ] || die "gsp_boot_tu10x.bin hash $boot_hash != pinned $PROVEN_SLICE_SHA"
-            log "[ok] gsp_boot_tu10x.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
+            proven_slice tu10x
 
             expected+=(booter_load_tu10x.bin gsp_boot_desc_tu10x.bin gsp_boot_tu10x.bin
                        fwimage_tu10x.bin fwsignature_tu10x.bin sec2_bl_tu10x.bin
                        v67-tu10x-four-plm.bin)
             unlock_files+=("v67-tu10x-four-plm.bin")
-            {
-                echo "nv-uefi-unlocker Turing GSP gate"
-                echo "time: $(date -Is)"
-                echo "host: $(hostname)"
-                echo "family: tu10x"
-                echo "gate: $GSP_GATE_STATUS"
-                echo "adapters:"
-                if [ -n "$ADAPTER_LINES" ]; then printf '%s\n' "$ADAPTER_LINES"; else echo "  (none detected on this host)"; fi
-            } > "$OUT/gsp-gate.txt"
+            write_gate_record tu10x
+            ;;
+        tu11x)
+            log "[warn] TU11x route (GTX 16 series / CMP 30HX) is RE-derived and NOT"
+            log "[warn] field-proven (issue #151): die-keyed TU116 booter archive + the"
+            log "[warn] TU102 frame table with the park word re-anchored (0x7EA4 -> 0x7E9A)."
+            log "[warn] Read-back is the only verdict; a clean failure is an expected outcome."
+            log "[extract] TU116/TU117 booter (BOOT_DIRECT, die-keyed) / shared Turing BL"
+            assets_run extract-tu11x "$SRC_TAR" "$OUT"
+            log "[extract] fwimage / fwsignature sections (tu10x ELF: $TU_SIG_FAMILIES)"
+            # shellcheck disable=SC2086  # controlled single-word tokens
+            assets_run gsp-sections "$OUT/gsp_tu10x.bin" "$OUT" $TU_SIG_FAMILIES
+            log "[generate] V67 TU11x payload (RE-derived, unproven)"
+            assets_run generate-tu11x "$OUT/v67-tu11x-four-plm.bin"
+
+            # The proven GspRmBoot archive is Turing-shared (the driver
+            # generates only a TU102 one), so tu11x slices the same bytes.
+            proven_slice tu11x
+
+            expected+=(booter_load_tu11x.bin gsp_boot_desc_tu11x.bin gsp_boot_tu11x.bin
+                       fwimage_tu11x.bin fwsignature_tu11x.bin sec2_bl_tu11x.bin
+                       v67-tu11x-four-plm.bin)
+            unlock_files+=("v67-tu11x-four-plm.bin")
+            write_gate_record tu11x
             ;;
     esac
 done
 
 cp -f "$BOOT_EFI" "$OUT/BOOTX64.EFI"
 expected+=("BOOTX64.EFI")
+
+# ---------- intermediates off the root ----------
+# The full GSP ELFs (gsp_ga10x.bin / gsp_tu10x.bin) are extraction
+# INTERMEDIATES: gsp-sections has consumed them and the loader reads only
+# fwimage_*/fwsignature_*/booter_load_*/... from the volume root - the ELF
+# files (84 + 29 MB) would be pure dead weight on the stick.
+for elf in gsp_ga10x.bin gsp_tu10x.bin; do
+    [ -f "$OUT/$elf" ] && rm -f -- "$OUT/$elf"
+done
 
 # Firmware only auto-boots \EFI\BOOT\BOOTX64.EFI; a flat copy of $OUT leaves the
 # executable at the root and the boot menu bounces back (issue #142).
@@ -750,6 +855,12 @@ for f in "${expected[@]}"; do
     printf '  %-28s %10s bytes\n' "$f" "$(size_of "$OUT/$f")"
 done
 printf '  %-28s %10s bytes\n' "EFI/BOOT/BOOTX64.EFI" "$(size_of "$OUT/EFI/BOOT/BOOTX64.EFI")"
+
+# Layout marker: identifies a volume that already hosts THIS project's files
+# so a later run may upgrade them in place. Any other existing file is never
+# overwritten (data-safety contract; see the install offer at the end).
+printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s"\n}\n' \
+    "${FAMILIES[*]}" "$(date -Is)" > "$OUT/nvuu-stick.json"
 
 log ""
 if mountpoint -q "$OUT" 2>/dev/null; then
@@ -773,3 +884,251 @@ if [ "$RUN_TURING_GATE" -eq 1 ]; then
     log "README Linux note - RTD3 (DynamicPowerManagement) erases the unlock"
     log "after handoff (issue #9)."
 fi
+
+# ---------- install-target probe + one-click persistent install ----------
+# The generated layout can be copied into an EXISTING FAT32 partition so the
+# unlock does not require a dedicated USB stick every time: an internal
+# (non-removable) disk's non-boot data vfat partition is offered for a
+# persistent install, and a USB stick's vfat partition for the same copy.
+# Data-safety contract (the issue #73 ruling kept intact): this probe NEVER
+# creates, resizes, reformats or repartitions anything, NEVER touches an
+# ESP/system/boot volume, and NEVER overwrites or deletes an existing file -
+# a differing file at the target refuses the whole target, and only a
+# previous nv-uefi-unlocker layout (identified by nvuu-stick.json) may be
+# upgraded in place. A layout on an internal partition boots through the
+# firmware's ONE-TIME boot menu; no NVRAM/BootOrder entry is ever written.
+
+INTERNAL_TARGETS=()   # "mountpoint|free|size|label|devnode"
+USB_TARGETS=()
+
+human_size() { # $1 = bytes
+    awk -v b="$1" 'BEGIN {
+        if (b >= 1073741824) printf "%.1f GB", b/1073741824;
+        else if (b >= 1048576) printf "%.1f MB", b/1048576;
+        else printf "%.0f KB", b/1024 }'
+}
+
+our_marker() { # $1 = mountpoint: is this a previous nv-uefi-unlocker layout?
+    [ -f "$1/nvuu-stick.json" ] && grep -q "nv-uefi-unlocker" "$1/nvuu-stick.json" 2>/dev/null
+}
+
+install_copy() { # $1 = src root, $2 = target mountpoint -> 0 ok, 1 refused
+    local src="$1" mp="$2" f rel dest bad=0 copied=0 skipped=0 total
+    total="$(find "$src" -type f | wc -l)"
+    # Pass 1 - conflict scan: a differing existing file refuses the whole
+    # target unless nvuu-stick.json marks it as our own earlier layout.
+    local conflict=0
+    while IFS= read -r f; do
+        rel="${f#"$src"/}"
+        dest="$mp/$rel"
+        [ -e "$dest" ] || continue
+        cmp -s "$f" "$dest" && continue
+        if our_marker "$mp"; then continue; fi   # upgrade in place
+        conflict=1
+        logerr "[install]   existing: $mp/$rel"
+    done < <(find "$src" -type f)
+    if [ "$conflict" -eq 1 ]; then
+        logerr "[install] REFUSED: the target already holds different file(s) and is not a nv-uefi-unlocker layout."
+        logerr "[install] nothing was written (the tool never overwrites existing files)."
+        logerr "[install] If it is a stale copy of this tool, delete those files yourself and re-run."
+        return 1
+    fi
+    # Pass 2 - copy. Identical files are skipped (nothing rewritten).
+    while IFS= read -r f; do
+        rel="${f#"$src"/}"
+        dest="$mp/$rel"
+        if [ -e "$dest" ]; then
+            if cmp -s "$f" "$dest"; then skipped=$((skipped + 1)); continue; fi
+        fi
+        mkdir -p "$mp/$(dirname "$rel")" || return 1
+        cp -f "$f" "$dest" || {
+            logerr "[install] copy failed: $f -> $dest (target full or read-only?)"
+            return 1
+        }
+        copied=$((copied + 1))
+    done < <(find "$src" -type f)
+    # Pass 3 - read-back is the only success criterion (file domain too).
+    while IFS= read -r f; do
+        rel="${f#"$src"/}"
+        dest="$mp/$rel"
+        if ! cmp -s "$f" "$dest" || [ "$(sha256_of "$f")" != "$(sha256_of "$dest")" ]; then
+            logerr "[install] READ-BACK MISMATCH: $dest - do not boot from this copy"
+            bad=1
+        fi
+    done < <(find "$src" -type f)
+    [ "$bad" -eq 1 ] && return 1
+    log "[install] done: $total files ($copied written, $skipped already identical) -> $mp (SHA-256 read-back verified)"
+    return 0
+}
+
+install_guidance() { # $1 = needed bytes
+    log "[install] no install target was picked (none found, or both offers declined)."
+    log "[install]   Internal (persistent) install: add a data FAT32 partition on an"
+    log "[install]     INTERNAL (non-USB) disk - NOT the EFI system partition, NOT any"
+    log "[install]     /boot volume (gparted/fdisk: shrink a volume, add a FAT32 one;"
+    log "[install]     500 MB is ample). This tool never creates, resizes or reformats"
+    log "[install]     partitions - it only copies files into an existing one."
+    log "[install]   USB install: any stick keeping at least $(human_size "$1") free on a"
+    log "[install]     FAT32 partition; the files are added alongside its contents."
+}
+
+install_boot_hints() {
+    log "[install] boot path: firmware ONE-TIME boot menu -> the UEFI entry for that"
+    log "[install] volume -> \\EFI\\BOOT\\BOOTX64.EFI. No NVRAM/BootOrder entry was"
+    log "[install] created; the unlock itself stays volatile by design and is replayed"
+    log "[install] at every boot."
+    log "[install] caveat: not every firmware lists internal FAT partitions in its boot"
+    log "[install] menu - the USB stick remains the universal path."
+}
+
+# Build INTERNAL_TARGETS / USB_TARGETS from lsblk. Only MOUNTED, writable
+# vfat partitions with room for the layout are offered; ESP partitions
+# (PARTTYPENAME "EFI System"), /boot*/  /efi mounts and the $OUT mount are
+# never candidates. Unmounted partitions are listed as hints, not offers
+# (installing into one would require mounting it here - too invasive).
+install_targets() { # $1 = needed bytes, $2 = excluded mountpoint
+    INTERNAL_TARGETS=()
+    USB_TARGETS=()
+    if ! have lsblk; then
+        log "[install] lsblk not found - install-target probe skipped"
+        return 0
+    fi
+    local rows
+    rows="$(lsblk -rno KNAME,RM,TYPE,FSTYPE,MOUNTPOINT,PARTTYPENAME,LABEL 2>/dev/null)" || rows=""
+    if [ -z "$rows" ]; then
+        # Distinguish "old lsblk" from "no block devices seen" (WSL2/container).
+        if lsblk -rno KNAME,TYPE,FSTYPE 2>/dev/null | grep -q .; then
+            log "[install] lsblk too old for PARTTYPENAME - cannot tell ESP from data, probe skipped"
+        else
+            log "[install] no block devices seen by lsblk (container/WSL2 host?) - probe skipped"
+        fi
+        return 0
+    fi
+    local need=$(( "$1" + 16777216 ))   # + 16 MB headroom over the layout size
+    local unmounted="" kname rm ftype mp ptype label dev is_usb free first_mp
+    while IFS=, read -r kname rm ftype mp ptype label; do
+        [ "$ftype" = "vfat" ] || continue
+        dev="/dev/$kname"
+        first_mp="${mp%%,*}"
+        if [ -z "$first_mp" ] || [ "$first_mp" = "swap" ]; then
+            unmounted+="  $dev  (not mounted - mount it first: udisksctl mount -b $dev)"$'\n'
+            continue
+        fi
+        # ESP is constitution territory (never written, not even appended to).
+        if [ "$ptype" = "EFI System" ]; then continue; fi
+        case "$first_mp" in
+            /|/boot|/boot/*|/efi|/efi/*|/bootx64efi) continue ;;   # boot volumes
+        esac
+        [ "$first_mp" = "$2" ] && continue   # the mount $OUT itself lives on
+        if ! [ -w "$first_mp" ]; then
+            unmounted+="  $dev  $first_mp (not writable by this user - try sudo or polkit mount)"$'\n'
+            continue
+        fi
+        free="$(df -B1 --output=avail "$first_mp" 2>/dev/null | tail -n1 || true)"
+        [ -n "$free" ] || continue
+        if [ "$free" -lt "$need" ]; then continue; fi
+        is_usb=0
+        if [ "$rm" = "1" ]; then is_usb=1; fi
+        if [ "$is_usb" -eq 0 ] && have udevadm && udevadm info -q property -n "$dev" 2>/dev/null | grep -q '^ID_BUS=usb'; then
+            is_usb=1
+        fi
+        local size
+        size="$(df -B1 --output=size "$first_mp" 2>/dev/null | tail -n1 || true)"
+        if [ "$is_usb" -eq 1 ]; then
+            USB_TARGETS+=("$first_mp|$free|$size|$label|$dev")
+        else
+            INTERNAL_TARGETS+=("$first_mp|$free|$size|$label|$dev")
+        fi
+    done <<< "$rows"
+    if [ -n "$unmounted" ]; then
+        log "[install] vfat partitions seen but not offered (not mounted / not writable):"
+        printf '%s' "$unmounted"
+    fi
+    return 0
+}
+
+install_offer() {
+    local needed_bytes out_mount ans n picked_entry mp free size label dev
+    local entries=()
+    # `|| true` inside the substitutions: under pipefail + set -e a failing
+    # df/du (MSYS df has no --output; a missing volume) would otherwise kill
+    # the script silently - the empty result is handled below.
+    needed_bytes="$(du -sb "$OUT" 2>/dev/null | awk '{print $1}' || true)"
+    [ -n "$needed_bytes" ] || needed_bytes="$(du -sk "$OUT" 2>/dev/null | awk '{print $1 * 1024}' || true)"
+    [ -n "$needed_bytes" ] || needed_bytes=0
+    out_mount="$(df -P --output=target "$OUT" 2>/dev/null | tail -n1 || true)"
+    log ""
+    log "[install] generated layout: $(find "$OUT" -type f | wc -l) files, $(human_size "$needed_bytes")"
+
+    # --install-to <mountpoint>: explicit non-interactive target, same
+    # eligibility checks as the probe, no menu.
+    if [ -n "$INSTALL_TO" ]; then
+        INSTALL_TO="${INSTALL_TO%/}"
+        [ -z "$INSTALL_TO" ] && INSTALL_TO="/"
+        [ "$HOST_WIN" -eq 1 ] && die "--install-to needs a real Linux mountpoint (this is a Windows-host bash)"
+        install_targets "$needed_bytes" "$out_mount"
+        picked_entry=""
+        # ${arr[@]+...} keeps bash 4.2 happy under `set -u` when empty.
+        for entry in ${INTERNAL_TARGETS[@]+"${INTERNAL_TARGETS[@]}"} ${USB_TARGETS[@]+"${USB_TARGETS[@]}"}; do
+            mp="${entry%%|*}"
+            [ "$mp" = "$INSTALL_TO" ] && picked_entry="$entry"
+        done
+        if [ -z "$picked_entry" ]; then
+            die "--install-to $INSTALL_TO is not an eligible target (mounted FAT32 with at least $(human_size "$needed_bytes") free, not ESP//boot, not the --out mount)."
+        fi
+        IFS='|' read -r mp free size label dev <<< "$picked_entry"
+        log "[install] target: $mp (label \"$label\", $(human_size "$free") free)"
+        if install_copy "$OUT" "$mp"; then install_boot_hints; fi
+        return 0
+    fi
+    [ "$NO_INSTALL_PROMPT" -eq 1 ] && { log "[install] probe skipped (--no-install-prompt)"; return 0; }
+
+    install_targets "$needed_bytes" "$out_mount"
+    if [ "${#INTERNAL_TARGETS[@]}" -eq 0 ] && [ "${#USB_TARGETS[@]}" -eq 0 ]; then
+        install_guidance "$needed_bytes"
+        return 0
+    fi
+    if [ ! -t 0 ]; then
+        log "[install] no terminal on stdin - skipping the offer (use --install-to)"
+        install_guidance "$needed_bytes"
+        return 0
+    fi
+
+    log "[install] FAT32 install-target probe (nothing already on a target is ever overwritten):"
+    picked_entry=""
+    for kind in internal usb; do
+        if [ "$kind" = "internal" ]; then
+            log "[install]   internal, non-boot data partitions (persistent install):"
+            entries=(${INTERNAL_TARGETS[@]+"${INTERNAL_TARGETS[@]}"})
+        else
+            log "[install]   USB / removable media:"
+            entries=(${USB_TARGETS[@]+"${USB_TARGETS[@]}"})
+        fi
+        [ "${#entries[@]}" -eq 0 ] && continue
+        n=1
+        for entry in "${entries[@]}"; do
+            IFS='|' read -r mp free size label dev <<< "$entry"
+            log "[install]     [$n] $mp  label=\"$label\"  $(human_size "$free") free of $(human_size "$size")  ($dev)"
+            n=$((n + 1))
+        done
+        ans=""
+        read -r ans || ans=""
+        case "$ans" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        if [ "$ans" -ge 1 ] && [ "$ans" -le "${#entries[@]}" ]; then
+            picked_entry="${entries[$((ans - 1))]}"
+            break
+        fi
+    done
+    if [ -z "$picked_entry" ]; then
+        install_guidance "$needed_bytes"
+        return 0
+    fi
+    IFS='|' read -r mp free size label dev <<< "$picked_entry"
+    log "[install] target: $mp (label \"$label\", $(human_size "$free") free)"
+    if install_copy "$OUT" "$mp"; then install_boot_hints; fi
+    return 0
+}
+
+install_offer

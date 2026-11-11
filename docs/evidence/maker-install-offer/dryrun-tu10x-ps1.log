@@ -1,0 +1,57 @@
+[gate] Turing GSP check skipped (-SkipGspCheck)
+[ok] NVIDIA-kernel-module-source-610.43.03.tar.xz SHA-256 verified (cached)
+[local] candidate nv_dispi.inf_amd64_20f49c6eb5c9b39b (DriverVer 10/19/2026, 32.0.16.2101)
+[local] using DriverStore C:\Windows\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_20f49c6eb5c9b39b (DriverVer 10/19/2026, 32.0.16.2101)
+[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)
+[extract] BADGE MODE: GSP from the local DriverStore (DriverVer 10/19/2026, 32.0.16.2101) - version pin waived (525-621 measured compatible)
+[ok] gsp_ga10x.bin + gsp_tu10x.bin staged from the local driver (format gate = per-family gsp-sections)
+[extract] TU102 booter (BOOT_DIRECT) / generic BL
+TU102 derived booter_load_tu10x.bin: 59224 bytes, SHA-256 verified
+TU102 derived gsp_boot_tu10x.bin: 4096 bytes, SHA-256 verified
+TU102 derived gsp_boot_desc_tu10x.bin: 76 bytes, SHA-256 verified
+PIN-ME sec2_bl_tu10x.bin: 768 bytes, sha256 f21f1cfbb8fffa8067685314367fc4c50f3f84dd99eda7c19db4292d9269b9d9
+[extract] fwimage / fwsignature sections (tu10x ELF: tu10x)
+skipped fwsignature_ga100: outside the RTX 20-40 export scope
+skipped fwsignature_tu11x: outside the RTX 20-40 export scope
+fwsignature_tu10x.bin: 4096 bytes
+fwimage_tu10x.bin: 16674264 bytes (same image)
+[generate] V67 TU10x payload
+wrote .relcheck\ev\usbroot-ps1\v67-tu10x-four-plm.bin (64000 bytes, SHA-256 verified)
+[ok] proven GspRmBoot archive SHA-256 verified (131072 bytes)
+[slice] first 0x6000 bytes -> gsp_boot_tu10x.bin
+gsp_boot_tu10x.bin: 24576 bytes, SHA-256 verified (proven BL slice, fired on TU106 2026-10-27; Turing-shared)
+[ok] gsp_boot_tu10x.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)
+  booter_load_tu10x.bin             59224 bytes
+  gsp_boot_desc_tu10x.bin              76 bytes
+  gsp_boot_tu10x.bin                24576 bytes
+  fwimage_tu10x.bin              16674264 bytes
+  fwsignature_tu10x.bin              4096 bytes
+  sec2_bl_tu10x.bin                   768 bytes
+  v67-tu10x-four-plm.bin            64000 bytes
+  BOOTX64.EFI                      236544 bytes
+  EFI/BOOT/BOOTX64.EFI             236544 bytes
+
+DONE (tu10x). The stick root must receive the layout; for example (X: = the FAT32 stick):
+  xcopy "D:\git-repo\nv-uefi-unlocker\.relcheck\ev\usbroot-ps1\*" X:\ /E /H /Y
+Or re-run with -Out X:\ to write the stick root directly.
+The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, do not flatten it.
+Unlock mode requires the v67-*.bin payload for the target card's family
+(v67-tu10x-four-plm.bin); removing it switches the EFI into
+replay/diagnostic mode for that family.
+
+Turing reminder: the target Windows must run EnableGpuFirmware=1 AND
+the unlock session must follow a RESTART - a hibernate resume does not
+re-initialize the driver (gsp-gate.txt on the stick records this build).
+
+[install] generated layout: 11 files, 16.5 MB
+[install] FAT32 install-target probe (nothing already on a target is ever overwritten):
+[install]   internal, non-boot data partitions (persistent install):
+[install]     [1] H:\  label="NV-UNLOCK"  1.9 GB free of 2.0 GB
+[install] no install target was picked (none found, or both offers declined).
+[install]   Internal (persistent) install: add a data FAT32 partition on an
+[install]     INTERNAL (non-USB) disk - NOT the EFI system partition, NOT the
+[install]     Windows boot volume (Disk Management: shrink a volume -> new simple
+[install]     volume -> FAT32; 500 MB is ample). This tool never creates, resizes
+[install]     or reformats partitions - it only copies files into an existing one.
+[install]   USB install: any stick keeping at least 16.5 MB free on a FAT32
+[install]     partition; the files are added alongside its existing contents.

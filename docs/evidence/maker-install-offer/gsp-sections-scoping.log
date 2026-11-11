@@ -1,0 +1,34 @@
+gsp_ga10x.bin: 84277400 bytes, SHA-256 verified
+  gsp_ga10x.bin section .fwimage size 0x5053000
+  gsp_ga10x.bin section .note.gnu.build-id size 0x24
+  gsp_ga10x.bin section .fwversion size 0xa
+  gsp_ga10x.bin section .fwsignature_cc_gr10x size 0x1000
+  gsp_ga10x.bin section .fwsignature_gr10x size 0x1000
+  gsp_ga10x.bin section .fwsignature_gb20y size 0x1000
+  gsp_ga10x.bin section .fwsignature_cc_gb20x size 0x1000
+  gsp_ga10x.bin section .fwsignature_gb20x size 0x1000
+  gsp_ga10x.bin section .fwsignature_cc_gb10x size 0x1000
+  gsp_ga10x.bin section .fwsignature_gb10y size 0x1000
+  gsp_ga10x.bin section .fwsignature_gb10x size 0x1000
+  gsp_ga10x.bin section .fwsignature_cc_gh100 size 0x1000
+  gsp_ga10x.bin section .fwsignature_gh100 size 0x1000
+  gsp_ga10x.bin section .fwsignature_ad10x size 0x1000
+  gsp_ga10x.bin section .fwsignature_ga10x size 0x1000
+  gsp_ga10x.bin section .symtab size 0x60
+  gsp_ga10x.bin section .strtab size 0x1d2
+  gsp_ga10x.bin section .shstrtab size 0x132
+gsp_tu10x.bin: 29352832 bytes, SHA-256 verified
+  gsp_tu10x.bin section .fwimage size 0x1bfadc8
+  gsp_tu10x.bin section .note.gnu.build-id size 0x24
+  gsp_tu10x.bin section .fwversion size 0xa
+  gsp_tu10x.bin section .fwsignature_ga100 size 0x1000
+  gsp_tu10x.bin section .fwsignature_tu11x size 0x1000
+  gsp_tu10x.bin section .fwsignature_tu10x size 0x1000
+  gsp_tu10x.bin section .symtab size 0x60
+  gsp_tu10x.bin section .strtab size 0x1ed
+  gsp_tu10x.bin section .shstrtab size 0x7b
+skipped fwsignature_ga100: outside the RTX 20-40 export scope
+fwsignature_tu11x.bin: 4096 bytes
+fwsignature_tu10x.bin: 4096 bytes
+fwimage_tu11x.bin: 29339080 bytes (same image)
+fwimage_tu10x.bin: 29339080 bytes (same image)

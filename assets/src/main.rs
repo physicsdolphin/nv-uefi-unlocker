@@ -4,6 +4,21 @@ use std::path::{Path, PathBuf};
 
 use assets::manifest::ga102_610 as pins;
 
+/// Raw extracted BINDATA sources (the `*_raw.c` dumps) are forensics
+/// material - 100-440 KiB of dead weight on a USB root the loader never
+/// reads. Emission is opt-in: set ASSETS_DEBUG_C=1 to keep them (they never
+/// enter git either way); the make-usbroot makers never set it.
+fn write_debug_c(outdir: &Path, name: &str, data: &[u8]) -> Result<(), String> {
+    let on = std::env::var_os("ASSETS_DEBUG_C")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    if on {
+        std::fs::write(outdir.join(name), data).map_err(|e| e.to_string())?;
+        println!("debug dump {name} (ASSETS_DEBUG_C=1): {} bytes", data.len());
+    }
+    Ok(())
+}
+
 fn extract(source: &Path, outdir: &Path) -> Result<(), String> {
     use assets::booter::{build_bundle, build_gsp_boot};
     use assets::manifest::sha256_hex;
@@ -244,10 +259,11 @@ fn extract_tu11x(source: &Path, outdir: &Path) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?
     .data;
-    // Raw generated sources stay on disk for forensics (never enter git).
-    std::fs::write(outdir.join("booter_load_tu11x_raw.c"), &booter_src).map_err(|e| e.to_string())?;
-    std::fs::write(outdir.join("gsp_boot_tu11x_raw.c"), &boot_src).map_err(|e| e.to_string())?;
-    std::fs::write(outdir.join("sec2_bl_tu11x_raw.c"), &bl_src).map_err(|e| e.to_string())?;
+    // Raw generated sources stay on disk for forensics (never enter git;
+    // ASSETS_DEBUG_C=1 opts in - see write_debug_c).
+    write_debug_c(outdir, "booter_load_tu11x_raw.c", &booter_src)?;
+    write_debug_c(outdir, "gsp_boot_tu11x_raw.c", &boot_src)?;
+    write_debug_c(outdir, "sec2_bl_tu11x_raw.c", &bl_src)?;
     write_derived("booter_load_tu11x.bin", &booter, pins::DERIVED_BOOTER_LOAD)?;
     write_derived("gsp_boot_desc_tu11x.bin", &desc, pins::DERIVED_GSP_BOOT_DESC)?;
     write_derived("sec2_bl_tu11x.bin", &bl, pins::DERIVED_SEC2_BL)?;
@@ -297,10 +313,11 @@ fn extract_tu10x(source: &Path, outdir: &Path) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?
     .data;
-    // Raw generated sources stay on disk for forensics (never enter git).
-    std::fs::write(outdir.join("booter_load_tu10x_raw.c"), &booter_src).map_err(|e| e.to_string())?;
-    std::fs::write(outdir.join("gsp_boot_tu10x_raw.c"), &boot_src).map_err(|e| e.to_string())?;
-    std::fs::write(outdir.join("sec2_bl_tu10x_raw.c"), &bl_src).map_err(|e| e.to_string())?;
+    // Raw generated sources stay on disk for forensics (never enter git;
+    // ASSETS_DEBUG_C=1 opts in - see write_debug_c).
+    write_debug_c(outdir, "booter_load_tu10x_raw.c", &booter_src)?;
+    write_debug_c(outdir, "gsp_boot_tu10x_raw.c", &boot_src)?;
+    write_debug_c(outdir, "sec2_bl_tu10x_raw.c", &bl_src)?;
     write_derived("booter_load_tu10x.bin", &booter, pins::DERIVED_BOOTER_LOAD)?;
     write_derived("gsp_boot_tu10x.bin", &image, pins::DERIVED_GSP_BOOT)?;
     write_derived("gsp_boot_desc_tu10x.bin", &desc, pins::DERIVED_GSP_BOOT_DESC)?;
@@ -320,7 +337,7 @@ fn extract_scrub(source: &Path, outdir: &Path) -> Result<(), String> {
     }
     let bundle = build_bundle(&String::from_utf8(src.clone()).map_err(|_| "non-ascii")?)
         .map_err(|e| e.to_string())?;
-    std::fs::write(outdir.join("scrubber_ad10x_raw.c"), &src).map_err(|e| e.to_string())?;
+    write_debug_c(outdir, "scrubber_ad10x_raw.c", &src)?;
     let digest = sha256_hex(&bundle);
     if pins::SCRUB_DERIVED != "UNMEASURED" && digest != pins::SCRUB_DERIVED {
         return Err(format!("SEC2 scrubber derived mismatch: {digest}"));

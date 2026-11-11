@@ -11,6 +11,16 @@
 #                     auto = local DriverStore (badge mode) -> Arch archive
 #                     -> first-party .run -> CachyOS cache, first that lands;
 #                     arch | run | cachyos | local pins one route)
+#   .\make-usbroot.ps1 -NoInstallPrompt    (skip the post-build install offer)
+#   .\make-usbroot.ps1 -InstallTo D:\      (copy the layout into an existing
+#                     FAT32 partition without asking; the volume must pass the
+#                     same eligibility checks as the probe)
+#
+# After generating the layout the script probes for EXISTING FAT32 partitions
+# it can copy into: an internal (non-USB) disk's non-boot data partition is
+# offered for a persistent install, a USB stick's partition for the same file
+# copy. Nothing on the target is ever overwritten or deleted, no partition is
+# ever created/resized/reformatted, and no NVRAM boot entry is written.
 #
 # -Family (default localhost):
 #   ad102 | rtx40 | 40   RTX 40 series (Ada)          - no Windows prerequisites
@@ -72,7 +82,20 @@ param(
     [string]$ClassKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}',
     # PnP's bound-device list for the NVIDIA driver (override for tests/offline
     # hives). Only devnodes the driver actually bound to this boot appear here.
-    [string]$NvServiceEnumKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Enum'
+    [string]$NvServiceEnumKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Enum',
+    # After generating the layout, probe for EXISTING FAT32 partitions to
+    # copy it into: an internal (non-USB) disk's non-boot data partition is
+    # offered for a persistent install (boot it from the one-time boot menu,
+    # no NVRAM entry), a USB stick's partition for the same file copy. The
+    # probe never creates/resizes/reformats partitions, never touches an
+    # ESP/system/boot volume, and never overwrites an existing file.
+    # -NoInstallPrompt skips the interactive offer (scripted runs).
+    [switch]$NoInstallPrompt,
+    # Non-interactive install target: the ROOT of a FAT32 volume ("D:\").
+    # Must pass the same eligibility checks as the probe (FAT32, room for
+    # the layout, not ESP/system/boot). Implies -NoInstallPrompt for the
+    # rest of the menu.
+    [string]$InstallTo = ""
 )
 
 # A bare drive root ("G:\") ends in a backslash, which New-Item -Path rejects
@@ -705,6 +728,19 @@ $unlockFiles = @()
 $ga10xSectionsDone = $false
 $tuSectionsDone = $false
 
+# gsp-sections exports fwimage_<fam>.bin + fwsignature_<fam>.bin per wanted
+# signature family. The .fwimage section is family-neutral (the same tens of
+# MB get rewritten for every exported name), so only the families this build
+# serves are requested - the ga10x ELF carries ga100/ga10x/ad10x signatures,
+# the tu10x ELF tu10x/tu11x/ga100. The loader looks families up by device
+# family name, hence the ad10x->ad102 / ga10x->ga102 copies below.
+$ga10xSigFamilies = @()
+if ($Families -contains "ga102") { $ga10xSigFamilies += "ga10x" }
+if ($Families -contains "ad102") { $ga10xSigFamilies += "ad10x" }
+$tuSigFamilies = @()
+if ($Families -contains "tu10x") { $tuSigFamilies += "tu10x" }
+if ($Families -contains "tu11x") { $tuSigFamilies += "tu11x" }
+
 # The proven GspRmBoot archive is Turing-shared (the driver generates only a
 # TU102 one), so tu10x and tu11x resolve and slice the same pinned bytes.
 # Order: explicit path, next to this script, reference checkout, work dir,
@@ -779,8 +815,8 @@ foreach ($fam in $Families) {
             & $AssetsExe extract-ad102 $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract-ad102 failed" }
             if (-not $ga10xSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (ga10x ELF)"
-                & $AssetsExe gsp-sections (Join-Path $Out "gsp_ga10x.bin") $Out
+                Write-Host "[extract] fwimage / fwsignature sections (ga10x ELF: $($ga10xSigFamilies -join ', '))"
+                & $AssetsExe gsp-sections (Join-Path $Out "gsp_ga10x.bin") $Out $ga10xSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $ga10xSectionsDone = $true
             }
@@ -803,8 +839,8 @@ foreach ($fam in $Families) {
             & $AssetsExe extract $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract failed" }
             if (-not $ga10xSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (ga10x ELF)"
-                & $AssetsExe gsp-sections (Join-Path $Out "gsp_ga10x.bin") $Out
+                Write-Host "[extract] fwimage / fwsignature sections (ga10x ELF: $($ga10xSigFamilies -join ', '))"
+                & $AssetsExe gsp-sections (Join-Path $Out "gsp_ga10x.bin") $Out $ga10xSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $ga10xSectionsDone = $true
             }
@@ -825,8 +861,8 @@ foreach ($fam in $Families) {
             & $AssetsExe extract-tu10x $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract-tu10x failed" }
             if (-not $tuSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF)"
-                & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out
+                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF: $($tuSigFamilies -join ', '))"
+                & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out $tuSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $tuSectionsDone = $true
             }
@@ -851,8 +887,8 @@ foreach ($fam in $Families) {
             & $AssetsExe extract-tu11x $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract-tu11x failed" }
             if (-not $tuSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF)"
-                & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out
+                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF: $($tuSigFamilies -join ', '))"
+                & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out $tuSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $tuSectionsDone = $true
             }
@@ -871,6 +907,17 @@ foreach ($fam in $Families) {
     }
 }
 
+# ---------- intermediates off the root ----------
+# The full GSP ELFs (gsp_ga10x.bin / gsp_tu10x.bin) are extraction
+# INTERMEDIATES: gsp-sections has consumed them and the loader reads only
+# fwimage_*/fwsignature_*/booter_load_*/... from the volume root - the ELF
+# files (84 + 29 MB) would be pure dead weight on the stick. The makers
+# delete them here instead of asking users to skip "extra .bin files".
+foreach ($elf in @("gsp_ga10x.bin", "gsp_tu10x.bin")) {
+    $elfPath = Join-Path $Out $elf
+    if (Test-Path $elfPath) { Remove-Item $elfPath -Force }
+}
+
 $expected += "BOOTX64.EFI"
 Copy-Item $BootEfi (Join-Path $Out "BOOTX64.EFI") -Force
 
@@ -885,6 +932,16 @@ foreach ($f in $expected) {
     Write-Host ("  {0,-28} {1,10} bytes" -f $f, (Get-Item (Join-Path $Out $f)).Length)
 }
 Write-Host ("  {0,-28} {1,10} bytes" -f "EFI/BOOT/BOOTX64.EFI", (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length)
+
+# Layout marker: identifies a volume that already hosts THIS project's files
+# so a later run may upgrade them in place. Any other existing file is never
+# overwritten (data-safety contract; see the install offer at the end).
+@{
+    project  = "nv-uefi-unlocker"
+    maker    = "make-usbroot.ps1"
+    families = ($Families -join ",")
+    built    = (Get-Date -Format o)
+} | ConvertTo-Json | Set-Content -Path (Join-Path $Out "nvuu-stick.json") -Encoding Ascii
 
 $outFull = (Resolve-Path -LiteralPath $Out).Path
 $outRoot = [System.IO.Path]::GetPathRoot($outFull)
@@ -905,3 +962,203 @@ if ($Families -contains "tu10x" -or $Families -contains "tu11x") {
     Write-Host "the unlock session must follow a RESTART - a hibernate resume does not"
     Write-Host "re-initialize the driver (gsp-gate.txt on the stick records this build)."
 }
+
+# ---------- install-target probe + one-click persistent install ----------
+# The generated layout can be copied into an EXISTING FAT32 partition so the
+# unlock does not require a dedicated USB stick every time: an internal
+# (non-removable) disk's non-boot data FAT32 partition is offered for a
+# persistent install, and a USB stick's FAT32 partition for the same copy.
+# Data-safety contract (the issue #73 ruling kept intact): this probe NEVER
+# creates, resizes, reformats or repartitions anything, NEVER touches an
+# ESP/system/boot volume, and NEVER overwrites or deletes an existing file -
+# a differing file at the target refuses the whole target, and only a
+# previous nv-uefi-unlocker layout (identified by nvuu-stick.json) may be
+# upgraded in place. A layout on an internal partition boots through the
+# firmware's ONE-TIME boot menu; no NVRAM/BootOrder entry is ever written.
+
+function Format-Size([long]$Bytes) {
+    if ($Bytes -ge 1GB) { "{0:N1} GB" -f ($Bytes / 1GB) }
+    elseif ($Bytes -ge 1MB) { "{0:N1} MB" -f ($Bytes / 1MB) }
+    else { "{0:N0} KB" -f ($Bytes / 1KB) }
+}
+
+function Get-InstallPayload {
+    $files = @(Get-ChildItem -LiteralPath $Out -Recurse -File)
+    $sum = 0
+    foreach ($f in $files) { $sum += $f.Length }
+    [pscustomobject]@{ Count = $files.Count; Bytes = $sum }
+}
+
+function Test-OurLayoutMarker([string]$Root) {
+    $m = Join-Path $Root "nvuu-stick.json"
+    if (-not (Test-Path -LiteralPath $m)) { return $false }
+    try { return ((Get-Content -LiteralPath $m -Raw -ErrorAction Stop) -match 'nv-uefi-unlocker') } catch { return $false }
+}
+
+# Enumerate FAT32 volumes that could receive the layout. Removable = USB
+# bus; everything else counts as internal. ESP/system/boot partitions and
+# the volume $Out itself sits on are never candidates.
+function Get-Fat32InstallTargets([long]$NeededBytes, [string]$ExcludeRoot) {
+    $targets = @()
+    $vols = Get-Volume -ErrorAction SilentlyContinue |
+        Where-Object { $_.DriveLetter -and $_.FileSystem -eq 'FAT32' -and $_.SizeRemaining -ge ($NeededBytes + 16MB) }
+    foreach ($v in $vols) {
+        $root = "$($v.DriveLetter):\"
+        if ($root -ieq $ExcludeRoot) { continue }
+        $part = Get-Partition -DriveLetter $v.DriveLetter -ErrorAction SilentlyContinue
+        if (-not $part) { continue }
+        if ($part.IsBoot -or $part.IsSystem) { continue }
+        if ("$($part.GptType)".ToLowerInvariant() -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}') { continue }
+        $disk = Get-Disk -Number $part.DiskNumber -ErrorAction SilentlyContinue
+        if (-not $disk) { continue }
+        if ($disk.IsOffline -or $disk.IsReadOnly) { continue }
+        $targets += [pscustomobject]@{
+            Root      = $root
+            Removable = ($disk.BusType -eq 'USB')
+            Label     = "$($v.FileSystemLabel)"
+            Free      = [long]$v.SizeRemaining
+            Size      = [long]$v.Size
+        }
+    }
+    return $targets
+}
+
+# Copy the whole layout into an existing volume root WITHOUT touching what
+# is already there: byte-identical files are skipped, a differing file
+# refuses the target unless nvuu-stick.json marks it as our own earlier
+# install (upgrade path). Every written file is verified by SHA-256
+# read-back; a verification failure fails the function (read-back is the
+# only success criterion, file domain included).
+function Copy-UnlockRoot([string]$From, [string]$To) {
+    $fromFull = (Resolve-Path -LiteralPath $From).Path.TrimEnd('\')
+    $ours = Test-OurLayoutMarker $To
+    $plan = @()
+    $conflicts = @()
+    foreach ($f in (Get-ChildItem -LiteralPath $fromFull -Recurse -File)) {
+        $rel = $f.FullName.Substring($fromFull.Length + 1)
+        $dest = Join-Path $To $rel
+        if (Test-Path -LiteralPath $dest) {
+            $same = ((Get-Item -LiteralPath $dest).Length -eq $f.Length) -and
+                    ((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash -eq
+                     (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash)
+            if ($same) { continue }
+            if ($ours) { $plan += [pscustomobject]@{ Src = $f.FullName; Dest = $dest; Rel = $rel; Overwrite = $true }; continue }
+            $conflicts += $rel
+        } else {
+            $plan += [pscustomobject]@{ Src = $f.FullName; Dest = $dest; Rel = $rel; Overwrite = $false }
+        }
+    }
+    if ($conflicts.Count -gt 0) {
+        Write-Host "[install] REFUSED: the target already holds different file(s) and is not a nv-uefi-unlocker layout:"
+        foreach ($c in $conflicts) { Write-Host "[install]   existing: $(Join-Path $To $c)" }
+        Write-Host "[install] nothing was written (the tool never overwrites existing files)."
+        Write-Host "[install] If it is a stale copy of this tool, delete those files yourself and re-run."
+        return $false
+    }
+    $copied = 0
+    foreach ($item in $plan) {
+        $dir = Split-Path $item.Dest -Parent
+        if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        }
+        Copy-Item -LiteralPath $item.Src -Destination $item.Dest -Force
+        $copied++
+    }
+    $bad = @()
+    foreach ($item in $plan) {
+        $srcHash = (Get-FileHash -LiteralPath $item.Src -Algorithm SHA256).Hash
+        $dstHash = (Get-FileHash -LiteralPath $item.Dest -Algorithm SHA256).Hash
+        if ($srcHash -ne $dstHash) { $bad += $item.Rel }
+    }
+    if ($bad.Count -gt 0) {
+        Write-Host "[install] READ-BACK MISMATCH on $($To) - do not boot from this copy:"
+        foreach ($b in $bad) { Write-Host "[install]   $b" }
+        return $false
+    }
+    $total = @(Get-ChildItem -LiteralPath $fromFull -Recurse -File).Count
+    Write-Host ("[install] done: {0} files written ({1} refreshed), {2} already identical -> {3} (SHA-256 read-back verified)" -f
+        $total, $plan.Count, ($total - $plan.Count), $To)
+    return $true
+}
+
+function Write-InstallGuidance([long]$NeededBytes) {
+    Write-Host "[install] no install target was picked (none found, or both offers declined)."
+    Write-Host "[install]   Internal (persistent) install: add a data FAT32 partition on an"
+    Write-Host "[install]     INTERNAL (non-USB) disk - NOT the EFI system partition, NOT the"
+    Write-Host "[install]     Windows boot volume (Disk Management: shrink a volume -> new simple"
+    Write-Host "[install]     volume -> FAT32; 500 MB is ample). This tool never creates, resizes"
+    Write-Host "[install]     or reformats partitions - it only copies files into an existing one."
+    Write-Host ("[install]   USB install: any stick keeping at least {0} free on a FAT32" -f (Format-Size $NeededBytes))
+    Write-Host "[install]     partition; the files are added alongside its existing contents."
+}
+
+function Invoke-InstallOffer {
+    $payload = Get-InstallPayload
+    Write-Host ""
+    Write-Host ("[install] generated layout: {0} files, {1}" -f $payload.Count, (Format-Size $payload.Bytes))
+    $excludeRoot = [System.IO.Path]::GetPathRoot((Resolve-Path -LiteralPath $Out).Path)
+
+    # Explicit non-interactive target (-InstallTo D:\): same eligibility
+    # checks as the probe, no menu.
+    if ($InstallTo) {
+        $wantRoot = [System.IO.Path]::GetPathRoot($InstallTo)
+        if (-not $wantRoot) { throw "-InstallTo '$InstallTo' is not a volume root (use e.g. D:\)" }
+        $match = @(Get-Fat32InstallTargets $payload.Bytes $excludeRoot | Where-Object { $_.Root -ieq $wantRoot })
+        if ($match.Count -eq 0) {
+            throw "-InstallTo $wantRoot is not an eligible FAT32 target (FAT32 volume, at least $(Format-Size $payload.Bytes) free, not ESP/system/boot, not the -Out volume)."
+        }
+        Write-Host ("[install] target: {0} (label '{1}', {2} free)" -f $match[0].Root, $match[0].Label, (Format-Size $match[0].Free))
+        if (Copy-UnlockRoot $Out $match[0].Root) { Write-InstallBootHints }
+        return
+    }
+    if ($NoInstallPrompt) {
+        Write-Host "[install] probe skipped (-NoInstallPrompt)"
+        return
+    }
+
+    $targets = @(Get-Fat32InstallTargets $payload.Bytes $excludeRoot)
+    $internal = @($targets | Where-Object { -not $_.Removable })
+    $usb = @($targets | Where-Object { $_.Removable })
+    if ($internal.Count -eq 0 -and $usb.Count -eq 0) {
+        Write-InstallGuidance $payload.Bytes
+        return
+    }
+    Write-Host "[install] FAT32 install-target probe (nothing already on a target is ever overwritten):"
+    $chosen = $null
+    foreach ($phase in @(
+        @{ Kind = "internal, non-boot data partitions (persistent install)"; List = $internal },
+        @{ Kind = "USB / removable media"; List = $usb })) {
+        if ($phase.List.Count -eq 0) { continue }
+        Write-Host ("[install]   {0}:" -f $phase.Kind)
+        $i = 1
+        foreach ($t in $phase.List) {
+            Write-Host ("[install]     [{0}] {1,-4} label=""{2}""  {3} free of {4}" -f
+                $i, $t.Root, $t.Label, (Format-Size $t.Free), (Format-Size $t.Size))
+            $i++
+        }
+        $ans = $null
+        try { $ans = Read-Host "[install] install there? number = install, Enter = skip" } catch { $ans = $null }
+        $n = 0
+        if ($ans -and [int]::TryParse("$ans", [ref]$n) -and $n -ge 1 -and $n -le $phase.List.Count) {
+            $chosen = $phase.List[$n - 1]
+            break
+        }
+    }
+    if (-not $chosen) {
+        Write-InstallGuidance $payload.Bytes
+        return
+    }
+    Write-Host ("[install] target: {0} (label ""{1}"", {2} free)" -f $chosen.Root, $chosen.Label, (Format-Size $chosen.Free))
+    if (Copy-UnlockRoot $Out $chosen.Root) { Write-InstallBootHints }
+}
+
+function Write-InstallBootHints {
+    Write-Host "[install] boot path: firmware ONE-TIME boot menu -> the UEFI entry for that"
+    Write-Host "[install] volume -> \EFI\BOOT\BOOTX64.EFI. No NVRAM/BootOrder entry was"
+    Write-Host "[install] created; the unlock itself stays volatile by design and is replayed"
+    Write-Host "[install] at every boot."
+    Write-Host "[install] caveat: not every firmware lists internal FAT partitions in its boot"
+    Write-Host "[install] menu - the USB stick remains the universal path."
+}
+
+Invoke-InstallOffer

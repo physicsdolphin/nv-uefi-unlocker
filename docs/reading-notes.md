@@ -829,3 +829,66 @@ WDATA_WR_SECURE=1↔FUSEWDATA_PLM=8f 跨孔径锁死复确认）：**消费 vs
 
 **g) 镜像三列复确认**（第三跑，逐位稳定）；FUSEADDR=0xff（真 bank）维持
 开放。GA10x 对照（GA102 词典轮）随 diag-unlock.py 0.7.4 面执行。
+
+## maker 免 U 盘一键安装 + 资产瘦身（2026-11-12，make-usbroot.ps1/.sh + assets）
+
+**动机**：#73 裁定拒绝的是"替用户动分区表的 installer"；把布局**追加复制进用户已有的
+FAT32 分区**不触碰该裁定——分区不被创建/调整/格式化，已有文件不被覆盖，一次引导菜单
+选择即可用，U 盘不再每轮必插。
+
+### 1. 安装探测（两个 maker 同构）
+
+生成完成后枚举**现有** FAT32 卷：Windows 侧 `Get-Volume`(FAT32+DriveLetter) →
+`Get-Partition`(IsBoot/IsSystem/GptType=ESP 三重排除) → `Get-Disk`(BusType；
+USB=可移动、其余=内置；本机 NV-UNLOCK H: 是 SATA 附着=按内置分类——BusType 是
+Windows 唯一干净的内部/外部信号，SATA 硬盘盒会算内置，属可接受偏差)。Linux 侧
+`lsblk -rno KNAME,RM,TYPE,FSTYPE,MOUNTPOINT,PARTTYPENAME,LABEL`：PARTTYPENAME
+"EFI System" 直接排除（宪法 #3 ESP 禁写），`/boot*/`、`/efi*`、`--out` 所在挂载点
+排除；只收**已挂载且可写**的卷（udisks 桌面自动挂载覆盖主流），未挂载的打印提示不收。
+空间门槛 = 布局实测字节数 + 16MB 余量。
+
+两段式菜单：内置候选先问"持久化安装"，未装再问 U 盘候选；皆无/皆跳 → 双语指引
+（内置划非 ESP 数据 FAT32 分区 / 准备够大 FAT32 的 U 盘）。自动化出口：
+`-NoInstallPrompt`/`--no-install-prompt`、`-InstallTo D:\`/`--install-to <挂载点>`
+（与探测同一套资格校验，不合格即 throw/die）。
+
+### 2. 数据安全契约（读回纪律的文件域投影）
+
+`nvuu-stick.json`（maker 每次生成写入）= 目标身份标记：无标记目标出现同名异内容文件
+→ **整个目标拒绝**并逐个列出，零写入；有标记 → 视为本项目旧布局允许原地升级。
+逐字节同内容 → 跳过不重写。写完全量 SHA-256 读回比对，失败即报"勿从该副本引导"。
+引导路径=固件一次性菜单（`\EFI\BOOT\BOOTX64.EFI`），零 NVRAM 写入——与 #73 宪法完全
+相容；对内安装明确警示"不是所有固件枚举内置 FAT 卷"。
+
+### 3. 瘦身三件
+
+① assets `*_raw.c`（438K 级取证转储）改 `ASSETS_DEBUG_C=1` 门控发射；② `gsp-sections`
+按族过滤——`.fwimage` 是族中性的，旧默认导出 5 族=每族一份 84M/29M 重复镜像，maker
+现在只传本构建的族（ga10x/ad10x/tu10x/tu11x）；③ 提取中间 ELF（gsp_ga10x.bin 84M /
+gsp_tu10x.bin 29M）在 gsp-sections 消费完即从输出根删除（loader 只读卷根
+`fwimage_*` 等，`tx.rs` 卷根解析从不碰这两个 ELF）。实测 tu10x-only 输出 11 文件
+~16.5 MB（badge-mode GSP）。
+
+### 4. sh↔ps1 同步（20 系不出 tu11x；tu11x 仅 16）
+
+sh 补齐 tu11x 分支、`--family 16|rtx16` 别名、`family_of_dev` 按 ps1 范围拆分
+（0x1E02-0x1F80=tu10x；0x1F81-0x1FFF+0x2182-0x21D1=tu11x——此前 Linux localhost 会把
+16 系误路由 tu10x）、scrubber 排除 tu11x、TU/GA 签名族表。badge-mode 增加 Git Bash
+（/c/...）与 WSL（/mnt/c/...）的 DriverStore glob。
+
+### 5. sh 三处潜伏 bug（顺手修，均有复现）
+
+① `resolve_utils` 的 fwdir 捕获用 `for d in …; do [ -f ] && [ -f ] && echo; done |
+sort | tail`：最后一条 glob 不匹配时**循环退出码=1**，在 pipefail+set -e 下穿过命令
+替换杀死赋值——脚本在 SRC1 缓存行后**静默死亡**（2026-11-01 引入 badge mode 起，
+Linux 自动档必死）。修复=改 `if` 形式。经验：bash 捕获内的 for 循环体，`&&` 链失败
+会成为循环退出码——捕获必须 if 化或 `|| true`。② MSYS df 无 `--output` 同一死法，
+捕获全部补 `|| true`。③ `[ "$(…)" ]` 类比较照旧。
+
+### 6. 验证与证据
+
+assets 重建绿+门控实测；双脚本语法过；tu10x/16 双端到端干跑绿；`-InstallTo D:\`
+拒绝路径、管道 stdin 越界应答→指引路径实测；Copy-UnlockRoot / install_copy harness
+各 4 测（fresh/identical/拒绝不落笔/标记升级）全绿。证据
+`docs/evidence/maker-install-offer/`，回归 harness `tools/maker-tests/`。
+**未做**：release/assets-x86_64-windows.exe 仍旧版（发版时按三定律重建换件）。

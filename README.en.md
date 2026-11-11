@@ -183,7 +183,7 @@ bash make-usbroot.sh --family "$gpu_series"
 
 Windows requires PowerShell 5+; the Linux binary requires glibc ≥ 2.34 (for example, Ubuntu 22.04+ / Debian 12+). Initial generation needs internet access. Resolve download or verification failures without substituting another firmware version.
 
-Files are generated in the local `usbroot/` directory, which already contains `EFI/BOOT/BOOTX64.EFI`. Copy the **contents** of `usbroot/` to the stick root (do not copy the directory itself as `U:\usbroot\`). The other extraction intermediates do not need to be copied.
+Files are generated in the local `usbroot/` directory, which already contains `EFI/BOOT/BOOTX64.EFI` and only the runtime-needed files. Copy the **contents** of `usbroot/` to the stick root (do not copy the directory itself as `U:\usbroot\`).
 
 ```text
 USB stick (FAT32)
@@ -192,6 +192,8 @@ USB stick (FAT32)
 ```
 
 Keep the generated `v67-*.bin` unlock file. [Full file list and purposes](docs/faq.en.md#usb).
+
+**No-manual-copy install (optional)**: after generating, the script probes for EXISTING FAT32 partitions and asks whether to install in one click - an internal disk's **non-boot** data FAT32 partition is offered as a persistent install (boot that volume from the firmware's one-time boot menu afterwards, no stick needed; not every firmware lists internal FAT partitions - the stick remains the universal path), and a USB stick's FAT32 partition for the same copy. The install only appends files: nothing already on the target is overwritten or deleted, differing same-name files refuse the whole target with the list, no partition is ever created/resized/reformatted, the system ESP is never touched and no NVRAM boot entry is written. With no eligible target at all, the script prints how to prepare either route. For scripted runs use `-NoInstallPrompt` / `--no-install-prompt`, or `-InstallTo D:\` / `--install-to <mountpoint>` for an existing target.
 
 Back up an existing `EFI/BOOT/BOOTX64.EFI` before replacing it. Do not copy into the system ESP or change the permanent boot order. See [USB files and options](docs/faq.en.md#usb) for file details, building on another host, GPU selection and advanced options.
 
