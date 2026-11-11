@@ -44,13 +44,15 @@
 
 ## USB 文件和高级选项怎么放？
 
-maker 在本地 `usbroot/` 输出资产（`*.bin` 平铺在该目录，另已建好 `EFI/BOOT/BOOTX64.EFI`）；把该目录的**内容**复制到 U 盘根目录（别把目录本身拷成 `U:\usbroot\`）。不要把抽取中间文件当作运行资产复制。
+maker 在本地 `usbroot/` 输出资产（`*.bin` 平铺在该目录，另已建好 `EFI/BOOT/BOOTX64.EFI`）；把该目录的**内容**复制到 U 盘根目录（别把目录本身拷成 `U:\usbroot\`）。输出只含运行所需文件——抽取中间产物（完整 GSP ELF、取证用 `*_raw.c` 转储）不再混在输出里；`ASSETS_DEBUG_C=1` 可让 assets 管线重新吐出取证转储（仅调试用）。
+
+**免 U 盘复制（可选）**：生成完成后 maker 会探测本机**现有** FAT32 分区并询问是否一键安装——内置盘（非 USB）上**非引导**（非 ESP、非系统/启动卷）的数据 FAT32 分区提示"持久化安装"（以后从主板一次性启动菜单直接引导该卷；部分主板不枚举内置盘 FAT 分区，U 盘始终是通用路径），U 盘上的 FAT32 分区提示"安装到 U 盘"。安装只做**追加复制**：目标上已有文件一律不覆盖、不删除，同名异内容文件会让整个目标被拒绝并逐个列出（除非盘根 `nvuu-stick.json` 表明这是本项目先前安装的布局，才允许原地升级）；绝不创建/调整/格式化分区，绝不写系统 ESP，绝不添加 NVRAM 启动项。两个探测都没有结果时，脚本会给出两条路线的准备指引（内置盘划一块非 ESP 数据 FAT32 分区 / 一个有足够大 FAT32 分区的 U 盘）。脚本化场景用 `-NoInstallPrompt` / `--no-install-prompt` 跳过询问，或 `-InstallTo D:\` / `--install-to <挂载点>` 指定已存在的目标（同一套资格校验）。
 
 **为什么放到这个路径就能被识别？** UEFI 固件对**可移动介质**有一个固定的回退引导路径——`\EFI\BOOT\BOOTX64.EFI`（x86_64）。文件在这个路径上，固件就会把它当作引导项自动列出/执行，**不需要**写入或修改任何 NVRAM 启动项——这也是本工具"无常驻引导项"纪律（[安全约束](#safety)）能成立的原因：拔掉 U 盘，机器回到原样。其他架构有各自的默认文件名（如 aarch64 是 `BOOTAA64.EFI`）：当前工具、资产与所有实测都只覆盖 x86_64；如果你在 aarch64（ARM 笔记本/服务器）上有需求，请开 feature request/PR 说明平台与固件，开发者暂时没有测试条件。
 
 **`-Out G:\` 在 Windows PowerShell 5.1 上会报 `New-Item : The path is not of a legal form`**（盘符根以 `\` 结尾，`New-Item -Path` 不接受；[#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)）。脚本创建目录时会自动剥掉尾反斜杠；若用旧包，改传 **`-Out G:`**（不带 `\`）即可。
 
-maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只生成对应家族；`-Family` / `--family` 可显式指定 `ad102`（40 系）、`ga102`（30 系）、`tu10x`（20 / 16 系）或 `all`（三代全家桶，一张盘服务多种卡）。多家族盘的文件是各家族清单的并集。
+maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只生成对应家族；`-Family` / `--family` 可显式指定 `ad102`（40 系）、`ga102`（30 系）、`tu10x`（20 系）、`tu11x`（16 系，RE 推导实验线）或 `all`（三代全家桶，一张盘服务多种卡；不含 tu11x）。多家族盘的文件是各家族清单的并集。两个脚本行为一致：`20`/`tu10x` 只产出 tu10x，`16`/`tu11x` 才产出 tu11x。
 
 `F` 为 `ad102`、`ga102` 或 `tu10x`：
 
@@ -62,7 +64,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | 盘根 | `fwimage_F.bin`、`fwsignature_F.bin` | GSP-RM 镜像与原厂签名 |
 | 盘根 | `v67-F-four-plm.bin` | 解锁载荷 |
 | 盘根，Ada / Ampere | `scrubber_ad10x.bin` | SEC2 scrubber |
-| 盘根，Turing | `sec2_bl_tu10x.bin` | FWSEC 所需引导段 |
+| 盘根，Turing | `sec2_bl_<tu10x|tu11x>.bin` | FWSEC 所需引导段 |
 | 盘根，Turing | `gsp-gate.txt` | maker 生成的 GSP 检查记录 |
 | 盘根，运行后 | `loader.log` | 阶段日志，下次运行前另存 |
 
@@ -161,6 +163,8 @@ TU106 + GSP 模式有休眠恢复后成功交棒的实测，但这不能代替�
 先核对系统侧选择器和电源状态。RTD3 让空闲 GPU 进入 D3cold 时会清除易失解锁；EFI 读回成功不能证明状态在系统内一直保留。
 
 若发行版在 `/usr/lib/modprobe.d/nvidia-runtimepm.conf` 启用 `NVreg_DynamicPowerManagement=0x02`，可在 `/etc/modprobe.d/` 使用同名文件覆盖。先备份已有配置：
+
+**一键脚本**：`sudo bash tools/disable-rtd3.sh`——实现本节全部步骤（同名覆盖+备份、设备级 `power/control=on` 立即生效、initramfs 工具探测、冲突文件点名、合并配置终检）；`--check` 只读体检当前状态。手工步骤如下：
 
 ```bash
 echo 'options nvidia NVreg_DynamicPowerManagement=0x00' | \

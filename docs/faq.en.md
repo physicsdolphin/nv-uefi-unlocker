@@ -44,13 +44,15 @@
 
 ## What files and options belong on the USB stick?
 
-The maker emits the assets into a local `usbroot/` directory (the `*.bin` files flat, plus `EFI/BOOT/BOOTX64.EFI`). Copy the **contents** to the stick root (do not copy the directory itself as `U:\usbroot\`). Do not copy extraction intermediates as runtime assets.
+The maker emits the assets into a local `usbroot/` directory (the `*.bin` files flat, plus `EFI/BOOT/BOOTX64.EFI`). Copy the **contents** to the stick root (do not copy the directory itself as `U:\usbroot\`). The output now contains only the runtime set - extraction intermediates (the full GSP ELFs, the forensic `*_raw.c` dumps) no longer mix into it; set `ASSETS_DEBUG_C=1` to have the assets pipeline emit the forensic dumps again (debugging only).
+
+**No-copy install (optional)**: after generating, the maker probes for EXISTING FAT32 partitions and offers a one-click install - an internal (non-USB) disk's **non-boot** (non-ESP, non-system/boot) data FAT32 partition is offered as a persistent install (boot that volume from the firmware's one-time boot menu afterwards; not every firmware lists internal FAT partitions - the USB stick stays the universal path), and a USB stick's FAT32 partition for the same copy. The install only ever **appends files**: nothing already on the target is overwritten or deleted, and differing same-name files refuse the whole target and get listed one by one (only a root `nvuu-stick.json` marking a previous nv-uefi-unlocker layout allows an in-place upgrade). No partition is ever created/resized/reformatted, the system ESP is never touched, and no NVRAM boot entry is written. When neither probe yields a target, the script prints how to prepare either route (carve a non-ESP data FAT32 partition on an internal disk, or use a stick with a large-enough FAT32 partition). For scripted runs use `-NoInstallPrompt` / `--no-install-prompt`, or `-InstallTo D:\` / `--install-to <mountpoint>` to name an existing target (same eligibility checks).
 
 **Why does that path get recognized automatically?** UEFI firmware carries a fixed fallback boot path for **removable media** - `\EFI\BOOT\BOOTX64.EFI` on x86_64. A file at that path is listed and executed as a boot entry on its own, **without** writing or modifying any NVRAM boot entry - which is why the "no persistent boot entry" discipline ([safety](#safety)) holds: pull the stick and the machine is back to stock. Other architectures have their own default file names (aarch64 uses `BOOTAA64.EFI`); the tool, the assets and every field measurement so far are x86_64-only - if you need aarch64 (ARM laptops/servers), please open a feature request or PR describing the platform and firmware; the developer currently has no test hardware for it.
 
 **`-Out G:\` fails on Windows PowerShell 5.1 with `New-Item : The path is not of a legal form`** (a bare drive root ends in `\`, which `New-Item -Path` rejects; [#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)). The script now strips the trailing backslash when creating the directories; on older packages pass **`-Out G:`** (no `\`).
 
-`F` is `ad102` (40 series), `ga102` (30 series) or `tu10x` (20 / 16 series):
+`F` is `ad102` (40 series), `ga102` (30 series), `tu10x` (20 series) or `tu11x` (16 series, RE-derived experimental route):
 
 | Location | Files | Purpose |
 | --- | --- | --- |
@@ -60,7 +62,7 @@ The maker emits the assets into a local `usbroot/` directory (the `*.bin` files 
 | Root | `fwimage_F.bin`, `fwsignature_F.bin` | GSP-RM image and stock signature |
 | Root | `v67-F-four-plm.bin` | Unlock payload |
 | Root, Ada / Ampere | `scrubber_ad10x.bin` | SEC2 scrubber |
-| Root, Turing | `sec2_bl_tu10x.bin` | FWSEC bootloader |
+| Root, Turing | `sec2_bl_<tu10x|tu11x>.bin` | FWSEC bootloader |
 | Root, Turing | `gsp-gate.txt` | Maker's GSP check record |
 | Root, after execution | `loader.log` | Stage log; save before another run |
 
@@ -167,6 +169,8 @@ TU106 with GSP mode has verified successful hibernate-resume handoff, but that d
 Check in-OS selectors and power state first. RTD3 can park an idle GPU in D3cold, clearing the volatile unlock; successful EFI read-backs do not prove continued OS persistence.
 
 If your distribution enables `NVreg_DynamicPowerManagement=0x02` in `/usr/lib/modprobe.d/nvidia-runtimepm.conf`, override it with the same basename in `/etc/modprobe.d/`. Back up existing configuration first:
+
+**One-shot script**: `sudo bash tools/disable-rtd3.sh` — performs every step of this section (the same-named override with backup, the device-level `power/control=on` that takes effect immediately, initramfs-tool detection, naming conflicting files, and a merged-config final check); `--check` is a read-only status report. Manual steps below:
 
 ```bash
 echo 'options nvidia NVreg_DynamicPowerManagement=0x00' | \

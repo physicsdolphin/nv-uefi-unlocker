@@ -20,6 +20,15 @@ Families (PMC_BOOT_0 bits [31:20]):
   TPCs, CTRL = the writable override, plus the GPC-level disable/defect
   masks and the raw OPT/DEFECT banks) - read-only, issue #169.
 
+ssdiag 0.7.4 surface parity (2026-11-11, GA100 VFI dictionary round): the
+kate-land/ga100vfi fuse-controller dictionary probed on every die at the
+GA100 offsets (controller core, 17 row0/1 security aliases + FFDO, fused
+SM_SPEED_SELECT family, STATUS_OPT_* effective words + PES/ROP_L2/TPC
+arrays), the 16-word x 3-address mirror probe, and - Turing only - the
+whole dictionary again at -0x7FF000 where the real option bank lives
+(open-questions #13) plus the GR-topology 0x409604 anchor. BAR0 rd/wr carry
+the out-of-aperture guard (offsets >= 16 MiB read all-ones / drop writes).
+
 Why this exists (issue #6): the EFI unlock's volatile state is only useful if
 it survives into the OS. This tool answers, from inside the running system:
   - did the SS override values persist?           (unlock state)
@@ -229,6 +238,207 @@ GA100_SM_OVR_BASE = 0x0082_0A40
 GA100_SM_STATUS_BASE = 0x0082_0C38
 GA100_GPCS = 8
 
+# ---------------------------------------------------------------------------
+# GA100 VFI dictionary round (ssdiag 0.7.4 parity; docs/reading-notes.md
+# "GA100 电压故障注入（VFI）考据" 2026-11-11). kate-land/ga100vfi published
+# the GA100 fuse-controller map; 0x8203f0 and the SM_SPEED_SELECT offsets are
+# identical across GA100/TU106/GB20x documentations, so the dictionary is a
+# Rosetta probe. Bank-base split measured 2026-11-11: GA10x/AD10x/GB20x decode
+# option VALUES at 0x820xxx, Turing's real bank sits at -0x7FF000 (0x021xxx,
+# open-questions #13) while 0x820xxx on Turing is a control-agreeing surface
+# with empty option slots. badf5040 = "PL0-blocked" both for words behind a
+# PLM AND for cross-block absence (the filter precedes decode) - existence
+# evidence is only the in-block plain/badf interleaving. NV_FUSE_OPT_ prefix
+# dropped throughout.
+GA100_FUSECTL_ROWS = [
+    ("FUSECTRL", 0x0082_0000),
+    ("FUSEADDR", 0x0082_0004),
+    ("EN_SW_OVERRIDE", 0x0082_0040),
+    ("FUSEDEBUG", 0x0082_0060),
+    ("CRC_STATUS", 0x0082_0070),
+    ("ENABLE_FUSE_PROG_STAT", 0x0082_0078),
+    ("DISABLE_FUSE_PROG_STAT", 0x0082_007C),
+    ("DISABLE_SW_OVR_STAT", 0x0082_0084),
+    ("FUSEWDATA_PLM", 0x0082_00F4),
+    ("FUSECTRL_PLM", 0x0082_00F8),
+    ("FUSEOPT_PLM", 0x0082_00FC),
+    ("RING_GLOBAL_CTL", 0x0012_0060),
+    ("RING_RESET_PLM", 0x0012_00A0),
+]
+GA100_SEC_ALIAS_ROWS = [
+    ("DEBUG_FEAT_SW_OVR_EN", 0x0082_0148),
+    ("IST_DEBUG_FA", 0x0082_0158),
+    ("PRIV_SEC_EN", 0x0082_0434),
+    ("SECURE_PRI_SRC_ISO_EN", 0x0082_0410),
+    ("PRIVKEY_ACC_DIS", 0x0082_0324),
+    ("FEATURE_FUSES_OVR_DIS", 0x0082_03F0),
+    ("SFK_ACC_DIS", 0x0082_05A8),
+    ("SECURE_PMU_DEBUG_DIS", 0x0082_0640),
+    ("SECURE_SECENG_DEBUG_DIS", 0x0082_063C),
+    ("SECURE_NVDEC_DEBUG_DIS", 0x0082_0644),
+    ("SECURE_MINION_DEBUG_DIS", 0x0082_06FC),
+    ("SECURE_GSP_DEBUG_DIS", 0x0082_074C),
+    ("HDCP_RAM_ACCESS_DIS", 0x0082_07F4),
+    ("DEBUG_SW_OVR_EN", 0x0082_0E20),
+    ("XV2CLK_RETIME_DIS", 0x0082_1064),
+    ("SECURE_FUSE_RESENSE_DIS", 0x0082_1058),
+    ("SECURED_BURN_FEAT_EN", 0x0082_1108),
+    ("SECURE_XUSB_DEBUG_DIS", 0x0082_0B98),
+    ("SECURE_FUSE_WDATA_WR_SEC", 0x0082_048C),
+    ("DEVID_SW_OVR_DIS", 0x0082_0584),
+]
+GA100_SPEED_SEL_ROWS = [
+    ("SM_SPEED_SELECT_DP", 0x0082_0224),
+    ("SM_SPEED_SELECT_FFMA", 0x0082_059C),
+    ("SM_SPEED_SELECT_FMLA16", 0x0082_07D4),
+    ("SM_SPEED_SELECT_FMLA32", 0x0082_07D8),
+    ("SM_SPEED_SELECT_IMLA0", 0x0082_07DC),
+    ("SM_SPEED_SELECT_IMLA1", 0x0082_07E0),
+    ("SM_SPEED_SELECT_IMLA2", 0x0082_07E4),
+    ("SM_SPEED_SELECT_IMLA3", 0x0082_07E8),
+    ("SM_SPEED_SELECT_IMLA4", 0x0082_07EC),
+]
+GA100_STATUS_OPT_ROWS = [
+    ("STAT_HALF_FBPA", 0x0082_0C00),
+    ("STAT_DISPLAY", 0x0082_0C04),
+    ("STAT_DISP_HEAD", 0x0082_0C08),
+    ("STAT_NVJPG", 0x0082_0C0C),
+    ("STAT_HALF_LTC", 0x0082_0C10),
+    ("STAT_FBIO", 0x0082_0C14),
+    ("STAT_FBPA", 0x0082_0C18),
+    ("STAT_GPC", 0x0082_0C1C),
+    ("STAT_PERLINK", 0x0082_0C20),
+    ("STAT_NVDEC", 0x0082_0C24),
+    ("STAT_SEC", 0x0082_0C28),
+    ("STAT_PCIE_LANE", 0x0082_0C2C),
+    ("STAT_SPARE_FS", 0x0082_0C30),
+    ("STAT_FB_CONFIG", 0x0082_0C34),
+    ("STAT_FBP", 0x0082_0D38),
+    ("STAT_NVENC", 0x0082_0D68),
+    ("STAT_GC6_ISLAND", 0x0082_0D6C),
+    ("STAT_NVLINK", 0x0082_0DB8),
+    ("STAT_SYS_PIPE", 0x0082_0E30),
+    ("STAT_OFA", 0x0082_0E34),
+]
+GA100_PES_STATUS_BASE = 0x0082_0DBC
+GA100_ROP_L2_STATUS_BASE = 0x0082_0D70
+GA100_TPC_STATUS_BASE = 0x0082_0C38
+
+# Mirror probe: 16 representative words x {0x820xxx, -0x800000, -0x7FF000}.
+# mirror == primary -> bit-23 alias; mirror badf while primary is plain ->
+# 0x820xxx exclusive; different plain values in two columns -> two live banks.
+# On GA10x the -0x7FF000 column is the control (expected badf).
+# Coverage-completion round (2026-11-12, same pinned surface): the repo's
+# option map holds 672 words; these add the segmentation carriers - the
+# fuse-side _DISABLE/_DEFECTIVE pairs, the _CP shadow family (volatile
+# floorsweep-reversal candidates, GA100 170hx-rir-tool precedent), TPC
+# per-GPC disable/reconfig/defective words and PCIE devid/magic. Excluded:
+# ~550 GA100-specific blocks (XUSB/AZA/ADCS/clocks/Tegra legacy/FPF spares).
+# HALF_FBPA/HALF_LTC are _ENABLE polarity (1=on).
+GA100_OPT_DIS_ROWS = [
+    ("FBIO_DISABLE", 0x0082_036C),
+    ("FBIO_DEFECTIVE", 0x0082_05D4),
+    ("FBPA_DISABLE", 0x0082_0368),
+    ("FBPA_DEFECTIVE", 0x0082_05D0),
+    ("FBP_DISABLE", 0x0082_0364),
+    ("FBP_DEFECTIVE", 0x0082_05CC),
+    ("PES_DISABLE", 0x0082_0690),
+    ("PES_DEFECTIVE", 0x0082_0698),
+    ("ROP_L2_DISABLE", 0x0082_02C4),
+    ("ROP_L2_DEFECTIVE", 0x0082_05E8),
+    ("NVDEC_DISABLE", 0x0082_0378),
+    ("NVDEC_DEFECTIVE", 0x0082_05E0),
+    ("NVENC_DISABLE", 0x0082_0414),
+    ("NVENC_DEFECTIVE", 0x0082_05DC),
+    ("NVJPG_DISABLE", 0x0082_0370),
+    ("NVJPG_DEFECTIVE", 0x0082_05BC),
+    ("OFA_DISABLE", 0x0082_02D8),
+    ("OFA_DEFECTIVE", 0x0082_02F0),
+    ("NVLINK_DISABLE", 0x0082_0684),
+    ("NVLINK_DEFECTIVE", 0x0082_068C),
+    ("SYS_PIPE_DISABLE", 0x0082_03A4),
+    ("SYS_PIPE_DEFECTIVE", 0x0082_03AC),
+    ("DISPLAY_DISABLE", 0x0082_037C),
+    ("DISPLAY_DEFECTIVE", 0x0082_05D8),
+    ("DISP_HEAD_DISABLE", 0x0082_0418),
+    ("PCIE_LANE_DISABLE", 0x0082_0394),
+    ("PCIE_LANE_DEFECTIVE", 0x0082_05E4),
+    ("PERLINK_DISABLE", 0x0082_07F0),
+    ("SEC_DISABLE", 0x0082_04FC),
+    ("GC6_ISLAND_DISABLE", 0x0082_0568),
+    ("HALF_FBPA_ENABLE", 0x0082_049C),
+    ("HALF_LTC_ENABLE", 0x0082_060C),
+    ("FB_CONFIG", 0x0082_0328),
+    ("GEN3_SPEED_DISABLE", 0x0082_0250),
+]
+GA100_DEVID_ROWS = [
+    ("PCIE_DEVIDA", 0x0082_04D8),
+    ("PCIE_DEVIDB", 0x0082_056C),
+    ("PCIE_MAGIC_A", 0x0082_0558),
+    ("PCIE_MAGIC_B", 0x0082_0518),
+    ("PCIE_MAGIC_C", 0x0082_051C),
+    ("PCIE_MAGIC_D", 0x0082_0520),
+]
+# DISABLE contiguous 0x820760+4g, RECONFIG contiguous 0x820788+4g.
+GA100_TPC_DISABLE_BASE = 0x0082_0760
+GA100_TPC_RECONFIG_BASE = 0x0082_0788
+GA100_TPC_DEF_ROWS = [
+    ("TPC_GPC0_DEFECTIVE", 0x0082_05C8),
+    ("TPC_GPC1_DEFECTIVE", 0x0082_0508),
+    ("TPC_GPC2_DEFECTIVE", 0x0082_050C),
+    ("TPC_GPC3_DEFECTIVE", 0x0082_0514),
+    ("TPC_GPC4_DEFECTIVE", 0x0082_0564),
+    ("TPC_GPC5_DEFECTIVE", 0x0082_05AC),
+    ("TPC_GPC6_DEFECTIVE", 0x0082_0B84),
+    ("TPC_GPC7_DEFECTIVE", 0x0082_0B80),
+]
+# The _CP shadow family (24 on GA100): soft-disable copies behind
+# EN_SW_OVERRIDE - the volatile floorsweep-reversal candidates (OQ#13).
+GA100_CP_ROWS = [
+    ("FBP_DISABLE_CP", 0x0082_0234),
+    ("GPC_DISABLE_CP", 0x0082_022C),
+    ("TPC_GPC0_DISABLE_CP", 0x0082_0230),
+    ("TPC_GPC1_DISABLE_CP", 0x0082_0504),
+    ("TPC_GPC2_DISABLE_CP", 0x0082_05F4),
+    ("TPC_GPC3_DISABLE_CP", 0x0082_05A0),
+    ("TPC_GPC4_DISABLE_CP", 0x0082_04C4),
+    ("TPC_GPC5_DISABLE_CP", 0x0082_04CC),
+    ("TPC_GPC6_DISABLE_CP", 0x0082_0B8C),
+    ("TPC_GPC7_DISABLE_CP", 0x0082_0B88),
+    ("FBIO_DISABLE_CP", 0x0082_0460),
+    ("FBPA_DISABLE_CP", 0x0082_0454),
+    ("NVDEC_DISABLE_CP", 0x0082_0458),
+    ("NVENC_DISABLE_CP", 0x0082_045C),
+    ("NVJPG_DISABLE_CP", 0x0082_0488),
+    ("ROP_L2_DISABLE_CP", 0x0082_02E4),
+    ("OFA_DISABLE_CP", 0x0082_02EC),
+    ("PCIE_LANE_DISABLE_CP", 0x0082_0248),
+    ("DISPLAY_DISABLE_CP", 0x0082_024C),
+    ("DISP_HEAD_DISABLE_CP", 0x0082_0450),
+    ("SYS_PIPE_DISABLE_CP", 0x0082_03A8),
+    ("PES_DISABLE_CP", 0x0082_0694),
+    ("NVLINK_DISABLE_CP", 0x0082_0688),
+    ("FB_CONFIG_CP_ANCHOR", 0x0082_0328),
+]
+GA100_MIRROR_WORDS = [
+    ("FUSECTRL", 0x0082_0000),
+    ("EN_SW_OVERRIDE", 0x0082_0040),
+    ("FUSEDEBUG", 0x0082_0060),
+    ("CRC_STATUS", 0x0082_0070),
+    ("FUSEWDATA_PLM", 0x0082_00F4),
+    ("FUSECTRL_PLM", 0x0082_00F8),
+    ("FUSEOPT_PLM", 0x0082_00FC),
+    ("DEBUG_FEAT_SW_OVR_EN", 0x0082_0148),
+    ("SM_SPEED_SELECT_DP", 0x0082_0224),
+    ("PRIVKEY_ACC_DIS", 0x0082_0324),
+    ("OPT_GPC_DISABLE", 0x0082_0350),
+    ("WDATA_WR_SECURE", 0x0082_048C),
+    ("OPT_GPC_DEFECTIVE", 0x0082_05C4),
+    ("STAT_GPC", 0x0082_0C1C),
+    ("STAT_TPC_GPC0", 0x0082_0C38),
+    ("SBFE", 0x0082_1108),
+]
+
 
 def find_gpus():
     out = []
@@ -420,7 +630,7 @@ def inventory_block():
     except OSError:
         pass
     if dpm.lower() in ("0x02", "0x2", "2", "0x03", "0x3", "3"):
-        advisories.append(f"NVIDIA runtime D3 enabled (DynamicPowerManagement={dpm}) - D3cold parks erase the volatile unlock after handoff (issue #9); fix: NVreg_DynamicPowerManagement=0x00 in modprobe.d, then reboot")
+        advisories.append(f"NVIDIA runtime D3 enabled (DynamicPowerManagement={dpm}) - D3cold parks erase the volatile unlock after handoff (issue #9); fix: NVreg_DynamicPowerManagement=0x00 in modprobe.d, then reboot; one-shot fixer: sudo bash tools/disable-rtd3.sh (repo)")
     print("===== end inventory =====")
     for a in advisories:
         print(f"ADVISORY: {a}")
@@ -446,10 +656,18 @@ class Bar0:
         self.map = mmap.mmap(f.fileno(), 16 * 1024 * 1024)
 
     def rd(self, off):
+        # Host-side last-resort net (ssdiag 0.7.4 parity, 2026-11-11 lesson):
+        # every table offset lives inside the 16 MiB aperture; anything past
+        # it is an arithmetic bug upstream (a shifted-base subtraction that
+        # underflowed froze nothing but killed the Windows exe with an access
+        # violation on unmapped user VA). Answer all-ones instead of reading.
+        if off >= 0x0100_0000:
+            return 0xFFFF_FFFF
         return int.from_bytes(self.map[off : off + 4], "little")
 
     def wr(self, off, val):
-        self.map[off : off + 4] = int.to_bytes(val, 4, "little")
+        if off < 0x0100_0000:
+            self.map[off : off + 4] = int.to_bytes(val, 4, "little")
 
 
 def family_of(boot0):
@@ -696,6 +914,92 @@ def report(bar, tag="", devpath=None):
         rrow(bar, PCIE_LINK_ROWS)
         print("  --- XP3G fuse-override block (Gen2 capability layer) ---")
         rrow(bar, XP3G_ROWS)
+    print("  --- ga100 vfi dictionary (kate-land/ga100vfi; read-only, cross-die probe) ---")
+    for label, rows in [
+        ("fusectl", GA100_FUSECTL_ROWS),
+        ("sec-alias", GA100_SEC_ALIAS_ROWS),
+        ("speed-sel", GA100_SPEED_SEL_ROWS),
+        ("status-opt", GA100_STATUS_OPT_ROWS),
+        ("opt-dis", GA100_OPT_DIS_ROWS),
+        ("devid", GA100_DEVID_ROWS),
+        ("tpc-def", GA100_TPC_DEF_ROWS),
+        ("cp-shadow", GA100_CP_ROWS),
+    ]:
+        for name, off in rows:
+            v = bar.rd(off)
+            note = f" ({decode_plm(v)})" if name.endswith("PLM") else ""
+            b = badf_bucket(v)
+            tag = f" [{b}]" if b else ""
+            print(f"  {label:<10} {name:<26} = {v:#010x}{note}{tag}")
+    for label, base, count in [
+        ("PES_GPC", GA100_PES_STATUS_BASE, 16),
+        ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16),
+        ("TPC_GPC", GA100_TPC_STATUS_BASE, 32),
+        ("TPC_DIS", GA100_TPC_DISABLE_BASE, 8),
+        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 8),
+    ]:
+        for chunk in range(0, count, 8):
+            cells = []
+            for i in range(chunk, min(chunk + 8, count)):
+                v = bar.rd(base + 4 * i)
+                b = badf_bucket(v)
+                cells.append(f"{v:#010x}" + (f" [{b}]" if b else ""))
+            print(f"  {label:<10} [{chunk:>2}] " + " ".join(cells))
+    print("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = PL0-blocked (exists-behind-PLM OR")
+    print("  cross-block absence - the filter precedes decode); plain value = GA100 semantics;"
+          " ffffffff/badf1100 = not decoded here")
+    if fam == "turing":
+        # Mirror-round verdict (2026-11-11): on Turing the GA100-layout option
+        # VALUES live at -0x7FF000 (the #187/TU104 bank); 0x820xxx is a
+        # control-agreeing surface with empty option slots. The shift is only
+        # defined inside the 0x82xxxx bank - the two PRI-ring rows at
+        # 0x1200xx stay flat (they are already printed above).
+        print("  --- turing fuse bank (ga100 dictionary at -0x7FF000; #13 / cold-values TU104) ---")
+        for label, rows in [
+            ("fusectl", GA100_FUSECTL_ROWS),
+            ("sec-alias", GA100_SEC_ALIAS_ROWS),
+            ("speed-sel", GA100_SPEED_SEL_ROWS),
+            ("status-opt", GA100_STATUS_OPT_ROWS),
+            ("opt-dis", GA100_OPT_DIS_ROWS),
+            ("devid", GA100_DEVID_ROWS),
+            ("tpc-def", GA100_TPC_DEF_ROWS),
+            ("cp-shadow", GA100_CP_ROWS),
+        ]:
+            for name, off in rows:
+                if off < 0x800_000:
+                    continue  # not an option-bank row (the two RING words)
+                v = bar.rd(off - 0x7FF_000)
+                note = f" ({decode_plm(v)})" if name.endswith("PLM") else ""
+                b = badf_bucket(v)
+                tag = f" [{b}]" if b else ""
+                print(f"  {label:<10} {name:<26} = {v:#010x}{note}{tag}")
+        for label, base, count in [
+            ("PES_GPC", GA100_PES_STATUS_BASE, 16),
+            ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16),
+            ("TPC_GPC", GA100_TPC_STATUS_BASE, 32),
+            ("TPC_DIS", GA100_TPC_DISABLE_BASE, 8),
+            ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 8),
+        ]:
+            for chunk in range(0, count, 8):
+                cells = []
+                for i in range(chunk, min(chunk + 8, count)):
+                    v = bar.rd(base - 0x7FF_000 + 4 * i)
+                    b = badf_bucket(v)
+                    cells.append(f"{v:#010x}" + (f" [{b}]" if b else ""))
+                print(f"  {label:<10} [{chunk:>2}] " + " ".join(cells))
+        print(f"  GR_TOPO_409604         = {bar.rd(0x0040_9604):#010x}"
+              " (TU104 KO anchor: 5 GPC/3 ROP = 0x06030005)")
+    print("  --- turing mirror probe (0x820xxx vs -0x800000 vs -0x7FF000; open-questions #13) ---")
+    print("  {:<24} {:>13} {:>13} {:>13}".format("word", "0x820xxx", "-0x800000", "-0x7FF000"))
+    for name, off in GA100_MIRROR_WORDS:
+        cells = []
+        for base in (0, 0x800_000, 0x7FF_000):
+            v = bar.rd(off - base)
+            b = badf_bucket(v)
+            cells.append(f"{v:#010x}" + (f" [{b}]" if b else ""))
+        print(f"  {name:<24} " + " ".join(f"{c:>13}" for c in cells))
+    print("  note: mirror == primary means a bit-23 alias (both addresses valid); mirror badf while")
+    print("  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks")
     for i in range(0, len(PLM_SURVEY), 4):
         row = PLM_SURVEY[i:i+4]
         print("  " + "  ".join(f"{o:#09x}={bar.rd(o):#010x}" for o in row))
