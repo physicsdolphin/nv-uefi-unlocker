@@ -680,6 +680,43 @@ vs 0x4001ad50）与 DEBUG_FEAT（GA106=badf5720!）逐 die 异——混合面。
 0x9a0168=0x82006bcf（含 0x8200 的怪值，GA102/TU106=0xffffffcf，记录）；
 GFW_PLM=0x8b8f=Ampere 形（Turing=0xffffff8f）。
 
+### 6f. GR 拓扑字全解码 + 4×3090 抽奖轮（2026-11-12，0.7.5 三读）
+
+证据：`tu106-1f07/ssdiag-v075-gr-anchor.log`、`ga102-2204/gr-anchor-round/
+diag-unlock-v075-4x3090.log`、`ga106-2504/ssdiag-v075-gr-anchor.log`。
+
+**GR_TOPO_409604 编码定谳（四点定标）**：byte3=**FBIO 数（bus/32）**、
+byte2=**ROP 分区数（×16）**、byte0=**活 GPC 计数**、byte1 恒 0——
+
+| die | GR | bus/32 | ROP/16 | 活 GPC | SM 校验 |
+|---|---|---|---|---|---|
+| TU104 KO | 0x06030005 | 6=192-bit | 3=48 | 5 | 30 ✓ |
+| TU106 2070 | 0x08040003 | 8=256 | 4=64 | 3 | 36 ✓ |
+| GA102 3090 | 0x0c060007 | 12=384 | 6=96 | 7 | 82 ✓ |
+| GA106 3060 | 0x06030003 | 6=192 | 3=48 | 3 | 28 ✓ |
+
+（TU106 1e93 的 0x08040006=6 活 GPC 亦合：3080 Ti mobile 12 GPC 活槽。）
+早期"byte3=die GPC 槽位"解读**作废**（GA102 的 12 无法是 GPC 数）。
+
+**OQ#19 ①关闭**：GA106 活 GPC={0,1,2}（4+5+5 TPC）× 2 SM = 28 ✓——
+bit=off 极性全族统一，bit=on 的"28 TPC"是数字巧合；GA106 die GPC 槽=7
+（TPC_GPC7_DEFECTIVE 越界 badf），GPC3-6 整关、GPC0 缺 TPC3（缺陷）+
+TPC5（分段）。**③ L2 切片假说自洽**：L2_CANDIDATE=0x81 = 8×512KB 片关
+bit0/7 → 6 片 = 3MB ✓ 3060（GA102 12 片全开 6MB ✓）——L2 掩码 = 512KB
+粒度切片禁用（待 aajax 布局复核）。②显存掩码收窄：FBP 侧 3 活 ×64-bit=
+192-bit ✓（GA106 die 疑同 GA102 的 6-FBP 系统）；STAT_FBIO 与 FBP 同值
+（0x38）待解释——残项。
+
+**4×3090 抽奖**（WS-C621E-SAGE，全部解锁态保持）：四卡 GR 逐位同值、
+TPC 抽签各不同——3b/86=GPC0.TPC0（无缺陷位）、**5e=GPC4.TPC1
+（DEFECTIVE=0x02 真缺陷）**、**af=GPC6.TPC2（DEFECTIVE=0x04）**；84−2=
+82 SM 全对。CP 影子随缺陷位镜像（5e/af 的 TPCn_CP=缺陷位）。0x823808/
+0x823824 = **逐卡状态**非逐 die（3b: 0x380/0 与 86: 0x01100382/1 同切
+不同值——同族内还漂，归属未明）；0x9a0bfc 计数器每卡不同（0x0a030b37 /
+0x2b252e1c / 0x38333b27 / 0x1b141f08）。四卡同时保持解锁 = 多卡解锁态
+共存 4 点实证。GA106 镜像 −0x800000 列的 DEBUG_FEAT=badf5720（0x56 码
+族）与 GA102 的 0xff000000 不同——该列逐 die 异质性再+1。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读
