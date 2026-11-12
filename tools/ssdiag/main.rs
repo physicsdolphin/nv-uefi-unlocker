@@ -1,4 +1,13 @@
-//! ssdiag v0.7.7 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.8 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.8 fixes two more inventory bugs, both field-caught on a ROG Strix
+//! G614JV (i7-13650HX + 2x32G DDR5 SODIMM): hybrid CPUs broke the
+//! logical/tpc core division (E-cores are single-threaded - a 6P+8E 14-core
+//! chip printed "10 cores"; now RelationProcessorCore entries from
+//! GetLogicalProcessorInformationEx are counted across all groups, with a
+//! self-validating variable-length walk and the division kept as fallback),
+//! and DDR5 >=32GiB SODIMMs overflow the 15-bit MiB form of the SMBIOS
+//! Type 17 size field, so the extended size @0x1D is now preferred whenever
+//! it carries a real value ("128 MiB" slots -> 32768).
 //! v0.7.7 adds the GB206 TPC CTRL row (0x820838+4g, 12 GPCs, read-only) to
 //! the blackwell branch - the writable-override sibling of the 0x820c38
 //! STATUS pair already captured as GA100_SM_STAT; requested on discussion
@@ -241,6 +250,11 @@ mod win {
         ) -> i32;
         pub fn GetNativeSystemInfo(info: *mut SystemInfo) -> i32;
         pub fn GetActiveProcessorCount(GroupNumber: u16) -> u32;
+        pub fn GetLogicalProcessorInformationEx(
+            relationship: u32,
+            buffer: *mut u8,
+            return_length: *mut u32,
+        ) -> i32;
     }
 
     /// Field layout matches winnt.h SYSTEM_INFO for x64 (ULONG_PTR fields
@@ -901,7 +915,13 @@ fn cpu_topology() -> Option<String> {
     }
     let tpc = __cpuid_count(0x0B, 0).ebx & 0xFFFF;
     let tpc = if tpc == 0 || tpc > logical { 1 } else { tpc };
-    let cores = logical / tpc;
+    // Hybrid (Intel 12th-gen+) breaks the logical/tpc division: E-cores are
+    // single-threaded, so 20 threads / tpc=2 printed "10 cores" on a 14-core
+    // i7-13650HX (6P+8E, field-caught 2026-11-12). Count physical cores
+    // directly from the OS instead - RelationProcessorCore entries cover P
+    // and E alike, across all groups. The walk is self-validating (it must
+    // land exactly on the buffer end, else we fall back to the division).
+    let cores = count_cores_slpiex().unwrap_or(logical / tpc);
     let leaf1 = __cpuid_count(1, 0);
     let family = (leaf1.eax >> 8) & 0xF;
     let ext_family = (leaf1.eax >> 20) & 0xFF;
@@ -921,6 +941,63 @@ fn cpu_topology() -> Option<String> {
     Some(format!(
         "family {display_family} model {display_model:#04x} stepping {stepping}, {cores} cores / {logical} threads"
     ))
+}
+
+/// Physical-core count from GetLogicalProcessorInformationEx (Relation-
+/// ProcessorCore=0 entries, all groups, hybrid-aware). Entry sizes per
+/// winnt.h on x64: every EX record is {Relationship u32} + a union whose
+/// fixed part ends in a GroupCount u16 followed by GroupAffinity[16] items.
+/// The walk is self-validating: it must consume exactly `len` bytes and
+/// count at least one core, otherwise the caller falls back to the
+/// logical/tpc division.
+#[cfg(target_arch = "x86_64")]
+fn count_cores_slpiex() -> Option<u32> {
+    unsafe {
+        let mut len: u32 = 0;
+        // pass 1: size query (fails with ERROR_INSUFFICIENT_BUFFER by design)
+        if win::GetLogicalProcessorInformationEx(0, core::ptr::null_mut(), &mut len) != 0
+            || len == 0
+            || len > 1 << 20
+        {
+            return None;
+        }
+        let mut buf = vec![0u8; len as usize];
+        if win::GetLogicalProcessorInformationEx(0, buf.as_mut_ptr(), &mut len) == 0 {
+            return None;
+        }
+        let len = len as usize;
+        let rd16 = |o: usize| u16::from_le_bytes(buf[o..o + 2].try_into().unwrap());
+        let mut off = 0usize;
+        let mut cores = 0u32;
+        while off + 16 <= len {
+            let rel = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            // fixed-part end (union start @4) and mask-array start, per record type
+            let (cnt_at, masks_at): (usize, usize) = match rel {
+                0 | 3 | 5 | 7 => (12, 16), // ProcessorCore/Package/Die/Module
+                1 | 6 => (16, 24),         // NumaNode / NumaNodeEx
+                2 => (28, 32),             // Cache
+                4 => (6, 16),              // Group (ActiveGroupCount)
+                _ => return None,          // unknown record type -> bail
+            };
+            if off + masks_at > len {
+                return None;
+            }
+            let gc = rd16(off + cnt_at) as usize;
+            let size = masks_at + gc * 16;
+            if size == 0 || off + size > len {
+                return None;
+            }
+            if rel == 0 {
+                cores += 1;
+            }
+            off += size;
+        }
+        if off == len && cores > 0 {
+            Some(cores)
+        } else {
+            None
+        }
+    }
 }
 
 /// Populated SMBIOS Type 17 modules: slot locator, capacity, speed (the
@@ -987,27 +1064,56 @@ fn ram_summary() -> (Option<u32>, Vec<String>) {
                 })
             };
             if let Some(mib) = mib {
-                let sp = u16::from_le_bytes(data[off + 0x15..off + 0x17].try_into().unwrap());
-                // ConfiguredMemoryClockSpeed lives at 0x20 (SMBIOS 2.6+). A
-                // first cut read it at 0x21 - off by one - so the byte pair
-                // became [hi(cfg), lo(next field)]: on the Huananzhi X99-F8D
-                // (Type 17 len 0x22) that strung together 0x08 + 't' of the
-                // following string block = 0x7408 = "29704 MT/s" on a DDR4-
-                // 2133 box, while most boards' short Type 17 records never
-                // reached the misaligned read and rode the correct Speed
-                // @0x15. The same board writes ConfiguredMemorySpeed = 10
-                // (MT/s - impossible; junk placeholder) while Speed holds the
-                // real rate: trust the configured value only when it is
-                // physically plausible; everything real is >= 200 MT/s.
-                let cs = if len >= 0x22 {
-                    u16::from_le_bytes(data[off + 0x20..off + 0x22].try_into().unwrap())
+                // AMI-shifted Type 17 layout, settled by a raw byte dump on
+                // the Z170 (2026-11-12): spec puts Device Locator @0x0F right
+                // after Form Factor @0x0E; this board family (ASUS Z170 AMI,
+                // Huananzhi X99, ASUS laptops - every table we have sampled)
+                // pads 0x00 at 0x0F and shifts everything from the locator
+                // onward by +1: Speed @0x15, Manufacturer @0x17, Part @0x1A,
+                // Extended Size @0x1C, Configured Speed @0x20. Detect via the
+                // pad byte and address both layouts. (This also explains the
+                // old "junk ConfiguredMemorySpeed = 10": the pre-0.7.6 read
+                // at the shifted table's 0x21 was {cfg-speed hi-byte, 0} =
+                // {0x0A, 0x00} = 10 - and the X99 "29704 MT/s" was that same
+                // shift feeding a fixed non-shifted offset.)
+                let shift: usize = (data[off + 0x0F] == 0) as usize;
+                let sp =
+                    u16::from_le_bytes(data[off + 0x14 + shift..off + 0x16 + shift].try_into().unwrap());
+                // DDR5 >=32GiB SODIMMs overflow the 15-bit MiB form of the
+                // size field (max 32767), so spec firmware moves the value to
+                // the extended size and leaves junk/tiny in @0x0C - a 2x32G
+                // DDR5 laptop printed "128 MiB" slots (field-caught
+                // 2026-11-12, G614JV). Prefer the extended value when it
+                // carries a real number (bit30 = MiB form, else KiB);
+                // plausibility >=512 MiB rejects junk (the ASUS table's
+                // extended word is a meaningless 1).
+                let mut mib = mib;
+                let ext_at = 0x1B + shift;
+                if len >= ext_at + 4 {
+                    let ext =
+                        u32::from_le_bytes(data[off + ext_at..off + ext_at + 4].try_into().unwrap());
+                    let mib_ext = if ext & 0x4000_0000 != 0 {
+                        Some(ext & 0x3FFF_FFFF)
+                    } else if ext != 0 {
+                        Some((ext & 0x3FFF_FFFF) / 1024)
+                    } else {
+                        None
+                    };
+                    if let Some(v) = mib_ext.filter(|v| *v >= 512) {
+                        mib = v;
+                    }
+                }
+                // Trust the configured value only when it is physically
+                // plausible; everything real is >= 200 MT/s.
+                let cs = if len >= 0x21 + shift {
+                    u16::from_le_bytes(data[off + 0x1F + shift..off + 0x21 + shift].try_into().unwrap())
                 } else {
                     0
                 };
                 let mt = if cs >= 200 { cs } else { sp };
-                let locator = smbios_string(data, off + len, data[off + 0x10]);
-                let man = smbios_string(data, off + len, data[off + 0x17]);
-                let part = smbios_string(data, off + len, data[off + 0x1A]);
+                let locator = smbios_string(data, off + len, data[off + 0x0F + shift]);
+                let man = smbios_string(data, off + len, data[off + 0x16 + shift]);
+                let part = smbios_string(data, off + len, data[off + 0x19 + shift]);
                 let mut line = format!(
                     "RAM SLOT: {} {} MiB",
                     if locator.is_empty() { "?" } else { &locator },
