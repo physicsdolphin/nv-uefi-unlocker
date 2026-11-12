@@ -825,7 +825,12 @@ CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI'
 
 ## 解锁日志全绿，但 Windows 起不来（`0xc000009a` / 恢复环境）？
 
-`0xc000009a` = `STATUS_INSUFFICIENT_RESOURCES`，发生在 winload 阶段（能看到 “按 F8 / F1 / Esc” 的恢复屏即已跑到这一步）。**不是内存不够，是最大可用块不够**：ExitBootServices 不把任何东西转成 conventional，我们自己的资产缓存会作为 `LOADER_DATA` 描述符劈开低 4 GiB 里唯一那段大块，而 winload 的启动预留只从单个描述符里取、不拼接——一台 32 GB 机器空闲 2.4 GiB 照样失败（[#146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146)，唯一一例）。
+`0xc000009a` = `STATUS_INSUFFICIENT_RESOURCES`，发生在 winload 阶段（能看到 “按 F8 / F1 / Esc” 的恢复屏即已跑到这一步）。winload 有两道互相独立的天花板，均已通过对 `winload.efi` 的静态分析证实（2026-11-12，[#146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146)）：
+
+1. **描述符条数——决定性的一道。** winload 把继承内存图的每一条描述符装进一个**恰好 1024 条的静态池**（`winload.efi!BlpMmInitialize`：`MmGlobalMemoryDescriptorCount = 1024`，48 字节/条，无动态扩容）；池耗尽即以 `0xc000009a` 杀死启动。实测分界：998 条能启动，1005 条不能。碎片按条计价、与大小无关——4 KiB 的洞与 80 MiB 的洞花同一个槽。现场中招的固件（Gigabyte B550 族）要么稳定高位 ~998，要么在同样的零写 boot 间摇摆 448↔1005 条；map 是固件自己的产物，EFI 应用既不能合并也不能改型——**断电重试**是正当绕行（同板 compact-map boot 能过），换 BIOS 版本才是真修。950 条以上日志会打硬 WARNING。
+2. **最大单块——原 #146 机制。** winload 的启动预留只从单个描述符里取、不拼接；ExitBootServices 不做转换，驻留的资产池会把低 4 GiB 唯一的大块劈开，总空闲再多也没用。
+
+判据直接读 `CHAIN-MEMMAP` 摘要行的 `(... N descriptors ...)` 总数，两条天花板看是哪条：**> ~1000** = 条数顶板（重试 / 换 BIOS）；**≤ ~1000 且最大块被砍半** = 尺寸顶板（下面的修复对象）。
 
 **v2.1.11 起默认在交棒前把资产池还给固件分配器**，代价为零（过了事务就再没人读资产）。判据看日志：
 

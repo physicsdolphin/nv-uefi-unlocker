@@ -3,6 +3,34 @@
 [中文](handoff-lowmem.md) | [English](handoff-lowmem.en.md) · [FAQ](faq.en.md#handoff) · [README](../README.en.md)
 
 > 2026-11-04. First winload-stage `0xc000009a` (`STATUS_INSUFFICIENT_RESOURCES`) in this project: Gigabyte B550 + RTX 3060 12GB (`10de:2504`), 32 GB, Win11 26200, Russian system language. The transaction itself was green; the boot died after it. Cause: **our own 84 MB asset cache resident below 4 GiB split the one large conventional run the system had left to allocate from.** This page records the discriminators, the three-run A/B, what the specification and the EDK2 implementation actually say, and why handing the assets back before the chain is now the default.
+>
+> **2026-11-12 update:** the reopened issue (three further machines, two more Gigabyte B550 boards) pins the *binding* constraint to **descriptor count, not size** — winload's static 1024-entry descriptor pool. See §0b; the size analysis below remains valid as the secondary mechanism and is what the v2.1.11 default fixed.
+
+## 0b. The real ceiling: descriptor count (2026-11-12 RE)
+
+The reopened issue brought three machines whose transactions die in winload at largest-block sizes where the abort path boots — a same-size pass/fail pair is unexplainable by the size theory. Static analysis of `winload.efi` (Windows 11 26200-era build from `System32\Boot`, SHA-256 `7002fe01ac5153e06bdfeacecafc5e5c929172149e4731b7259bf90b6611f44f`, symbols intact) pins the mechanism:
+
+- `winload.efi!BlpMmInitialize` (`0x1801d35bc`, write at `0x1801d3644`): `MmGlobalMemoryDescriptorCount = 1024`. Every boot-time memory descriptor — any descriptor list: page allocator regions, firmware map translation, heap bounds — is allocated from one **static pool of 1024 entries** (`MmStaticMemoryDescriptors` @ `0x1803457e0`, 48-byte stride, the array ends exactly at the count variable). `MmMdpAllocDescriptor` (`0x1801d6c48`) has **no dynamic overflow**: free list empty ⇒ `Used < 1024` or NULL.
+- `winload.efi!MmFwGetMemoryMap` (`0x1801d7138`) walks **every descriptor** of the inherited map through `MmMdInitDescriptor` → `MmMdAddDescriptorToList`; NULL ⇒ returns `-1073741670` = **`0xC000009A`**. The function sits on the boot-critical path three times: `MmPaInitialize` (winload entry), `BlMmGetMemoryMap`, and `MmFwSynchronizeMemoryMap` (late re-ingestion of the map our chain handed over).
+- Secondary trap, same function: the sizing-call/re-read GetMemoryMap dance keeps only **`4 × DescriptorSize`** of growth headroom; map growth > 4 entries in between fails the second call with `0xC0000023` — the wordless no-Recovery-screen failure shape.
+
+Field data — every `CHAIN-MEMMAP` whole-map descriptor total in the reopened thread (three machines):
+
+| Total descriptors | Path | Outcome |
+|---|---|---|
+| 448 / 998 | ESC abort (zero GPU writes) | **boots** |
+| 1005 | ESC abort (zero GPU writes) | fail, no Recovery screen (the `0xC0000023` shape) |
+| 1007 / 1012 / 1013 / 1014 / 1021 / 1022 | dry-run and transaction paths alike | `0xc000009a` |
+
+Threshold ∈ **(998, 1005]** ≈ 1024 minus ~20–25 descriptors of winload's own concurrent working set. Zero exceptions in ten data points. Consequences:
+
+- **Fragments cost 1:1 regardless of size** — a 4 KiB hole spends the same slot as an 80 MiB one. The v2.1.11 asset free stays correct (it removes a size split *and* ~2 slots) but cannot save firmware whose own map already sits at ~998–1005 entries.
+- **GPU state is exonerated for this error class**: failing abort (1005) vs passing abort (448) differ only in the map; PLM/FLR/WPR2/GOP state cannot participate in a failure produced before any GPU driver exists.
+- **The map is the firmware's artifact and immutable from an application**: allocation only carves from `EfiConventionalMemory` and never spans descriptors; EDK2 merges only same-type adjacent ranges on free — the 4 KiB type-alternation shreds cannot be repaired from our side. Boards whose firmware alone crosses the line can only be fixed by the firmware vendor, or dodged by a power-off retry (the same board's compact-map boots pass).
+- Our own additive footprint (heap-arena fragments ~+15 descriptors, GOP reconnect reallocation, the preload) matters exactly on such boards: preload is opt-in since 2026-11-09 (`\tx-preload.txt`), and the chainload summary now prints a hard WARNING above 950 descriptors so the log self-explains.
+- Firmware-build pathology measured: one board stable-high at 998 (one slot from the line), another swinging 448↔1005 between identical zero-write boots.
+
+Walkthrough + BIOS-version test protocol: the 2026-11-12 comments on [issue #146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146#issuecomment-6815041042). The size analysis below stays valid as the secondary mechanism (winload's page allocator still needs a large-enough run inside a single descriptor).
 
 ## 0. Bottom line
 

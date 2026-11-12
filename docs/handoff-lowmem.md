@@ -3,6 +3,35 @@
 [中文](handoff-lowmem.md) | [English](handoff-lowmem.en.md) · [FAQ](faq.md#handoff) · [README](../README.md)
 
 > 2026-11-04。项目首例 winload 阶段 `0xc000009a`（`STATUS_INSUFFICIENT_RESOURCES`），Gigabyte B550 + RTX 3060 12GB（`10de:2504`）、32 GB、Win11 26200、俄文系统。事务本体全绿，死在事务之后：**我们自己驻留在低 4 GiB 的 84 MB 资产缓存，把系统唯一能用的那一段大块连续内存劈成了两半**。本文记录判据、三跑对照、规范/实现层结论，以及为什么把"交棒前把资产还给固件分配器"做成默认。
+>
+> **2026-11-12 更新**：重开后新增的三台机器（另两块 Gigabyte B550）把真正的约束钉死在**描述符条数而非尺寸**上——winload 的 1024 条静态描述符池。见 §0b；下文的尺寸分析仍成立，作为次级机制，也是 v2.1.11 默认修复的对象。
+
+## 0b. 真正的天花板：描述符条数（2026-11-12 RE）
+
+重开 issue 带来三台机器：事务死在 winload，但最大块尺寸与能启动的 abort 路径完全相同——同尺寸的 pass/fail 对，尺寸理论无法解释。对本机 `System32\Boot\winload.efi`（Windows 11 26200 世代，SHA-256 `7002fe01…f44f`，符号完整）的静态分析钉死机制：
+
+- `winload.efi!BlpMmInitialize`（`0x1801d35bc`，写入点 `0x1801d3644`）：`MmGlobalMemoryDescriptorCount = 1024`。引导期**所有**内存描述符（页分配器区域、固件 map 翻译、堆边界……）全部从这一个 **1024 条静态池**分配（`MmStaticMemoryDescriptors` @ `0x1803457e0`，stride 48 字节，数组终点恰好顶着 count 变量）。`MmMdpAllocDescriptor`（`0x1801d6c48`）**没有动态扩容**：free list 空 ⇒ 只能 `Used < 1024` 取新槽，否则 NULL。
+- `winload.efi!MmFwGetMemoryMap`（`0x1801d7138`）把继承 map 的**每一条**描述符过 `MmMdInitDescriptor` → `MmMdAddDescriptorToList`；NULL ⇒ 返回 `-1073741670` = **`0xC000009A`**。该函数在启动关键路径出现三次：`MmPaInitialize`（winload 入口）、`BlMmGetMemoryMap`、`MmFwSynchronizeMemoryMap`（后期对我们交棒 map 的再摄取）。
+- 同函数的次级陷阱：两次 `GetMemoryMap`（探大小→真读）之间只留 **`4 × DescriptorSize`** 增长余量；期间 map 长出 >4 条，第二次调用以 `0xC0000023` 失败——即"无 Recovery 屏"的哑失败形态。
+
+现场数据——重开线程里全部 `CHAIN-MEMMAP` 全图描述符总数（三台机器）：
+
+| 描述符总数 | 路径 | 结果 |
+|---|---|---|
+| 448 / 998 | ESC abort（零 GPU 写） | **启动** |
+| 1005 | ESC abort（零 GPU 写） | 失败，无 Recovery 屏（`0xC0000023` 形态） |
+| 1007 / 1012 / 1013 / 1014 / 1021 / 1022 | dry-run 与事务路径 | `0xc000009a` |
+
+阈值 ∈ **(998, 1005]** ≈ 1024 减去 winload 自身 ~20–25 条并发工作集。十个数据点零例外。推论：
+
+- **碎片按条计价，与大小无关**——4 KiB 的洞与 80 MiB 的洞花同一个槽。v2.1.11 的资产释放仍然正确（同时消掉尺寸劈裂与 ~2 个槽），但救不了固件自己就把 map 填到 ~998–1005 条的板子。
+- **该错误类别里 GPU 态无罪**：失败的 abort（1005）与通过的 abort（448）只差 map；PLM/FLR/WPR2/GOP 不可能参与一个在任何 GPU 驱动存在之前就产生的失败。
+- **map 是固件的产物，应用层动不了**：分配只能从 `EfiConventionalMemory` 切且不许跨描述符；EDK2 只在释放时合并同型相邻——4 KiB 型交替碎片不可修复。固件自己越线的板子只能等固件厂商修，或断电重试躲过去（同板的 compact-map boot 能过）。
+- 我们自身的加项（heap arena 碎片 ~+15 条、GOP 重连重分配、预载）恰恰在这种板子上致命：预载自 2026-11-09 起 opt-in（`\tx-preload.txt`）；chainload 摘要在 950 条以上打硬 WARNING，让日志自解释。
+- 实测固件病型：一块板稳定高位 998（离死线 1 条），另一块在同样的零写 boot 间摇摆 448↔1005。
+
+完整走读 + BIOS 版本对照协议见 [issue #146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146#issuecomment-6815041042) 的 2026-11-12 评论。下文的尺寸分析作为次级机制仍成立（winload 页分配器仍需单个描述符内装得下的大块）。
+
 
 ## 0. 结论先行
 

@@ -813,7 +813,12 @@ CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI'
 
 ## The unlock log is green but Windows will not start (`0xc000009a` / Recovery)?
 
-`0xc000009a` is `STATUS_INSUFFICIENT_RESOURCES` at the winload stage (the Recovery screen with "press F8 / F1 / Esc" means it got that far). **It is not a shortage of memory, it is a shortage of the largest usable run**: ExitBootServices converts nothing to conventional, so our own asset cache crosses over as a `LOADER_DATA` descriptor and splits the only large run below 4 GiB - and winload takes its boot reservation out of a single descriptor without stitching. A 32 GB machine with 2.4 GiB still free fails all the same ([#146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146), the only case so far).
+`0xc000009a` is `STATUS_INSUFFICIENT_RESOURCES` at the winload stage (the Recovery screen with "press F8 / F1 / Esc" means it got that far). winload has two independent ceilings, both verified by static analysis of `winload.efi` (2026-11-12, [issue #146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146)):
+
+1. **Descriptor count — the binding one.** winload ingests every descriptor of the memory map it inherits into a **static pool of exactly 1024 entries** (`winload.efi!BlpMmInitialize`: `MmGlobalMemoryDescriptorCount = 1024`, 48-byte descriptors, no dynamic overflow); pool exhaustion kills the boot with `0xc000009a`. Measured line: 998 descriptors boot, 1005 fail. Fragments cost 1:1 regardless of size - a 4 KiB hole spends the same slot as an 80 MiB one. Affected firmware builds (Gigabyte B550 family in the field) either sit stable-high near 998 or swing 448↔1005 entries between identical zero-write boots; the map is the firmware's own artifact and cannot be merged or re-typed from an EFI app, so a full power-off **retry** is the legitimate workaround and the BIOS version is the real fix. The log prints a hard WARNING above 950 descriptors.
+2. **Largest single run — the original #146 mechanism.** winload's boot reservation comes out of a single descriptor without stitching; ExitBootServices converts nothing, so a resident asset pool can split the only large run below 4 GiB even with gigabytes free in total.
+
+Read the discriminator straight off the `CHAIN-MEMMAP` summary line - the `(... N descriptors ...)` total decides which ceiling you are hitting: **> ~1000** = count ceiling (retry / BIOS update); **≤ ~1000 with a halved largest block** = size ceiling (the fix below).
 
 **Since v2.1.11 the asset pool is handed back to the firmware allocator before the chain, by default**, at zero cost (nothing reads an asset after the transaction). Read it off the log:
 
