@@ -272,7 +272,7 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
 | 6 | **OS 侧连接管理器（USB4 CM）建立/重建 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)，已关闭，桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块绑定/接管时拆掉并重建整棵下游总线。固件 CM 的独立雷电主机（Intel 雷电面板那类）开机不走此行，但重插线时管理栈重建隧道、同样触发 | 金丝雀 `cleared`（域复位）。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
-| 7 | **我们自己的交棒重锁写**（v2.1.11 及更早的默认行为） | 存活 | 交棒前把 `FEAT_PLM` 锁回 `0xffffff8f`（硬件读回 `0xffffffef`）；驱动 init 再把门推回并触发 PF FLR | SS 在交棒时完好、系统内被清零；`nvlddmkm` id=14 明写 `None → PF FLR`（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 2026-11-12 同卡 A/B；`061aef8` 起默认门开，见 `docs/evidence/issue99-1f07-x99-gate-open/`） |
+| 7 | **我们自己的交棒重锁写**（v2.1.11 及更早的默认行为） | 复位（PF FLR） | 交棒前把 `FEAT_PLM` 锁回 `0xffffff8f`（硬件读回 `0xffffffef`）；驱动 init 再把门推回并触发 PF FLR | SS 在交棒时完好、系统内被清零；`nvlddmkm` id=14 明写 `None → PF FLR`（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 2026-11-12 同卡 A/B；`061aef8` 起默认门开，见 `docs/evidence/issue99-1f07-x99-gate-open/`） |
 
 第 6 行的特殊性：复位由**建立/重建隧道的 CM** 执行——USB4 主机上是 OS 侧 CM，发生在任何驱动绑定之前，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）；固件 CM 主机开机不触发此行（见雷电节分型），重插才触发。唯一出路是抑制那次拆建，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
