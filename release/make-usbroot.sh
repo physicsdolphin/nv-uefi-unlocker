@@ -10,9 +10,13 @@
 #   ./make-usbroot.sh                          (localhost: detect this machine's GPUs)
 #   ./make-usbroot.sh --family tu10x --out /media/usb
 #   ./make-usbroot.sh --family all             (every RTX 20/30/40 family)
+#   ./make-usbroot.sh --family 30,40           (comma list - a mixed 30/40 rig
+#                     needs exactly these two, without dragging Turing assets)
 #
 # Options (1:1 with the PowerShell twin's parameters):
-#   --family F        ad102 | ga102 | tu10x | tu11x | all | localhost
+#   --family F        ad102 | ga102 | tu10x | tu11x | all | localhost, or a
+#                     comma/semicolon list of those tokens ("30,40"; list =
+#                     exact set to build, the mixed-generation rig form)
 #                     (aliases rtx40/40, rtx30/30, rtx20/20, rtx16/16;
 #                     default localhost)
 #                     localhost = enumerate the NVIDIA GPUs in THIS machine
@@ -20,6 +24,9 @@
 #                     found there; dies when no RTX 20/30/40/16 card is present.
 #                     all = build all three 20-40 series families on one stick
 #                     (tu11x excluded - explicit opt-in only).
+#                     `all` anywhere wins; `localhost` inside a list is unioned
+#                     with the explicit members; a list runs the Turing GSP gate
+#                     strict, same as a single explicit family.
 #   --out DIR         output root (default ./usbroot)
 #   --work DIR        download/verify work dir (default ./inputs)
 #   --assets PATH     assets pipeline binary. Resolution order: this flag /
@@ -265,32 +272,66 @@ detect_local_families() { # echoes the build families found here, one per line
 }
 
 # ---------- resolve the family argument into a build list ----------
+# --family takes one token or a comma/semicolon/space list ("30,40"); the list
+# is the mixed-generation rig form. `all` anywhere wins; `localhost` inside a
+# list is unioned with the explicit members. Alias normalization per token, then
+# a canonical build order (same table the loader routes cards with).
 GATE_STRICT=1
 FAMILIES=()
-case "$FAMILY" in
-    ad102|rtx40|40) FAMILIES=(ad102) ;;
-    ga102|rtx30|30) FAMILIES=(ga102) ;;
-    tu10x|rtx20|20) FAMILIES=(tu10x) ;;
-    tu11x|rtx16|16) FAMILIES=(tu11x) ;;
-    all)
-        # One stick with every 20-40 series family. May target a machine
-        # other than this one, so the Turing GSP gate runs lenient below.
-        FAMILIES=(tu10x ga102 ad102)
-        GATE_STRICT=0
-        ;;
-    localhost)
+WANT_ALL=0
+WANT_LOCAL=0
+WANTED=()
+IFS=',; ' read -r -a _fam_tokens <<< "$FAMILY"
+for _tok in "${_fam_tokens[@]}"; do
+    [ -n "$_tok" ] || continue
+    _tok="${_tok,,}"
+    case "$_tok" in
+        ad102|rtx40|40) _fam=ad102 ;;
+        ga102|rtx30|30) _fam=ga102 ;;
+        tu10x|rtx20|20) _fam=tu10x ;;
+        tu11x|rtx16|16) _fam=tu11x ;;
+        all) WANT_ALL=1; continue ;;
+        localhost) WANT_LOCAL=1; continue ;;
+        *) die "unknown family: '$_tok' (ad102 | ga102 | tu10x | tu11x | all | localhost, or a comma list such as 30,40)" ;;
+    esac
+    case " ${WANTED[*]-} " in *" $_fam "*) ;; *) WANTED+=("$_fam") ;; esac
+done
+if [ "${#WANTED[@]}" -eq 0 ] && [ "$WANT_ALL" -eq 0 ] && [ "$WANT_LOCAL" -eq 0 ]; then
+    WANT_LOCAL=1
+fi
+if [ "$WANT_ALL" -eq 1 ]; then
+    # One stick with every 20-40 series family. May target a machine
+    # other than this one, so the Turing GSP gate runs lenient below.
+    FAMILIES=(tu10x ga102 ad102)
+    GATE_STRICT=0
+else
+    if [ "$WANT_LOCAL" -eq 1 ]; then
+        _detected=()
         while IFS= read -r fam; do
-            FAMILIES+=("$fam")
+            _detected+=("$fam")
         done < <(detect_local_families)
-        if [ "${#FAMILIES[@]}" -eq 0 ]; then
-            die "localhost: no supported NVIDIA adapter (RTX 20/30/40/16 series) found on
+        if [ "${#_detected[@]}" -eq 0 ]; then
+            if [ "${#WANTED[@]}" -eq 0 ]; then
+                die "localhost: no supported NVIDIA adapter (RTX 20/30/40/16 series) found on
 this machine. Use an explicit --family (ad102 | ga102 | tu10x | tu11x) or --family all."
+            fi
+            log "[localhost] no local supported adapter - using the explicit list only"
         fi
-        log "[localhost] building for: ${FAMILIES[*]}"
+        for fam in "${_detected[@]}"; do
+            case " ${WANTED[*]-} " in *" $fam "*) ;; *) WANTED+=("$fam") ;; esac
+        done
+        log "[localhost] building for: ${WANTED[*]-}"
         log "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): python3 tools/diag-unlock.py --inventory"
-        ;;
-    *) die "unknown family: $FAMILY (ad102 | ga102 | tu10x | tu11x | all | localhost)" ;;
-esac
+        if [ "${#WANTED[@]}" -lt 3 ]; then
+            log "[localhost] NOTE: this stick will only carry ${WANTED[*]-} assets. Cards from other generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot. For a multi-generation machine use the comma list (30,40) or --family all"
+        fi
+    elif [ "${#WANTED[@]}" -gt 1 ]; then
+        log "[family] explicit list - building: ${WANTED[*]}"
+    fi
+    for fam in tu10x tu11x ga102 ad102; do
+        case " ${WANTED[*]-} " in *" $fam "*) FAMILIES+=("$fam") ;; esac
+    done
+fi
 
 # ---------- tools ----------
 have stat || die "stat not found"

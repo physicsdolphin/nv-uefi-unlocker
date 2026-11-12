@@ -52,7 +52,7 @@ maker 在本地 `usbroot/` 输出资产（`*.bin` 平铺在该目录，另已建
 
 **`-Out G:\` 在 Windows PowerShell 5.1 上会报 `New-Item : The path is not of a legal form`**（盘符根以 `\` 结尾，`New-Item -Path` 不接受；[#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)）。脚本创建目录时会自动剥掉尾反斜杠；若用旧包，改传 **`-Out G:`**（不带 `\`）即可。
 
-maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只生成对应家族；`-Family` / `--family` 可显式指定 `ad102`（40 系）、`ga102`（30 系）、`tu10x`（20 系）、`tu11x`（16 系，RE 推导实验线）或 `all`（三代全家桶，一张盘服务多种卡；不含 tu11x）。多家族盘的文件是各家族清单的并集。两个脚本行为一致：`20`/`tu10x` 只产出 tu10x，`16`/`tu11x` 才产出 tu11x。
+maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只生成对应家族；`-Family` / `--family` 可显式指定 `ad102`（40 系）、`ga102`（30 系）、`tu10x`（20 系）、`tu11x`（16 系，RE 推导实验线）、逗号并列的精确集合（如 `30,40`，混合代际机用）或 `all`（三代全家桶，一张盘服务多种卡；不含 tu11x）。多家族盘的文件是各家族清单的并集。两个脚本行为一致：`20`/`tu10x` 只产出 tu10x，`16`/`tu11x` 才产出 tu11x。
 
 `F` 为 `ad102`、`ga102` 或 `tu10x`：
 
@@ -115,7 +115,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 - 可行形态（#104 实证）：数据卷缩出 ~2 GB FAT32 分区，按 U 盘同款布局放置 EFI+资产，BIOS 启动菜单里将其（显示为 `UEFI OS`）手动调前或 F12 一次性选择；可随时从 BIOS 菜单改回 Windows Boot Manager，不刷任何东西。
 - 为什么不提供自动化脚本：多数用户的认知是"引导分区炸了=工具的锅"；缩容场景千差万别（双系统/跨盘引导/btrfs、zfs 等不支持在线缩容的文件系统），工具面强行覆盖全部存储拓扑有真实的数据安全风险。**策略：教程可查（如上）、自动化不做、允许下游 fork 提供自动化脚本并互链。**
 
-异机制盘先显式指定 `-Family`（或用 `-Family all`），Turing 检查不适用时可用 `-SkipGspCheck` / `--skip-gsp-check` 跳过制盘机检查，但目标机仍须满足 GSP 前置。离线 Turing 引导归档 `gsp_rm_boot_dbg.bin` 用 `-ProvenBlob` / `--proven-blob` 指定；长度和 hash 校验仍有效。下载或校验失败时不要换版本或绕过检查。Windows PowerShell TLS 下载失败时可用 WSL / Git Bash 运行 bash maker。
+异机制盘先显式指定 `-Family`（或用 `-Family all`）；**目标机同机有多个代际时必须把代际逗号并列**（如 `-Family 30,40`）或直接 `-Family all`，单代盘会让其余代的卡在启动时被跳过（`loader.log` 有专门一行点名缺哪一族并给重建命令）。Turing 检查不适用时可用 `-SkipGspCheck` / `--skip-gsp-check` 跳过制盘机检查，但目标机仍须满足 GSP 前置。离线 Turing 引导归档 `gsp_rm_boot_dbg.bin` 用 `-ProvenBlob` / `--proven-blob` 指定；长度和 hash 校验仍有效。下载或校验失败时不要换版本或绕过检查。Windows PowerShell TLS 下载失败时可用 WSL / Git Bash 运行 bash maker。
 
 **中国大陆网络与下载源**（2026-11-08 更新）：`raw.githubusercontent.com` 被阻断，Turing 引导归档的抓取会自动依次回退到 jsDelivr CDN 与代理传输（同一对象，钉定 SHA-256 逐字节把关）。`nvidia-utils` 输入自 2026-11-08 起是**源组自动回退**（[#212](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/212)：CachyOS 归档是每包约三版的滚动窗口，钉定的 610.43.03 已被挤出窗口 404）：**Arch 官方归档（永久，版本不清除）→ 第一方 NVIDIA `.run` 安装器（XFree86 树只增不删，us/tw/jp 多区域节点同字节）→ CachyOS 旧容器（仅作字节缓存还魂通道）**，三者内含的 GSP 固件逐位一致——内容寻址闸只认内层 ELF 的钉定 SHA-256。`-UtilsSource arch|run|cachyos`（bash 版 `--utils-source`）可钉定单一路线；全部失败时报告会列出每个源、其 URL 与钉定哈希。任何钉定文件都可以离线获得后直接放进 `inputs/`（哈希匹配即接受）——这是官方认可的离线路径。某传输源失效时不要换**版本**（钉定哈希按容器字节算，610.57/615.x 容器字节不同即不命中），换**源**或离线投放皆可。**但解锁本身对 GSP 版本不挑**——按世代限定：图灵谱系（`gsp_tu10x`）525–621 全跨度（16.7–37.1 MB）已在 TU106 台架实测全链解锁；**各代 GSP 只用于本代卡**（40 系/AD10x 走 `gsp_ga10x.bin` 的 `fwsignature_ad10x` 段，其兼容下限=40 系起家的最早 GSP）。GSP 只是砸开 FEAT 门的工牌，机制与边界详见 [docs/gsp-compatibility.md](gsp-compatibility.md)（英文版 [gsp-compatibility.en.md](gsp-compatibility.en.md)）。
 

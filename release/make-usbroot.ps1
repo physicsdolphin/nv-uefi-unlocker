@@ -7,6 +7,8 @@
 #   .\make-usbroot.ps1                     (localhost: detect this machine's GPUs)
 #   .\make-usbroot.ps1 -Family tu10x -Out E:\
 #   .\make-usbroot.ps1 -Family all         (every RTX 20/30/40 family)
+#   .\make-usbroot.ps1 -Family 30,40       (comma list - a mixed 30/40 rig
+#                     needs exactly these two, without dragging Turing assets)
 #   .\make-usbroot.ps1 -UtilsSource run    (pin the nvidia-utils transport:
 #                     auto = local DriverStore (badge mode) -> Arch archive
 #                     -> first-party .run -> CachyOS cache, first that lands;
@@ -49,13 +51,25 @@
 #                        runs lenient: still warns when a LOCAL Turing card sits
 #                        in legacy mode, but is silent when this host has no
 #                        Turing adapter at all.
+#   30,40                a comma (or space/semicolon) list builds exactly the
+#                        listed families on one stick - the mixed-generation rig
+#                        form (e.g. a 3060 + 4070 + 4090 box needs 30,40 and
+#                        nothing else; "all" would also drag Turing assets). A
+#                        list runs the Turing GSP gate strict, same as a single
+#                        explicit family. `all` inside a list wins, `localhost`
+#                        inside a list is unioned with the explicit members.
+#                        Long form: ad102,ga102 (or any alias mix).
+#
+# Device id -> family routing, and therefore which families a card needs, is the
+# same table the loader uses (loader/src/main.rs asset_family). A card whose
+# family is not on the stick is skipped at boot with an explicit loader.log line.
 #
 # Requires: PowerShell 5+ and internet access to the pinned URLs.
 
 param(
-    [ValidateSet("ad102", "ga102", "tu10x", "tu11x", "all", "localhost",
-                 "rtx40", "rtx30", "rtx20", "rtx16", "40", "30", "20", "16")]
-    [string]$Family = "localhost",
+    # One token or a comma/space/semicolon list (validated below against
+    # $validFamilyTokens - ValidateSet cannot express the list form).
+    [string[]]$Family = @("localhost"),
     # Default to the copies shipped next to this script.
     [string]$AssetsExe = "",
     [string]$BootEfi = "",
@@ -112,13 +126,31 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 # Normalize the family aliases (the task is 20/30/40 series, not chip names).
-$familyArg = $Family.ToLowerInvariant()
-$normalized = switch ($familyArg) {
-    { $_ -in "ad102", "rtx40", "40" } { "ad102" }
-    { $_ -in "ga102", "rtx30", "30" } { "ga102" }
-    { $_ -in "tu10x", "rtx20", "20" } { "tu10x" }
-    { $_ -in "tu11x", "rtx16", "16" } { "tu11x" }
-    default { $familyArg }   # localhost | all pass through
+# $Family is a list: `-Family 30,40` binds as two elements, and a single quoted
+# "30,40" is split here too, so both spellings work.
+$validFamilyTokens = @("ad102", "ga102", "tu10x", "tu11x", "all", "localhost",
+                       "rtx40", "rtx30", "rtx20", "rtx16", "40", "30", "20", "16")
+$familyTokens = @()
+foreach ($f in $Family) {
+    foreach ($tok in ($f -split '[,;\s]+')) {
+        if ([string]::IsNullOrWhiteSpace($tok)) { continue }
+        $familyTokens += $tok.ToLowerInvariant()
+    }
+}
+if ($familyTokens.Count -eq 0) { $familyTokens = @("localhost") }
+$normalizedTokens = @()
+foreach ($tok in $familyTokens) {
+    if ($validFamilyTokens -notcontains $tok) {
+        throw ("unknown family: '{0}' (ad102 | ga102 | tu10x | tu11x | all | localhost, " -f $tok) +
+               "or a comma list such as 30,40)"
+    }
+    $normalizedTokens += switch ($tok) {
+        { $_ -in "ad102", "rtx40", "40" } { "ad102" }
+        { $_ -in "ga102", "rtx30", "30" } { "ga102" }
+        { $_ -in "tu10x", "rtx20", "20" } { "tu10x" }
+        { $_ -in "tu11x", "rtx16", "16" } { "tu11x" }
+        default { $tok }   # localhost | all pass through
+    }
 }
 
 # Device id -> build family (same ranges as loader/src/main.rs).
@@ -230,40 +262,57 @@ function Get-LocalNvidiaAdapters {
     return $adapters
 }
 
-# Resolve the family argument into a build list.
+# Resolve the family argument into a build list. `all` anywhere wins (the user
+# asked for everything); `localhost` inside a list is unioned with the explicit
+# members so `-Family 30,localhost` on a 20-series box also builds Turing.
 $gateStrict = $true
-if ($normalized -eq "all") {
+$useAll = $normalizedTokens -contains "all"
+$useLocal = $normalizedTokens -contains "localhost"
+$explicit = @($normalizedTokens | Where-Object { $_ -ne "all" -and $_ -ne "localhost" })
+if ($useAll) {
     # One stick with every 20-40 series family; may target a machine other
     # than this one, so the Turing GSP gate runs lenient below.
     $Families = @("tu10x", "ga102", "ad102")
     $gateStrict = $false
-} elseif ($normalized -eq "localhost") {
-    $detected = @()
-    foreach ($a in Get-LocalNvidiaAdapters) {
-        $fam = Get-UnlockFamily $a.Dev
-        if (-not $fam) {
-            Write-Host ("[localhost] 10de:{0} - outside RTX 20/30/40 series, ignoring ({1})" -f $a.Dev, $a.Desc)
-            continue
-        }
-        Write-Host ("[localhost] 10de:{0} -> {1} ({2})" -f $a.Dev, $fam, $a.Desc)
-        if ($detected -notcontains $fam) { $detected += $fam }
-    }
-    if ($detected.Count -eq 0) {
-        throw "localhost: no supported NVIDIA adapter (RTX 20/30/40/16 series) found on
-this machine. Use an explicit -Family (ad102 | ga102 | tu10x | tu11x) or -Family all."
-    }
-    # Canonical build order regardless of enumeration order. tu11x rides
-    # along when a 16-series card is present, same as any detected family.
-    $Families = @("tu10x", "tu11x", "ga102", "ad102") | Where-Object { $detected -contains $_ }
-    Write-Host ("[localhost] building for: {0}" -f ($Families -join ", "))
-    Write-Host "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): ssdiag --inventory"
-    if ($Families.Count -lt 3) {
-        Write-Host ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($Families -join "/") +
-                    " generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot." +
-                    " For a multi-generation machine use: .\make-usbroot.ps1 -Family all")
-    }
 } else {
-    $Families = @($normalized)
+    $wanted = @()
+    foreach ($tok in $explicit) {
+        if ($wanted -notcontains $tok) { $wanted += $tok }
+    }
+    if ($useLocal) {
+        $detected = @()
+        foreach ($a in Get-LocalNvidiaAdapters) {
+            $fam = Get-UnlockFamily $a.Dev
+            if (-not $fam) {
+                Write-Host ("[localhost] 10de:{0} - outside RTX 20/30/40 series, ignoring ({1})" -f $a.Dev, $a.Desc)
+                continue
+            }
+            Write-Host ("[localhost] 10de:{0} -> {1} ({2})" -f $a.Dev, $fam, $a.Desc)
+            if ($detected -notcontains $fam) { $detected += $fam }
+        }
+        if ($detected.Count -eq 0) {
+            if ($explicit.Count -eq 0) {
+                throw "localhost: no supported NVIDIA adapter (RTX 20/30/40/16 series) found on
+this machine. Use an explicit -Family (ad102 | ga102 | tu10x | tu11x) or -Family all."
+            }
+            Write-Host "[localhost] no local supported adapter - using the explicit list only"
+        }
+        foreach ($fam in $detected) {
+            if ($wanted -notcontains $fam) { $wanted += $fam }
+        }
+        Write-Host ("[localhost] building for: {0}" -f ($wanted -join ", "))
+        Write-Host "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): ssdiag --inventory"
+        if ($wanted.Count -lt 3) {
+            Write-Host ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($wanted -join "/") +
+                        " generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot." +
+                        " For a multi-generation machine use the comma list (30,40) or -Family all")
+        }
+    } elseif ($wanted.Count -gt 1) {
+        Write-Host ("[family] explicit list - building: {0}" -f ($wanted -join ", "))
+    }
+    # Canonical build order regardless of list/token order; a list also runs the
+    # Turing GSP gate strict, same as a single explicit family.
+    $Families = @("tu10x", "tu11x", "ga102", "ad102") | Where-Object { $wanted -contains $_ }
 }
 
 # Pinned public inputs (see AGENTS.md / assets/src/manifest.rs). The

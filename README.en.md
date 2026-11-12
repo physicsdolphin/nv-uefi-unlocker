@@ -166,20 +166,18 @@ After restarting, confirm that GSP firmware is running before making the stick. 
 
 ### 2. Prepare the bootable USB stick
 
-Run from the extracted package directory. Select `40` for the 40 series, `30` for the 30 series, or `20` for the 20 / 16 series.
+Run from the extracted package directory. With no `-Family` the script detects this machine's cards and builds exactly the families it finds. Building on another host: `40` for the 40 series, `30` for the 30 series, `20` for the 20 / 16 series. **When one machine holds cards from several generations, comma-list them** (`-Family 30,40` builds exactly those two without dragging unrelated assets); `-Family all` puts all three generations on one stick. A generation left off the stick is skipped at boot and named in `loader.log`.
 
 Windows PowerShell:
 
 ```powershell
-$gpuSeries = "40"
-.\make-usbroot.ps1 -Family $gpuSeries
+.\make-usbroot.ps1
 ```
 
 Linux / WSL / Git Bash:
 
 ```bash
-gpu_series=40
-bash make-usbroot.sh --family "$gpu_series"
+bash make-usbroot.sh
 ```
 
 Windows requires PowerShell 5+; the Linux binary requires glibc ≥ 2.34 (for example, Ubuntu 22.04+ / Debian 12+). Initial generation needs internet access. Resolve download or verification failures without substituting another firmware version.

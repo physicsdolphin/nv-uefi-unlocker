@@ -52,7 +52,7 @@ The maker emits the assets into a local `usbroot/` directory (the `*.bin` files 
 
 **`-Out G:\` fails on Windows PowerShell 5.1 with `New-Item : The path is not of a legal form`** (a bare drive root ends in `\`, which `New-Item -Path` rejects; [#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)). The script now strips the trailing backslash when creating the directories; on older packages pass **`-Out G:`** (no `\`).
 
-`F` is `ad102` (40 series), `ga102` (30 series), `tu10x` (20 series) or `tu11x` (16 series, RE-derived experimental route):
+`F` is `ad102` (40 series), `ga102` (30 series), `tu10x` (20 series) or `tu11x` (16 series, RE-derived experimental route); the family selector also takes a comma list (`30,40` - the mixed-generation rig form) or `all`:
 
 | Location | Files | Purpose |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ Yes, but as an **expert, at-your-own-risk operation**: the shipped workflow stay
 - The working shape (#104): shrink a data volume by ~2 GB, lay out a FAT32 partition exactly like the USB stick, then pick it from the BIOS boot menu (shows as `UEFI OS`) - manual reorder or one-time F12. Reversible from the BIOS menu back to Windows Boot Manager, nothing flashed.
 - Why no automation script: for most users "my boot partition broke" is the tool's fault, and resize scenarios vary wildly (dual-boot, cross-disk entries, btrfs/zfs with no online shrink). **Policy: the recipe above is documented, automation is not provided, downstream forks may ship scripts and cross-link.**
 
-For preparation on a different host, use `-SkipGspCheck` / `--skip-gsp-check`; target GSP prerequisites still apply. Offline Turing archive `gsp_rm_boot_dbg.bin` selection uses `-ProvenBlob` / `--proven-blob`; length/hash validation remains mandatory. Do not substitute versions or bypass failed checks. For Windows PowerShell TLS download failures, the bash maker can run under WSL / Git Bash.
+For preparation on a different host, name the family explicitly (or `-Family all`); **when the target machine holds cards from several generations, comma-list them** (`-Family 30,40`) or just use `-Family all` - a single-generation stick skips every other generation's card at boot (with a dedicated `loader.log` line naming the missing family and the rebuild command). Use `-SkipGspCheck` / `--skip-gsp-check` when the host-side Turing GSP check does not apply; target GSP prerequisites still apply. Offline Turing archive `gsp_rm_boot_dbg.bin` selection uses `-ProvenBlob` / `--proven-blob`; length/hash validation remains mandatory. Do not substitute versions or bypass failed checks. For Windows PowerShell TLS download failures, the bash maker can run under WSL / Git Bash.
 
 ### Where do the pinned downloads come from now? (source group, 2026-11-08)
 
