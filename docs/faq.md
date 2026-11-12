@@ -94,7 +94,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-gop-hide.txt`（tx 构建） | **手动兜底**：每行一个 BDF（`bb:dd.f` 或 `dddd:bb:dd.f`）或 vendor:device（`vvvv:dddd`），对应 GOP child 直接 Disconnect（不重建）。拒绝条件：清单命中 console 卡自身（兄弟头规则，**整单拒执行**）、无可解析行（拒绝猜）、术后读回失败响亮上报。与默认重排互斥：hide 先执行 |
 | `i_know_what_i_am_doing.txt` | 5 秒倒计时后自动运行，任意键中止；文件存在即启用，内容忽略 |
 | `tx-no-canary.txt` | 整组跳过复位金丝雀的读写（A/B 对照；见[回锁章](#relock)） |
-| `tx-relock.txt`（tx 构建） | **退出阀**：交棒前把 FEAT PLM 锁回 `0xffffff8f`（三代通用）。默认自 2026-11-08 起三代都门开交棒（Turing 加入 Ampere/Ada 的开门形态；TU106 bench 端到端坐实门开无害且系统内写入面开放，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`）。Turing 臂实测回锁值 `0xffffffef`/`0xffffff8f` 随板方差；Ampere/Ada 臂（FLR 判定后重锁）未上过 bench |
+| `tx-relock.txt`（tx 构建） | **退出阀**：交棒前把 FEAT PLM 锁回 `0xffffff8f`（三代通用）。默认自 2026-11-08 起三代都门开交棒（Turing 加入 Ampere/Ada 的开门形态；TU106 bench 端到端坐实门开无害且系统内写入面开放，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`）。Turing 臂实测回锁值 `0xffffffef`/`0xffffff8f` 随板方差；Ampere/Ada 臂（FLR 判定后重锁）未上过 bench。**注意重锁本身有代价**：部分驱动会对重锁态发起 init 期 PF FLR 并清零 SS（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B），所以 v2.1.11 及更早的默认行为在那些驱动上会丢锁 |
 | `tx-ultrafast.txt`（tx 构建） | **速度档**（已验证机器用）：跳过全部纯诊断性质的事前/事后探测——M1 冷态采样、GOP 探测、AUTH-SCAN、ROOT-DIR 转储、opener/拓扑诊断、载荷后 FEAT sweep、HANDOFF-PCI / HANDOFF-VGA-FINAL 转储、POST-GOP 探针、CHAIN-MEMMAP——并折叠 quiet + **仅事务锚点 flush**（比阶段标记集紧得多：~80 次/轮 → ~15 次/轮；挂死时锚点之间的日志盲区更大，显式 `tx-flush-lines.txt` 仍优先）。**裁决链读回一个不少**：selector 写读回、WPR2/POST-BOOT 判定、booter 载入审计照跑——读回是唯一成功判据。**复位金丝雀不省**（写读回毫秒级、复位取证价值高；自 2026-11-09 起 ultrafast 照跑，`HANDOFF-OUT` 显示真实判定；确要跳过用 `tx-no-canary.txt`）。被跳过的阶段在日志里各留一行 `ultrafast - skipped`。只建议在已多轮验证的机器上使用 |
 | `tx-no-log.txt`（tx 构建） | 不开 `\loader.log`（全程仅 console 输出；quiet 因"console 是唯一记录"守卫结构性失效，console 保持完整）。挂死即零取证，只建议与 armed、已多轮验证的机器同用 |
 | `tx-no-console.txt`（tx 构建） | 完全不回显（慢速 GOP 文本输出的回显成本归零，issue #38 的分钟级回显形态直接消失）。确认提示不可见——**必须与 armed 同用**（键盘语义不变：armed 倒计时内任意键仍中止）；与 `tx-no-log.txt` 同置即全程零输出的完全静默跑，挂死时屏与盘两处都无证据 |
@@ -249,7 +249,9 @@ sudo update-initramfs -u
 | `POST-GOP` 完好，系统内门关、`SS` 变成既非基线也非覆盖值 | 重推导（驱动 init 主动编程） | 机制表第 3 行；见 [#148 记录](#relock-148) |
 | `POST-GOP` 完好，系统内门关、`SS` 回到该卡开机基线（覆盖字段归零） | 整域复位（掉电 / SBR / 全芯片复位） | 机制表第 1、2 行 |
 
-Turing 自 2026-11-08 起交棒默认也是门开（与 Ampere/Ada 一致）；只有 `\tx-relock.txt` 在位时才会出现重锁值——别把 marker 臂的正常值当丢失，判读见[雷电一节](#thunderbolt)与[冷态对照](cold-values.md)。
+Turing 自 2026-11-08（`061aef8`，v2.1.12-rc1 起）交棒默认也是门开（与 Ampere/Ada 一致）；只有 `\tx-relock.txt` 在位时才会出现重锁值——别把 marker 臂的正常值当丢失，判读见[雷电一节](#thunderbolt)与[冷态对照](cold-values.md)。**v2.1.11 及更早的默认是交棒前重锁，那是当时已知的最大一条自造回锁源（机制表第 7 行，[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)）。**
+
+**基线纪律：** 判「SS 被清零」必须先有一条**同一 boot、解锁之前**的锁态 `ssdiag` 采样。stock 的 `SS0/SS1` 并非恒为零（#99 同卡实测两次 stock 分别 `0x00040000`/`0x6` 与 `0x0`/`0x0`，READOUT 都是 `0x00400080`）；只有「基线 → 交棒 `POST-GOP` → 系统内」三段同 boot 可比，SS 的变化才有判别力。
 
 **配对法：拿"复位金丝雀"当见证。** 光看 FEAT 只能说"写被抹了"，说不清是**被写**还是**整片被复位**。v2.1.11 起载具在 FLR 验证之后往 PBUS 软件 scratch（`0x1480`/`0x1484`（即索引 `0x20`/`0x21`；早于本轮构建的不算，偏移曾错写成 `0x140020/24`），open RM 的老驱动只写 `0x1e`，这两格干净；BUS 域随 FLR/SBR/撤电清零）写一对魔数并立刻读回，`POST-GOP`、`HANDOFF-OUT` 与系统内 `ssdiag`（0.6.7+）各给同一状态。判读必须与 FEAT 成对：**金丝雀完好 + FEAT 被抹 = 没复位，是写入；金丝雀清零 + FEAT 完好 = FLR/SBR 级复位且 AON 存活；两者一起没 = 撤电/全片复位。**
 
@@ -270,10 +272,11 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
 | 6 | **OS 侧连接管理器（USB4 CM）建立/重建 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)，已关闭，桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块绑定/接管时拆掉并重建整棵下游总线。固件 CM 的独立雷电主机（Intel 雷电面板那类）开机不走此行，但重插线时管理栈重建隧道、同样触发 | 金丝雀 `cleared`（域复位）。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
+| 7 | **我们自己的交棒重锁写**（v2.1.11 及更早的默认行为） | 存活 | 交棒前把 `FEAT_PLM` 锁回 `0xffffff8f`（硬件读回 `0xffffffef`）；驱动 init 再把门推回并触发 PF FLR | SS 在交棒时完好、系统内被清零；`nvlddmkm` id=14 明写 `None → PF FLR`（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 2026-11-12 同卡 A/B；`061aef8` 起默认门开，见 `docs/evidence/issue99-1f07-x99-gate-open/`） |
 
 第 6 行的特殊性：复位由**建立/重建隧道的 CM** 执行——USB4 主机上是 OS 侧 CM，发生在任何驱动绑定之前，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）；固件 CM 主机开机不触发此行（见雷电节分型），重插才触发。唯一出路是抑制那次拆建，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
-第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5 行是我们唯一还能改自己代码的地方，第 6 行是 OS 侧旋钮（不在本工具内）——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
+第 1、2 行是物理事件，第 3 行是固件契约（见下节），第 5、7 行是我们自己代码里能改的（第 7 行已在 2026-11-08 默认关闭），第 6 行是 OS 侧旋钮（不在本工具内）——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
 
 **第 1 行已有两轴同抓的完整现场对**（2026-11-04，[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)，HP Victus 16 `25a2` 纯混合平台，`docs/evidence/issue37-hp-victus-25a2/`）：EFI 侧金丝雀设置并读回完好、交棒时卡 D0 → 系统内金丝雀清零 + FEAT 回厂推导值 + 根口 `00:01.0` PMCSR `D3`。FLR 被同日志排除（本链 `POST-FLR` 自证 GA10x 选择器活过 FLR），事件超出 FLR 即常规复位族，根口 D3 把形态压向第 1 行。对照组：TU106 桌面金丝雀 intact + 双端 D0（写入型才会长这样）；同为 GA107M 的 [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)（Linux）是无复位的 devinit 重写（金丝雀应完好）——同 die、不同平台、不同行。金丝雀表的第四格（`intact` + FEAT 完好）也已有首个现场实例（2026-11-05，[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109#issuecomment-6650530730)：同卡同 VBIOS 同子系统、B650 桌面，交棒与系统内均 `intact`、双端 D0、`UNLOCKED`）——"什么都没发生"同样是一条读数，它把卡/VBIOS/驱动从鉴别变量里踢了出去，只剩平台。
 
@@ -320,10 +323,11 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 
 做得到的：
 
+0. **先排除我们自己的旧尾巴**：v2.1.11 及更早的载具默认在交棒前重锁 FEAT 门，部分驱动会因此在 init 期发起 PF FLR 并把 SS 清零（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)，2026-11-12 同卡 A/B）。`061aef8`（v2.1.12-rc1 起）默认改成门开交棒、SS 原样交棒，升级载具本身即消除该触发；不要用 v2.1.11 复测这个问题。
 1. **阻断复位源**：关 RTD3（[Linux](#linux) / Windows 对应驱动电源设置）、关快速启动与现代待机、BIOS 里关 PCIe 空闲电源门控；不要用"关机"当重启。
 2. **改变入口态**：独显直连优先；混合输出下 MUX/面板归属决定设备是否被枚举（[#148 记录](#relock-148)）。
 3. **事后修复**：门仍开时 `ssdiag --reapply` / `diag-unlock.py --reapply` 写回选择器；门已锁只能重放。
-4. **报告时带齐证据**：`loader.log` 的 `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` 三行（含 `CANARY` 与 `wpr2_lo`）、系统内读回值（用带 `CANARY:` 判定行的 `ssdiag` 0.6.5+）、`powercfg /a`、设备电源状态与事件日志。缺这些只能反复猜。
+4. **报告时带齐证据**：`loader.log` 的 `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` 三行（含 `CANARY` 与 `wpr2_lo`）、系统内读回值（用带 `CANARY:` 判定行的 `ssdiag` 0.6.5+）、`powercfg /a`、设备电源状态与事件日志。**外加同一 boot 的锁态基线**（解锁前、同一次引导内先跑一遍 `ssdiag`）：不少卡的 stock `SS0/SS1` 本来就含 0（本机实例见诊断协议 §4），没有基线时「SS=0」判不了是清零还是出厂。缺这些只能反复猜。
 5. **把平台属性化**：确认某平台有 `_PR3` 且 rail 真断，就按平台属性登记，而不是当驱动缺陷追。
 6. **给 dGPU 制造引用**：在 dGPU 直连的接口上接一台外接显示器再冷启。Linux 社区的经验说法是"接在 NVIDIA 一侧的显示器会挡住 D3cold"（轶事）；若丢锁随之消失，就支持"无人引用 → 被同步成关闭"这条假说。**Windows 侧程序级引用已实证（[D#229](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/229)，2026-11-11）**：常驻持有 CUDA context + 每 5 s 真 kernel 提交（计划任务 SYSTEM 开机自启）即可阻止 RTD3 park——`nvidia-smi` 仍 P8/1.5 W 不抬功耗、混合拓扑零改动不接显示器，同引导 6/6 采样近 12 min 全 `HELD`（对照无保活 ~2 min 空闲即被抹）；边界如实：未做停保活因果对照、Modern Standby/合盖未测、"交棒→驱动接管"空窗用户态无解。Linux 侧等价物=关 RTD3（[一键脚本](#linux)）。
 
@@ -439,7 +443,7 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 
 **取证方法（eGPU 报告者可直接照抄）**：chain 到 Linux live USB，`modprobe.blacklist=nouveau,thunderbolt`，用 `tools/diag-unlock.py` 在无驱动环境读回；rEFInd 顶掉 ISO 自带 GRUB 可绕开机介质陷阱，Secure Boot 全程开着也能链过去，不必为此关它。完整读数与阴性对照见 `docs/evidence/issue54-tb4-4090-linux-router-reset/`。
 
-Turing 的交棒自 2026-11-08 起默认**门开**（与 Ampere/Ada 一致；TU106 bench 端到端坐实：固件 GOP 重建与 Windows 驱动 init 都不重关它，系统内 PLM 仍 `0xffffffff`、金丝雀完好，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`；此前版本默认交棒前重锁，`\tx-relock.txt` 可恢复）。门开的附带收益是系统内写入面开放：`ssdiag --reapply` 的 Turing 只读限制具备解除条件（工具侧待跟进），SS0 各 4 位速率字段的编码语义也可在系统内实验。**marker 臂的回锁值本身不是失败**：`\tx-relock.txt` 在位时实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差——`1e04` 22G 改装卡（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)）实测过 `fully closed 0xffffff8f` 且 SS 仍持解锁值，`8f` 本身不作失败判读，看同一行的 `ss0/ss1`。`HANDOFF-OUT` 里 `tu10x: plm=0xffffffff`（默认）或 `tu10x: plm=0xffffffef`（marker 臂）配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 都是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)；#54/#74/#102 均已关闭 completed）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
+Turing 的交棒自 2026-11-08 起默认**门开**（与 Ampere/Ada 一致；TU106 bench 端到端坐实：固件 GOP 重建与 Windows 驱动 init 都不重关它，系统内 PLM 仍 `0xffffffff`、金丝雀完好，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`；v2.1.11 及更早默认交棒前重锁，`\tx-relock.txt` 可恢复；旧重锁在部分驱动上会诱发 init 期 PF FLR 并清零 SS，[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B 定谳）。门开的附带收益是系统内写入面开放：`ssdiag --reapply` 的 Turing 只读限制具备解除条件（工具侧待跟进），SS0 各 4 位速率字段的编码语义也可在系统内实验。**marker 臂的回锁值本身不是失败**：`\tx-relock.txt` 在位时实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差——`1e04` 22G 改装卡（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)）实测过 `fully closed 0xffffff8f` 且 SS 仍持解锁值，`8f` 本身不作失败判读，看同一行的 `ss0/ss1`。`HANDOFF-OUT` 里 `tu10x: plm=0xffffffff`（默认）或 `tu10x: plm=0xffffffef`（marker 臂）配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 都是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)；#54/#74/#102 均已关闭 completed）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
 
 <a id="secureboot"></a>
 
@@ -688,6 +692,7 @@ ssdiag --reapply
 | Ampere/Ada 门开、SS 值不符 | 可修复选择器，修复后再次读回 |
 | Turing 门开（`0xffffffff`）、SS 值正确 | 默认交棒形态（2026-11-08 起，与 Ampere/Ada 一致）；系统内写入面随之开放 |
 | Turing 门重锁（`0xffffffef`/`0xffffff8f`）、SS 值正确 | `\tx-relock.txt` 在位的正常形态（回锁值随板方差，bits 5:6 置位 ≠ 冷态默认 `0xffffff8f`），或平台/驱动重锁事件——用金丝雀区分，见 [冷态对照](cold-values.md) |
+| Turing 交棒门重锁、系统内 SS 被清零 | 旧载具（≤v2.1.11）的默认重锁诱发了驱动 init 的 PF FLR（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)）；换 v2.1.12-rc3+ 重放，别再在旧版上复测 |
 | 门关闭且 SS 无效，或卡已失电 | 修复工具不能重新开门；按恢复流程重放 |
 
 将系统侧结果与 `loader.log` 的 `HANDOFF-OUT` 对照。若驱动初始化异常，同时检查设备管理器、nvlddmkm/Xid 与电源状态；不要只用 EFI 的成功状态替代系统内验证。

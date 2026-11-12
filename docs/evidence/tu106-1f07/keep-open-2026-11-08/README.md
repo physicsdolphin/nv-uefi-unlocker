@@ -27,6 +27,10 @@ Turing 交棒前的 `FEAT PLM 0x409650 ← 0xffffff8f` 重锁写是否必要。�
 - 直接后果（同日落主线）：三代统一**默认门开交棒**（Turing 加入 GA10x/Ada 本来的开门形态）；`\tx-relock.txt` marker 恢复旧重锁（Turing 臂=原位重锁；Ampere/Ada 臂=FLR 判定后重锁，两臂中后者从未上过 bench）。
 - 门开的附带收益：系统内写入面开放——`ssdiag --reapply` 的 Turing 只读限制具备解除条件（工具侧待跟进），SS0 各 4 位速率字段的编码语义可在系统内自由实验。
 
+## 后续（2026-11-12）
+
+第一个由**丢失现场**翻绿的独立证据已入档：另一台 `1f07`（X99，630.20 / GSP 630.03，OS 26340）在 v2.1.8 上被清零，换 v2.1.12-rc2（本提交的默认门开）后 `UNLOCKED`、金丝雀 intact、双端 D0、0 条 `nvlddmkm` 事件，FP16 同频归一 1.71–1.77×。见 `docs/evidence/issue99-1f07-x99-gate-open/`。该轮同时证明旧重锁会诱发驱动 init 的 PF FLR。
+
 ## 记录局限
 
 - 系统内 ssdiag 输出仅存摘录（`ssdiag-in-os-excerpt.txt`），完整输出与驱动版本号未归档。

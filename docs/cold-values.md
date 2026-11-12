@@ -254,4 +254,6 @@ pre-bind 冷采样；GB202 的熔丝镜像为 boot-static，故应等于 pre-bin
 
 采样影响：PLM 翻转验证与"重锁读回"对照点应把 0xffffffef 列为 TU102 合法回锁态；GA102/Ada 侧是否同样板卡相关待采（开放问题 #12）。
 
-2026-11-08 起口径更新：三代交棒默认**门开**（`0xffffffff`；TU106 keep-open bench 见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`），上表 0xffffffef/0xffffff8f 回锁读数此后只在 `\tx-relock.txt` marker 臂或平台/驱动重锁事件中出现——用金丝雀与 SS 对区分（FAQ 回锁章）。
+2026-11-08 起口径更新：三代交棒默认**门开**（`0xffffffff`；TU106 keep-open bench 见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`），上表 0xffffffef/0xffffff8f 回锁读数此后只在 `\tx-relock.txt` marker 臂或平台/驱动重锁事件中出现——用金丝雀与 SS 对区分（FAQ 回锁章）。重锁写本身也会被驱动咬：部分驱动对重锁态发起 init 期 PF FLR 并清零 SS（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B，`061aef8` 移除默认重锁后消失）。
+
+2026-11-12 补：**TU106 stock 的 `SS0/SS1` 基线跨 boot 不一致**（同一 `1f07`、同一驱动与 OS，两次非解锁 boot 分别为 `0x00040000`/`0x6` 与 `0x0`/`0x0`，READOUT 两次皆 `0x00400080`）。冷态表只列寄存器值时不构成"清零"证明；采样必须带同一 boot 的锁态基线（诊断协议 §4、`docs/evidence/issue99-1f07-x99-gate-open/`）。
