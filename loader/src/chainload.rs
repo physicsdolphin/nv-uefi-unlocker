@@ -152,6 +152,19 @@ fn log_handoff_memmap() {
     info!(
         "CHAIN-MEMMAP: {conv_below4g_mib} MiB conventional / {resident_below4g_mib} MiB resident (LOADER+BS) below 4GiB, largest block {largest_below4g_mib} MiB ({total} descriptors, {lines} shown)"
     );
+    // winload ingests every descriptor of the handoff map into a static pool of
+    // exactly 1024 entries (winload.efi!BlpMmInitialize:
+    // MmGlobalMemoryDescriptorCount = 1024, stride 48 B, no dynamic overflow)
+    // and dies with 0xc000009a when that pool runs out - per-entry
+    // MmMdInitDescriptor in MmFwGetMemoryMap returns NULL. Field ceiling on
+    // issue #146: 998 descriptors booted, 1005 did not. The threshold below is
+    // advisory (the boot may still survive at 998); it exists so the log
+    // explains a future failure instead of the boot dying without a word.
+    if total > 950 {
+        info!(
+            "CHAIN-MEMMAP: WARNING: {total} descriptors in the handoff map - winload's static descriptor pool is 1024 and boots fail with 0xc000009a (STATUS_INSUFFICIENT_RESOURCES) above ~1000 (issue #146); the count varies boot-to-boot on affected firmware, so a retried power-off boot can pass"
+        );
+    }
 }
 
 /// Recursively `ConnectController` every PciIo handle so block devices carry
