@@ -1,5 +1,7 @@
 # nv-uefi-unlocker 之 老黄刀法回退器   · [常见问题 FAQ](docs/faq.md)
 
+# 不是哥们，怎么给老黄职位也回退了？？！！
+
 [中文](README.md) | [English](README.en.md)
 
 **你的 GeForce 正以半速跑 AI——这个工具在驱动加载前把它修复。**
