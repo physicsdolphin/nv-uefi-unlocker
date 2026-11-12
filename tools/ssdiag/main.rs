@@ -1,4 +1,8 @@
-//! ssdiag v0.7.6 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.7 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.7 adds the GB206 TPC CTRL row (0x820838+4g, 12 GPCs, read-only) to
+//! the blackwell branch - the writable-override sibling of the 0x820c38
+//! STATUS pair already captured as GA100_SM_STAT; requested on discussion
+//! #216 (desktop 5060 Ti vs 460 laptop floorsweep comparison).
 //! v0.7.6 fixes two inventory bugs field-caught on a Huananzhi X99-F8D dual
 //! E5-2699v3: the CPU line counted only the calling thread's processor group
 //! (GetNativeSystemInfo is group-scoped - 8 threads shown on a 72-thread
@@ -3822,6 +3826,16 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     }
     if blackwell {
         println!("--- blackwell fuse/aux block (read-only; selectors are fuse mirrors) ---");
+        // GB206 TPC CTRL overrides (0x820838+4g, the writable pair sibling of
+        // the 0x820c38 STATUS row below = GA100_SM_STAT; discussion #216
+        // asks for exactly these three from a desktop 5060 Ti - read-only).
+        print!("  TPC_CTRL (0x820838+4g, 12 GPCs):");
+        for gpc in 0..12u32 {
+            let v = rd(TPC_CTRL_BASE + gpc * 4);
+            let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
+            print!(" {}{}", hx32(v), b);
+        }
+        println!();
         for (name, off) in BLACKWELL_ROWS {
             let v = rd(off);
             let note = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
