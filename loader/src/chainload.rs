@@ -152,6 +152,39 @@ fn log_handoff_memmap() {
     info!(
         "CHAIN-MEMMAP: {conv_below4g_mib} MiB conventional / {resident_below4g_mib} MiB resident (LOADER+BS) below 4GiB, largest block {largest_below4g_mib} MiB ({total} descriptors, {lines} shown)"
     );
+    // issue #146 follow-up: per-type descriptor histogram over the whole map
+    // (all address ranges). The count ceiling is what kills the boot (see the
+    // WARNING below), and the histogram tells a debugged machine WHAT to do
+    // about it: many tiny CONVENTIONAL fragments = reclaimable fragmentation
+    // (disconnect candidates), MMIO/RESERVED-heavy = firmware layout (only a
+    // BIOS fix helps), LOADER/BSD-heavy = someone's runtime residency (ours
+    // to drive down). Small-block count = conventional fragments <= 64 KiB -
+    // the EDK2 merge-on-free cannot stitch these if a foreign type sits
+    // next door, so they are the "unfixable from an app" fraction.
+    let mut by_type = [0u32; 15];
+    let mut oem_types = 0u32;
+    let mut hist_total = 0u32;
+    let mut conv_small = 0u32; // conventional fragments <= 64 KiB (16 pages)
+    let mut conv_frag_mib = 0u64; // total MiB sitting in those fragments
+    for d in mmap.entries() {
+        let t: u32 = d.ty.0; // newtype_enum: `pub struct MemoryType(pub u32)`
+        hist_total += 1;
+        match t {
+            0..=14 => by_type[t as usize] += 1,
+            _ => oem_types += 1, // 0x70000000+ OEM/vendor region
+        }
+        if t == 7 && d.page_count <= 16 {
+            conv_small += 1;
+            conv_frag_mib += (d.page_count as u64) >> 4;
+        }
+    }
+    debug_assert_eq!(hist_total, total, "both loops walk the same snapshot");
+    info!(
+        "CHAIN-MEMMAP-TYPES: counted={hist_total}/{total} reserved={} loader_code={} loader_data={} bs_code={} bs_data={} rt_code={} rt_data={} conv={} unusable={} acpi_reclaim={} acpi_nv={} mmio={} mmio_port={} pal={} pmem={} oem={} | tiny_conv(<=64KiB): {} blocks, {conv_frag_mib} MiB",
+        by_type[0], by_type[1], by_type[2], by_type[3], by_type[4], by_type[5],
+        by_type[6], by_type[7], by_type[8], by_type[9], by_type[10], by_type[11],
+        by_type[12], by_type[13], by_type[14], oem_types, conv_small
+    );
     // winload ingests every descriptor of the handoff map into a static pool of
     // exactly 1024 entries (winload.efi!BlpMmInitialize:
     // MmGlobalMemoryDescriptorCount = 1024, stride 48 B, no dynamic overflow)
