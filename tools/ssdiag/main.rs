@@ -919,9 +919,19 @@ fn cpu_topology() -> Option<String> {
     // single-threaded, so 20 threads / tpc=2 printed "10 cores" on a 14-core
     // i7-13650HX (6P+8E, field-caught 2026-11-12). Count physical cores
     // directly from the OS instead - RelationProcessorCore entries cover P
-    // and E alike, across all groups. The walk is self-validating (it must
-    // land exactly on the buffer end, else we fall back to the division).
-    let cores = count_cores_slpiex().unwrap_or(logical / tpc);
+    // and E alike, across all groups. Self-validating walk; the division
+    // stays as the fallback and SSDIAG_WALK_DEBUG exposes which path ran.
+    let cores = match count_cores_slpiex() {
+        Some(n) => {
+            debug_walk(&format!("slpiex walk cores={n}"));
+            n
+        }
+        None => {
+            let c = logical / tpc;
+            debug_walk(&format!("walk failed, division fallback cores={c}"));
+            c
+        }
+    };
     let leaf1 = __cpuid_count(1, 0);
     let family = (leaf1.eax >> 8) & 0xF;
     let ext_family = (leaf1.eax >> 20) & 0xFF;
@@ -944,12 +954,17 @@ fn cpu_topology() -> Option<String> {
 }
 
 /// Physical-core count from GetLogicalProcessorInformationEx (Relation-
-/// ProcessorCore=0 entries, all groups, hybrid-aware). Entry sizes per
-/// winnt.h on x64: every EX record is {Relationship u32} + a union whose
-/// fixed part ends in a GroupCount u16 followed by GroupAffinity[16] items.
-/// The walk is self-validating: it must consume exactly `len` bytes and
-/// count at least one core, otherwise the caller falls back to the
-/// logical/tpc division.
+/// ProcessorCore=0). Layout settled EMPIRICALLY (ctypes dump on Win11
+/// 26200, 2026-11-13): every EX record carries its own byte length at
+/// offset +4 - core records are 48 bytes and 8 of them tile the 384-byte
+/// buffer of the 8C/16T bench exactly (Numa/Package=48, Cache=56, Group=80,
+/// all self-consistent). Walk by that field; no struct guessing. A guessed
+/// GroupCount-based walk (v0.7.8 first cut) overran on every machine and
+/// silently fell back to the division - which is indistinguishable from
+/// success on uniform-SMT boxes and wrong only on hybrid, i.e. the worst
+/// possible failure mode; the SSDIAG_WALK_DEBUG env hook exists so the
+/// taken path is always observable. Builds whose records lack the size
+/// field fail the walk and fall back to the logical/tpc division.
 #[cfg(target_arch = "x86_64")]
 fn count_cores_slpiex() -> Option<u32> {
     unsafe {
@@ -966,25 +981,12 @@ fn count_cores_slpiex() -> Option<u32> {
             return None;
         }
         let len = len as usize;
-        let rd16 = |o: usize| u16::from_le_bytes(buf[o..o + 2].try_into().unwrap());
         let mut off = 0usize;
         let mut cores = 0u32;
-        while off + 16 <= len {
+        while off + 8 <= len {
             let rel = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
-            // fixed-part end (union start @4) and mask-array start, per record type
-            let (cnt_at, masks_at): (usize, usize) = match rel {
-                0 | 3 | 5 | 7 => (12, 16), // ProcessorCore/Package/Die/Module
-                1 | 6 => (16, 24),         // NumaNode / NumaNodeEx
-                2 => (28, 32),             // Cache
-                4 => (6, 16),              // Group (ActiveGroupCount)
-                _ => return None,          // unknown record type -> bail
-            };
-            if off + masks_at > len {
-                return None;
-            }
-            let gc = rd16(off + cnt_at) as usize;
-            let size = masks_at + gc * 16;
-            if size == 0 || off + size > len {
+            let size = u32::from_le_bytes(buf[off + 4..off + 8].try_into().unwrap()) as usize;
+            if size < 8 || off + size > len {
                 return None;
             }
             if rel == 0 {
@@ -997,6 +999,17 @@ fn count_cores_slpiex() -> Option<u32> {
         } else {
             None
         }
+    }
+}
+
+/// Opt-in observability for the core-count path (SSDIAG_WALK_DEBUG=1):
+/// without it a walk failure is invisible whenever the division fallback
+/// agrees on uniform-SMT machines - the exact trap the first 0.7.8 cut
+/// fell into.
+#[cfg(target_arch = "x86_64")]
+fn debug_walk(msg: &str) {
+    if std::env::var_os("SSDIAG_WALK_DEBUG").is_some() {
+        eprintln!("WALK: {msg}");
     }
 }
 
@@ -1545,6 +1558,23 @@ fn inventory_header(gpus: &[Gpu]) -> InventorySummary {
     }
     if slot_lines.is_empty() {
         println!("RAM SLOT: none decoded (SMBIOS Type 17 absent or unreadable)");
+    }
+    // Under-report honesty note (DDR5 gap): when every populated slot's
+    // decoded capacity totals far below the OS-visible physical total, the
+    // firmware's Type 17 numbers cannot be trusted for capacity (field case:
+    // 2x32G DDR5 SODIMMs reported as "128 MiB" each, G614JV 2026-11-12).
+    // Say so instead of letting the bad numbers stand unmarked.
+    if let Some(mib) = total {
+        let slot_total: u32 = slot_lines
+            .iter()
+            .filter_map(|l| l.split_whitespace().nth(3).and_then(|w| w.parse::<u32>().ok()))
+            .sum();
+        if slot_total > 0 && slot_total as u64 * 4 < mib as u64 {
+            println!(
+                "RAM NOTE: SMBIOS slots total {slot_total} MiB but OS reports {mib} MiB - \
+                 firmware under-reports slot capacity; trust the OS total"
+            );
+        }
     }
     for l in disk_report() {
         println!("{l}");
