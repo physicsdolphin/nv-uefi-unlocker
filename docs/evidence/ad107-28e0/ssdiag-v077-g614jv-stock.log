@@ -1,11 +1,3 @@
-[AD107 28e0 (RTX 4060 Laptop, ROG Strix G614JV, BIOS 333), Windows ssdiag 0.7.7, 2026-11-12]
-[STOCK/NOT_UNLOCKED: FEAT PLM=0xffffff8f closed, SS0=0x05100071 factory rates, canary cleared (never through the chain), LEGACY driver mode 610.74]
-[FIRST Ada-family full-dictionary sample; three task-book baseline values re-verified un-drifted:
-  FEAT_READOUT_1=0x00410080, FBPA_PLM=0xffffff0f, WPR/WPR_CFG_PLM=0x0004cb8f]
-[Also field-caught: hybrid-CPU core count bug (13650HX=6P+8E=14C/20T printed as 10C/20T) and
- DDR5 SODIMM capacity quirk (2x32G SODIMM DDR5 shown as 128 MiB slots - the
- 32GiB DIMM size overflows the 15-bit MiB form of Type 17 size @0x0C, and the
- extended size @0x1D was not consulted) - 0.7.8 candidates]
 ===== ssdiag inventory v0.7.7 (read-only; no admin, no driver) =====
 OS:      Windows 11 25H2 build 26200.9974
 CPU:     13th Gen Intel(R) Core(TM) i7-13650HX (family 6 model 0xb7 stepping 1, 10 cores / 20 threads)

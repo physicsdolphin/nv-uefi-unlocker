@@ -1013,6 +1013,54 @@ fn debug_walk(msg: &str) {
     }
 }
 
+/// Decode the SMBIOS Type 17 Extended Size dword into MiB, three forms:
+/// spec MiB (bit30 set), spec KiB (else, /1024), and the bare-MiB
+/// convention the G614JV firmware uses (0x00008000 = 32GiB written as plain
+/// 32768, no flag). Plausibility: real DIMMs are >=512 MiB, so junk like
+/// the Z170 table's extended word of 1 decodes to None and callers keep
+/// their legacy value.
+fn ext_size_mib(ext: u32) -> Option<u32> {
+    let v = ext & 0x3FFF_FFFF;
+    if v == 0 {
+        return None;
+    }
+    if ext & 0x4000_0000 != 0 {
+        Some(v) // spec MiB form
+    } else if v >= 512 {
+        Some(v) // bare-MiB convention (ASUS DDR5 firmware)
+    } else if v / 1024 >= 512 {
+        Some(v / 1024) // spec KiB form
+    } else {
+        None // junk
+    }
+}
+
+/// Slot capacity from the raw Size field (+ optional Extended Size), MiB.
+/// The pure part of ram_summary's decode, kept standalone so the real
+/// field bytes are unit-testable.
+fn slot_size_mib(raw: u16, ext: Option<u32>) -> Option<u32> {
+    match raw {
+        0 => None, // slot empty
+        0x7FFF => ext.and_then(ext_size_mib), // sentinel: value in the extended field
+        0x8000..=0xFFFF => Some((raw & 0x7FFF) as u32), // already MiB
+        _ => {
+            // Field-observed AMI quirk (ASUS Z170, SMBIOS 3.0): 16 GiB DIMMs
+            // written as 0x4000 - plain MiB WITHOUT the bit15 flag - so a
+            // spec-literal KiB read yields "16 MiB". No module sold this
+            // millennium is smaller than 128 MiB, so a KiB reading that
+            // small is really MiB. When the extended slot decodes bigger,
+            // the firmware under-reported the legacy field (a DDR5 gap
+            // form) - take it.
+            let kib = raw as u32;
+            let legacy = if kib < 131_072 { kib } else { kib / 1024 };
+            match ext.and_then(ext_size_mib) {
+                Some(v) if v > legacy => Some(v),
+                _ => Some(legacy),
+            }
+        }
+    }
+}
+
 /// Populated SMBIOS Type 17 modules: slot locator, capacity, speed (the
 /// configured speed when the firmware records one), manufacturer + part
 /// number. Serials are deliberately NOT read. Offsets are the spec's
@@ -1049,73 +1097,34 @@ fn ram_summary() -> (Option<u32>, Vec<String>) {
             slots = Some(u16::from_le_bytes(data[off + 0x0D..off + 0x0F].try_into().unwrap()) as u32);
         }
         if typ == 17 && len >= 0x17 {
-            let raw = u16::from_le_bytes(data[off + 0x0C..off + 0x0E].try_into().unwrap());
-            let mib: Option<u32> = if raw == 0 {
-                None // slot empty
-            } else if raw == 0x7FFF {
-                // extended size @0x1D; bit30 = value in MiB
-                if len >= 0x21 {
-                    let ext = u32::from_le_bytes(data[off + 0x1D..off + 0x21].try_into().unwrap());
-                    let v = ext & 0x3FFF_FFFF;
-                    Some(if ext & 0x4000_0000 != 0 { v } else { v / 1024 })
-                } else {
-                    None
-                }
-            } else if raw & 0x8000 != 0 {
-                Some((raw & 0x7FFF) as u32) // already MiB
+            // AMI-shifted Type 17 layout, settled by raw byte dumps (Z170
+            // 2026-11-12, G614JV 2026-11-13): spec puts Device Locator @0x0F
+            // right after Form Factor @0x0E; this board family (ASUS Z170
+            // AMI, Huananzhi X99, ASUS laptops - every table we have sampled)
+            // pads 0x00 at 0x0F and shifts everything from the locator onward
+            // by +1: Speed @0x15, Manufacturer @0x17, Part @0x1A, Extended
+            // Size @0x1C, Configured Speed @0x20. Detect via the pad byte and
+            // address both layouts - the shift applies to the extended-size
+            // read too, which is what the G614JV "128 MiB" (2x32G DDR5)
+            // tracing finally hinged on: its Size field is the 0x7FFF
+            // sentinel, the real value sits in the shifted extended slot as
+            // bare 0x8000 = 32768 MiB (32GiB, no bit30 flag), and the old
+            // unshifted sentinel read at 0x1D stitched 0xC0000080 out of it
+            // - whose bit30 happens to decode as the MiB form of exactly 128.
+            let shift: usize = (data[off + 0x0F] == 0) as usize;
+            let ext_at = 0x1B + shift;
+            let ext_raw = if len >= ext_at + 4 {
+                Some(u32::from_le_bytes(
+                    data[off + ext_at..off + ext_at + 4].try_into().unwrap(),
+                ))
             } else {
-                // Field-observed AMI quirk (ASUS Z170, SMBIOS 3.0): 16 GiB DIMMs
-                // written as 0x4000 - plain MiB WITHOUT the bit15 flag - so a
-                // spec-literal KiB read yields "16 MiB". No module sold this
-                // millennium is smaller than 128 MiB, so a KiB reading that
-                // small is really MiB.
-                let kib = raw as u32;
-                Some(if kib < 131_072 {
-                    kib
-                } else {
-                    kib / 1024
-                })
+                None
             };
+            let raw = u16::from_le_bytes(data[off + 0x0C..off + 0x0E].try_into().unwrap());
+            let mib: Option<u32> = slot_size_mib(raw, ext_raw);
             if let Some(mib) = mib {
-                // AMI-shifted Type 17 layout, settled by a raw byte dump on
-                // the Z170 (2026-11-12): spec puts Device Locator @0x0F right
-                // after Form Factor @0x0E; this board family (ASUS Z170 AMI,
-                // Huananzhi X99, ASUS laptops - every table we have sampled)
-                // pads 0x00 at 0x0F and shifts everything from the locator
-                // onward by +1: Speed @0x15, Manufacturer @0x17, Part @0x1A,
-                // Extended Size @0x1C, Configured Speed @0x20. Detect via the
-                // pad byte and address both layouts. (This also explains the
-                // old "junk ConfiguredMemorySpeed = 10": the pre-0.7.6 read
-                // at the shifted table's 0x21 was {cfg-speed hi-byte, 0} =
-                // {0x0A, 0x00} = 10 - and the X99 "29704 MT/s" was that same
-                // shift feeding a fixed non-shifted offset.)
-                let shift: usize = (data[off + 0x0F] == 0) as usize;
                 let sp =
                     u16::from_le_bytes(data[off + 0x14 + shift..off + 0x16 + shift].try_into().unwrap());
-                // DDR5 >=32GiB SODIMMs overflow the 15-bit MiB form of the
-                // size field (max 32767), so spec firmware moves the value to
-                // the extended size and leaves junk/tiny in @0x0C - a 2x32G
-                // DDR5 laptop printed "128 MiB" slots (field-caught
-                // 2026-11-12, G614JV). Prefer the extended value when it
-                // carries a real number (bit30 = MiB form, else KiB);
-                // plausibility >=512 MiB rejects junk (the ASUS table's
-                // extended word is a meaningless 1).
-                let mut mib = mib;
-                let ext_at = 0x1B + shift;
-                if len >= ext_at + 4 {
-                    let ext =
-                        u32::from_le_bytes(data[off + ext_at..off + ext_at + 4].try_into().unwrap());
-                    let mib_ext = if ext & 0x4000_0000 != 0 {
-                        Some(ext & 0x3FFF_FFFF)
-                    } else if ext != 0 {
-                        Some((ext & 0x3FFF_FFFF) / 1024)
-                    } else {
-                        None
-                    };
-                    if let Some(v) = mib_ext.filter(|v| *v >= 512) {
-                        mib = v;
-                    }
-                }
                 // Trust the configured value only when it is physically
                 // plausible; everything real is >= 200 MT/s.
                 let cs = if len >= 0x21 + shift {
@@ -4789,6 +4798,26 @@ mod tests {
             _ => 0,
         };
         dump_debug(&rd, "turing");
+    }
+
+    #[test]
+    fn slot_sizes_decode_from_real_field_bytes() {
+        // Z170 (raw dump 2026-11-12): raw MiB form, extended word is junk 1.
+        assert_eq!(slot_size_mib(0x4000, Some(1)), Some(16384));
+        // G614JV (raw dump 2026-11-13): Size is the 0x7FFF sentinel, the
+        // shifted extended slot carries bare 0x00008000 = 32768 MiB (32GiB,
+        // no bit30 flag). The pre-0.7.8 unshifted sentinel read at 0x1D
+        // stitched 0xC0000080 out of these bytes - bit30 set - and printed
+        // exactly "128 MiB". 14C/20T hybrid CPU line and this one come from
+        // the same machine.
+        assert_eq!(slot_size_mib(0x7FFF, Some(0x0000_8000)), Some(32768));
+        assert_eq!(slot_size_mib(0x7FFF, None), None);
+        // Legacy small-KiB quirk (spec KiB form reads absurdly small -> MiB).
+        assert_eq!(slot_size_mib(0x0080, None), Some(128));
+        // Spec MiB form in the extended slot overrides only when bigger.
+        assert_eq!(slot_size_mib(0x4000, Some(0x4000_0000 | 32768)), Some(32768));
+        // Slot empty.
+        assert_eq!(slot_size_mib(0, Some(0x4000_0000 | 16384)), None);
     }
 
     #[test]
