@@ -153,6 +153,8 @@
 
 **`2206` 首个 Linux 报告（[#230](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/230)，2026-11-11）**：Kubuntu 26.04（kernel 7.0.0-43）+ 驱动 595.99.02，MSI PRO B760-P / 12700KF，SB off、板开 CSM 但经 UEFI 入口引导（条目含"CSM/UEFI"双显），单卡带显示（1920x1080 GOP）；v2.1.10 免 maker 直接用下载包 usbroot/（GA102+GA10x+AD10x+TU10x 资产全在）；**Linux-only 交棒形态=链回 `\EFI\ubuntu\shimx64.efi`**（无 Windows Boot Manager 可链）。全链绿（scrub 超时容忍同 #29、booter PLM 翻转 ~151 ms、SS0 `0x56635171`→`0x88888888`/SS1 `0x7`→`0x8`、POST-FLR 存活 D0、native GOP 自 shadow ROM 重建 `display path verified`）；**同会话零写负控**（Boot A 30 s 超时，吞吐与锁定无差 54.95/62.05/62.69）。系统内证据=**同引导 bench**（无 ssdiag，如实）：sustained 60.42→106.89 TFLOPS（**1.77×**@340 W）、per-SM-clock **2.05×**（0.0326→0.0667 TFLOPS/MHz），280 W 档 99.67（遗留开机电源服务所致、非工具行为），SW power cap 100% 采样；解锁保持 ≥1.5 h 桌面使用（双 sustained 跑，同引导无重启）。限制：无 OS 侧读回、跨引导持久性/睡眠/RTD3 未测（Linux 桌面卡默认无激进 RTD3；现有一键体检 `tools/disable-rtd3.sh --check`）、纯合成 FP16 GEMM。
 
+**`2206` winload 描述符条数顶板——首个 resolution 数据点（[#146](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146)，2026-11-12）**：Gigabyte B550 AORUS MASTER（BIOS F18i）+ 5900X + 64 GB，Win11 25H2，驱动 610.47，**Secure Boot 常开**走 shim 15.8 + 自签 MOK（补 `.sbat` 节，PK/KEK/db 未动）。v2.1.11 事务全绿但交棒死在 winload `0xc000009a`，交棒图 **1047 条**——超 winload 静态 1024 条池（见[交棒低位内存](handoff-lowmem.md)）；资产释放已生效（`cleared 10 entries, 84388324 bytes`）、最大块 2567 MiB 从来不是约束。换 **v2.1.12-rc3**（预载 opt-in 默认关）同链 **668 条**带解锁启动 Windows，直方图桶和精确自洽（`bs_data=318 bs_code=140 conv=160` 其中 139 个 ≤64 KiB 小块——固件自身 4 KiB 碎屑签名）。线程第 11/12 号数据点；十二轮、四块 B550、零例外。379 条差不可单变量归给预载翻转（跨构建跨 boot；otacoo 板 boot-to-boot 摇摆 448↔1005、其预载 A/B 只动 ~1 条）——已邀请同构建 `\tx-preload.txt` A/B 定量。
+
 <a id="device-10"></a>
 
 ### GA103M · 3080 Ti Laptop 2420

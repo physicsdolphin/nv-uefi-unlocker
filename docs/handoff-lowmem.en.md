@@ -21,8 +21,10 @@ Field data — every `CHAIN-MEMMAP` whole-map descriptor total in the reopened t
 | 448 / 998 | ESC abort (zero GPU writes) | **boots** |
 | 1005 | ESC abort (zero GPU writes) | fail, no Recovery screen (the `0xC0000023` shape) |
 | 1007 / 1012 / 1013 / 1014 / 1021 / 1022 | dry-run and transaction paths alike | `0xc000009a` |
+| **1047** (v2.1.11, preload on) | tx, asset free active | `0xc000009a` |
+| **668** (rc3, preload off) | tx | **boots, unlock intact** |
 
-Threshold ∈ **(998, 1005]** ≈ 1024 minus ~20–25 descriptors of winload's own concurrent working set. Zero exceptions in ten data points. Consequences:
+Threshold ∈ **(998, 1005]** ≈ 1024 minus ~20–25 descriptors of winload's own concurrent working set. Zero exceptions in twelve data points on four Gigabyte B550 boards. The last two rows are the first **resolution** datapoint ([#146 comment](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146#issuecomment-6824222242), B550 AORUS MASTER F18i, GA102 2206, 64 GiB, SB ON via shim/MOK): both runs straddle the line exactly as predicted. Caveat: the 379-descriptor delta crosses two builds and two boots — with otacoo's board showing boot-to-boot swing (448↔1005) and only ~1 descriptor of preload sensitivity, the delta is firmware swing + preload + SB-shim path mixed; a same-build `\tx-preload.txt` A/B was offered to pin it down. The 668-run histogram (bs_data=318, bs_code=140, conv=160 with 139 tiny ≤64 KiB blocks, 0 MiB) is internally consistent — the reader-checkable buckets+oem==counted invariant held on first field contact. Consequences:
 
 - **Fragments cost 1:1 regardless of size** — a 4 KiB hole spends the same slot as an 80 MiB one. The v2.1.11 asset free stays correct (it removes a size split *and* ~2 slots) but cannot save firmware whose own map already sits at ~998–1005 entries.
 - **GPU state is exonerated for this error class**: failing abort (1005) vs passing abort (448) differ only in the map; PLM/FLR/WPR2/GOP state cannot participate in a failure produced before any GPU driver exists.
