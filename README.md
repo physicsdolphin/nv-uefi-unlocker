@@ -1,6 +1,6 @@
 # nv-uefi-unlocker 之 老黄刀法回退器   · [常见问题 FAQ](docs/faq.md)
 
-## 不是哥们，怎么给老黄职位也回退了？？！！
+## UPDATE:2026/11/12 UTC+8 不是哥们，怎么给老黄职位也回退了？？！！
 
 [中文](README.md) | [English](README.en.md)
 
