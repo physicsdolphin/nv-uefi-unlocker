@@ -23,8 +23,12 @@
 | 1007 / 1012 / 1013 / 1014 / 1021 / 1022 | dry-run 与事务路径 | `0xc000009a` |
 | **1047**（v2.1.11，预载开） | 事务，资产释放已生效 | `0xc000009a` |
 | **668**（rc3，预载关） | 事务 | **启动，解锁保持** |
+| 1010（rc3，BIOS FFc） | 事务 | `0xc000009a` |
+| **1004**（rc3，**BIOS FHc**） | 事务 | **启动，ssdiag `UNLOCKED`**——BIOS 轮首个修复案例 |
 
-阈值 ∈ **(998, 1005]** ≈ 1024 减去 winload 自身 ~20–25 条并发工作集。**四个数据点零例外——十二个数据点、四块 Gigabyte B550**。末两行是首个** resolution** 数据点（[#146 评论](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146#issuecomment-6824222242)，B550 AORUS MASTER F18i，GA102 2206，64 GB，SB ON shim/MOK）：两次 run 恰好骑在判据两侧。归因注意：379 条差跨了两个构建和两次 boot——otacoo 板已证 boot-to-boot 摇摆（448↔1005）且同款预载 A/B 只差 ~1 条，这 379 = 固件摇摆 + 预载 + SB shim 路径的混合，已邀请报告者做同构建 `\tx-preload.txt` A/B 定量。668 run 的直方图（bs_data=318、bs_code=140、conv=160 其中 139 个 ≤64 KiB 小块、0 MiB）桶和自洽——buckets+oem==counted 不变量首次现场验证通过。推论：
+阈值 ∈ **(998, 1005]** ≈ 1024 减去 winload 自身 ~20–25 条并发工作集。**四个数据点零例外——十二个数据点、四块 Gigabyte B550**。末两行是首个** resolution** 数据点（[#146 评论](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146#issuecomment-6824222242)，B550 AORUS MASTER F18i，GA102 2206，64 GB，SB ON shim/MOK）：两次 run 恰好骑在判据两侧。归因注意：379 条差跨了两个构建和两次 boot——otacoo 板已证 boot-to-boot 摇摆（448↔1005）且同款预载 A/B 只差 ~1 条，这 379 = 固件摇摆 + 预载 + SB shim 路径的混合，已邀请报告者做同构建 `\tx-preload.txt` A/B 定量。668 run 的直方图（bs_data=318、bs_code=140、conv=160 其中 139 个 ≤64 KiB 小块、0 MiB）桶和自洽——buckets+oem==counted 不变量首次现场验证通过。
+
+**BIOS 轮闭环（2026-11-12 晚，同线程）**：otacoo 的 B550I AORUS PRO AX 经 Q-Flash 从 FFc（2024-09-02）升到 FHc（2026-08-18），rc3 从 1010 条死变 **1004 条启动且系统内 ssdiag `UNLOCKED`**（[评论](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/146#issuecomment-6829307694)，日志归档 `reopen-2026-11/run12-*`）。升版改变了两个独立的东西：条数 1010→1004（−6，过线；>950 WARNING 照设计触发——它标的是"进入建议带"不是"必死"）和布局，最大块 2028→2634 MiB（新固件重新整理了低位区——第二个签名，对尺寸顶板的板子才是关键）。同 BIOS 的 abort→tx 差 = **我方事务足迹在这块板实测 +17 条**，与 ivandrozdov 板的 ~+15 独立互证——这是 loader 侧合并优化必须打败的数字。保留的诚实注意：事务 boot 目前一次（升版前同板零写摇摆 448↔1005，重复性开放）；此机是 Windows 10 LTSC，winload 与被分析的 Win11 26200 镜像不同版本——1004 过 vs run4 哑失败 1005 死，两种解释都成立（那边边界略高，或 run4 死于增长余量陷阱而非池耗尽）；不跨 winload 版本拟合单条边界。启动证据方法值得推广：过的一次 `loader.log` 末写 → 内核事件 12 仅 **2.5 s**，失败轮全是 34–93 s 恢复间隔。推论：
 
 - **碎片按条计价，与大小无关**——4 KiB 的洞与 80 MiB 的洞花同一个槽。v2.1.11 的资产释放仍然正确（同时消掉尺寸劈裂与 ~2 个槽），但救不了固件自己就把 map 填到 ~998–1005 条的板子。
 - **该错误类别里 GPU 态无罪**：失败的 abort（1005）与通过的 abort（448）只差 map；PLM/FLR/WPR2/GOP 不可能参与一个在任何 GPU 驱动存在之前就产生的失败。
