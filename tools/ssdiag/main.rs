@@ -3975,8 +3975,8 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     for (name, off) in CORE_ROWS {
         let v = rd(off);
         match badf_bucket(v) {
-            Some(b) => println!("{name:<22} = {} [{}]", hx32(v), red(b)),
-            None => println!("{name:<22} = {}", hx32(v)),
+            Some(b) => println!("{name:<22} {}= {} [{}]", off_h(off), hx32(v), red(b)),
+            None => println!("{name:<22} {}= {}", off_h(off), hx32(v)),
         }
     }
     println!(
@@ -4027,7 +4027,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                 },
                 _ => String::new(),
             };
-            println!("  {label:<20} {name:<9} = {}{note}", hx32(v));
+            println!("  {label:<20} {name:<9} {}= {}{note}", off_h(*off), hx32(v));
         }
     }
     if blackwell {
