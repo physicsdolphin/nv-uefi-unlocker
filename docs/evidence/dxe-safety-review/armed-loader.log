@@ -1,0 +1,21 @@
+[    102ms] INFO : loader::logging: log file \loader.log opened on marker volume
+[    104ms] INFO : loader::logging: nv-uefi-unlocker v2.1.9 (read-only build; no GPU writes by design)
+[    105ms] INFO : loader::dxe: FORM: firmware-resident DXE driver, build id 'nv-uefi-unlocker DXE driver form 1', tx=false, notification=true
+[    119ms] INFO : loader::dxe: ARM: NVUX2 volume fafd1abe3f0000000000000001000000 + pinned manifest/control snapshot
+[    124ms] INFO : loader::dxe: FAILSAFE: attempt 1/2, retained until explicit app reauthorization; firmware return is not OS health
+[    129ms] INFO : loader::dxe: WATCHDOG: explicitly armed for 300s; retained on return, boot manager/OS owns subsequent policy
+[    178ms] INFO : loader::dxe: CONFIRM: pinned unattended policy - no keyboard window
+[    179ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[    183ms] INFO : loader::pci: ENUMERATE: 6 PciIo handles
+[    184ms] INFO : loader::pci: PCI 0000:00:00.0 8086:29c0 class 000600
+[    185ms] INFO : loader::pci: PCI 0000:00:01.0 1234:1111 class 000300
+[    185ms] INFO : loader::pci: PCI 0000:00:02.0 8086:10d3 class 000200
+[    186ms] INFO : loader::pci: PCI 0000:00:1f.0 8086:2918 class 000601
+[    186ms] INFO : loader::pci: PCI 0000:00:1f.2 8086:2922 class 000106
+[    187ms] INFO : loader::pci: PCI 0000:00:1f.3 8086:2930 class 000c05
+[    188ms] INFO : loader::gop: PHASE: GOP-PROBE (read-only)
+[    192ms] INFO : loader::gop: GOP-PROBE: 2 GOP handles
+[    192ms] INFO : loader::gop: GOP handle Handle(0x1e609598): 1280x800 Bgr
+[    193ms] INFO : loader::gop: GOP handle Handle(0x1e753998): 1280x800 Bgr
+[    194ms] INFO : loader::runner: SAMPLE: no NVIDIA GPU present, skipped (negative control path)
+[    195ms] INFO : loader::dxe: FINAL: driver phases returned; OS health unconfirmed, attempt count retained

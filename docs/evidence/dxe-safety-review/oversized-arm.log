@@ -1,0 +1,14 @@
+BdsDxe: loading Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+BdsDxe: starting Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+SMOKE mode=oversized-arm
+SMOKE process_fv=SUCCESS
+SMOKE PASS: RAM FV accepted
+SMOKE dispatch=SUCCESS
+SMOKE PASS: FFS dispatched by DxeCore
+SMOKE PASS: FV entry deferred despite BDS_ARCH presence
+SMOKE count=0
+SMOKE PASS: attempt budget persisted
+SMOKE PASS: boot latch established or invalid authority refused
+SMOKE PASS: repeated ReadyToBoot did not rerun
+SMOKE PASS: second image instance did not rerun
+SMOKE COMPLETE mode=oversized-arm

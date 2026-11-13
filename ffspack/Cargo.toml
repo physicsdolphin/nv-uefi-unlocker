@@ -1,0 +1,22 @@
+[package]
+name = "ffspack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Host-side packager for the firmware-resident DXE driver form
+# (docs/dxe-driver-ffs-feasibility.md): patches the cargo-built
+# nvunlock-dxe.efi PE subsystem to EFI_BOOT_SERVICE_DRIVER (0x0B) and wraps
+# it as an EFI_FV_FILETYPE_DRIVER FFS file for manual insertion via
+# UEFITool NE. Contains no NVIDIA assets and never will (constitution 1.6).
+
+[dependencies]
+sha2 = "0.10"
+
+[[bin]]
+name = "ffspack"
+path = "src/main.rs"
+
+[lib]
+name = "ffspack"
+path = "src/lib.rs"

@@ -1,3 +1,10 @@
+## README 编辑边界
+
+- README 是面向用户的文档，包括 `README.md`、`README.en.md` 及其他 README 文件。
+- 开发、修复、重构、测试和安全审查期间，禁止修改 README。
+- 开发方案、实现细节、审查结果、实验记录和验证证据应写入 `docs/`，不得写入 README。
+- 本规则优先于本文后续涉及 README 的历史任务说明和交付物描述。
+
 # UEFI 预驱动 GPU 解锁器——开发代理任务书（v1，2026-10-25）
 
 > Deployment agents: use [AGENTS.deploy.md](AGENTS.deploy.md) for the installation workflow and current documentation index. This file remains the development task brief.

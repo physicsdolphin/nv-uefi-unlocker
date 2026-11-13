@@ -591,8 +591,8 @@ pub fn list_root_entries() {
     // (3x u64 = 24), 3x Time (16B each = 48), attribute u64 = 72, name
     // UCS-2 from offset 80. This bypasses uefi's entry API, whose error
     // path instantiates CStr16 helpers that reference wcslen under LTO.
-    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
-        info!("TX-ASSET-DIAG: get_image_file_system FAILED");
+    let Ok(mut fs) = crate::volumes::marker_fs() else {
+        info!("TX-ASSET-DIAG: marker volume open FAILED");
         return;
     };
     let Ok(mut dir) = fs.open_volume() else {
@@ -702,11 +702,14 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
 /// content: the UI switches are zero-byte marker files by design, so
 /// anything that treats "size 0" as "absent" silently disables them.
 pub fn probe_file(path: &str) -> bool {
+    if crate::volumes::armed().is_some() && path.ends_with(".txt") {
+        return crate::volumes::policy_file(path).is_some();
+    }
     let Ok(path_c) = uefi::CString16::try_from(path) else {
         return false;
     };
     use uefi::proto::media::file::{File, FileMode};
-    let Ok(mut fs) = boot::get_image_file_system(boot::image_handle()) else {
+    let Ok(mut fs) = crate::volumes::marker_fs() else {
         return false;
     };
     let Ok(mut dir) = fs.open_volume() else {
@@ -714,6 +717,87 @@ pub fn probe_file(path: &str) -> bool {
     };
     dir.open(&path_c, FileMode::Read, uefi::proto::media::file::FileAttribute::empty())
         .is_ok()
+}
+
+/// Asset paths that MUST exist for one family's transaction (the optional
+/// `\v67-direct-ss.bin` override is deliberately not probed: its absence is
+/// a legitimate chain-replay configuration).
+fn family_asset_paths(family: &str) -> alloc::vec::Vec<alloc::string::String> {
+    let mut v = alloc::vec::Vec::new();
+    for p in [
+        "\\booter_load_{}.bin",
+        "\\gsp_boot_desc_{}.bin",
+        "\\gsp_boot_{}.bin",
+        "\\fwimage_{}.bin",
+        "\\fwsignature_{}.bin",
+    ] {
+        v.push(alloc::format!("{}", p.replacen("{}", family, 1)));
+    }
+    if family_is_turing(family) {
+        v.push(alloc::format!("\\sec2_bl_{family}.bin"));
+    } else {
+        v.push("\\scrubber_ad10x.bin".into());
+    }
+    v
+}
+
+/// Live media re-probe (audit N7): the read-through cache makes the
+/// transaction immune to media removal AFTER the prefetch - by design
+/// (issue #38) - so the documented "pulled media aborts before GPU
+/// interaction" property is restored by re-opening each required asset
+/// file right before the transaction. Failure here aborts the card before
+/// any GPU interaction instead of proceeding on stale bytes.
+pub fn live_asset_presence(family: &str) -> bool {
+    family_asset_paths(family).iter().all(|path| {
+        let ok = probe_file(path);
+        if !ok {
+            info!("TX-ASSET-DIAG: {path} vanished between prep and run (media pulled?)");
+        }
+        ok
+    })
+}
+
+/// Startup line enumerating which guard-override markers were active on the
+/// armed volume for this run (audit N4: overrides are authority, not bytes;
+/// after the F1 fix they can only come from the operator-authorized volume,
+/// and they must be visible in the flushed evidence either way).
+pub fn log_overrides() {
+    const OVERRIDES: &[&str] = &[
+        "\\tx-accept-warm-wpr2.txt",
+        "\\tx-force-continue.txt",
+        "\\tx-low-staging.txt",
+        "\\tx-no-pm-preflight.txt",
+        "\\pre-flr-on.txt",
+        "\\tx-require-d0.txt",
+        "\\tx-gop-disconnect.txt",
+        "\\no-reconnect.txt",
+        "\\tu10x-no-reconnect.txt",
+        "\\tu10x-no-ss.txt",
+        "\\tx-fwsec-high-staging.txt",
+        "\\tx-fwsec-vram-staging.txt",
+        "\\tx-no-gsp-halt-gate.txt",
+    ];
+    let active: alloc::vec::Vec<&str> =
+        OVERRIDES.iter().copied().filter(|p| probe_file(p)).collect();
+    if active.is_empty() {
+        info!("OVERRIDES: none");
+    } else {
+        info!("OVERRIDES: {}", active.join(" "));
+    }
+}
+
+/// Asset integrity for the driver form (audit M1): the maker writes
+/// `\dxe-manifest.txt` (sha256sum-style `<hex>  <path>` lines); the driver
+/// form refuses to touch the GPU unless every asset it is about to use
+/// matches the manifest. The application form keeps its stick-trust
+/// semantics (the operator holds the stick they prepared; the maker
+/// verified at build time).
+pub fn verify_asset_digests<'a>(
+    entries: impl Iterator<Item = (&'a str, Option<&'a [u8]>)>,
+) -> Result<(), &'static str> {
+    let manifest = crate::volumes::policy_file(crate::dxe_policy::MANIFEST)
+        .ok_or("no authorized dxe-manifest.txt")?;
+    crate::dxe_policy::verify_assets(&manifest, entries)
 }
 
 /// Read one ASSET (never a marker) with the three states kept apart:
@@ -796,7 +880,10 @@ fn asset_cache_disabled() -> bool {
 /// pre-warmed cache back); `\tx-free-assets.txt` is still accepted and is now
 /// a no-op. Pool backing pages are returned on drop, so this genuinely
 /// shrinks the handoff map; CHAIN-MEMMAP right after is the read-back
-/// (constitution §1.1).
+/// (constitution §1.1). The DXE driver form calls it at the end of the
+/// phase sequence instead (it never chains) - the residency argument
+/// (audit M4: the driver stays resident for the rest of the boot) applies
+/// there, and the keep-assets opt-out is honored the same way.
 pub fn handoff_free_assets() {
     if probe_file(r"\tx-keep-assets.txt") {
         info!("TX-ASSET-CACHE: \\tx-keep-assets.txt present - cache left resident across the chain");
@@ -843,6 +930,15 @@ pub fn read_boot_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_boot_file_inner(path: &str) -> Inner {
+    // DXE driver form (PR #100): .txt controls come from the pinned policy
+    // snapshot of the authorized volume, never from a live filesystem probe
+    // (audit F1). The application form is unaffected (nothing armed).
+    if crate::volumes::armed().is_some() && path.ends_with(".txt") {
+        return match crate::volumes::policy_file(path) {
+            Some(bytes) => Inner::Content(bytes),
+            None => Inner::Absent,
+        };
+    }
     // Diagnostic bypass (issue #146): the knob is probed once, memoized.
     if asset_cache_disabled() {
         return read_boot_file_uncached(path);
@@ -871,7 +967,7 @@ fn read_boot_file_uncached(path: &str) -> Inner {
     use alloc::vec::Vec;
     use uefi::proto::media::file::{File, FileInfo, FileMode, FileAttribute};
 
-    let mut fs = match boot::get_image_file_system(boot::image_handle()) {
+    let mut fs = match crate::volumes::marker_fs() {
         Ok(fs) => fs,
         Err(e) => { info!("TX-ASSET-DIAG: {path} fs open failed {:?}", e.status()); return Inner::Failed; }
     };

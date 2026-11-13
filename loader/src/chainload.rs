@@ -11,6 +11,7 @@
 //! (our own image device path), because the handle-level match is not
 //! reliable across firmware implementations.
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use log::info;
 use uefi::boot::{self, LoadImageSource, OpenProtocolAttributes, OpenProtocolParams, SearchType};
@@ -209,7 +210,7 @@ fn log_handoff_memmap() {
 /// GPU re-binds the console stack over the AMI pathless GOP splitter child
 /// that survives the detach - the firmware resets mid-call (ASUS Z790 +
 /// 2803). Block devices are what this pass is for.
-pub(crate) fn reconnect_block_devices(tag: &str) {
+pub fn reconnect_block_devices(tag: &str) {
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&crate::pci::PciIo::GUID))
     else {
         info!("{tag}: reconnect pass: no PciIo handles");
@@ -382,13 +383,20 @@ fn chain_load_bootmgfw_inner() -> Result<()> {
 /// path parses.
 const MARKER_READ_CAP: usize = 4096;
 
-/// Read a small marker/config file from our own boot volume. Any
+/// Read a small marker/config file from the marker volume (the app's own
+/// boot volume, or the volume the DXE driver armed - see `volumes`). Any
 /// filesystem error counts as absent: the default semantics must never be
 /// upgraded by a probe failure. Absent-file is the normal case and stays
 /// silent; volume-level failures are logged (they explain a marker that
 /// "should have" engaged but did not).
 pub fn boot_volume_read(path: &CStr16) -> Option<alloc::vec::Vec<u8>> {
-    let mut fs = match boot::get_image_file_system(boot::image_handle()) {
+    // DXE driver form: controls can only come from the volume the app
+    // authorized (pinned partition GUID; audit F1/N2) - never from a live
+    // filesystem probe.
+    if crate::volumes::armed().is_some() {
+        return crate::volumes::policy_file(&path.to_string());
+    }
+    let mut fs = match crate::volumes::marker_fs() {
         Ok(fs) => fs,
         Err(e) => {
             info!("MARKER: image fs open failed: {:?}", e.status());
@@ -475,6 +483,18 @@ fn parse_marker_number(content: &[u8], default: u64, min: u64, max: u64) -> u64 
 /// window they still own.
 pub fn parse_armed_seconds(content: &[u8]) -> u64 {
     parse_marker_number(content, 5, 0, 30)
+}
+
+/// `\tx-dxe-arm.txt` countdown seconds for the DXE driver form: first line
+/// 1..=30, default 5 - the same floor as the application form (audit N1:
+/// the abort window must not be removable by marker content; headless
+/// operation opts out via the separate `\tx-dxe-noconfirm.txt` marker).
+/// The 0-second no-wait form of `parse_armed_seconds` is deliberately NOT
+/// offered here: a ReadyToBoot notification cannot poll keys, so an
+/// armed-but-windowless run must fail closed in `dxe`, not via marker
+/// content.
+pub fn parse_dxe_arm_seconds(content: &[u8]) -> u64 {
+    parse_marker_number(content, 5, 1, 30)
 }
 
 /// `\tx-flush-lines.txt` flush cadence: 0..=4096 count-based flushes per

@@ -21,10 +21,20 @@ pub enum Confirm {
     Abort,
 }
 
+/// Check the actual system-table consoles, not an unrelated protocol handle.
+pub fn stdin_available() -> bool {
+    uefi::table::system_table_raw().is_some_and(|st| unsafe { !st.as_ref().stdin.is_null() })
+}
+
+pub fn stdout_available() -> bool {
+    uefi::table::system_table_raw().is_some_and(|st| unsafe { !st.as_ref().stdout.is_null() })
+}
+
 /// One console-input poll. Public so the armed-prep loop (tx_prep) can
 /// interleave read-only work with the abort window.
 /// 本次启动被判定为"幽灵键"的键值被视为不存在(见 settle_input_once)。
 pub fn poll_key() -> Option<Key> {
+    if !stdin_available() { return None; }
     let key = system::with_stdin(|stdin| stdin.read_key());
     let key = key.ok().flatten()?;
     let code = key_code(key);
@@ -427,4 +437,30 @@ pub fn wait_confirm_armed(seconds: u64) -> Confirm {
     }
     info!("CONFIRM: {seconds}s armed countdown elapsed - PROCEED (marker file opted in)");
     Confirm::Proceed
+}
+
+/// DXE file-load path only (TPL_APPLICATION), for BOTH build classes.
+pub fn wait_dxe_countdown(seconds: u64) -> Confirm {
+    for _ in 0..seconds * 20 {
+        if !stdin_available() { return Confirm::Abort; }
+        match system::with_stdin(|stdin| stdin.read_key()) {
+            Ok(Some(_)) | Err(_) => return Confirm::Abort,
+            Ok(None) => {},
+        }
+        boot::stall(Duration::from_millis(50));
+    }
+    Confirm::Proceed
+}
+
+pub fn explicit_authorize(seconds: u64) -> bool {
+    if !stdin_available() { return false; }
+    for _ in 0..seconds * 20 {
+        match system::with_stdin(|stdin| stdin.read_key()) {
+            Ok(Some(Key::Printable(c))) => return matches!(u16::from(c), 0x20 | 0x0d),
+            Ok(Some(_)) | Err(_) => return false,
+            Ok(None) => {},
+        }
+        boot::stall(Duration::from_millis(50));
+    }
+    false
 }

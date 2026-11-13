@@ -903,6 +903,19 @@ printf '  %-28s %10s bytes\n' "EFI/BOOT/BOOTX64.EFI" "$(size_of "$OUT/EFI/BOOT/B
 printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s"\n}\n' \
     "${FAMILIES[*]}" "$(date -Is)" > "$OUT/nvuu-stick.json"
 
+# \dxe-manifest.txt (PR #100 audit M1): sha256sum-style digests of the
+# asset set. The firmware-resident DXE driver form refuses a transaction
+# whose assets do not match this manifest (fail-closed); the application
+# form ignores the file. Backslash paths match the loader's probes.
+: > "$OUT/dxe-manifest.txt"
+for f in "${expected[@]}"; do
+    case "$f" in
+        BOOTX64.EFI|gsp-gate.txt) continue ;;
+    esac
+    printf '%s  \%s\n' "$(sha256_of "$OUT/$f")" "$f" >> "$OUT/dxe-manifest.txt"
+done
+expected+=("dxe-manifest.txt")
+
 log ""
 if mountpoint -q "$OUT" 2>/dev/null; then
     log "DONE (${FAMILIES[*]}). $OUT already IS a filesystem root - nothing to copy, boot it directly."
