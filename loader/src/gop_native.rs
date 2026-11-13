@@ -218,6 +218,14 @@ pub fn recover(pci_handle: Handle, gpu: &PciIo, initial_attrs: Option<u64>) -> R
         // reorder/hide surgeries are marker-gated inside.
         crate::gop_order::after_console_rebound(child);
     } else {
+        // Issue #239: this path used to produce no diagnostics at all - the
+        // machine under it is the one where bootmgfw's self-establishment is
+        // the only display recovery, so the handle order it will sink into
+        // is exactly what the next report must carry. Read-only dump; no
+        // surgery (the demote needs a PCI parent and the structural
+        // machines' first-pick competitor - the devpath-less console
+        // handle - has none).
+        crate::gop_order::dump_after_failed_rebind(child);
         info!("NATIVE-GOP: complete (STRUCTURAL: console left to bootmgfw - display recovery NOT verified)");
     }
     Ok(())

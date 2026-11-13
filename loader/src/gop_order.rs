@@ -290,6 +290,20 @@ pub fn after_console_rebound(console_child: Handle) {
     run_reorder(console_child, &handles);
 }
 
+/// Failure-path companion to `after_console_rebound` (issue #239): the
+/// console rebind failed NOT_FOUND and the ordering surgery is out of scope
+/// here - it would not apply anyway, because the first-pick competitor on
+/// the structural machines is the devpath-less console handle and its
+/// missing PCI parent makes it undemotable. What the path lacked is
+/// evidence: dump the post-rebuild handle order read-only so a failing
+/// report carries what the first-pick consumer will sink into. Dump only,
+/// zero writes.
+pub fn dump_after_failed_rebind(console_child: Handle) {
+    if dump_order(console_child).is_none() {
+        info!("GOP-ORDER: no GOP handles enumerable - nothing to dump");
+    }
+}
+
 fn run_hide(console_child: Handle, handles: &[Handle], raw: &str) {
     let keys = parse_hide(raw);
     if keys.is_empty() {
