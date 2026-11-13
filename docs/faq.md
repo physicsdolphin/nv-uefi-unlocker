@@ -835,7 +835,7 @@ CHAIN-BOOT: firmware resolve: [0] Boot0001 -> '\EFI\MICROSOFT\BOOT\BOOTMGFW.EFI'
 1. **描述符条数——决定性的一道。** winload 把继承内存图的每一条描述符装进一个**恰好 1024 条的静态池**（`winload.efi!BlpMmInitialize`：`MmGlobalMemoryDescriptorCount = 1024`，48 字节/条，无动态扩容）；池耗尽即以 `0xc000009a` 杀死启动。实测分界：998 条能启动，1005 条不能。碎片按条计价、与大小无关——4 KiB 的洞与 80 MiB 的洞花同一个槽。现场中招的固件（Gigabyte B550 族）要么稳定高位 ~998，要么在同样的零写 boot 间摇摆 448↔1005 条；map 是固件自己的产物，EFI 应用既不能合并也不能改型——**断电重试**是正当绕行（同板 compact-map boot 能过），换 BIOS 版本才是真修。950 条以上日志会打硬 WARNING。
 2. **最大单块——原 #146 机制。** winload 的启动预留只从单个描述符里取、不拼接；ExitBootServices 不做转换，驻留的资产池会把低 4 GiB 唯一的大块劈开，总空闲再多也没用。
 
-判据直接读 `CHAIN-MEMMAP` 摘要行的 `(... N descriptors ...)` 总数，两条天花板看是哪条：**> ~1000** = 条数顶板（重试 / 换 BIOS）；**≤ ~1000 且最大块被砍半** = 尺寸顶板（下面的修复对象）。
+判据直接读 `CHAIN-MEMMAP` 摘要行的 `(... N descriptors ...)` 总数，两条天花板看是哪条：**> ~1000** = 条数顶板（重试 / 换 BIOS）；**≤ ~1000 且最大块被砍半** = 尺寸顶板（下面的修复对象）。条数高时**先问走的是哪条引导路径**：在中招的 B550 固件上，**F12 / BBS popup 引导菜单**比 **DEL → BIOS → Save/Exit → Boot Override** 多留 ~370–475 条图描述符（popup 以原生分辨率重建 console、其分配撕裂内存图），足以把 BIOS-override 能启动的板推过池线。绕行按序：走 BIOS override 流引导；升级 BIOS（首台板已实证）；或把布局永久装进内置 FAT32 分区、BIOS 固定 BootOrder 引导——菜单路径永不执行（见[交棒低位内存 §0c](handoff-lowmem.md)）。
 
 **v2.1.11 起默认在交棒前把资产池还给固件分配器**，代价为零（过了事务就再没人读资产）。判据看日志：
 
