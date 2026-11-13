@@ -1814,6 +1814,30 @@ fn paint(code: &str, s: &str) -> String {
     }
 }
 
+/// Multi-column cell value: badf reads colored red when ANSI is on, and
+/// '!' replaces the '0x' prefix when it is not - a redirected/piped run or
+/// a console without VT still shows the bucket at a glance, and the cell
+/// stays exactly 10 characters either way. 0xffffffff (NO_DECODE) keeps the
+/// plain form.
+
+/// Offset column for `name = value` rows, house style: yellow 0x + cyan
+/// digits (same as the PLM survey gutter). Always 10 visible chars.
+fn off_h(off: u32) -> String {
+    format!("{}{}", paint("96", "0x"), paint("93", &format!("{off:08x}")))
+}
+
+fn cell_val(v: u32) -> String {
+    if badf_bucket(v).is_some() {
+        if COLOR_ON.load(std::sync::atomic::Ordering::Relaxed) {
+            red(&format!("{v:#010x}"))
+        } else {
+            format!("!{v:09x}") // '!' + 9 hex digits = 10 chars = 0x + 8
+        }
+    } else {
+        format!("{v:#010x}")
+    }
+}
+
 /// 0x-prefixed 8-digit u32: prefix yellow, digits cyan.
 fn hx32(v: u32) -> String {
     if COLOR_ON.load(std::sync::atomic::Ordering::Relaxed) {
@@ -4012,9 +4036,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         // asks for exactly these three from a desktop 5060 Ti - read-only).
         print!("  TPC_CTRL (0x820838+4g, 12 GPCs):");
         for gpc in 0..12u32 {
-            let v = rd(TPC_CTRL_BASE + gpc * 4);
-            let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
-            print!(" {cell}");
+            print!(" {}", cell_val(rd(TPC_CTRL_BASE + gpc * 4)));
         }
         println!();
         for (name, off) in BLACKWELL_ROWS {
@@ -4044,7 +4066,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     None => String::new(),
                 },
             };
-            println!("  {label:<15} {name:<22} = {}{note}", hx32(v));
+            println!("  {label:<15} {name:<22} {}= {}{note}", off_h(*off), hx32(v));
         }
     }
     if fam == "ampere" || fam == "ada" {
@@ -4071,16 +4093,12 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     // whole row is the per-die existence answer.
     print!("{: >18}", "  GA100_SM_OVR");
     for gpc in 0..8u32 {
-        let v = rd(GA100_SM_OVR_BASE + gpc * 4);
-        let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
-        print!(" {cell}");
+        print!(" {}", cell_val(rd(GA100_SM_OVR_BASE + gpc * 4)));
     }
     println!();
     print!("{: >18}", "  GA100_SM_STAT");
     for gpc in 0..8u32 {
-        let v = rd(GA100_SM_STATUS_BASE + gpc * 4);
-        let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
-        print!(" {cell}");
+        print!(" {}", cell_val(rd(GA100_SM_STATUS_BASE + gpc * 4)));
     }
     println!();
     println!("--- ampere/ada FEAT sweep (M1 cluster) ---");
@@ -4095,15 +4113,19 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     }
     println!();
     println!("--- PLM survey (cmp170hx 26-register union) ---");
+    // Two-column layout: same multi-column rule as the arrays - no bucket
+    // text per cell; badf values marked red (ANSI on) / '!' prefix (plain,
+    // width-stable so the columns stay aligned either way). OPEN keeps its
+    // tag - it is rare and single-word.
     for (i, off) in PLM_SURVEY.iter().enumerate() {
         let v = rd(*off);
-        let note = match badf_bucket(v) {
-            Some(b) => format!(" [{}]", red(b)),
-            None if v == 0xFFFF_FFFF => format!(" [{}]", green("OPEN")),
-            None => String::new(),
-        };
         let off_s = format!("{}{}", paint("96", "0x"), paint("93", &format!("{off:08x}")));
-        let val_s = hx32(v);
+        let val_s = cell_val(v);
+        let note = if v == 0xFFFF_FFFF {
+            format!(" [{}]", green("OPEN"))
+        } else {
+            String::new()
+        };
         print!("  {off_s}={val_s}{note}");
         if i % 2 == 1 {
             println!();
@@ -4115,7 +4137,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     for (name, off) in PRIV_ROWS {
         let v = rd(off);
         let note = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-        println!("{name:<22} = {}{note}", hx32(v));
+        println!("{name:<22} {}= {}{note}", off_h(off), hx32(v));
     }
     println!("--- ga100 vfi dictionary (kate-land/ga100vfi; read-only, cross-die probe) ---");
     for (label, regs) in [
@@ -4138,7 +4160,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     None => String::new(),
                 }
             };
-            println!("  {label:<10} {name:<26} = {}{note}", hx32(v));
+            println!("  {label:<10} {name:<26} {}= {}{note}", off_h(*off), hx32(v));
         }
     }
     // STATUS_OPT arrays, 8 dwords per line, badf-bucketed inline (GA100_SM
@@ -4159,11 +4181,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         for chunk in (0..count).step_by(8) {
             print!("  {label:<10} [{chunk:>2}]");
             for i in chunk..(chunk + 8).min(count) {
-                let v = rd(base + i * 4);
-                // Multi-column rows: no per-cell bucket text (it wrecks the
-                // columns when a whole row is badf) - color the value itself.
-                let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
-                print!(" {cell}");
+                print!(" {}", cell_val(rd(base + i * 4)));
             }
             println!();
         }
@@ -4218,9 +4236,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         println!("  GB20X_PES   (HAL 67-71 relocated face)");
         print!("   PES_STATUS ");
         for gpc in 0..12u32 {
-            let v = rd(GB20X_PES_STATUS_BASE + gpc * 4);
-            let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
-            print!(" {cell}");
+            print!(" {}", cell_val(rd(GB20X_PES_STATUS_BASE + gpc * 4)));
         }
         println!();
         let ofa = rd(GB20X_OFA_DISABLE);
@@ -4268,7 +4284,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                         None => String::new(),
                     }
                 };
-                println!("  {label:<10} {name:<26} = {}{note}", hx32(v));
+                println!("  {label:<10} {name:<26} {}= {}{note}", off_h(*off - 0x7FF_000), hx32(v));
             }
         }
         for (label, base, count) in [
@@ -4279,9 +4295,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             for chunk in (0..count).step_by(8) {
                 print!("  {label:<10} [{chunk:>2}]");
                 for i in chunk..(chunk + 8).min(count) {
-                    let v = t(base + i * 4);
-                    let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
-                    print!(" {cell}");
+                    print!(" {}", cell_val(t(base + i * 4)));
                 }
                 println!();
             }
@@ -4293,8 +4307,14 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         print!("  {name:<24}");
         for base in [0u32, 0x800_000, 0x7FF_000] {
             let v = if base == 0 { rd(off) } else { rd(off - base) };
-            let cell = hx32(v);
-            let cell = if badf_bucket(v).is_some() { format!("{:>13}", red(&cell)) } else { format!("{cell:>13}") };
+            let cell = cell_val(v);
+            let cell = if badf_bucket(v).is_some() && !COLOR_ON.load(std::sync::atomic::Ordering::Relaxed) {
+                format!("{cell:>13}")
+            } else if badf_bucket(v).is_some() {
+                format!("{:>13}", cell)
+            } else {
+                format!("{cell:>13}")
+            };
             print!(" {cell}");
         }
         println!();
@@ -4903,6 +4923,25 @@ mod tests {
             _ => 0,
         };
         dump_debug(&rd, "turing");
+    }
+
+    #[test]
+    fn cell_val_width_stable_across_buckets() {
+        // Multi-column rule (2026-11-13 user directive): plain mode marks
+        // badf with a width-stable '!' prefix so columns never shift. The
+        // assertion is on VISIBLE width - ANSI escapes add bytes, not
+        // columns - so strip them before measuring, whatever COLOR_ON
+        // happens to be during the test run.
+        let visible = |s: &str| s.replace('\x1b', "[").chars().filter(|_| true).count();
+        let strip = |s: String| s.replace(['\x1b', '[', ']', ';'], "").split('m').next().unwrap_or("").to_string();
+        let normal = cell_val(0x1234_5678);
+        let badf = cell_val(0xBADF_5040);
+        let nv = strip(normal.clone());
+        let bv = strip(badf.clone());
+        assert_eq!(nv.chars().count(), bv.chars().count(), "{normal} vs {badf}");
+        let _ = visible("");
+        assert!(badf.contains('!') || badf.contains('\x1b')); // marked either way
+        assert_eq!(cell_val(0xFFFF_FFFF), format!("{:#010x}", 0xFFFF_FFFFu32)); // NO_DECODE stays plain
     }
 
     #[test]
