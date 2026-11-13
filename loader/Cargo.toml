@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+sha2 = { version = "0.10", default-features = false }
 log = { version = "0.4", default-features = false }
 romcore = { path = "../romcore" }
 uefi = { version = "0.41", features = ["global_allocator", "logger", "panic_handler", "alloc"] }
