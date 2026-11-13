@@ -181,6 +181,10 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
     let (img, patch, ucode, engine, nsigs, per_sig) = match family {
         "ga102" => (60416, 35344, 3, 1, 2, 384),
         "ad102" => (56832, 32272, 3, 1, 2, 384),
+        // tu11x measured from the pinned TU116 bundle (2026-11-04, issue
+        // #151): image 256B smaller than TU102's, patch slot 0x8600 (not
+        // 0x8700), same engine/ucode/sig-table shape.
+        "tu11x" => (58880, 34304, 0xd, 1, 1, 16),
         "tu10x" => (59136, 34560, 0xd, 1, 1, 16),
         "scrub" => (7424, 0x1a00, 0xd, 1, 2, 384),
         _ => {
@@ -348,7 +352,7 @@ pub fn wpr_meta_pack(
     // heap-end and gspFwOffset; recomputing inflated the heap and broke the
     // layout). With our gspFwOffset this formula reproduces the driver dump
     // bit-for-bit: heapOffset = 0x1f7900000.
-    let (nonwpr_off, nonwpr_size, wpr_start, heap_off, heap_size, flags) = if family == "tu10x" {
+    let (nonwpr_off, nonwpr_size, wpr_start, heap_off, heap_size, flags) = if crate::tx::family_is_turing(family) {
         const MB: u64 = 1024 * 1024;
         // TU10x driver formula (RM 615.71.09 source, issue #57): heap =
         // 8 MiB (BASE_RM) + align_1MiB(96 KiB x GiB) + 96 MiB (CLIENT),
@@ -1204,6 +1208,75 @@ pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u
     Ok(())
 }
 
+/// POST-GOP state readback (issue #164). Purely observational, default-on
+/// from v2.1.11: the console rebuild in tx hands the card's OWN GOP driver
+/// to StartImage AFTER the POST-FLR verification, so before this probe the
+/// last readback predates a driver load. A gate that is shut (or selectors
+/// that are gone) here means the loss happened BEFORE bootmgfw and the
+/// Windows driver path is excluded for that boot; an intact state here that
+/// is gone in Windows puts the driver pass back on the hook. Never fails the
+/// transaction - the reconnect itself is already delivered by this point.
+pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool, tx_relock: bool) {
+    let (plm_at, ss0_at, ss1_at, readout_at) = if crate::tx::family_is_turing(family) {
+        (TU10X_FEAT_PLM, TU10X_FEAT_SS0, TU10X_FEAT_SS1, TU10X_FEAT_READOUT)
+    } else {
+        (
+            crate::tx::regs::FEAT_PLM,
+            crate::tx::regs::FEAT_SS0,
+            crate::tx::regs::FEAT_SS1,
+            crate::tx::regs::FEAT_READOUT_1,
+        )
+    };
+    let plm = gpu.pci.bar_read_u32(gpu.bar, plm_at as u64);
+    let ss0 = gpu.pci.bar_read_u32(gpu.bar, ss0_at as u64);
+    let ss1 = gpu.pci.bar_read_u32(gpu.bar, ss1_at as u64);
+    let readout = gpu.pci.bar_read_u32(gpu.bar, readout_at as u64);
+    let wpr_lo = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::WPR2_LO as u64);
+    let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::WPR2_HI as u64);
+    // Reset canary (issues #164/#165): armed after the FLR, so "cleared"
+    // here means the card's own ROM devinit ran a reset during the rebuild.
+    let (can_a, can_b) = (
+        gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::CANARY_A as u64),
+        gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::CANARY_B as u64),
+    );
+    let can = crate::tx::canary_verdict(can_a, can_b);
+    info!("POST-GOP: FEAT_PLM={plm:#x} SS0={ss0:#x} SS1={ss1:#x} READOUT_1={readout:#010x} WPR2_LO={wpr_lo:#010x} WPR2_HI={wpr_hi:#x} CANARY={can}({can_a:#010x}/{can_b:#010x}) (read-only, after the console rebuild)");
+    if !payload_mode {
+        info!("POST-GOP: replay mode - the stock booter never opens the gate, so the booter status stays the verdict");
+        return;
+    }
+    // The handoff end state depends on the relock marker, not the family:
+    // the default everywhere is the gate held OPEN (the SS overrides are
+    // the payload; Turing joined the GA10x/Ada open-gate shape after the
+    // 2026-11-08 bench). \tx-relock.txt closes it again - proven end value
+    // on Turing is 0xffffffef with the SS overrides still in place (see
+    // the relock block in tx.rs); the GA10x/Ada relock shape has never
+    // been benched, so there the raw readback is the record and a
+    // mismatch is informational, not a verdict.
+    let (want_plm, want_note) = if tx_relock {
+        if crate::tx::family_is_turing(family) {
+            (
+                0xffff_ffef,
+                "tu10x relock requested (\\tx-relock.txt): gate re-locked, SS values are the payload",
+            )
+        } else {
+            (
+                0xffff_ff8f,
+                "ga10x/ada relock requested (\\tx-relock.txt) - shape never benched, readback is the record",
+            )
+        }
+    } else {
+        (0xffff_ffff, "gate handed off open (default since the 2026-11-08 bench)")
+    };
+    if plm == want_plm && ss0 == SS0_UNLOCK && ss1 == SS1_UNLOCK {
+        info!("POST-GOP: unlock intact after the console rebuild (FEAT_PLM={plm:#x} = {want_note})");
+    } else {
+        info!(
+            "POST-GOP: unlock NOT intact after the console rebuild (want plm={want_plm:#x} ss0={SS0_UNLOCK:#x} ss1={SS1_UNLOCK:#x}, got plm={plm:#x} ss0={ss0:#x} ss1={ss1:#x}) - suspect the card's own GOP StartImage/devinit (or the firmware), not the Windows driver"
+        );
+    }
+}
+
 /// Turing execution verdict. Chain-replay (stock booter): mailbox0 == 0
 /// (kernel s_executeBooterUcode semantics) plus WPR2 still up - the stock
 /// booter never touches the FEAT PLM, so demanding unlock values here would
@@ -1264,10 +1337,43 @@ pub fn verify_execution_tu10x(gpu: &TxGpu, payload_mode: bool, meta: &[u8]) -> R
         info!("POST-BOOT: replay verdict ok (no exception, WPR2 up, PLM stays locked)");
         return Ok(());
     }
-    if plm != 0xffff_ffff {
-        info!("POST-BOOT: PLM still locked - the payload's writes did not happen");
+    // Verdict on the selectors, not on the PLM latch (issue #74, round 33).
+    // TU102 `1e04` over TB4 completes the payload - SS0 reads 0x88888888 and
+    // SS1 0x8 - while 0x409650 reads back 0xffffff8f, the same value tx.rs
+    // calls "the surprise" at handoff. Gating on PLM there is a guaranteed
+    // false negative, and because the failure path restores the stock
+    // signature, a successful payload ends the boot locked instead of
+    // unlocked. ssdiag verdicts on SS0/SS1 for exactly this reason; do the
+    // same here and keep PLM logged as the write gate it is.
+    //
+    // TWO proven success shapes (2026-11-08 bench, Z370/TU106 vs #74's
+    // TU102-over-TB4): (A) the payload writes the selectors itself and the
+    // PLM latch reads back LOCKED - this gate was built for that shape;
+    // (B) the payload opens ONLY the PLM and the loader writes the
+    // selectors as host right after (the v2.1.10 flow, every TU106/Z370
+    // success log: "selector write: SS0=0x88888888"). Shape B was locked
+    // out when the verdict started requiring payload-written SS - the
+    // bench run failed EIO with PLM=0xffffffff open and SS at factory,
+    // exactly the shape v2.1.10 unlocks. With the PLM open, the host
+    // selector writes land and their READBACK is the verdict - report Ok
+    // and let tx.rs's write_selector path decide.
+    if ss0 != SS0_UNLOCK || ss1 != SS1_UNLOCK {
+        if plm == 0xffff_ffff {
+            info!(
+                "POST-BOOT: PLM open, payload did not write the selectors (ss0={ss0:#x} ss1={ss1:#x} factory) - shape B: the loader writes them next, readback decides"
+            );
+            return Ok(());
+        }
+        info!(
+            "POST-BOOT: tu10x selectors not written (ss0={ss0:#x} want {SS0_UNLOCK:#x}, ss1={ss1:#x} want {SS1_UNLOCK:#x}) and PLM still locked - the payload's writes did not happen"
+        );
         wpr_desc_rejected_hint(mbox0, meta);
         return Err(TxError::EIO);
+    }
+    if plm != 0xffff_ffff {
+        info!(
+            "POST-BOOT: PLM={plm:#x} did not read back open, but the selectors are written - PLM is the write gate, not the verdict (issue #74)"
+        );
     }
     Ok(())
 }
@@ -1279,7 +1385,7 @@ pub fn flr_phase(gpu: &TxGpu, family: &str, payload_mode: bool) -> Result<(), Tx
     // FEAT SS0/SS1 addresses are family-specific (Turing 0x409664/6c vs
     // GA10x/Ada 0x82381c/20) and PLM-locked at PL0 until a payload opens
     // the FEAT PLM - in replay the read failing is expected, not an error.
-    let (ss0_at, ss1_at) = if family == "tu10x" {
+    let (ss0_at, ss1_at) = if crate::tx::family_is_turing(family) {
         (TU10X_FEAT_SS0, TU10X_FEAT_SS1)
     } else {
         (crate::tx::regs::FEAT_SS0, crate::tx::regs::FEAT_SS1)

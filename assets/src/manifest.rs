@@ -41,6 +41,33 @@ pub mod ga102_610 {
     pub const GSP_TU10X_SHA256: &str =
         "73065619db9ec921d19fc4e519dd04d91a9199b525eaca9b257b89fb8c5ec52c";
 
+    // ---- nvidia-utils source group (issue #212) -------------------------
+    // The CachyOS v3 archive above keeps only a ~3-version rolling window
+    // per package and dropped 610.43.03 on 2026-11-08. The two transports
+    // below are permanent-class and carry BIT-IDENTICAL GSP firmware ELFs
+    // (gsp_ga10x 57237362..., gsp_tu10x 73065619...; all three containers
+    // cross-verified 2026-11-08). The content-addressed gate is the inner
+    // ELF hash pair above - a container is acceptable iff it yields those
+    // exact bytes.
+
+    /// nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst (Arch Linux Archive -
+    /// the official rollback archive; published package versions are never
+    /// purged). Same inner firmware as the CachyOS v3 container.
+    pub const UTILS_PKG_ARCH_SHA256: &str =
+        "c3367ff68632ac7daf6ca50ef7cbdd1cb5d09f7fe0b26125b312c73e52a34cf4";
+    pub const UTILS_PKG_ARCH_URL: &str =
+        "https://archive.archlinux.org/packages/n/nvidia-utils/nvidia-utils-610.43.03-1-x86_64.pkg.tar.zst";
+
+    /// NVIDIA-Linux-x86_64-610.43.03.run (first-party installer; the
+    /// download.nvidia.com XFree86 tree is append-only - driver versions
+    /// from 2008 remain fetchable). Firmware members live at firmware/.
+    pub const UTILS_RUN_SHA256: &str =
+        "45e2d4c134a23c35e50f253a4aa63e7e5e8d17e3d185d4a07c8a58e9612ed392";
+    pub const UTILS_RUN_URL: &str =
+        "https://download.nvidia.com/XFree86/Linux-x86_64/610.43.03/NVIDIA-Linux-x86_64-610.43.03.run";
+    pub const GSP_GA10X_RUN_PATH: &str = "firmware/gsp_ga10x.bin";
+    pub const GSP_TU10X_RUN_PATH: &str = "firmware/gsp_tu10x.bin";
+
     /// Generated-source BINDATA files inside the source archive.
     pub const BINDATA_BOOTER_LOAD: &str = "g_bindata_kgspGetBinArchiveBooterLoadUcode_GA102.c";
     pub const BINDATA_BOOTER_LOAD_SHA256: &str =
@@ -146,6 +173,41 @@ pub mod tu10x_610 {
     /// mutex-3 release tokens; fill 0x4a7, guard 0x6140.
     pub const V67_TU10X_PAYLOAD_SHA256: &str =
         "b0ec90294d1de3c67e024631c0a11000f281470d76eed806fc24c66b7fd1ef41";
+}
+
+/// TU116/TU117 (GTX 16 series / CMP 30HX) route — issue #151. The die ships
+/// its own booter archive in 610.43.03: same engine id (1), ucode id (0xd)
+/// and patch meta as tu10x, but a die-keyed image (58880 bytes vs 59136)
+/// and its own 16-byte prod signature; the patch slot sits at 0x8600
+/// (tu10x: 0x8700). GspRmBoot and the generic falcon BL are Turing-shared —
+/// the driver generates only TU102 archives for them — so those pins are
+/// re-exported from tu10x_610 unchanged.
+pub mod tu11x_610 {
+    pub const BINDATA_BOOTER_LOAD: &str = "g_bindata_kgspGetBinArchiveBooterLoadUcode_TU116.c";
+    pub const BINDATA_BOOTER_LOAD_SHA256: &str =
+        "57e1a11e72647c511c43ea1d06da07ab1ad7e0a2099859d4e2088cd78f2a9496";
+
+    pub use super::tu10x_610::{
+        BINDATA_GSP_RM_BOOT, BINDATA_GSP_RM_BOOT_SHA256, BINDATA_SEC2_BL,
+        BINDATA_SEC2_BL_SHA256, DERIVED_GSP_BOOT, DERIVED_GSP_BOOT_DESC,
+        PROVEN_RM_BOOT_SLICE_LEN, PROVEN_RM_BOOT_SLICE_SHA256,
+        PROVEN_RM_BOOT_SLICE_SRC_SHA256,
+    };
+    /// Derived from the pinned TU116 archive (measured 2026-11-04: 58968B
+    /// bundle = 72 + 58880 image + 16B sig table).
+    pub const DERIVED_BOOTER_LOAD: &str =
+        "2e78e446825e344542f2286d571ef3e05d0cf5af22fa22facfac6a0220ccfdbc";
+    /// Derived from the Turing-shared TU102 BL source (768B; same bytes as
+    /// sec2_bl_tu10x.bin).
+    pub const DERIVED_SEC2_BL: &str =
+        "f21f1cfbb8fffa8067685314367fc4c50f3f84dd99eda7c19db4292d9269b9d9";
+
+    /// TU116 V67 signature image — the TU102 frame table with the park word
+    /// re-anchored to the decrypted TU116 debug segment (0x7EA4 -> 0x7E9A,
+    /// see payload.rs). RE-derived, NOT field-proven: issue #151 is the
+    /// verification path.
+    pub const V67_TU11X_PAYLOAD_SHA256: &str =
+        "c79208ac3b9e49cb590dadceb84e7032055fbdfad27788d8da7cb6964a005750";
 }
 
 #[cfg(test)]

@@ -36,7 +36,7 @@
 
 博客自身结论即失败：LTC/LTS 禁用=熔丝层|软件掩码，0x822080 只能 OR 进更多禁用；GA100 RIR 永久改写读出是唯一剩余路径=OTP 烧写，违反本项目"易失覆盖、每次引导重放、可逆"的纪律且有变砖风险（作者本人已停手）。不立项。
 
-## 5. 原始论文评估：A Canary in the Crypto Mine（Zenodo 10.5281/zenodo.20916112，Jon Pry，2026-06-26）
+## 5. 原始论文评估：A Canary in the Crypto Mine（Zenodo 10.5281/zenodo.20916112 = 含 debug booter 的版本记录，概念 DOI 10.5281/zenodo.20916111，Jon Pry，2026-06-26；[ResearchGate 408132536](https://www.researchgate.net/publication/408132536_A_Canary_in_the_Crypto_Mine_Defeating_Stack_Protection_in_a_GPU_Secure_Coprocessor)）
 
 CMP 170HX（=A100 同芯，三轴 fuse-crippled：SM 速率钳 1/32、显存 10→80GB、PCIe Gen1）的学术化拆解，CC-BY-4.0。与本项目相关的四点：
 

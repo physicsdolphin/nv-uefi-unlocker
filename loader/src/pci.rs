@@ -19,7 +19,7 @@ use uefi::mem::memory_map::MemoryMap as _;
 #[cfg(feature = "tx")]
 use uefi::mem::memory_map::MemoryType;
 use uefi::proto::unsafe_protocol;
-use uefi::{Identify, Status};
+use uefi::{cstr16, Identify, Status};
 
 pub const NVIDIA_VENDOR_ID: u16 = 0x10de;
 
@@ -248,11 +248,17 @@ impl PciIo {
     }
 
     /// PCI attributes enable (tx builds: TOTORONG ClaimRestore step).
+    ///
+    /// NOTE: op 1 is EfiPciIoAttributeOperation**Set** in the EDK2 enum
+    /// (Get=0, Set=1, Enable=2) - this call SETS the whole attribute word
+    /// to `mask`, which is why the historical call sites pass exactly
+    /// 0x0007. Kept as-is (behavior verified on hardware across the whole
+    /// transaction history); new code uses [`Self::attributes_enable_op`].
     #[cfg(feature = "tx")]
 
     #[cfg(feature = "tx")]
     pub fn attributes_enable(&self, mask: u64) {
-        // op 1 = EfiPciIoAttributeOperationEnable; Arg1 = mask
+        // op 1 = EfiPciIoAttributeOperationSet; Arg1 = mask
         let mut st = Status::SUCCESS;
         unsafe {
             let _called = (self.0.attributes)(&self.0 as *const _ as *mut _, 1, mask, 0, &mut st);
@@ -261,6 +267,79 @@ impl PciIo {
             log::error!("attributes_enable({mask:#x}) status {st:?}");
         }
     }
+
+    /// Proper EfiPciIoAttributeOperationEnable (op 2): OR the given bits
+    /// into the device's attribute set without touching the rest.
+    #[cfg(feature = "tx")]
+    pub fn attributes_enable_op(&self, mask: u64) -> Status {
+        let mut st = Status::SUCCESS;
+        unsafe {
+            let _ = (self.0.attributes)(&self.0 as *const _ as *mut _, 2, mask, 0, &mut st);
+        }
+        st
+    }
+
+    /// EfiPciIoAttributeOperationGet (op 0): the firmware-tracked attribute
+    /// set (EDK2 keeps it in the PciIo device struct, not in config space).
+    /// Captured before the claim so the handoff can restore the VGA
+    /// forwarding subset it cleared (issue #109 chain-2 code-12 class).
+    #[cfg(feature = "tx")]
+    pub fn attributes_get(&self) -> Option<u64> {
+        let mut attrs = 0u64;
+        let mut st = Status::SUCCESS;
+        // Safety: exclusive-borrowed protocol; Result is an out-param
+        // pointer passed in Arg2 per EDK2 PciIoAttributes.
+        unsafe {
+            let _ = (self.0.attributes)(
+                &self.0 as *const _ as *mut _,
+                0,
+                0,
+                &mut attrs as *mut u64 as u64,
+                &mut st,
+            );
+        }
+        if st != Status::SUCCESS {
+            log::error!("attributes_get status {st:?}");
+            return None;
+        }
+        Some(attrs)
+    }
+
+    /// The PciBus-shadowed option ROM (EFI_PCI_IO_PROTOCOL RomImage/
+    /// RomSize fields, pinned at slots 19/18 of PciIoRaw). This is the
+    /// copy the firmware fetched at enumeration - the native-GOP path
+    /// extracts the card's own GOP driver from it.
+    #[cfg(feature = "tx")]
+    pub fn rom_image(&self) -> Option<&[u8]> {
+        // Verbatim slot dump BEFORE any use (issue #128 run 11: the log
+        // went dark inside the recovery block; a garbage RomSize fed
+        // straight into a copy is an unbounded allocation -> silent
+        // freeze, and the flushed ptr/size pair is what localises a
+        // mid-copy fault). "NATIVE-GOP" is a flush marker.
+        log::info!(
+            "NATIVE-GOP: PciIo RomImage slots raw: ptr={:#x} RomSize={} ({:#x})",
+            self.0.rom_image as usize,
+            self.0.rom_size,
+            self.0.rom_size
+        );
+        if self.0.rom_image.is_null() || self.0.rom_size == 0 {
+            return None;
+        }
+        if !(512..=16 * 1024 * 1024).contains(&self.0.rom_size) {
+            log::info!(
+                "NATIVE-GOP: RomSize {} outside the plausible option-ROM window (512..=16MiB) - treating as absent",
+                self.0.rom_size
+            );
+            return None;
+        }
+        // Safety: RomImage points into a firmware-allocated buffer of
+        // RomSize bytes, valid for the boot services lifetime.
+        Some(unsafe {
+            core::slice::from_raw_parts(self.0.rom_image as *const u8, self.0.rom_size as usize)
+        })
+    }
+
+
 
     /// THE BAR write primitive — consumed only by `tx` builds. M0/M1
     /// binaries contain no call sites (constitution §1.7 audit anchor).
@@ -650,14 +729,18 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
         let vendor = pci.config_read_u16(0x00);
         let device = pci.config_read_u16(0x02);
         if vendor == 0xffff || vendor == 0x0000 {
-            info!("PCI {:04x}:{:02x}:{:02x}.{} empty slot (vendor {:#06x})", seg, bus, dev, fun, vendor);
+            if !crate::ultrafast() {
+                info!("PCI {:04x}:{:02x}:{:02x}.{} empty slot (vendor {:#06x})", seg, bus, dev, fun, vendor);
+            }
             continue;
         }
         let class = pci.config_read_u32(0x08) >> 16; // class<<8 | subclass
-        info!(
-            "PCI {:04x}:{:02x}:{:02x}.{} {:04x}:{:04x} class {:06x}",
-            seg, bus, dev, fun, vendor, device, class
-        );
+        if !crate::ultrafast() {
+            info!(
+                "PCI {:04x}:{:02x}:{:02x}.{} {:04x}:{:04x} class {:06x}",
+                seg, bus, dev, fun, vendor, device, class
+            );
+        }
 
         if vendor == NVIDIA_VENDOR_ID {
             // Candidate = NVIDIA display adapter (class 03), function 0.
@@ -670,7 +753,9 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
                     seg, bus, dev, fun,
                 });
             }
-            describe_nvidia(&pci, seg, bus, dev, fun, device);
+            if !crate::ultrafast() {
+                describe_nvidia(&pci, seg, bus, dev, fun, device);
+            }
         }
     }
     if candidates.len() > 1 {
@@ -694,8 +779,26 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
 /// other one may run.
 #[cfg(feature = "tx")]
 pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
-    match crate::tx::read_boot_file("\\tx-select-bdf.txt") {
-        Some(raw) => match parse_bdf(&raw) {
+    // read_asset, NOT read_boot_file: the three states matter (issue #106
+    // zero-byte lesson). Absent = no pin, default order. Ok(Some) = parse.
+    // Err (zero-byte/corrupt/short read) must NOT fall through to the
+    // default - a broken pin silently unlocking every card is the worst
+    // outcome for a pin switch, so refuse alongside the unparsable case.
+    match crate::tx::read_asset("\\tx-select-bdf.txt") {
+        Err(_) => {
+            info!("ENUMERATE: tx-select-bdf.txt present but unreadable (zero-byte/corrupt) - refusing to guess, TX skipped");
+            alloc::vec::Vec::new()
+        }
+        Ok(None) => {
+            if all.len() > 1 {
+                info!(
+                    "ENUMERATE: no tx-select-bdf marker - every supported card runs, in enumeration order ({} found)",
+                    all.len()
+                );
+            }
+            all.to_vec()
+        }
+        Ok(Some(raw)) => match parse_bdf(&raw) {
             Some(bdf) => {
                 for c in all.iter() {
                     if (c.seg, c.bus, c.dev, c.fun) == bdf {
@@ -717,20 +820,12 @@ pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
                 alloc::vec::Vec::new()
             }
         },
-        None => {
-            if all.len() > 1 {
-                info!(
-                    "ENUMERATE: no tx-select-bdf marker - every supported card runs, in enumeration order ({} found)",
-                    all.len()
-                );
-            }
-            all.to_vec()
-        }
     }
 }
 
-/// Parse "bb:dd.f" or "dddd:bb:dd.f" (hex, whitespace/NUL tolerant).
-#[cfg(feature = "tx")]
+/// Parse "bb:dd.f" or "dddd:bb:dd.f" (hex, whitespace/NUL tolerant). Shared by
+/// `select_tx_targets` (tx builds) and `select_sample_targets` (every build)
+/// below - pure string parsing, nothing tx-feature-specific about it.
 fn parse_bdf(raw: &[u8]) -> Option<(usize, usize, usize, usize)> {
     let clean: alloc::vec::Vec<u8> = raw
         .iter()
@@ -750,6 +845,37 @@ fn parse_bdf(raw: &[u8]) -> Option<(usize, usize, usize, usize)> {
     let dev = usize::from_str_radix(dev_s, 16).ok()?;
     let fun = usize::from_str_radix(fun_s, 16).ok()?;
     Some((seg, bus, dev, fun))
+}
+
+/// Read-only M1 SAMPLE-phase target selection (bug report: SAMPLE always ran
+/// `gpus.first()`, ignoring `tx-select-bdf.txt`, so on a multi-GPU box the
+/// cold-state register sweep could pin a different card than the TX phase).
+/// Marker semantics: absent = the FIRST card only - today's field-proven
+/// default, cost unchanged on machines without the marker (a full sweep per
+/// card on default multi-GPU boots would be a silent cost regression);
+/// parsed+matched = only that one card (the actual bug being fixed: SAMPLE
+/// and TX then agree on the same pinned card); parsed+unmatched/unparsable
+/// = none (the operator explicitly asked to pin a card and it did not match
+/// - refusing beats silently sweeping everything).
+///
+/// Available in every build, not just `tx` ones - SAMPLE has no feature gate.
+/// That means it cannot use `tx::read_asset`'s three-state read (that module
+/// is `tx`-gated); it uses `chainload::boot_volume_read` instead, which only
+/// distinguishes present/absent, not absent/corrupt. For this read-only phase
+/// that is an accepted, lower-stakes tradeoff: the worst a corrupt marker can
+/// do here is skip or retarget a register dump, not touch anything.
+pub fn select_sample_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
+    match crate::chainload::boot_volume_read(cstr16!(r"\tx-select-bdf.txt")) {
+        None => all.first().into_iter().cloned().collect(),
+        Some(raw) => match parse_bdf(&raw) {
+            Some(bdf) => all
+                .iter()
+                .find(|c| (c.seg, c.bus, c.dev, c.fun) == bdf)
+                .map(|c| alloc::vec![*c])
+                .unwrap_or_default(),
+            None => alloc::vec::Vec::new(),
+        },
+    }
 }
 
 /// Resolve the PCI Express capability offset for the FLR path. The walk is
@@ -819,11 +945,13 @@ pub fn log_dma_path(tag: &str, gpu: &PciIo) {
 }
 
 /// Read-only handoff-time PCI snapshot (issue #61 ask #2): GPU config
-/// header, capability walk (PCIe DevCtl/LnkCtl + MSI enable), and every
-/// bridge's Command / Bridge Control (VGA routing bits). Runs after the
-/// FLR/verify phase and before the reconnect, so the log pairs directly
-/// with the Windows-side pnputil dump of the same boot: a resource-class
-/// delta between the two pinpoints which side changed what.
+/// header, capability walk (PCIe DevCtl/LnkCtl + MSI enable), and - via
+/// [`diag_bridge_routing`] - every bridge's Command / Bridge Control (VGA
+/// routing bits). Runs after the FLR/verify phase and before the reconnect,
+/// so the log pairs directly with the Windows-side pnputil dump of the same
+/// boot: a resource-class delta between the two pinpoints which side
+/// changed what. The bridge half is snapshotted again after the restore
+/// (`HANDOFF-VGA-FINAL`), because this point still precedes it.
 #[cfg(feature = "tx")]
 pub fn diag_handoff_pci(gpu: &PciIo) {
     info!(
@@ -876,8 +1004,185 @@ pub fn diag_handoff_pci(gpu: &PciIo) {
         }
         ptr = next;
     }
+    diag_bridge_routing("HANDOFF-PCI");
+}
+
+/// Decode a device path into the anchor the dump cares about: every PCI
+/// node folded into the last seen `seg:bus:dev.fn`, plus flags for a UART
+/// (serial) node and any text-ish tail (file nodes). Deliberately bounded -
+/// a poisoned node length must not loop.
+fn dp_anchor(path: &[u8]) -> (Option<(usize, usize, usize)>, bool) {
+    let mut seg = 0usize;
+    let mut pci = None;
+    let mut uart = false;
+    let mut i = 0usize;
+    for _ in 0..64 {
+        if i + 4 > path.len() {
+            break;
+        }
+        let (ty, sub) = (path[i], path[i + 1]);
+        let len = u16::from_le_bytes([path[i + 2], path[i + 3]]) as usize;
+        if len < 4 || i + len > path.len() {
+            break;
+        }
+        match (ty, sub) {
+            // Type 01 = Hardware, subtype 01 = PCI: fun, dev (bus is not in
+            // the path; the segment comes from the PciRoot node).
+            (0x01, 0x01) if len >= 6 => {
+                let (fun, dev) = (path[i + 4] as usize, path[i + 5] as usize);
+                pci = Some((seg, dev, fun));
+            }
+            // Type 03 = Messaging, subtype 0A = UART (serial console).
+            (0x03, 0x0a) => uart = true,
+            // PciRoot carries the segment (u32) as its UID.
+            (0x01, 0x02) if len >= 8 => {
+                seg = u32::from_le_bytes([path[i + 4], path[i + 5], path[i + 6], path[i + 7]]) as usize;
+            }
+            _ => {}
+        }
+        i += len;
+    }
+    (pci, uart)
+}
+
+/// Read-only device path bytes of a handle (`GetProtocol` on the
+/// DevicePath protocol; same technique as the chainload fingerprint).
+fn handle_devpath(handle: uefi::Handle) -> Option<alloc::vec::Vec<u8>> {
+    let dp = unsafe {
+        boot::open_protocol::<uefi::proto::device_path::DevicePath>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .ok()?;
+    Some(dp.as_bytes().to_vec())
+}
+
+/// Hex prefix of a device path (bounded; the tail beyond 64 bytes is
+/// implied by the decoded anchor).
+fn dp_hex(path: &[u8]) -> alloc::string::String {
+    use core::fmt::Write as _;
+    let mut s = alloc::string::String::new();
+    for b in path.iter().take(64) {
+        let _ = write!(s, "{b:02x}");
+    }
+    let _ = write!(s, "{}", if path.len() > 64 { "..." } else { "" });
+    s
+}
+
+/// Identify the PCI device behind a device-path anchor by scanning the
+/// PciIo handle set for the same location (the console handle itself does
+/// not necessarily carry PciIo). Read-only.
+fn anchor_identity(anchor: Option<(usize, usize, usize)>) -> alloc::string::String {
+    use core::fmt::Write as _;
+    let Some((seg, dev, fun)) = anchor else {
+        return "no PCI node".into();
+    };
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
-        info!("HANDOFF-PCI bridge scan: locate_handle_buffer failed");
+        return alloc::format!("{seg:04x}:?:{dev:02x}.{fun} (scan failed)");
+    };
+    for handle in handles.iter() {
+        let Ok(pci) = (unsafe {
+            boot::open_protocol::<PciIo>(
+                OpenProtocolParams { handle: *handle, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        }) else {
+            continue;
+        };
+        // Device/fn are unique inside a segment; the bus is not in the path.
+        let Some((pseg, bus, pdev, pfun)) = pci.get_location() else {
+            continue;
+        };
+        if (pseg, pdev, pfun) != (seg, dev, fun) {
+            continue;
+        }
+        let vd = pci.config_read_u32(0x00);
+        let mut s = alloc::format!("{pseg:04x}:{bus:02x}:{pdev:02x}.{pfun} = {:04x}:{:04x}", vd & 0xffff, vd >> 16);
+        if vd & 0xffff == u32::from(NVIDIA_VENDOR_ID) {
+            let _ = write!(s, " (NVIDIA GPU)");
+        }
+        return s;
+    }
+    alloc::format!("{seg:04x}:?:{dev:02x}.{fun} (no PciIo handle)")
+}
+
+/// #122/#170 diag: who owns the boot console. The detach destroys exactly
+/// this stack; the dump names its anchor device so a GPU-anchored GOP
+/// console can be told apart from a VGA/UART one before any disconnect.
+pub fn diag_console_identity() {
+    let st = uefi::table::system_table_raw();
+    let Some(st) = st else {
+        info!("DIAG-CONSOLE: no system table");
+        return;
+    };
+    let st = unsafe { st.as_ref() };
+    for (label, raw) in [("OUT", st.stdout_handle), ("IN", st.stdin_handle)] {
+        let Some(handle) = (unsafe { uefi::Handle::from_ptr(raw) }) else {
+            info!("DIAG-CONSOLE-{label}: handle null (no console)");
+            continue;
+        };
+        match handle_devpath(handle) {
+            Some(path) => {
+                let (anchor, uart) = dp_anchor(&path);
+                info!(
+                    "DIAG-CONSOLE-{label}: handle {:?} uart={} anchor={} dp={}",
+                    handle,
+                    uart,
+                    anchor_identity(anchor),
+                    dp_hex(&path)
+                );
+            }
+            None => info!("DIAG-CONSOLE-{label}: handle {:?} has no device path", handle),
+        }
+    }
+}
+
+/// #122/#170 diag: the USB controller hosting our boot volume. The 8-series
+/// PCH offers EHCI #1 (0:1d.0) / EHCI #2 (0:1a.0) and xHCI (0:14.0); the
+/// port routing is decided by `xUSB2PR`, so "rear USB2 port" alone does not
+/// prove an EHCI path - this dump does.
+pub fn diag_boot_volume_controller() {
+    let image = boot::image_handle();
+    let Ok(loaded) = (unsafe {
+        boot::open_protocol::<uefi::proto::loaded_image::LoadedImage>(
+            OpenProtocolParams { handle: image, agent: image, controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        info!("DIAG-BOOTVOL: LoadedImage unavailable");
+        return;
+    };
+    let Some(dev) = loaded.device() else {
+        info!("DIAG-BOOTVOL: no device handle");
+        return;
+    };
+    match handle_devpath(dev) {
+        Some(path) => {
+            let (anchor, uart) = dp_anchor(&path);
+            info!(
+                "DIAG-BOOTVOL: device {:?} uart={} anchor={} dp={}",
+                dev,
+                uart,
+                anchor_identity(anchor),
+                dp_hex(&path)
+            );
+        }
+        None => info!("DIAG-BOOTVOL: device {:?} has no device path", dev),
+    }
+}
+
+/// Every bridge's Command / Bridge Control (VGA routing bits), under a
+/// caller-supplied tag. Read-only, no driver binding. Two call sites are
+/// wanted (issue #165): the snapshot above runs BEFORE the console
+/// rebuild, so on its own it can only show the detach-time intermediate
+/// routing (the claim's Set(0x0007) drops the VGA bits) - the FINAL
+/// snapshot after the handoff restore records the bits Windows actually
+/// inherits.
+#[cfg(feature = "tx")]
+pub fn diag_bridge_routing(tag: &str) {
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
+        info!("{tag} bridge scan: locate_handle_buffer failed");
         return;
     };
     for handle in handles.iter() {
@@ -895,7 +1200,7 @@ pub fn diag_handoff_pci(gpu: &PciIo) {
         }
         let loc = pci.get_location();
         info!(
-            "HANDOFF-PCI bridge {loc:?} cmd={:#06x} bridgectl={:#06x}",
+            "{tag} bridge {loc:?} cmd={:#06x} bridgectl={:#06x}",
             pci.config_read_u16(0x04),
             pci.config_read_u16(0x3e)
         );
@@ -907,7 +1212,24 @@ pub fn diag_handoff_pci(gpu: &PciIo) {
 /// `enable` sets COMMAND bit 2 (bus master) on every PCI-to-PCI bridge in the
 /// GPU's segment whose secondary..subordinate range contains the GPU's bus,
 /// only where the bit is clear, and records the bridges whose readback shows it
-/// set. Drop clears bit 2 again on exactly those bridges.
+/// set.
+///
+/// Release is EXPLICIT (`release`), not an implicit `Drop`, and it is an
+/// ORDERING guarantee rather than an abandonment. The guard lives in the
+/// caller's slot (`run_transaction`'s `bridge_slot` parameter): armed
+/// mid-transaction (before the booter fires - PR #87 / booter 0x89 family),
+/// released on the clean success tail, and on a failure return handed back
+/// still armed to `tx_one_card`, which releases it only AFTER its
+/// `emergency_flr`. That ordering is the whole point: an implicit `Drop`
+/// would fire at the failure-return site itself, clearing bus-master while
+/// SEC2 may still have DMA in flight through these exact bridges (clearing
+/// under a live transfer is itself an uncontrolled write to a card whose
+/// state is no longer trusted), while never releasing at all would carry our
+/// bus-master bits across the handoff into Windows (dirty-BME shape,
+/// known-pit #3/#9). Post-FLR the GPU function is reset, nothing can be in
+/// flight, and clearing is exactly as safe as on the success tail. The one
+/// path that never releases is the opt-in `\tx-stop-on-failure.txt` STOP:
+/// the machine halts for a full power cycle with the bridges untouched.
 #[cfg(feature = "tx")]
 pub struct BridgeMaster {
     /// (bridge handle, location for logs) of every bridge this guard enabled.
@@ -962,11 +1284,14 @@ impl BridgeMaster {
         }
         BridgeMaster { enabled }
     }
-}
 
-#[cfg(feature = "tx")]
-impl Drop for BridgeMaster {
-    fn drop(&mut self) {
+    /// Clear bit 2 again on exactly the bridges `enable` set it on. Call
+    /// ONLY where the GPU cannot have DMA in flight through those bridges:
+    /// the clean success tail, or AFTER a completed emergency FLR on the
+    /// failure path (see the struct doc comment). Never from the failure
+    /// site itself, and never on the opt-in STOP path. Idempotent (a second
+    /// call finds `enabled` already drained and does nothing).
+    pub fn release(&mut self) {
         for (handle, loc) in self.enabled.drain(..) {
             // Safety: GetProtocol performs no driver binding.
             let Ok(pci) = (unsafe {

@@ -1,0 +1,51 @@
+{
+  "label": "after",
+  "when": "2026-11-05T23:34:53",
+  "gpu": "NVIDIA GeForce RTX 3090 Ti",
+  "device_id": "0x220310DE",
+  "vbios": "94.02.a0.00.0d",
+  "driver": "616.92",
+  "power_limit_w": 480.0,
+  "torch": "2.1.2+cu118",
+  "size": 8192,
+  "seconds": 30,
+  "start_util_pct": 12.0,
+  "modes": {
+    "fp16": {
+      "tflops_p90": 99.51655387353574,
+      "tflops_median": 93.91075197724089,
+      "batches": 258,
+      "sha256": "f4871918306ca40cf2aca52f56e7b488edd229329f60a33e9a4d495f85a884cd",
+      "power_w": 445.75,
+      "sm_mhz": 1800.0,
+      "temp_c": 72.0
+    },
+    "bf16": {
+      "tflops_p90": 120.37447241003285,
+      "tflops_median": 119.2927225746963,
+      "batches": 325,
+      "sha256": "f72078eabaf89e2ca82c63aac74e05f7a187081a5b56bd57efa4edf1badcfad5",
+      "power_w": 457.225,
+      "sm_mhz": 1755.0,
+      "temp_c": 78.5
+    },
+    "tf32": {
+      "tflops_p90": 64.11912392563985,
+      "tflops_median": 63.70993878654548,
+      "batches": 174,
+      "sha256": "498c9a4c244754f043f1b128bc1c58f76d7d9aa56c9917ddc7689cb6aa722045",
+      "power_w": 445.775,
+      "sm_mhz": 1845.0,
+      "temp_c": 81.0
+    },
+    "fp32": {
+      "tflops_p90": 25.44635641336756,
+      "tflops_median": 25.383097856564753,
+      "batches": 70,
+      "sha256": "fb6a31d8e2b88cea5e32b8a1cd0cdf8fdfe36edb9225f351848bc5ba0f60484b",
+      "power_w": 461.76,
+      "sm_mhz": 1830.0,
+      "temp_c": 82.0
+    }
+  }
+}

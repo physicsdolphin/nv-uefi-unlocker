@@ -34,8 +34,11 @@ clone 位置 `reference/`（不入库）。
 
 ## 2. Turing 谱系与定址（0x4096xx FEAT 块）
 
-谱系源头：Jon Pry《A Canary in the Crypto Mine》（V67 canary 漏洞，DOI
-10.5281/zenodo.20916112）→ PZH1gdmu/CMP40HX-Unlock v3.0.0（TU106，
+谱系源头：Jon Pry《A Canary in the Crypto Mine: Defeating Stack Protection in a
+GPU Secure Coprocessor》（2026-06-26，Zenodo；V67 canary 漏洞。DOI
+10.5281/zenodo.20916112 = 含 debug booter 的版本记录（生态通行引用），概念 DOI
+10.5281/zenodo.20916111；[ResearchGate 408132536](https://www.researchgate.net/publication/408132536_A_Canary_in_the_Crypto_Mine_Defeating_Stack_Protection_in_a_GPU_Secure_Coprocessor)）
+→ PZH1gdmu/CMP40HX-Unlock v3.0.0（TU106，
 unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性由 40HX 项目
 实机证明。
 
@@ -93,6 +96,33 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
 - **[p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock)**
   （skbskhud）：P104 PCIe Gen2 链路工具（PCI 配置空间操作参考，与算力
   解锁正交）。
+- **CMP 钳制机制史前史**（经 cmp170hx history/external-sources 转引）：
+  [FluidX3D issue #8](https://github.com/ProjectPhysX/FluidX3D/issues/8)
+  （ProjectPhysX / Moritz Lehmann，2023-10-27，`FP_CONTRACT OFF` 禁 FMA
+  收缩——170HX 内存受限负载 3.4×，按指令类型降发射率的最早公开行为学
+  证据）→ [dartraiden/NVIDIA-patcher issue #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)
+  （jetcat8848，2023-12-06，170HX FP32 0.395→6.285 TFLOPS 15.9× + efuse
+  1/2^n 分频假设——九路选择器模型雏形；cmp170hx 记为通向 2026 寄存器级
+  破解的源头线程）。引用落点：[theoretical-uplift](theoretical-uplift.md)
+  §2 史前史注脚。
+
+## 4b. Blackwell（GB20x）只读面与负结果
+
+- **[gpu-unlock-gb206](https://github.com/steviecurrie/gpu-unlock-gb206)**
+  （steviecurrie，GPL-2.0）：首份 GB206 公开寄存器数据与三写梯、`FEAT_READOUT_1`
+  非连续位域的正确位移表（`0,3,7,10,13,16,19,22,28`）与 selftest。探针派生自
+  gpu-unlock-ada 的 `diagnostics/peek/gpu_peek.c`；数据以
+  [issue #168](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/168)
+  提交。落点：[blackwell-gb20x-status](blackwell-gb20x-status.md)、
+  [cold-values](cold-values.md) GB206 节、ssdiag/diag-unlock 的 Blackwell 行。
+- **[bf16-unlock-blackwell-research](https://github.com/shuttie/bf16-unlock-blackwell-research)**
+  （shuttie，文本 CC BY 4.0 / 工具 MIT+GPL-2.0）：87 次实验的负结果与引导链
+  （FSP→BootROM→FMC→GSP-RM，无 SEC2）、FMC 容器格式、`16!` 密钥全搜、
+  PRO 6000 满速对照。落点：同上文档的 §2/§3/§5。
+- **[gpu-unlock-blackwell](https://github.com/phiraml/gpu-unlock-blackwell)**
+  （phiraml，MIT）：`kgspGetBinArchiveBooterLoadUcode` 的变体清单与缺失的
+  GB20x booter（开放模块 NULL 桩）；`mma_rate.py` 测量工具（gb206 仓已 vendored）。
+  落点：同上文档 §3.1。
 
 ## 5. 逆向工具链
 
@@ -118,6 +148,13 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
 - **[Catnip202X](https://github.com/Catnip202X)**：ROM 解析器越界修复
   （PR #44）、工具间寄存器表漂移（issue #42）、免 U 盘分区提案与裁决
   记录（issue #73）。
+- **[seti9585](https://github.com/seti9585)**（issue #107）：native-GOP
+  console 重建方法的贡献者——在其自有实现中先证"从目标卡自身影子 Option
+  ROM 提取未改原厂 GOP 并显式启动"可行（这一路径正是从[其 4080S 项目](https://github.com/seti9585/RTX4080SUPER-Tensor-Core-Unlocker)的行为借鉴而来），
+  并对本仓库首版实现做源码复审、抓出 `EFI_DECOMPRESS` 协议结构体
+  `EFI_DECOMPRESS_PROTOCOL` 的 `Revision` 字段错位（#128 第 12 轮冻结点
+  的真因，`edecba5` 修复并把布局钉进编译期断言）。164608 字节已知答案
+  成为提取链的跨机验证锚点；方法是 v2.1.10 默认行为的直接来源。
 
 硬件实测与报告（详表见[社区硬件记录](community-reports.md)与
 [兼容性矩阵](compatibility.md#reports)，按 issue 号引用；下表列出可具名的）：
@@ -135,6 +172,14 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
   （也是 ReBarUEFI/NvStrapsReBar 载具的实现基座）。
 - [UEFITool/UEFIPatch](https://github.com/LongSoft/UEFITool)（LongSoft）：
   固件模块手术的参考工具。
+
+## 关于作者
+
+作者背景：长期硬件超频与显卡改装爱好者，经手超频魔改维修运维的 NVIDIA
+显卡累计数百块（含大量矿卡与魔改卡），多年从事笔记本、桌面计算机、
+服务器运维、硬件维修、UEFI BIOS 魔改、硬件调试；本项目为学生兴趣研究
+性质（与同学合作）。这一背景决定了本仓库的工程纪律取向：读回是唯一
+判据、证据按 commit 归档、恢复路径先行。
 
 ## 许可与边界
 

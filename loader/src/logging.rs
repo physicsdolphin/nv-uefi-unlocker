@@ -1,17 +1,11 @@
-//! Dual logger: console + `\loader.log` on the marker volume (USB stick for
-//! the application form; the NVRAM-armed volume for the DXE driver form -
-//! see `volumes` and the PR #100 audit).
+//! Dual logger: console + `\loader.log` on the boot volume (USB).
 //!
 //! The UEFI Shell's `> file` redirection proved unreliable on the target
 //! firmware (empty capture), so we own the file ourselves. This also
 //! pre-implements M1's "write samples to USB FAT" requirement.
 //!
-//! Constitution note: the log file lives on the operator-designated volume
-//! and is the only thing the application form ever writes. The DXE driver
-//! form additionally writes its failsafe state to NVRAM variables (not
-//! files) and rotates the previous log to `\loader-prev.log` instead of
-//! destroying it (audit F3); markers, assets and logs on an ESP are placed
-//! there BY the operator, never by an installer of ours.
+//! Constitution note: the log file lives on OUR boot volume and is the only
+//! thing this app ever writes; the ESP stays untouched.
 
 use alloc::format;
 use core::cell::UnsafeCell;
@@ -21,8 +15,26 @@ use uefi::{cstr16, system, CStr16, CString16};
 
 pub const LOG_PATH: &CStr16 = cstr16!(r"\loader.log");
 
-/// Flush every 16th line, and always on stage/verdict lines. FAT only
-/// commits size/dirent on Flush, so the markers below are what survives a
+/// Close-and-reopen every marker line, Flush() on the count cadence.
+///
+/// Why not Flush() for the markers: `FatIFileAccess` deliberately skips the
+/// cache flush on the success path and `FatFlush` is the only path that
+/// writes the directory entry (size included). Firmware that treats Flush
+/// as a no-op therefore leaves a 0-byte file no matter how often it is
+/// called - measured on both 8-series boards of #122/#170: >40 lines,
+/// `DETACH` markers among them (marker lines are flushed), file still 0
+/// bytes, while the graceful read-only round on the same stick wrote 13 KB
+/// at Close. `EFI_FILE_PROTOCOL.Close` is defined to release the handle and
+/// the EDK2 FAT driver flushes the dirent on the way out, so marker lines
+/// now write -> close -> reopen(ReadWrite, seek END). A hang after the
+/// marker then leaves a readable file instead of an empty one.
+///
+/// Cost: one open + seek + close per marker (~50 markers/run, the same
+/// 0.3-0.5 s envelope the old flush budget assumed). The count cadence
+/// stays a plain Flush() - it is cheap and now only a nicety.
+///
+/// 2026-10-27 background (why markers exist at all): FAT only commits
+/// size/dirent on Flush, so the markers are what survives a
 /// hang or mid-call reset - exactly what the 2026-10-27 Z790 diagnosis
 /// needed (the log ended at "POST-FLR: verified"). A Flush per line is
 /// visible on slow USB media (the TU106 run of 2026-10-28 spent noticeable
@@ -31,6 +43,19 @@ pub const LOG_PATH: &CStr16 = cstr16!(r"\loader.log");
 /// count cadence is a knob: `\tx-flush-lines.txt` on the stick root sets it
 /// (0 = marker lines only). Raising it trades forensics resolution for
 /// fewer flush stalls - the marker lines below always flush regardless.
+///
+/// Boundary coverage (P1-6, nv_unlock_win 0.2.14 discipline): every
+/// transaction verdict/phase line flushes via the markers below, so a
+/// mid-call reset always leaves the last boundary on the stick. Mapping:
+/// claim verdicts -> "claim:", FWSEC ignition return -> "FWSEC:" (colon
+/// form only - FWSEC-TU*/FWSEC-TRACE diagnostics stay on the count
+/// cadence), booter START/staging -> "BOOTER:", selectors -> "SELECTOR",
+/// FLR -> "FLR" + "POST-", StartImage -> "CHAIN" + the finish() close.
+/// Deliberately NOT added: FWSEC-TU/FWSEC-TRACE/BOOTER-AUDIT/
+/// TX-ASSET-DIAG/SCRUB progress streams (issue #38 budget: per-line flush
+/// ~5-10 ms on USB BOT; the marker set adds <=~50 flushed lines =
+/// ~0.3-0.5 s worst case - the real-machine ablation round must confirm
+/// no new 1.25 s BOT stalls appear, else revert).
 const FLUSH_EVERY_LINES_DEFAULT: usize = 16;
 static FLUSH_EVERY_LINES: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(FLUSH_EVERY_LINES_DEFAULT);
@@ -41,12 +66,73 @@ pub fn set_flush_every_lines(n: usize) {
     FLUSH_EVERY_LINES.store(n, core::sync::atomic::Ordering::Relaxed);
 }
 
+/// Close-based commit ladder (#122 diag6). The diag3-5 builds always did
+/// `Close` (create-commit and per-marker commit); v2.1.9 and diag2 never
+/// did. On the Z97 board every diag4/5 run died inside the window that
+/// opens with the create-commit and never left a single log line, while
+/// the old builds sedimented 157-239 lines per run - so the ladder is now
+/// a stick switch and the OLD behaviour is the default:
+///
+///   0 (default)            write + cadence Flush, one long-lived handle
+///                          (v2.1.9/diag2 semantics - the sedimentation
+///                          baseline)
+///   1 (`tx-log-commit-lines`)  + Close/reopen on marker lines
+///   2 (`tx-log-commit`)        + the create-commit as well (diag3-5)
+///
+/// The dirent is then only committed on Close, so with 0/1 the "0 bytes
+/// with a stale dirent" shape comes back - the cluster carve is the reader.
+static LOG_COMMIT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+pub fn set_log_commit(level: usize) {
+    LOG_COMMIT.store(level.min(2), core::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn log_commit() -> usize {
+    LOG_COMMIT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 const FLUSH_MARKERS: &[&str] = &[
     "PHASE", "RESULT", "POST-", "FINAL", "RECONNECT", "DETACH", "CHAIN",
     "SELECTOR", "HANDOFF", "WATCHDOG", "AUTH-SCAN end",
+    "claim:", "FLR", "BOOTER:", "FWSEC:",
+    // Issue #128 run 11: a freeze inside the native-GOP recovery block
+    // left the log blind at the 16-line cadence - run 10's post-block
+    // lines only reached the stick because the graceful path ran on to
+    // FINAL (marker flush + close). The whole recovery sequence is ~25
+    // lines, so per-line flush costs ~0.1-0.25 s worst case on USB BOT
+    // and turns any future hang into a between-two-lines answer.
+    "NATIVE-GOP", "VGA-RESTORE",
+    // Issue #122 (2026-11-05): the reporter's self-built TX binaries hang
+    // with a created-but-0-byte log and a screen that never lights up, in
+    // the thin strip between the file existing and the first marker line.
+    // These entries make the strip itself readable: "log file" is line 1,
+    // the version banner line 2, BOOT/DIAG/EARLY cover the probes behind
+    // them, and PREP/CONFIRM cover the armed countdown where the first
+    // TX-only runtime work (enumeration/GOP probe/sample/asset reads)
+    // actually runs.
+    "log file", "nv-uefi-unlocker", "BOOT", "DIAG", "EARLY", "PREP", "CONFIRM",
+    // Issue #170 diag5: the recovered v2.1.10 logs end at "TX: layout ok",
+    // but "layout ok" and the next log call are adjacent statements - the
+    // evidence pipeline stopped, not necessarily the execution. "TX:" and
+    // "layout" commit every segment boundary and the FWSEC-section step
+    // lines (all "FWSEC:"-prefixed) so the ignition stretch is line-resolved.
+    "TX:", "layout",
     // DXE-form evidence anchors (PR #100 audit F3/N4): provenance, arming
     // and guard-override visibility survive a hang with the run.
     "FORM", "ARM:", "FAILSAFE", "OVERRIDES",
+];
+
+/// Ultrafast speed profile (`\tx-ultrafast.txt`): marker flushes are the
+/// per-line USB BOT cost driver (~0.1-0.25 s each, worse when flash GC
+/// kicks), and the shared marker set matches ~70-80 lines per run. The
+/// verified-machine profile flushes only on transaction anchors - phase
+/// boundaries, the FWSEC ignition result, the booter halt, the verdicts
+/// and the chain handoff. Trade: a hang between anchors leaves the log
+/// blind since the last anchor; that is the documented ultrafast bargain
+/// (multi-round-verified machines only).
+const ULTRAFAST_FLUSH_MARKERS: &[&str] = &[
+    "log file", "PHASE", "BEGIN", "WPR2 UP", "halted", "FLR",
+    "SELECTOR RESULT", "FINAL", "HANDOFF-OUT", "CHAIN-PRE",
 ];
 
 /// Console whitelist for quiet mode (issue #38): with `\tx-quiet.txt` on
@@ -62,6 +148,8 @@ const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "PROMPT", "CONFIRM", // interaction
     "PHASE", "SELECTOR", "HANDOFF", // stage boundaries
     "RESULT", "FINAL", "TX:", "CHAIN", "QUIET", // verdicts
+    "INPUT-SETTLE", // phantom-key suppression notice (stuck-key class)
+    "KEYS:", // \tx-ignore-key.txt load result (phantom-key ignore list)
     "FORM", "ARM:", "FAILSAFE", "OVERRIDES", // DXE-form provenance (audit F3/N4)
 ];
 
@@ -85,6 +173,12 @@ struct DualLogger {
     lines: UnsafeCell<usize>,
     // issue #38: skip the console mirror for non-verdict lines
     quiet: UnsafeCell<bool>,
+    // #122/#170 diag: stop mirroring while the console stack is torn down
+    console_enabled: UnsafeCell<bool>,
+    // \tx-no-log.txt: no \loader.log this boot - console is the only output
+    log_disabled: UnsafeCell<bool>,
+    // \tx-no-console.txt: no console mirror at all (silent run)
+    console_off: UnsafeCell<bool>,
 }
 
 static LOGGER: DualLogger = DualLogger {
@@ -92,6 +186,9 @@ static LOGGER: DualLogger = DualLogger {
     file_error_reported: UnsafeCell::new(false),
     lines: UnsafeCell::new(0),
     quiet: UnsafeCell::new(false),
+    console_enabled: UnsafeCell::new(true),
+    log_disabled: UnsafeCell::new(false),
+    console_off: UnsafeCell::new(false),
 };
 
 // Safety: UEFI applications are single-threaded during boot services.
@@ -125,27 +222,66 @@ impl Log for DualLogger {
 
         // File mirror FIRST, then console: a dangling console chain is
         // itself a suspected crash site, so the stick must already hold the
-        // line before it is mirrored. Flush policy: see FLUSH_MARKERS above.
+        // line before it is mirrored. Durability policy: see the marker
+        // comment above (close+reopen on markers, Flush on the cadence).
         // Safety: single-threaded boot services; pointer use is confined here.
         unsafe {
             let n = *self.lines.get() + 1;
             *self.lines.get() = n;
             let fe = FLUSH_EVERY_LINES.load(core::sync::atomic::Ordering::Relaxed);
-            let flush = (fe > 0 && n % fe == 0)
-                || FLUSH_MARKERS.iter().any(|m| line.contains(m));
-            if let Some(f) = (*self.file.get()).as_mut() {
-                let ok = f.write(line.as_bytes()).is_ok() && (!flush || f.flush().is_ok());
+            let count_flush = fe > 0 && n % fe == 0;
+            // Marker lines always Flush (v2.1.9 semantics at every level);
+            // the Close half of the durability path is the diag6 knob.
+            let marker = if crate::ultrafast() {
+                ULTRAFAST_FLUSH_MARKERS.iter().any(|m| line.contains(m))
+            } else {
+                FLUSH_MARKERS.iter().any(|m| line.contains(m))
+            };
+            let flush = count_flush || marker;
+            let durable = marker && log_commit() >= 1;
+            if (*self.file.get()).is_some() {
+                let mut ok;
+                {
+                    let f = (*self.file.get()).as_mut().unwrap();
+                    ok = f.write(line.as_bytes()).is_ok();
+                    if ok && flush {
+                        ok = f.flush().is_ok();
+                    }
+                }
+                if ok && durable {
+                    // Close (drops the handle: that is what commits the
+                    // dirent on firmware where Flush is a no-op), then
+                    // reopen at EOF so logging continues.
+                    let _ = (*self.file.get()).take();
+                    match reopen_log() {
+                        Some(f) => *self.file.get() = Some(f),
+                        None => {
+                            *self.file.get() = None;
+                            ok = false;
+                        }
+                    }
+                }
                 if !ok {
-                    // Media pulled: stop trying, keep console alive.
+                    // Media pulled / reopen refused: console keeps the run
+                    // diagnosable, the file log stops here.
                     *self.file.get() = None;
                 }
             }
         }
 
         // Console mirror. Quiet mode (issue #38) keeps verdict-class lines
-        // only; the stick already holds every line (file mirror ran first).
+        // only; the console-detached gate (#170 diag) suppresses the mirror
+        // entirely between detach and reconnect. The file mirror ran first.
         let quiet = unsafe { *self.quiet.get() };
-        if crate::keywait::stdout_available() && (!quiet || console_visible(&line)) {
+        let console_enabled = unsafe { *self.console_enabled.get() };
+        let console_off = unsafe { *self.console_off.get() };
+        // The DXE driver form can run with no console in the system table
+        // (headless firmware); a null stdout pointer must never be deref'd.
+        if console_enabled
+            && !console_off
+            && crate::keywait::stdout_available()
+            && (!quiet || console_visible(&line))
+        {
             if let Ok(s) = CString16::try_from(line.as_str()) {
                 system::with_stdout(|out| {
                     let _ = out.output_string_lossy(&s);
@@ -161,7 +297,13 @@ impl Log for DualLogger {
 /// Replaces `uefi::helpers::init()` (which only installs uefi's own
 /// console-only logger; allocator and panic handler need no init call).
 pub fn init(version: &str) {
-    let file = open_fresh_log();
+    // \tx-no-log.txt: skip the file entirely - console becomes the only
+    // output, which also structurally refuses quiet (see quiet_effective).
+    let file = if log_disabled() {
+        None
+    } else {
+        open_fresh_log()
+    };
     if file.is_none() {
         *unsafe { &mut *LOGGER.file_error_reported.get() } = true;
     }
@@ -172,20 +314,17 @@ pub fn init(version: &str) {
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(log::LevelFilter::Info);
 
-    if file_open() {
-        log::info!("log file {} opened on marker volume", LOG_PATH);
+    if log_disabled() {
+        log::info!("LOG: \\tx-no-log.txt present - no file logging this boot (console only; hang forensics are ON THE OPERATOR)");
+    } else if file_open() {
+        log::info!("log file {} opened on boot volume", LOG_PATH);
     } else {
         log::info!("log file unavailable (console-only); open failed");
     }
-    // Build class in the log line itself (audit M2): LTO can drop the
-    // banner's strings from a binary whose banner is never called, so the
-    // log - not the banner - is the authoritative build-class record. The
-    // typo "unloader" the audit flagged is fixed; the quiet whitelist
-    // matches "nv-uefi-unlocker" and keeps this line visible.
-    #[cfg(feature = "tx")]
-    log::info!("nv-uefi-unlocker v{version} (TX BUILD: CONTAINS GPU-WRITE PATHS)");
-    #[cfg(not(feature = "tx"))]
-    log::info!("nv-uefi-unlocker v{version} (read-only build; no GPU writes by design)");
+    log::info!("nv-uefi-unlocker v{version} (tx builds carry the gated transaction; readonly = console output only)");
+    if console_off() {
+        log::info!("CONSOLE: \\tx-no-console.txt present - console mirror off (fully silent run; combine with the armed marker)");
+    }
 }
 
 /// Close the log file (flush) before chain-loading. Idempotent.
@@ -222,12 +361,137 @@ fn file_open() -> bool {
     unsafe { (*LOGGER.file.get()).is_some() }
 }
 
+/// `\tx-no-log.txt` speed/privacy knob: never open `\loader.log` this boot.
+/// Set once from main before [`init`]; console becomes the only output and
+/// quiet is structurally refused (its guard sees the file as closed).
+pub fn set_log_disabled(v: bool) {
+    // Safety: single-threaded boot services; called before any logging.
+    unsafe {
+        *LOGGER.log_disabled.get() = v;
+    }
+}
+
+fn log_disabled() -> bool {
+    unsafe { *LOGGER.log_disabled.get() }
+}
+
+/// `\tx-no-console.txt` speed knob: suppress the console mirror entirely
+/// (the GOP text output that costs minutes on slow panels, issue #38).
+/// Set once from main before [`init`]. Invisible run - combine with the
+/// armed marker so the confirm needs no screen.
+pub fn set_console_off(v: bool) {
+    // Safety: single-threaded boot services; called before any logging.
+    unsafe {
+        *LOGGER.console_off.get() = v;
+    }
+}
+
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+fn console_off() -> bool {
+    unsafe { *LOGGER.console_off.get() }
+}
+
+/// Stop mirroring to the console (#122/#170 diag, issue #170).
+///
+/// The GOP handle we disconnect carries the console's TextOut instance, so
+/// every call after `DisconnectController` runs against a console stack the
+/// spec never promised would stay usable. This gate makes the next log call
+/// touch nothing but the file, which splits the two candidate hang sites:
+/// a run that survives the mute dies in a Stop() (H2), a run that still
+/// hangs was killed by writing to the detached console (H1).
+///
+/// Read-only builds carry it unused.
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+pub fn mute_console() {
+    // Safety: single-threaded boot services.
+    unsafe {
+        *LOGGER.console_enabled.get() = false;
+    }
+}
+
+/// Re-enable the console mirror. Idempotent and silent (a log line here is
+/// the first post-detach console write, so callers decide when to spend it).
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+pub fn unmute_console() {
+    // Safety: single-threaded boot services.
+    unsafe {
+        *LOGGER.console_enabled.get() = true;
+    }
+}
+
+#[cfg_attr(not(feature = "tx"), allow(dead_code))]
+pub fn console_muted() -> bool {
+    // Safety: single-threaded boot services.
+    unsafe { !*LOGGER.console_enabled.get() }
+}
+
+/// Reopen `\loader.log` for writing with the position at EOF; used by the
+/// marker-line durability path after the close that commits the dirent.
+/// `FileMode::ReadWrite` on an existing file does not truncate (only
+/// CreateReadWrite does), and `END_OF_FILE` seeks to the current end.
+fn reopen_log() -> Option<RegularFile> {
+    let mut fs = crate::volumes::marker_fs().ok()?;
+    let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
+    let handle: FileHandle = root
+        .open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty())
+        .ok()?;
+    let mut file = handle.into_regular_file()?;
+    file.set_position(RegularFile::END_OF_FILE).ok()?;
+    Some(file)
+}
+
+fn open_fresh_log() -> Option<RegularFile> {
+    let mut fs = crate::volumes::marker_fs().ok()?;
+    let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
+
+    // Rotate (audit F3): archive the previous log instead of destroying it.
+    // Best-effort - a failed rotation must not stop the new run. Replaces
+    // main's plain stale-log delete; the fresh log still starts empty.
+    rotate_previous_log(&mut root);
+
+    let handle: FileHandle = root
+        .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
+        .ok()?;
+    let file = handle.into_regular_file()?;
+    // Commit the fresh (0-byte) dirent right away by closing and reopening
+    // (issue #122): the reporter's hangs leave a created-but-empty file, and
+    // on firmware where Flush is a no-op the creation itself is otherwise
+    // uncommitted. With the empty dirent on disk, "file created, still 0
+    // bytes" now means the run died between this point and the first log
+    // line - a three-call strip (set_logger, first format, first write)
+    // instead of an unknown one.
+    if log_commit() >= 2 {
+        // Create-commit: close the fresh (0-byte) dirent right away so a
+        // hang leaves a created-but-empty file instead of a stale one.
+        drop(file);
+        if let Some(f) = reopen_log() {
+            return Some(f);
+        }
+        // Issue #198: on the Y9000P firmware the reopen chain refuses on
+        // every boot - readonly runs completed with the console alive, the
+        // file stayed 0 bytes and a full-cluster carve found nothing - a
+        // second, cleaner failure mode of the same Close/reopen machinery
+        // that wedges the Z97 init window. Nothing has been written yet at
+        // this point, so recover: a fresh truncating handle plus the
+        // flush-only path for the whole run (v2.1.9 semantics, which this
+        // firmware demonstrably logs fine on).
+        set_log_commit(0);
+        let mut fs = crate::volumes::marker_fs().ok()?;
+        let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
+        let handle: FileHandle = root
+            .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
+            .ok()?;
+        return handle.into_regular_file();
+    }
+    Some(file)
+}
+
 /// Log history (audit F3 + 2026-11-01 log-persistence round): each armed
 /// boot shifts a three-generation chain instead of destroying the previous
 /// record — `\loader.log` → `\loader-prev.log` → `\loader-prev2.log` →
 /// `\loader-prev3.log` (oldest dropped). EFI has no rename, so every shift
 /// is a bounded copy: 1 MiB per generation caps the worst case at ~3 MiB of
-/// volume I/O per armed boot.
+/// volume I/O per boot.
 const LOG_HISTORY: usize = 3;
 const PREV_LOG_PATHS: [&CStr16; LOG_HISTORY] = [
     cstr16!(r"\loader-prev.log"),
@@ -235,20 +499,6 @@ const PREV_LOG_PATHS: [&CStr16; LOG_HISTORY] = [
     cstr16!(r"\loader-prev3.log"),
 ];
 const PREV_LOG_CAP: usize = 1024 * 1024;
-
-fn open_fresh_log() -> Option<RegularFile> {
-    let mut fs = crate::volumes::marker_fs().ok()?;
-    let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
-
-    // Rotate (audit F3): archive the previous log instead of destroying it.
-    // Best-effort - a failed rotation must not stop the new run.
-    rotate_previous_log(&mut root);
-
-    let handle: FileHandle = root
-        .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
-        .ok()?;
-    handle.into_regular_file()
-}
 
 /// Shift the generation chain oldest-first (each copy's source still
 /// exists), then delete the original so the fresh log starts empty.

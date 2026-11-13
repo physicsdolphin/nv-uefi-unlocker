@@ -16,6 +16,8 @@ pub const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "PROMPT", "CONFIRM", // interaction
     "PHASE", "SELECTOR", "HANDOFF", // stage boundaries
     "RESULT", "FINAL", "TX:", "CHAIN", "QUIET", // verdicts
+    "INPUT-SETTLE", // phantom-key suppression notice (stuck-key class)
+    "KEYS:", // \tx-ignore-key.txt load result (phantom-key ignore list)
 ];
 
 pub fn console_visible(line: &str) -> bool {

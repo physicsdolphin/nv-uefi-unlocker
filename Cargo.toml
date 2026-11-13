@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["loader", "assets", "sim", "ffspack"]
+members = ["loader", "assets", "sim", "ffspack", "romcore"]
 # loader is an x86_64-unknown-uefi binary and cannot build for the host
 # triple; plain `cargo build` therefore only covers the host-side crates.
 # Build the EFI app with `cargo efi` (see .cargo/config.toml).
-default-members = ["assets", "sim", "ffspack"]
+default-members = ["assets", "sim", "ffspack", "romcore"]
 
 [workspace.package]
-version = "2.1.9"
+version = "2.1.12-rc3"
 edition = "2021"
 license = "GPL-2.0-only"
 

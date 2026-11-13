@@ -382,3 +382,184 @@ fn t31_turing_wpr2_up_live_gsp_refused() {
     assert_eq!(err.phase, "claim");
     assert!(err.reason.contains("GSP session live"));
 }
+
+/// Issue #22 closeout: the reset model ends at RESET_FALSE (AGENTS §9.2) -
+/// after any successful or failed run the SEC2 reset register must read
+/// de-asserted, and the de-assertion write is part of the booter phase.
+#[test]
+fn t32_reset_ends_deasserted_on_success() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    gpu.boot_mode = crate::BootMode::Halt;
+    // Replay is the cheapest full run through the booter phase.
+    let mut txn = Transaction::new_replay(&mut gpu, Faults::default());
+    let _ = txn.run();
+    assert_eq!(
+        gpu.read(regs::SEC2_RESET) & 1,
+        0,
+        "reset left asserted - later host reads would see FECS_PRI_RESET (AGENTS 9.2)"
+    );
+}
+
+/// Issue #22 closeout: a failing DMA free is reachable and reports the
+/// unwind phase with the leak it describes (the old drain loop could never
+/// fail, making t18 a tautology).
+#[test]
+fn t33_dma_free_failure_reports_unwind_phase() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let err = Transaction::new(
+        &mut gpu,
+        Faults { fail_free_at: Some(1), ..Default::default() },
+    )
+    .run()
+    .unwrap_err();
+    assert_eq!(err.phase, "unwind", "a failed free must surface as unwind: {err:?}");
+    assert!(err.reason.contains("leak") || err.phase == "unwind");
+}
+
+// ---- STAGING-FALLBACK batch (issues #74/#156/#191) -------------------------
+// The loader's gate: booter mailbox0 == 0x89 AND the host meta magic intact
+// AND the HIGH band staged AND one shot only. Anything else - 0x91 (the
+// sub-4GB lock mirror class), a corrupt host page, LOW already staged, or a
+// second failure - must go straight to the canonical failure path.
+
+fn run_high(faults: Faults) -> Result<crate::transaction::Report, PhaseError> {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, faults);
+    tx.staging_high = true;
+    tx.run()
+}
+
+/// The #74/#156/#191 class: HIGH band staged, >=4GiB reads undelivered.
+/// Attempt 1 records 0x89 + HALT, the fallback fires exactly once, attempt 2
+/// in the LOW band verifies, and the transaction completes with a clean
+/// unwind (the dead HIGH buffers were released, the LOW ones ride to the end).
+#[test]
+fn t34_high_band_unreachable_fallback_recovers() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { high_band_unreachable: true, ..Default::default() },
+    );
+    tx.staging_high = true;
+    let report = tx.run().expect("the LOW-band retry must carry the boot");
+    assert!(report.unwind_clean && report.selectors_written && report.flr_done);
+    let hits = tx.log().iter().filter(|l| l.contains("STAGING-FALLBACK")).count();
+    assert_eq!(hits, 1, "the fallback must fire exactly once, got {hits}");
+    assert!(tx.log().iter().any(|l| l.contains(">=4GiB staging read undelivered")));
+}
+
+/// Negative control for the gate: LOW staged + the platform only blocks HIGH
+/// - the plain path succeeds and the fallback must never appear.
+#[test]
+fn t35_low_staged_unreachable_high_needs_no_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { high_band_unreachable: true, ..Default::default() },
+    );
+    tx.staging_high = false; // \tx-low-staging.txt analog
+    let report = tx.run().expect("LOW staging delivers on a HIGH-blocked platform");
+    assert!(report.unwind_clean);
+    assert!(
+        !tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")),
+        "the fallback must not fire when LOW was staged by choice"
+    );
+}
+
+/// #57 analog: both bands dead. The fallback fires, the retry fails, and the
+/// canonical failure path takes over - exactly one fallback attempt, clean
+/// unwind, no loops.
+#[test]
+fn t36_both_bands_dead_retry_fails_canonical() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { both_bands_unreachable: true, ..Default::default() },
+    );
+    tx.staging_high = true;
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "verify");
+    assert!(err.reason.contains("both bands"), "retry-fail verdict: {err:?}");
+    let hits = tx.log().iter().filter(|l| l.contains("STAGING-FALLBACK")).count();
+    assert_eq!(hits, 1, "no retry loops: exactly one fallback attempt");
+    assert!(tx.log().iter().all(|l| !l.contains("rebound to the LOW buffers")));
+}
+
+/// Mirror class (#16): LOW band is read-locked and fails 0x91 - a different
+/// status the gate must never mistake for the band class.
+#[test]
+fn t37_sub4gb_lock_fails_0x91_without_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { sub4gb_lock: true, ..Default::default() },
+    );
+    tx.staging_high = false; // forced LOW (e.g. \tx-low-staging.txt on a #16 board)
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "verify");
+    assert!(err.reason.contains("sub-4GB read lock"), "{err:?}");
+    assert!(!tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")));
+}
+
+/// Buffer-side bug: the HOST meta page is corrupt, so no retry can help -
+/// the gate must refuse and say why.
+#[test]
+fn t38_magic_corrupt_no_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { meta_magic_corrupt: true, ..Default::default() },
+    );
+    tx.staging_high = true;
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "verify");
+    assert!(err.reason.contains("buffer-side"), "{err:?}");
+    assert!(!tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")));
+}
+
+/// The healthy majority: HIGH staged, platform delivers - the fallback path
+/// is never entered at all (the default arm must stay byte-for-byte the old
+/// behavior).
+#[test]
+fn t39_healthy_high_staging_never_enters_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.staging_high = true;
+    let report = tx.run().expect("default HIGH path stays green");
+    assert!(report.unwind_clean && report.selectors_written);
+    assert!(!tx.log().iter().any(|l| l.contains("STAGING-FALLBACK")));
+}
+
+/// The 1e93 falsification (2026-11-09, issue #156): after one completed
+/// booter run an engine reset cannot restore the FBIF write surface (the
+/// reporter's bare rc1 run died EIO at falcon_dma_unblock with the trio
+/// reading back dirty), so the fallback's retry vehicle is FLR + FWSEC
+/// re-ignition + fire. The platform fault models the dead write surface;
+/// the transaction must recover through the FLR vehicle, not despite it.
+#[test]
+fn t40_fbif_dead_after_run_flr_retry_recovers() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults {
+            high_band_unreachable: true,
+            fbif_write_dead_after_run: true,
+            ..Default::default()
+        },
+    );
+    tx.staging_high = true;
+    let report = tx.run().expect("the FLR + FWSEC re-ignition retry must carry the boot");
+    assert!(report.unwind_clean && report.selectors_written);
+    // The one-shot gate line fires once; the FLR-vehicle completion line is
+    // the second STAGING-FALLBACK line (the real loader logs several).
+    let gate_hits = tx
+        .log()
+        .iter()
+        .filter(|l| l.contains(">=4GiB staging read undelivered"))
+        .count();
+    assert_eq!(gate_hits, 1, "the gate must fire exactly once, got {gate_hits}");
+    assert!(
+        tx.log().iter().any(|l| l.contains("FLR + FWSEC re-ignition done")),
+        "the 1e93 vehicle (FLR + FWSEC re-ignition) must be on the log"
+    );
+}

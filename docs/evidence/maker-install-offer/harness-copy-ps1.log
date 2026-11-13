@@ -1,0 +1,15 @@
+
+[install] generated layout: 11 files, 16.5 MB
+[install] probe skipped (-NoInstallPrompt)
+[install] done: 11 files written (11 refreshed), 0 already identical -> D:\git-repo\nv-uefi-unlocker/.relcheck/copy-target (SHA-256 read-back verified)
+TEST1 fresh: ok=True
+[install] done: 11 files written (0 refreshed), 11 already identical -> D:\git-repo\nv-uefi-unlocker/.relcheck/copy-target (SHA-256 read-back verified)
+TEST2 identical rerun: ok=True
+[install] REFUSED: the target already holds different file(s) and is not a nv-uefi-unlocker layout:
+[install]   existing: D:\git-repo\nv-uefi-unlocker\.relcheck\copy-target\booter_load_tu10x.bin
+[install] nothing was written (the tool never overwrites existing files).
+[install] If it is a stale copy of this tool, delete those files yourself and re-run.
+TEST3 conflict refuse: ok=False (expected False), user file untouched=True
+[install] done: 11 files written (11 refreshed), 0 already identical -> D:\git-repo\nv-uefi-unlocker/.relcheck/copy-target (SHA-256 read-back verified)
+TEST4 marker upgrade: ok=True, overwritten-and-verified=True
+ALL COPY HARNESS TESTS PASSED

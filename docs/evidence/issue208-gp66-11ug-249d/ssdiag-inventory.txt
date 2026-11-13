@@ -1,0 +1,30 @@
+﻿===== ssdiag inventory v0.7.0 (read-only; no admin, no driver) =====
+OS:      Windows 11 26H2 build 26300.9711
+CPU:     11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+BOARD:   Micro-Star International Co., Ltd. GP66 Leopard 11UG (board: Micro-Star International Co., Ltd. MS-1543)
+BIOS:    E1543IMS.323 (04/20/2022)
+CHASSIS: laptop/portable (SMBIOS chassis type 10)
+GPU 1: NVIDIA GeForce RTX 3070 Laptop GPU
+GPU 1 PCI: 10de:249d SUBSYS 12FB1462 BDF 01:00.0
+GPU 1 family: ga10x (Ampere GA103/104/106/107) - IN-SCOPE (unlock transaction family)
+GPU 1 VBIOS: 94.04.55.00.89 (nvapi)
+GPU 1 driver: 32.0.16.2101 (621.01), dated 10-19-2026; EnableGpuFirmware unset (LEGACY mode)
+===== end inventory =====
+PLATFORM: vulnerable-driver blocklist = ON
+PLATFORM: core isolation (HVCI)       = ON
+PLATFORM: HVCI runtime (CodeIntegrity) = clear
+PLATFORM: Secure Boot                 = OFF
+PLATFORM: blocklist/HVCI gate is ON, but that alone refuses nothing here.
+  The pinned pmxdrv hash is NOT on the current Microsoft blocklist (checked
+  2026-11 against the OS-delivered and downloadable policies); it loads or
+  fails on the signature gate above, not on this one.
+NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs
+      a driver install (event 7045) and managed/EDR machines may alert on it.
+USB4: Usb4HostRouter Start = 3 (Manual)
+USB4: Usb4DeviceRouter Start = 3 (Manual)
+USB4: no USB4 devnodes enumerated
+USB4: device-router driver ENABLED - the takeover will reset the tunnel at bind; a cleared canary is expected
+ADVISORY: driver 621.01 - this family PF-FLRs the unlocked card back to stock in Windows (issue #99, TU106 evidence); an in-OS read-back of NOT_UNLOCKED there is the driver, not a failed EFI transaction
+ADVISORY: laptop chassis - the volatile unlock can drop on sleep/RTD3/MUX events; note the display mode (hybrid vs dGPU-direct) when reporting (FAQ: losing the unlock)
+inventory complete - read-only, nothing was loaded or written
+posting this block? review it and redact anything you consider personal first

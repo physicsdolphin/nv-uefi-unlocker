@@ -8,7 +8,7 @@ use log::info;
 use uefi::boot;
 
 use crate::pci::PciIo;
-use crate::tx::{hs_prevalidate, inaccessible, TxError, TxGpu};
+use crate::tx::{inaccessible, TxError, TxGpu};
 
 /// Extracted FWSEC from the card's own PROM (V3 descriptor semantics).
 pub struct FwsecInfo {
@@ -25,7 +25,7 @@ pub struct FwsecInfo {
     pub engine_mask: u32,
     pub ucode_id: u32,
     pub sig_versions: u32,  // slot bitmap
-    pub sig_off: u32,       // signature area within the ROM (desc + 44)
+    pub sig_off: u32,       // signature area within the ROM (desc + desc_size: 44 on V3, 60 on V2)
     pub interface_off: u32, // FRTS interface block offset in DMEM
     pub imem_sec_base: u32, // V2 NS/SEC split: secure segment IMEM base (0 on V3)
     pub imem_sec_size: u32, // V2 secure segment size (0 on V3)
@@ -171,6 +171,21 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
                 // NVOC TU106 self-check: stored 0x9a10 = imemLoad 0x9600 +
                 // dmem 0x410. The old parse here read iface@12/imem@20/32 —
                 // those are VirtualEntry/IMEMPhys/IMEMSecBase, wrong slots.
+                // Issue #21: IMEMVirtBase lives at +28 (not +24, which is
+                // IMEMLoadSize - the old parse read the same field twice),
+                // and the signature area starts AFTER the 60-byte descriptor
+                // (the old +44 was the V3 value, pointing inside it).
+                // Cross-checked field-by-field against nvoc's authoritative
+                // V2 decode (core/src/vbios/legacy.rs V2 tuple, TU106
+                // 1.rom-measured): interface+16/phys+20/load+24/virt+28/
+                // secbase+32/secsize+36 all match exactly. The +52 read
+                // (DMEM image offset) has no nvoc counterpart - nvoc derives
+                // the DMEM window geometrically (desc_end + imem_load_size,
+                // "IMEM followed by DMEM") instead of reading a field; both
+                // agree on the real TU106 (field value 0x410 == geometric
+                // position), so the cmp50hx explicit-field reading stays,
+                // noted here as a two-source ambiguity never adjudicated by
+                // a first-hand decode.
                 if size < 60 || desc_off + 60 > rom.len() {
                     return None;
                 }
@@ -185,7 +200,7 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
                     stored_size: stored,
                     imem_pa: le32(rom, desc_off + 20),
                     imem_size: le32(rom, desc_off + 24),
-                    imem_va: le32(rom, desc_off + 24),
+                    imem_va: le32(rom, desc_off + 28),
                     dmem_pa: 0,
                     dmem_size: dmem_load,
                     data_off: dmem_off_img,
@@ -193,7 +208,7 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
                     engine_mask: 0x400,
                     ucode_id: 9,
                     sig_versions: 0,
-                    sig_off: desc_off as u32 + 44,
+                    sig_off: desc_off as u32 + 60,
                     interface_off: le32(rom, desc_off + 16),
                     imem_sec_base: sec_base,
                     imem_sec_size: sec_size,
@@ -287,17 +302,22 @@ pub fn fwsec_patch_frts(image: &mut [u8], fw: &FwsecInfo, frts_offset: u64) -> R
     for _ in 0..entries {
         let dest = le32(dmem, off + 4) as usize;
         if le32(dmem, off) == 4 {
+            // The mapper block we are about to patch must carry the audited
+            // V3 layout - validating at selection time (not after, as the C
+            // reference does) keeps a crafted descriptor from deferring its
+            // own rejection until after we have committed to it (#21).
             if mapper.is_some() || dest + 64 > dmem.len() {
                 return Err(TxError::EInval);
+            }
+            if le16(dmem, dest + 4) != 3 || le16(dmem, dest + 6) < 64 {
+                return Err(TxError::EIO); // only the audited V3 mapper layout
             }
             mapper = Some(dest);
         }
         off += 8;
     }
     let mapper = mapper.ok_or(TxError::EIO)?;
-    if le16(dmem, mapper + 4) != 3 || le16(dmem, mapper + 6) < 64 {
-        return Err(TxError::EIO); // only the audited V3 mapper layout
-    }
+    // (V3 layout already validated at selection time.)
     let cmd_off = le32(dmem, mapper + 8) as usize;
     let cmd_size = le32(dmem, mapper + 12) as usize;
     if cmd_size < 44 || cmd_off + cmd_size > dmem.len() {
@@ -366,7 +386,7 @@ pub fn layout_from_registers(
     // mailbox status (meta/staging rejection), misattributed here before.
     // Decode, log, and never guess.
     let fb_mib = if inaccessible(fb_raw) {
-        if family == "tu10x" {
+        if family == "tu10x" || family == "tu11x" {
             const FB_MIB_TU106_1F07: u32 = 8192;
             const LOCAL_MEMORY_RANGE: u32 = 0x0010_0ce0;
             let lmr = gpu.read32_raw(LOCAL_MEMORY_RANGE);
@@ -428,7 +448,7 @@ pub fn layout_from_registers(
     // and is bit-identical to the AD107M values the M4 chain verified
     // end-to-end. Skip the check where the register is hidden.
     let (plm, plm_check) = if inaccessible(plm_raw) {
-        if family == "tu10x" {
+        if family == "tu10x" || family == "tu11x" {
             info!(
                 "layout: MMU_PLM PLM-locked on Turing ({plm_raw:#010x}) - skipping the lock-bit sanity check (lo/hi window remains the layout input)"
             );
@@ -525,7 +545,22 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
 
     let mapped = 1024 * 1024usize;
     let mut rom_words = alloc::vec![0u32; mapped / 4];
-    let st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000, rom_words.as_mut());
+    // Chunked read with progress commits (issue #170 diag5): the 262k
+    // sequential PROM MMIO reads are the first unbracketed stretch after
+    // "layout ok" - the B85M's recovered evidence ends exactly there, so
+    // every stretch of the FWSEC section must emit commit points. Chunking
+    // is behaviorally identical (same window, same accessor, same order).
+    let chunk_words = rom_words.len() / 16;
+    let mut st = uefi::Status::SUCCESS;
+    for (i, chunk) in rom_words.chunks_mut(chunk_words).enumerate() {
+        st = gpu.pci.bar_read_u32_buf(gpu.bar, 0x300000 + (i * chunk_words * 4) as u64, chunk);
+        if st != uefi::Status::SUCCESS {
+            break;
+        }
+        if (i + 1) % 4 == 0 {
+            info!("FWSEC: PROM read {}%", (i + 1) * 100 / 16);
+        }
+    }
     if st != uefi::Status::SUCCESS {
         info!("FWSEC-TRACE: PROM bulk read failed {:?}", st);
         return Err(TxError::ENodev);
@@ -580,10 +615,18 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
         let image = unsafe { core::slice::from_raw_parts_mut(dma.host, fw.image_size as usize) };
         fwsec_patch_frts(image, &fw, layout.frts_offset)?;
     }
+    info!("FWSEC: image staged ({} bytes, frts patched)", fw.image_size);
 
+    // FUSE_OPT_FPF_GSP_UCODE_ID + 4*(ucodeId-1) - a zero ucode_id from a
+    // crafted descriptor would underflow into an unrelated fuse register,
+    // so refuse it instead (issue #21; 0 is not a valid ucode id).
+    if fw.ucode_id == 0 || fw.ucode_id > 16 {
+        info!("FWSEC: ucode_id {} out of the fuse-table range - refusing", fw.ucode_id);
+        return Err(TxError::EInval);
+    }
     let fuse_raw = gpu.read32(0x0082_41c0 + (fw.ucode_id - 1) * 4)?;
     let version = fuse_version(fuse_raw);
-    info!("FWSEC fuse: raw={fuse_raw:#x} version={version}");
+    info!("FWSEC: fuse raw={fuse_raw:#x} version={version}");
     let sig_at = fwsec_sig_offset(fw.sig_versions, version, 384)?;
     let d0 = fw.data_off as usize;
     unsafe {
@@ -601,14 +644,17 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
     // is proven on both engines; everything after placement (BROM PKC
     // params, BOOTVEC, start, HALT) matches the kernel HS sequence.
     const GSP_SEC: u32 = 1 << 28;
+    info!("FWSEC: GSP falcon reset begin");
     crate::tx::falcon_reset(gpu, GSP_BASE, GSP_FBIF, GSP_FALCON2, true)?;
     crate::tx::falcon_dma_unblock(gpu, GSP_BASE, GSP_FBIF)?;
     crate::tx::falcon_authority_probe(gpu, GSP_BASE, "GSP");
+    info!("FWSEC: GSP reset+unblock ok");
     let image = unsafe { core::slice::from_raw_parts(dma.host, fw.image_size as usize) };
     let imem = &image[..fw.imem_size as usize];
     {
         // Kernel FWSEC DMA commands carry SEC=1 for the whole IMEM.
         let blocks = imem.len().div_ceil(256);
+        info!("FWSEC: IMEM portal begin ({} blocks)", blocks);
         let mut tag = fw.imem_va >> 8;
         for blk in 0..blocks {
             let off = blk * 256;
@@ -631,11 +677,13 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
                 gpu.write32(GSP_BASE + 0x184, v);
             }
         }
-        info!("FWSEC portal: IMEM {} blocks ({} bytes, secure)", blocks, imem.len());
+        info!("FWSEC: portal IMEM done ({} blocks, {} bytes, secure)", blocks, imem.len());
     }
     let dmem = &image[fw.data_off as usize..(fw.data_off + fw.dmem_size) as usize];
     crate::tx_portal::portal_load_dmem(gpu, GSP_BASE, fw.dmem_pa, dmem);
+    info!("FWSEC: DMEM portal done ({} bytes)", dmem.len());
     // BROM PKC params (kernel _kgspSetupPkcParams) + BOOTVEC + start.
+    info!("FWSEC: PKC params + BOOTVEC writes begin");
     gpu.write32(GSP_FALCON2 + 0x210, fw.pkc_off);
     gpu.write32(GSP_FALCON2 + 0x19c, fw.engine_mask);
     gpu.write32(GSP_FALCON2 + 0x198, fw.ucode_id & 0xff);
@@ -648,18 +696,19 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
     } else {
         gpu.write32(GSP_BASE + 0x100, 1 << 1);
     }
+    info!("FWSEC: HALT wait begin (5s cap)");
     let r = gpu.poll_us(GSP_BASE + 0x100, 1 << 4, 1 << 4, 5_000_000, true);
     let cpuctl = gpu.pci.bar_read_u32(gpu.bar, (GSP_BASE + 0x100) as u64);
     let exci = gpu.pci.bar_read_u32(gpu.bar, (GSP_BASE + 0x0d0) as u64);
     let mbox0 = gpu.pci.bar_read_u32(gpu.bar, (GSP_BASE + 0x40) as u64);
-    info!("FWSEC portal forensic: CPUCTL={cpuctl:#010x} MAILBOX0={mbox0:#010x} EXCI={exci:#010x}");
+    info!("FWSEC: portal forensic CPUCTL={cpuctl:#010x} MAILBOX0={mbox0:#010x} EXCI={exci:#010x}");
 
     let scratch = gpu.read32(0x1400 + 0x0e * 4)?;
-    info!("FWSEC result: scratch={scratch:#x} expected_hi16=0");
+    info!("FWSEC: result scratch={scratch:#x} expected_hi16=0");
     let wpr_lo = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a824);
     let wpr_hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
     info!(
-        "FWSEC WPR2: low={wpr_lo:#x} high={wpr_hi:#x} expected_page={:#x} end={:#x}",
+        "FWSEC: WPR2 low={wpr_lo:#x} high={wpr_hi:#x} expected_page={:#x} end={:#x}",
         layout.frts_offset >> 12, layout.wpr_end
     );
     r?;
@@ -680,7 +729,6 @@ pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
 
 /// allow unused-import warnings for pre-wired items
 const _: () = {
-    let _ = hs_prevalidate as fn(u64, u32, u32, u32, u32, u32, u32, u32) -> Result<u64, TxError>;
     let _: Option<&PciIo> = None;
 };
 
@@ -886,7 +934,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     let bl_vec = BL_START_TAG << 8;
     info!(
         "FWSEC-TU10X: BL at IMEM dst={bl_dst:#x} (hwcfg {imem_blocks} blocks), BOOTVEC={bl_vec:#x}{}",
-        if bl_dst == bl_vec { "" } else { "  <== dst != 0xfd00 (50HX saw 0xfd00 on TU102/TU106)" }
+        if bl_dst == bl_vec { "" } else { "  <== dst != 0xfd00 (BL link addr; a 256-block IMEM puts it at 0xfe00 - normal, seen on every TU106/TU102 success too)" }
     );
     crate::tx_portal::portal_load_imem(gpu, GSP, bl_dst, bl_vec, &bl[..BL_CODE_SIZE], false);
 
@@ -900,6 +948,12 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     } else {
         gpu.write32(GSP + 0x100, 1 << 1);
     }
+    // Immediate post-START discriminator (1e93 rc2 field ask, issue #156):
+    // START write dropped -> CPUCTL still reads HALTED (0x10); core launched
+    // -> the START bit clears and HALTED drops. Splits "the write never
+    // stuck" from "the core is running but wedged" in one line.
+    let cpuctl_post = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x100) as u64);
+    info!("FWSEC-TU10X: STARTCPU post-START CPUCTL={cpuctl_post:#010x} (pre={cpuctl_pre:#010x}; 0x0 = core launched, 0x10 = START did not stick)");
     info!("FWSEC-TU10X: STARTCPU, polling WPR2 up (5s budget)...");
     let mut up = false;
     let (mut wpr_lo, mut wpr_hi) = (0u32, 0u32);
@@ -920,6 +974,13 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
         let scratch = gpu.read32(0x1400 + 0x0e * 4).unwrap_or(0);
         info!(
             "FWSEC-TU10X: WPR2 never came up - lo={wpr_lo:#x} hi={wpr_hi:#x} CPUCTL={cpuctl:#010x} EXCI={exci:#010x} MAILBOX0={mbox0:#010x} scratch={scratch:#010x}"
+        );
+        // The booter path (wpr_desc_rejected_hint) carries the full causes
+        // block; this path needs the same triage line, because with VT-d ON
+        // the failure lands HERE (the #74 three-death-shapes: a silent FWSEC
+        // image fetch) even though FWSEC staging is already LOW by default.
+        info!(
+            "FWSEC-TU10X: known causes (issue #74 four-cell matrix): 1) BIOS VT-d/IOMMU ON - it kills staging DMA in BOTH bands, turn it OFF first (SVM/AMD-V and Intel VT-x verified harmless); 2) a bridge on the path without bus master (see the DMA-PATH lines); 3) band problems are unlikely here - FWSEC staging is already LOW by default (\\tx-fwsec-high-staging.txt is ablation only)"
         );
         let _ = dma.release(gpu.pci);
         return Err(TxError::EIO);
@@ -1005,7 +1066,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
 /// BINDATA → BTL1, `\\scrubber_ad10x.bin`): image 7424B, ucode 0xd, 2×RSA-384.
 /// The VBIOS PROM app 0x49 we tried first is a DIFFERENT ucode (22528B) that
 /// is not what advances the handoff (measured 2026-10-26).
-pub fn scrubber_if_needed(gpu: &TxGpu, bundle: Option<&[u8]>) -> Result<(), TxError> {
+pub fn scrubber_if_needed(gpu: &TxGpu) -> Result<(), TxError> {
     const SEC2_BASE: u32 = 0x0084_0000;
     const SEC2_FBIF: u32 = 0x0084_0600;
     const SEC2_FALCON2: u32 = 0x0084_1000;
@@ -1018,8 +1079,18 @@ pub fn scrubber_if_needed(gpu: &TxGpu, bundle: Option<&[u8]>) -> Result<(), TxEr
         return Ok(());
     }
 
-    let bundle = bundle.ok_or(TxError::ENodev)?;
-    let (hdr, image, sigs) = crate::tx_booter::load_booter(bundle, "scrub")?;
+    let bundle = match crate::tx::read_asset("\\scrubber_ad10x.bin") {
+        Ok(Some(b)) => b,
+        Ok(None) => {
+            info!("SCRUB: \\scrubber_ad10x.bin missing on boot volume");
+            return Err(TxError::ENodev);
+        }
+        Err(()) => {
+            info!("SCRUB: \\scrubber_ad10x.bin is present but unreadable - refusing to fire a partial image");
+            return Err(TxError::ENodev);
+        }
+    };
+    let (hdr, image, sigs) = crate::tx_booter::load_booter(&bundle, "scrub")?;
     info!(
         "SCRUB: bundle ok - code {:#x}+{:#x}@va{:#x} data {:#x}+{:#x} patch {:#x} ucode {:#x}",
         hdr.app_code_off, hdr.app_code_size, hdr.app_code_off, hdr.data_off, hdr.data_size, hdr.patch_loc, hdr.ucode_id
@@ -1027,6 +1098,13 @@ pub fn scrubber_if_needed(gpu: &TxGpu, bundle: Option<&[u8]>) -> Result<(), TxEr
 
     // Signature slot: SEC2 per-ucode fuse (kernel ksec2ReadUcodeFuseVersion:
     // FUSE_OPT_FPF_SEC2_UCODE1_VERSION + 4*(ucodeId-1)), then stock patch.
+    // The bundle comes from our own builder (load_booter pins ucode_id=0xd),
+    // so this cannot fire on a real stick - the check documents the invariant
+    // and keeps a future descriptor change from underflowing (issue #21).
+    if hdr.ucode_id == 0 || hdr.ucode_id > 16 {
+        info!("SCRUB: ucode_id {} out of the fuse-table range - refusing", hdr.ucode_id);
+        return Err(TxError::EInval);
+    }
     let fuse_raw = gpu.read32(0x0082_4140 + (hdr.ucode_id - 1) * 4)?;
     let version = fuse_version(fuse_raw);
     info!("SCRUB: fuse_raw={fuse_raw:#010x} version={version} sigs={}", hdr.num_sigs);

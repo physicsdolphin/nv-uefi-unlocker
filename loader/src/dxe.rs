@@ -18,6 +18,8 @@ use crate::{
     chainload, dxe_policy as policy, keywait, logging, runner, timing, volumes, DXE_BUILD_ID,
     VERSION,
 };
+#[cfg(feature = "tx")]
+use crate::tx;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
 use log::info;
@@ -266,8 +268,27 @@ fn run_flow(in_notification: bool) {
         keywait::wait_dxe_countdown(secs)
     };
     if matches!(confirmed, keywait::Confirm::Proceed) {
-        runner::phases(confirmed);
-        info!("FINAL: driver phases returned; OS health unconfirmed, attempt count retained");
+        let outcome = runner::phases(confirmed);
+        // Opt-in \tx-stop-on-failure.txt hard failure: the session must not
+        // act on the card again. The application form HALTS here (it owns
+        // the machine until it chain-loads); the driver form instead returns
+        // to the firmware with the failure recorded - a notification
+        // context must never hang the boot, and the driver has no
+        // chain-load step to withhold. The attempt budget stays consumed
+        // either way: this is a run that went wrong, not a clean skip.
+        if outcome.hard_stop {
+            note_exit("hard-stop");
+            info!("STOP: hard TX failure with \\tx-stop-on-failure.txt armed - the driver form records the failure and returns to the firmware without further GPU interaction (no FLR, no next card; a resident driver must never hang the boot)");
+        } else {
+            info!("FINAL: driver phases returned; OS health unconfirmed, attempt count retained");
+        }
+        // The driver never chains, so the app-form chain-side free
+        // (chainload -> handoff_free_assets) never runs for it - free the
+        // read-through cache here instead (audit M4: the driver stays
+        // resident for the rest of the boot; the prep's justification is
+        // that it is discardable, so its memory is).
+        #[cfg(feature = "tx")]
+        tx::handoff_free_assets();
     } else {
         note_exit("aborted");
         info!("CONFIRM: aborted - zero GPU writes; attempt count retained");

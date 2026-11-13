@@ -1,0 +1,274 @@
+PLATFORM: vulnerable-driver blocklist = unknown (value absent - the Windows default applies)
+PLATFORM: core isolation (HVCI)       = unknown (value absent - the Windows default applies)
+PLATFORM: HVCI runtime (CodeIntegrity) = clear
+PLATFORM: Secure Boot                 = OFF
+NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs
+      a driver install (event 7045) and managed/EDR machines may alert on it.
+2 NVIDIA GPU function(s) discovered
+===== GPU 1/2: PCI\VEN_10DE&DEV_2504&SUBSYS_40721458&REV_A1\4&1c1c94c&0&0010 =====
+ranges:
+  f6000000-f6ffffff (16 MiB)
+  033fe0000000-033fefffffff (256 MiB)
+  033ff0000000-033ff1ffffff (32 MiB)
+config-space ReBAR (bus 3 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [16G/8G/4G/2G/1G/512M/256M/128M/64M] current 256 MiB (size_idx 8)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+config-space link caps (bus 3 dev 0 fn 0): LnkCap max Gen4 x16 | LnkSta Gen3 x16 | LnkCap2 [Gen1,Gen2,Gen3,Gen4] | LnkCtl2 TLS Gen3
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:02.0 VEN_8086&DEV_6F04 PMCSR = D0 (0x0008) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: f6000000
+--- core/debug block ---
+PMC_BOOT_0             = 0xb76000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0x00003000
+GFW_PLM                = 0x00008b8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x201011bf
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x1ffffe00
+WPR2_HI                = 0x00000000
+MMU_PLM                = 0x0045cb8f
+MMU_LOCK_LO            = 0x00100000
+MMU_LOCK_HI            = 0x02effff0
+GSP_CPUCTL             = 0x00000010
+GSP_EXCI               = 0x00900000
+SEC2_CPUCTL            = 0xbadf5620 [BADF]
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0xbadf5620 [BADF]
+FUSE_VER_DECODE        = 0x00000003
+CANARY_A/B (loader-written)  = 0x0164c0de/0x0165cafe -> intact
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xbadf5040 (closed (non-standard))
+  turing 0x4096xx      SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  turing 0x4096xx      READOUT   = 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  PLM       = 0xffffffff (OPEN)
+  0x823xxx amp/ada/gb  SS0       = 0x88888888 [0* 0* 0* 0* 0* 0* 0* 0*]
+  0x823xxx amp/ada/gb  SS1       = 0x00000008 [0*]
+  0x823xxx amp/ada/gb  READOUT_1 = 0x00000000 [full speed]
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0x0004cb8f (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0x0004cb8f (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0xffffff0f (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0x00000028
+  ad1x 64g-bar1   AD1X_CFG               = 0x80000008
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0xffffff8f (closed (stock))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0x0007fc00
+  ada fuse/tpc    FUSE_CTRL              = 0xe0040000
+  ada fuse/tpc    FUSE_ADDR              = 0x0000023f
+  ada fuse/tpc    FUSE_REG_50            = 0x023f021e
+  ada fuse/tpc    FUSE_REG_54            = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    FUSE_DEBUGCTRL         = 0x00000000
+  ada fuse/tpc    DISABLE_FUSE_PROG      = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    OPT_GPC_DISABLE        = 0x00000000
+  ada fuse/tpc    OPT_GPC_DEFECTIVE      = 0x00000000
+  ada fuse/tpc    CTRL_OPT_9C8           = 0x00000000
+--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---
+  GPC0 CTRL=0x00000000 STATUS=0x00000021 [TPC0 TPC5]
+  GPC1 CTRL=0x00000000 STATUS=0x00000020 [TPC5]
+  GPC2 CTRL=0x00000000 STATUS=0x00000020 [TPC5]
+  GPC3 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC4 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC5 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC6 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC7 CTRL=0x00000000 STATUS=0x00000000 []
+  OPT_GPC_DISABLE=0x00000000 (bit per GPC)  OPT_GPC_DEFECTIVE=0x00000000 (bit per GPC)
+  bank A 0x008203a0..: 0x00000001 0x00000000 0x00000001 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000600
+  bank B 0x008205c0.. (+4 = OPT_GPC_DEFECTIVE above): 0x00000001 0x00000000 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000000 0x00000000
+  verdict: 28 TPC(s) fused off in 7 GPC(s), no defect bit on them - override candidates (write path out of scope)
+--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---
+  LNKCAP             = 0x00454d04
+  LNKCTL_LNKSTA      = 0x11030042
+  LNKCAP2            = 0x0180001e
+  LNKCTL2_LNKSTA2    = 0x001e0003
+  PRIV_MISC_1        = 0x20360500
+  VSEC_DEVICE        = 0x00001801
+  VSEC_HIERARCHY     = 0x00001001
+  XVE_OVR_LTSSM      = 0x00000000
+  XVE_B_PLM          = 0xffffff8f (closed (stock))
+  XVE_D0_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D4_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D8_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_C_PLM          = 0xffffff8f (closed (stock))
+  LINK_CONFIG_0      = 0x80005800
+  PL_LINK_RATE       = 0x00140000
+  CYA_0_DISG2        = 0x00000001
+  XP3G_STATUS0       = 0x00000001
+  XP3G_STATUS3       = 0x10a80000
+  XP3G_OVR0          = 0x00000000
+  XP3G_OVR3          = 0x00000000
+  XP3G_VAL0          = 0x00000000
+  XP3G_VAL3          = 0x00000000
+  XP3G_PLM0          = 0xffffff8f (closed (stock))
+  XP3G_PLM4          = 0xffffffcf
+  XP3G_PLM8          = 0xffffffcf
+  XP3G_PLMC          = 0xffffffcf
+  OPT_GPC_DISABLE    = 0x00000000
+  OPT_MAGIC          = 0x10a80000
+  OPT_GEN23          = 0x00000000
+  OPT_GEN3           = 0x00000000
+  L2_CANDIDATE       = 0x00000081
+  L2_SW_MASK         = 0x00000000
+  L2_EFF_MASK        = 0x00000081
+      GA100_SM_OVR 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+     GA100_SM_STAT 0x00000021 0x00000020 0x00000020 0x0000003f 0x0000003f 0x0000003f 0x0000003f 0x00000000
+--- ampere/ada FEAT sweep (M1 cluster) ---
+                         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+                   value 0xffffff8f 0x00100081 0x00888888 0x002aaaaa 0x00000233 0x00000001 0x00000000 0x00000008 0x00004b8f
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0xffffff8f  0x008200d4=0xfffffffc
+  0x008200d8=0xffffff8f  0x008200dc=0xffffff8f
+  0x008200e0=0xffffff8f  0x008200e4=0xffffff8f
+  0x008200e8=0xfffffffc  0x008200ec=0xfffffffc
+  0x008200f0=0xfffffffc  0x008200f4=0xffffff8f
+  0x008200fc=0xffffffff [OPEN]  0x00823800=0xffffff8f
+  0x00823804=0xffffffff [OPEN]  0x00823b00=0x00004b8f
+  0x009a0008=0xbadf5040 [PRIV_VIOLATION]  0x009a000c=0x00004b8f
+  0x009a0148=0xffffff0f  0x009a014c=0xffffff8f
+  0x009a0168=0xffffffcf  0x009a03f0=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0554=0xffffffcf  0x009a0bfc=0x00000000
+  0x00100b10=0xffffff8f  0x00100b38=0xffffff8f
+  0x00100b84=0xffffff88  0x00100b9c=0xffffffcf
+FUSE_OPT_FEATURE_OVR   = 0x00000000
+FUSE_VER               = 0x00000003
+VERDICT [ampere]: UNLOCKED (override values live)
+CANARY: intact + SS live - no reset, nothing rewrote the state after handoff
+
+===== GPU 2/2: PCI\VEN_10DE&DEV_2504&SUBSYS_88181043&REV_A1\4&4fcaf60&0&0018 =====
+ranges:
+  0a0000-0bffff (0 MiB)
+  e0000000-efffffff (256 MiB)
+  f0000000-f1ffffff (32 MiB)
+  f4000000-f4ffffff (16 MiB)
+config-space ReBAR (bus 4 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [16G/8G/4G/2G/1G/512M/256M/128M/64M] current 256 MiB (size_idx 8)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+config-space link caps (bus 4 dev 0 fn 0): LnkCap max Gen3 x16 | LnkSta Gen1 x16 | LnkCap2 [Gen1,Gen2,Gen3,Gen4] | LnkCtl2 TLS Gen3
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:03.0 VEN_8086&DEV_6F08 PMCSR = D0 (0x0008) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: f4000000
+--- core/debug block ---
+PMC_BOOT_0             = 0xb76000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0x00003000
+GFW_PLM                = 0x00008b8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x621011bf
+VGA_WORKSPACE          = 0x02fffe09
+WPR2_LO                = 0x1ffffe00
+WPR2_HI                = 0x00000000
+MMU_PLM                = 0x0045cb8f
+MMU_LOCK_LO            = 0x1ffffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000000
+GSP_EXCI               = 0x00002911
+SEC2_CPUCTL            = 0x00000020
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00008811
+FUSE_VER_DECODE        = 0x00000003
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xbadf5040 (closed (non-standard))
+  turing 0x4096xx      SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  turing 0x4096xx      READOUT   = 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  PLM       = 0xffffff8f (closed (stock))
+  0x823xxx amp/ada/gb  SS0       = 0x40442012 [r2 r1 . r2 r4 r4 . r4]
+  0x823xxx amp/ada/gb  SS1       = 0x00000006 [r6]
+  0x823xxx amp/ada/gb  READOUT_1 = 0x00400080
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0x0004cb8f (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0x0004cb8f (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0xffffff0f (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0x00000028
+  ad1x 64g-bar1   AD1X_CFG               = 0x80000008
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0xffffff8f (closed (stock))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0x0007fc00
+  ada fuse/tpc    FUSE_CTRL              = 0xe0040000
+  ada fuse/tpc    FUSE_ADDR              = 0x0000023f
+  ada fuse/tpc    FUSE_REG_50            = 0x023f021e
+  ada fuse/tpc    FUSE_REG_54            = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    FUSE_DEBUGCTRL         = 0x00000000
+  ada fuse/tpc    DISABLE_FUSE_PROG      = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    OPT_GPC_DISABLE        = 0x00000000
+  ada fuse/tpc    OPT_GPC_DEFECTIVE      = 0x00000000
+  ada fuse/tpc    CTRL_OPT_9C8           = 0x00000000
+--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---
+  GPC0 CTRL=0x00000000 STATUS=0x00000028 [TPC3 TPC5]
+  GPC1 CTRL=0x00000000 STATUS=0x00000020 [TPC5]
+  GPC2 CTRL=0x00000000 STATUS=0x00000020 [TPC5]
+  GPC3 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC4 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC5 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC6 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC7 CTRL=0x00000000 STATUS=0x00000000 []
+  OPT_GPC_DISABLE=0x00000000 (bit per GPC)  OPT_GPC_DEFECTIVE=0x00000000 (bit per GPC)
+  bank A 0x008203a0..: 0x00000001 0x00000000 0x00000001 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000600
+  bank B 0x008205c0.. (+4 = OPT_GPC_DEFECTIVE above): 0x00000001 0x00000000 0x00000008 0x00000000 0xbadf5040 0x00000000 0x00000000 0x00000000
+  verdict: 28 TPC(s) fused off in 7 GPC(s), no defect bit on them - override candidates (write path out of scope)
+--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---
+  LNKCAP             = 0x00453d03
+  LNKCTL_LNKSTA      = 0x11010142
+  LNKCAP2            = 0x0180001e
+  LNKCTL2_LNKSTA2    = 0x001e0003
+  PRIV_MISC_1        = 0x20b60500
+  VSEC_DEVICE        = 0x00001801
+  VSEC_HIERARCHY     = 0x00001001
+  XVE_OVR_LTSSM      = 0x00000000
+  XVE_B_PLM          = 0xffffff8f (closed (stock))
+  XVE_D0_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D4_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D8_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_C_PLM          = 0xffffff8f (closed (stock))
+  LINK_CONFIG_0      = 0x800c5800
+  PL_LINK_RATE       = 0x00130000
+  CYA_0_DISG2        = 0x00002000
+  XP3G_STATUS0       = 0x00000001
+  XP3G_STATUS3       = 0x10a80000
+  XP3G_OVR0          = 0x00000000
+  XP3G_OVR3          = 0x00000000
+  XP3G_VAL0          = 0x00000000
+  XP3G_VAL3          = 0x00000000
+  XP3G_PLM0          = 0xffffff8f (closed (stock))
+  XP3G_PLM4          = 0xffffffcf
+  XP3G_PLM8          = 0xffffffcf
+  XP3G_PLMC          = 0xffffffcf
+  OPT_GPC_DISABLE    = 0x00000000
+  OPT_MAGIC          = 0x10a80000
+  OPT_GEN23          = 0x00000000
+  OPT_GEN3           = 0x00000000
+  L2_CANDIDATE       = 0x00000081
+  L2_SW_MASK         = 0x00000000
+  L2_EFF_MASK        = 0x00000081
+      GA100_SM_OVR 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+     GA100_SM_STAT 0x00000028 0x00000020 0x00000020 0x0000003f 0x0000003f 0x0000003f 0x0000003f 0x00000000
+--- ampere/ada FEAT sweep (M1 cluster) ---
+                         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+                   value 0xffffff8f 0x00000180 0x00888888 0x002aaaaa 0x00000233 0x00000001 0x00000000 0x00000008 0x00004b8f
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0xffffffff [OPEN]  0x008200d4=0xfffffffc
+  0x008200d8=0xffffff8f  0x008200dc=0xffffffff [OPEN]
+  0x008200e0=0xffffff8f  0x008200e4=0xffffff8f
+  0x008200e8=0xfffffffc  0x008200ec=0xfffffffc
+  0x008200f0=0xfffffffc  0x008200f4=0xffffff8f
+  0x008200fc=0xffffffff [OPEN]  0x00823800=0xffffff8f
+  0x00823804=0xffffff8f  0x00823b00=0x00004b8f
+  0x009a0008=0xbadf5040 [PRIV_VIOLATION]  0x009a000c=0x00004b8f
+  0x009a0148=0xffffff0f  0x009a014c=0xffffff8f
+  0x009a0168=0x82006bcf  0x009a03f0=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0554=0xffffffcf  0x009a0bfc=0x3b252b32
+  0x00100b10=0xffffff8f  0x00100b38=0xffffff8f
+  0x00100b84=0xffffff88  0x00100b9c=0xffffffcf
+FUSE_OPT_FEATURE_OVR   = 0x00000000
+FUSE_VER               = 0x00000003
+VERDICT [ampere]: NOT_UNLOCKED
+CANARY: cleared + SS gone - a reset hit this boot after the EFI handoff (expected anonymous relock)
+driver service removed (remove-when-done)

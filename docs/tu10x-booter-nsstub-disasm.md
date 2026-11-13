@@ -71,6 +71,7 @@
 **推论（修正既有两说）**：
 1. "EXCI=0x00900100=入口崩溃" 与 "0x91=meta 拒收" **同时成立**：硬核四例的安全段**跑起来了**（写了 0x91/0x11/0x0B），拒收后 booter 以固定签名自毁——终态 EXCI 锁存 INV_INS@0x100（跳回安全入口且密码上下文已清 → 解码无效）。EXCI 是**拒收后的自毁残影，不是拒收原因**。
 2. D/E 轮（搬址/直入）终值 0x31：安全入口被破坏、桩标记后即死——这类才是"入口级"失败。
+4. **#151（TU117 `1f82`）在默认配置下也落进 0x31 桶**：安全段入口 `0x100` 取指 MISS_INS（`EXCI=0x00a00100`）、安全段从未运行、unwind 全干净（[#151](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/151)）。该 die 的变量不是消融而是**物料**：610.43.03 的 `g_bindata_kgspGetBinArchiveBooterLoadUcode_TU116.c` 为 tu11x 家族备了独立 booter 镜像与 16B AES 签名（engine 1 / ucode 0xd / patch_loc 0x8900 与 tu10x 全同、未压缩长度同为 59648B，仅镜像内容与签名字节不同），而 loader 把 `0x1e02..=0x1fff`（含 `1f82`）与 `0x2182..=0x21d1` 一律路由到 tu10x 包与 `\fwsignature_tu10x.bin`，patch slot 里塞的也是按 tu10x 熔丝槽选的签名。"桩能写 0x31"= 加载/放置正常，"死在往安全段的转移上"= 该转移恰是 die 密钥相关的验签/解密段——两者合起来与该错配形状自洽。判别顺序：先 `\tx-bootvec-sec.txt`（向量 vs 物料），再上 tu11x 路由。TU116 同一盲区。
 3. EXCI 位域权威定义（open-gpu-kernel-modules `dev_soe_ip.h` NV_SOE_FALCON_EXCI，Falcon IP 通用）：EXPC[19:0]、**EXCAUSE[24:20]**；cause 9=**INV_INS**（无效指令）、0x0a=MISS_INS、0x10=DMEM_MISS_INS。`0x00900100` = EXPC 0x100 + **INV_INS**（此前"EXCAUSE=0x10=DMEM_MISS_INS"的解读错误；travis 指出的 [24:20]=9 正确，名字为 invalid instruction）。`0x00a00100`=MISS_INS@0x100（D/E 轮空页取指）。
 
 ## C4. 修正后的因果模型（与 Phase B 头号嫌疑闭环）

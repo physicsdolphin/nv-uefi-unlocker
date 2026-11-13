@@ -34,6 +34,30 @@ const TABLE: &[Reg] = &[
     Reg("FUSE_OPT_FEAT_OVR_DISABLE 0x8203f0", 0x0082_03f0),
     Reg("FUSE_VER 0x824140", 0x0082_4140),
     Reg("FUSE_VER_DECODE 0x8241c0", 0x0082_41c0),
+    // Blackwell (GB20x) fuse/selector surface (issue #168). On GB20x the
+    // 0x823xxx sweep below IS the FEAT bank (the TU10x rows are the wrong
+    // block there); the fuse words are the product-segmentation source -
+    // GB206/GB202/GB203M all read FMLA32/IMLA1/2/4 = 3 and a byte-identical
+    // readout word, with host writes dropped by a PL3-only PLM. 50-series
+    // never reaches the transaction (asset_family has no 0x2bxx), so this
+    // pre-driver SAMPLE is the only EFI-side window there is
+    // (docs/blackwell-gb20x-status.md).
+    Reg("FUSE_EN_SW_OVERRIDE 0x820040", 0x0082_0040),
+    Reg("FUSE_SS_PLM 0x8200fc", 0x0082_00fc),
+    Reg("SECURE_FEAT_OVR_QUADRO_WR 0x82038c", 0x0082_038c),
+    Reg("FUSE_SS_DP 0x820224", 0x0082_0224),
+    Reg("FUSE_SS_FFMA 0x82059c", 0x0082_059c),
+    Reg("FUSE_SS_FMLA16 0x8207d4", 0x0082_07d4),
+    Reg("FUSE_SS_FMLA32 0x8207d8", 0x0082_07d8),
+    Reg("FUSE_SS_IMLA0 0x8207dc", 0x0082_07dc),
+    Reg("FUSE_SS_IMLA1 0x8207e0", 0x0082_07e0),
+    Reg("FUSE_SS_IMLA2 0x8207e4", 0x0082_07e4),
+    Reg("FUSE_SS_IMLA3 0x8207e8", 0x0082_07e8),
+    Reg("FUSE_SS_IMLA4 0x8207ec", 0x0082_07ec),
+    Reg("FEAT_OVR_ECC 0x82380c", 0x0082_380c),
+    Reg("FEAT_OVR_ECC_1 0x823810", 0x0082_3810),
+    Reg("FEAT_READOUT_0 0x823814", 0x0082_3814),
+    Reg("SM_ISSUE_RATE_MODIFIER 0x504204", 0x0050_4204),
     // AD10x-specific (64G BAR1 craft). On TU106 these are expected to
     // bucket as badf; that is itself a data point, not an error.
     Reg("AD1xx CYA 0x88724", 0x0008_8724),
@@ -53,10 +77,36 @@ const TABLE: &[Reg] = &[
     // carries). Cold-state read doubles as the #10 factory-clamp probe once
     // a payload run opens the gate.
     Reg("TU10x FEAT_READOUT 0x409668", 0x0040_9668),
+    // XP3G privilege domain + XVE config mirror + gated link-policy set
+    // (inventory: cmp90hx-unlock 76940ae GEN3ADV rounds; ssdiag has carried
+    // the same union Windows-side since field round 3 - this EFI-side cold
+    // read is the pre-driver half of the answer). Open question #12: TU106
+    // reads XP3G_PLM0 OPEN (cmp-features round) - what is still unknown is
+    // whether the policy set behind the gate is live pre-driver or dead
+    // (GA102 shape: host writes rejected even after FEAT/SEC2-ROP opens).
+    // Readback here also seeds the relock-variance comparison: cold PLM
+    // vs the driver's post-init value vs the post-handoff relock value.
+    Reg("XP3G PLM0 0x8e1b0", 0x0008_e1b0),
+    Reg("XP3G PLMC 0x8e1bc", 0x0008_e1bc),
+    Reg("XP3G OVR0 0x8e110", 0x0008_e110),
+    Reg("XP3G VAL0 0x8e120", 0x0008_e120),
+    Reg("XVE LNKCAP 0x88084", 0x0008_8084),
+    Reg("XVE LNKCTL 0x88088", 0x0008_8088),
+    Reg("XVE LNKCAP2 0x880a4", 0x0008_80a4),
+    Reg("XVE LNKCTL2 0x880a8", 0x0008_80a8),
+    Reg("LNK MISC_1 0x8841c", 0x0008_841c),
+    Reg("LNK VSEC_HIER 0x88610", 0x0008_8610),
+    Reg("LNK LTSSM_KICK 0x8872c", 0x0008_872c),
+    Reg("LNK LINK_CONFIG_0 0x8c040", 0x0008_c040),
+    Reg("LNK PL_LINK_RATE 0x8c1c0", 0x0008_c1c0),
+    Reg("LNK CYA_DISG2 0x8c2c0", 0x0008_c2c0),
 ];
 
 /// FEAT override cluster, dword sweep (task brief: 0x823804-0x823820 focus;
 /// cmp170hx: locked PL0 sees live dwords 0x823800-0x82382C + 0x823B00).
+/// On Ampere/Ada/Blackwell this range is the real FEAT bank; only Turing's
+/// lives at 0x4096xx. On Blackwell the stock words are readable and nonzero
+/// (READOUT_1 is a fuse mirror - its fields are NOT the Ada rate law).
 const FEAT_CLUSTER: core::ops::Range<u32> = 0x0082_3800..0x0082_3830;
 const FEAT_ROW_REMAPPER_PLM: u32 = 0x0082_3b00;
 
@@ -105,6 +155,17 @@ pub fn run(gpu: &FoundGpu) {
             return;
         }
     };
+
+    // Opt-in identity enrollment surface: when \tx-prom-sha256.txt exists,
+    // logs the SHA-256 of the fixed 1 MiB PROM window so an operator can
+    // pin it for identity::authorize's (opt-in) tx-build gate. Gated on the
+    // file's presence: an unconditional measurement would cost two full
+    // 1 MiB PROM traversals per card on EVERY default boot (issue #38 speed
+    // track). Never enrolls or authorizes anything by itself, and is a no-op
+    // log line if BAR0 memory decode happens to be off here.
+    if !crate::identity::measure_if_enrolled(&pci) {
+        info!("IDENTITY: PROM not measured (\\tx-prom-sha256.txt absent, or the window was unreadable) - default boots pay zero PROM-read cost");
+    }
 
     for Reg(name, off) in TABLE {
         let v = pci.bar_read_u32(BAR0, *off as u64);
@@ -158,9 +219,11 @@ pub fn run(gpu: &FoundGpu) {
     } else if ok == 0 {
         info!("SAMPLE FEAT cluster: NOT readable at PL0 on this chip (all badf) - recorded as the answer");
     }
-    // FEAT_READOUT_1 headline: 0x00000000 = full speed, non-zero = throttled.
+    // FEAT_READOUT_1 headline: 0 = full speed, non-zero = fused selectors
+    // present. The decode is a fuse mirror, not a rate: on Blackwell nonzero
+    // is stock and selector 3 is ~half rate, not the Ada 1/8.
     let readout = pci.bar_read_u32(BAR0, 0x0082_3818);
-    info!("SAMPLE FEAT_READOUT_1 = {readout:#010x} (0 = no compute throttle active)");
+    info!("SAMPLE FEAT_READOUT_1 = {readout:#010x} (0 = all selectors full; nonzero = fuse mirror, see docs/blackwell-gb20x-status.md)");
 
     // PSTRAPS (envytools hw/io/pstraps.html; NvStrapsReBar SetupNvStraps.c).
     // G80+: BAR1 size = SET0[15:14] + SET1[22:20] summed (0=64MiB, each +1

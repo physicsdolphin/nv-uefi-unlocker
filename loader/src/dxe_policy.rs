@@ -38,6 +38,14 @@ pub const CONFIG_PATHS: &[&str] = &[
     "\\tx-meta-in-vram.txt",
     "\\tx-sec2-c-load.txt",
     "\\tu10x-fb-gb.txt",
+    // Controls that arrived with the main-line transaction surface (sync
+    // round 2026-11-14): each is probed by tx*.rs/runner.rs, so the driver
+    // form must honor it under the same authorization as every other
+    // override - an unpinned control would silently read as absent.
+    "\\tx-no-canary.txt",
+    "\\tx-reconnect-legacy.txt",
+    "\\tx-relock.txt",
+    "\\tx-stop-on-failure.txt",
     MANIFEST,
 ];
 pub type Snapshot = Vec<Option<Vec<u8>>>;

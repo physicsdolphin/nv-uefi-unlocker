@@ -1,0 +1,133 @@
+===== D. ssdiag 0.7.2 stock baseline 2026-11-12 10:36 (SS0=0x40000 SS1=0x6) =====
+Windows PowerShell 脚本开始
+
+===== GPU 1/1: PCI\VEN_10DE&DEV_1F07&SUBSYS_12AD10DE&REV_A1\4&b0d7636&0&0018 =====
+ranges:
+  e0000000-efffffff (256 MiB)
+  f0000000-f1ffffff (32 MiB)
+  fa000000-faffffff (16 MiB)
+config-space ReBAR (bus 3 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [256M/128M/64M] current 256 MiB (size_idx 8)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+config-space link caps (bus 3 dev 0 fn 0): LnkCap max Gen3 x16 | LnkSta Gen3 x16 | LnkCap2 [Gen1,Gen2,Gen3] | LnkCtl2 TLS Gen3
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:03.0 VEN_8086&DEV_2F08 PMCSR = D0 (0x0008) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: fa000000
+--- core/debug block ---
+PMC_BOOT_0             = 0x166000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0xbadf5040 [PRIV_VIOLATION]
+GFW_PLM                = 0xffffff8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x6a2001bf
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x01faf000
+WPR2_HI                = 0x01ffee00
+MMU_PLM                = 0xbadf5040 [PRIV_VIOLATION]
+MMU_LOCK_LO            = 0x1ffffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000010
+GSP_EXCI               = 0x00000000
+SEC2_CPUCTL            = 0x00000020
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00003911
+FUSE_VER_DECODE        = 0xbadf5040 [PRIV_VIOLATION]
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xffffff8f (closed (stock))
+  turing 0x4096xx      SS0       = 0x00040000 [. . . . r4 . . .]
+  turing 0x4096xx      READOUT   = 0x00400080
+  turing 0x4096xx      SS1       = 0x00000006 [r6]
+  0x823xxx amp/ada/gb  PLM       = 0xbadf5040 (closed (non-standard))
+  0x823xxx amp/ada/gb  SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  0x823xxx amp/ada/gb  SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  READOUT_1 = 0xbadf5040 [PRIV_VIOLATION]
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+
+CANARY: cleared + SS gone - a reset hit this boot after the EFI handoff (expected anonymous relock)
+driver service removed (remove-when-done)
+ExitCode=0
+=== DISPLAY DEVICES ===
+
+
+FriendlyName : OrayIddDriver Device
+Status       : OK
+Problem      : CM_PROB_NONE
+InstanceId   : ROOT\DISPLAY\0000
+
+FriendlyName : NVIDIA GeForce RTX 2070
+Status       : OK
+Problem      : CM_PROB_NONE
+InstanceId   : PCI\VEN_10DE&DEV_1F07&SUBSYS_12AD10DE&REV_A1\4&B0D7636&0&0018
+=== POWER RELATED ===
+
+
+Name     : NVIDIA GeForce RTX 2070
+DeviceID : PCI\VEN_10DE&DEV_1F07&SUBSYS_12AD10DE&REV_A1\4&B0D7636&0&0018
+Status   : OK
+
+
+
+Windows PowerShell 脚本结束
+结束时间: 20261112103623
+
+
+
+
+===== E. ssdiag 0.7.2 stock baseline 2026-11-12 15:02 after reboot (SS0=0x0 SS1=0x0) =====
+Windows PowerShell 脚本开始
+
+===== GPU 1/1: PCI\VEN_10DE&DEV_1F07&SUBSYS_12AD10DE&REV_A1\4&b0d7636&0&0018 =====
+ranges:
+  e0000000-efffffff (256 MiB)
+  f0000000-f1ffffff (32 MiB)
+  fa000000-faffffff (16 MiB)
+config-space ReBAR (bus 3 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [256M/128M/64M] current 256 MiB (size_idx 8)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+config-space link caps (bus 3 dev 0 fn 0): LnkCap max Gen3 x16 | LnkSta Gen3 x16 | LnkCap2 [Gen1,Gen2,Gen3] | LnkCtl2 TLS Gen3
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:03.0 VEN_8086&DEV_2F08 PMCSR = D0 (0x0008) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: fa000000
+--- core/debug block ---
+PMC_BOOT_0             = 0x166000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0xbadf5040 [PRIV_VIOLATION]
+GFW_PLM                = 0xffffff8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x6a2001bf
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x01faf000
+WPR2_HI                = 0x01ffee00
+MMU_PLM                = 0xbadf5040 [PRIV_VIOLATION]
+MMU_LOCK_LO            = 0x1ffffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000010
+GSP_EXCI               = 0x00000000
+SEC2_CPUCTL            = 0x00000020
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00003911
+FUSE_VER_DECODE        = 0xbadf5040 [PRIV_VIOLATION]
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xffffff8f (closed (stock))
+  turing 0x4096xx      SS0       = 0x00000000 [. . . . . . . .]
+  turing 0x4096xx      READOUT   = 0x00400080
+  turing 0x4096xx      SS1       = 0x00000000 [.]
+  0x823xxx amp/ada/gb  PLM       = 0xbadf5040 (closed (non-standard))
+  0x823xxx amp/ada/gb  SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  0x823xxx amp/ada/gb  SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  READOUT_1 = 0xbadf5040 [PRIV_VIOLATION]
+
+CANARY: cleared + SS gone - a reset hit this boot after the EFI handoff (expected anonymous relock)
+driver service removed (remove-when-done)
+Windows PowerShell 脚本结束
+结束时间: 20261112150234

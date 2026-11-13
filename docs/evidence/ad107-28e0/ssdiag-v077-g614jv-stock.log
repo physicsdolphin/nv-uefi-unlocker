@@ -1,0 +1,365 @@
+===== ssdiag inventory v0.7.7 (read-only; no admin, no driver) =====
+OS:      Windows 11 25H2 build 26200.9974
+CPU:     13th Gen Intel(R) Core(TM) i7-13650HX (family 6 model 0xb7 stepping 1, 10 cores / 20 threads)
+BOARD:   ASUSTeK COMPUTER INC. ROG Strix G614JV_G614JV (board: ASUSTeK COMPUTER INC. G614JV)
+BIOS:    G614JV.333 (10/01/2025)
+CHASSIS: laptop/portable (SMBIOS chassis type 10)
+RAM: 65147 MiB physical, 2 SMBIOS slots
+RAM SLOT: Controller0-ChannelA-DIMM0 128 MiB @ 4800 MT/s (SK Hynix HMCG88AGBSA095N)
+RAM SLOT: Controller1-ChannelA-DIMM0 128 MiB @ 4800 MT/s (SK Hynix HMCG88AGBSA095N)
+DISK: #0 aigo NVMe SSD P7000Z 2TB - 1907.7 GiB
+DISK: #1 YMTC PC411-2048GB-B - 1907.7 GiB
+PART: disk 0 @ 16 MiB size 1907.7 GiB D: ReFS "Data" free 299.9 GiB / 1907.6 GiB
+PART: disk 1 @ 1 MiB size 260 MiB (no letter) FAT32 "SYSTEM" free 223 MiB / 259 MiB
+PART: disk 1 @ 277 MiB size 1879.7 GiB C: NTFS "OS" free 979.8 GiB / 1879.7 GiB
+PART: disk 1 @ 1879.9 GiB size 26.0 GiB (no letter) NTFS "BACKUP" free 1.4 GiB / 26.0 GiB
+PART: disk 1 @ 1906.0 GiB size 1.7 GiB E: FAT32 "MYASUS" free 1.1 GiB / 1.7 GiB
+PCI DEV: High Definition Audio 控制器 (10de:22be)
+PCI DEV: Intel(R) GNA Scoring Accelerator module (8086:a74f)
+PCI DEV: Intel(R) Innovation Platform Framework Processor Participant (8086:a71d)
+PCI DEV: Intel(R) LPC Controller/eSPI Controller - 7A0C (8086:7a0c)
+PCI DEV: Intel(R) Management Engine Interface #1 (8086:7a68)
+PCI DEV: Intel(R) PCI Express Root Port #13 - 7A34 (8086:7a34)
+PCI DEV: Intel(R) PCI Express Root Port #21 - 7A44 (8086:7a44)
+PCI DEV: Intel(R) PCI Express Root Port #25 - 7A48 (8086:7a48)
+PCI DEV: Intel(R) PCI Express Root Port #6 - 7A3D (8086:7a3d)
+PCI DEV: Intel(R) PCI Express Root Port #9 - 7A30 (8086:7a30)
+PCI DEV: Intel(R) PCIe RC 010 G5 - A70D (8086:a70d)
+PCI DEV: Intel(R) SMBus - 7A23 (8086:7a23)
+PCI DEV: Intel(R) SPI (flash) Controller - 7A24 (8086:7a24)
+PCI DEV: Intel(R) Serial IO I2C Host Controller - 7A4C (8086:7a4c)
+PCI DEV: Intel(R) Serial IO SPI Host Controller - 7A79 (8086:7a79)
+PCI DEV: Intel(R) Shared SRAM - 7A27 (8086:7a27)
+PCI DEV: Intel(R) UHD Graphics (8086:a78b)
+PCI DEV: Intel(R) Wi-Fi 6E AX211 160MHz (8086:7a70)
+PCI DEV: NVIDIA GeForce RTX 4060 Laptop GPU (10de:28e0)
+PCI DEV: PCI Express 上游交换机端口 (8086:1133)
+PCI DEV: PCI Express 下游交换机端口 (8086:1133)
+PCI DEV: PCI 标准主机 CPU 桥 (8086:a72a)
+PCI DEV: Realtek PCIe GbE Family Controller (10ec:8168)
+PCI DEV: Thunderbolt(TM) Controller - 1134 (8086:1134)
+PCI DEV: USB Synopsys 控制器 (8086:7a61)
+PCI DEV: 标准 NVM Express 控制器 (1e49:1071)
+PCI DEV: 标准 NVM Express 控制器 (1e4b:1602)
+PCI DEV: 符合 USB xHCI 的主机控制器 (8086:1135)
+PCI DEV: 符合 USB xHCI 的主机控制器 (8086:7a60)
+PCI DEV: 英特尔® 智音技术总线 (8086:7a50)
+GPU 1: NVIDIA GeForce RTX 4060 Laptop GPU
+GPU 1 PCI: 10de:28e0 SUBSYS 20BD1043 BDF 01:00.0
+GPU 1 family: ad10x (Ada) - IN-SCOPE (unlock transaction family)
+GPU 1 VBIOS: 95.07.16.40.f7 (nvapi)
+GPU 1 driver: 32.0.16.1074 (610.74), dated 7-2-2026; EnableGpuFirmware unset (LEGACY mode)
+===== end inventory =====
+PLATFORM: vulnerable-driver blocklist = OFF
+PLATFORM: core isolation (HVCI)       = unknown (value absent - the Windows default applies)
+PLATFORM: HVCI runtime (CodeIntegrity) = clear
+PLATFORM: Secure Boot                 = OFF
+NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs
+      a driver install (event 7045) and managed/EDR machines may alert on it.
+USB4: Usb4HostRouter Start = 3 (Manual)
+USB4: Usb4DeviceRouter Start = 3 (Manual)
+USB4: no USB4 devnodes enumerated
+USB4: device-router driver ENABLED - the takeover will reset the tunnel at bind; a cleared canary is expected
+ADVISORY: laptop chassis - the volatile unlock can drop on sleep/RTD3/MUX events; note the display mode (hybrid vs dGPU-direct) when reporting (FAQ: losing the unlock)
+1 NVIDIA GPU function(s) discovered
+===== GPU 1/1: PCI\VEN_10DE&DEV_28E0&SUBSYS_20BD1043&REV_A1\4&1a81f3bf&0&0008 =====
+ranges:
+  0x83000000-0x83ffffff (16 MiB)
+  0x6000000000-0x61ffffffff (8192 MiB)
+  0x6200000000-0x6201ffffff (32 MiB)
+config-space ReBAR (bus 1 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [8G/4G/2G/1G/512M/256M/128M/64M] current 8192 MiB (size_idx 13)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+config-space link caps (bus 1 dev 0 fn 0): LnkCap max Gen4 x8 | LnkSta Gen4 x8 | LnkCap2 [Gen1,Gen2,Gen3,Gen4] | LnkCtl2 TLS Gen4
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:01.0 VEN_8086&DEV_A70D PMCSR = D0 (0x0000) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: 0x83000000
+--- core/debug block ---
+PMC_BOOT_0             = 0x197000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0x00001ffc
+GFW_PLM                = 0x00008b8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x621001bf
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x1ffffe00
+WPR2_HI                = 0x00000000
+MMU_PLM                = 0x0045cb8f
+MMU_LOCK_LO            = 0x1ffffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000020
+GSP_EXCI               = 0x00009f11
+SEC2_CPUCTL            = 0x00000020
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00008b11
+FUSE_VER_DECODE        = 0x00000001
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xbadf5040 (closed (non-standard))
+  turing 0x4096xx      SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  turing 0x4096xx      READOUT   = 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  PLM       = 0xffffff8f (closed (stock))
+  0x823xxx amp/ada/gb  SS0       = 0x05100071 [r1 r7 . . . r1 r5 .]
+  0x823xxx amp/ada/gb  SS1       = 0x00000005 [r5]
+  0x823xxx amp/ada/gb  READOUT_1 = 0x00410080
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0x0004cb8f (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0x0004cb8f (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0xffffff0f (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0x0000002d
+  ad1x 64g-bar1   AD1X_CFG               = 0x80000007
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0xffffff8f (closed (stock))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0x0003fc00
+  ada fuse/tpc    FUSE_CTRL              = 0xe0040000
+  ada fuse/tpc    FUSE_ADDR              = 0x0000033f
+  ada fuse/tpc    FUSE_REG_50            = 0x033f02ff
+  ada fuse/tpc    FUSE_REG_54            = 0x00000118
+  ada fuse/tpc    FUSE_DEBUGCTRL         = 0x00400000
+  ada fuse/tpc    DISABLE_FUSE_PROG      = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    OPT_GPC_DISABLE        = 0x00000000
+  ada fuse/tpc    OPT_GPC_DEFECTIVE      = 0x00000000
+  ada fuse/tpc    CTRL_OPT_9C8           = 0x00000000
+--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---
+  GPC0 CTRL=0x00000000 STATUS=0x00000030 [TPC4 TPC5]
+  GPC1 CTRL=0x00000000 STATUS=0x00000030 [TPC4 TPC5]
+  GPC2 CTRL=0x00000000 STATUS=0x00000030 [TPC4 TPC5]
+  GPC3 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC4 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC5 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC6 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC7 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  OPT_GPC_DISABLE=0x00000000 (bit per GPC)  OPT_GPC_DEFECTIVE=0x00000000 (bit per GPC)
+  bank A 0x008203a0..: 0x00000001 0x00000000 0x00000001 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000000
+  bank B 0x008205c0.. (+4 = OPT_GPC_DEFECTIVE above): 0x00000001 0x00000000 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000000 0x00000000
+  verdict: 36 TPC(s) fused off in 8 GPC(s), no defect bit on them - override candidates (write path out of scope)
+--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---
+  LNKCAP             = 0x00467884
+  LNKCTL_LNKSTA      = 0x10840100
+  LNKCAP2            = 0x0180001e
+  LNKCTL2_LNKSTA2    = 0x001e0004
+  PRIV_MISC_1        = 0x20b60500
+  VSEC_DEVICE        = 0x00001801
+  VSEC_HIERARCHY     = 0x00001001
+  XVE_OVR_LTSSM      = 0x00000000
+  XVE_B_PLM          = 0xffffff8f (closed (stock))
+  XVE_D0_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D4_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D8_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_C_PLM          = 0xffffff8f (closed (stock))
+  LINK_CONFIG_0      = 0x40404c00
+  PL_LINK_RATE       = 0x00040000
+  CYA_0_DISG2        = 0x00000000
+  XP3G_STATUS0       = 0x10000001
+  XP3G_STATUS3       = 0x00a0000c
+  XP3G_OVR0          = 0x00000000
+  XP3G_OVR3          = 0x00000000
+  XP3G_VAL0          = 0x00000000
+  XP3G_VAL3          = 0x00000000
+  XP3G_PLM0          = 0xffffff8f (closed (stock))
+  XP3G_PLM4          = 0xffffffcf
+  XP3G_PLM8          = 0xffffffcf
+  XP3G_PLMC          = 0xffffffcf
+  OPT_GPC_DISABLE    = 0x00000000
+  OPT_MAGIC          = 0x00a0000c
+  OPT_GEN23          = 0x00000000
+  OPT_GEN3           = 0x00000000
+  L2_CANDIDATE       = 0x00000000
+  L2_SW_MASK         = 0x00000000
+  L2_EFF_MASK        = 0x00000000
+      GA100_SM_OVR 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+     GA100_SM_STAT 0x00000030 0x00000030 0x00000030 0x0000003f 0x0000003f 0x0000003f 0x0000003f 0x0000003f
+--- ampere/ada FEAT sweep (M1 cluster) ---
+         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+   value 0xffffff8f 0x00000182 0x00888888 0x00aaaaaa 0x00000233 0x00000000 0x00000001 0x0000000a 0x00004b8f
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0xffffff8f  0x008200d4=0xfffffffc
+  0x008200d8=0xffffff8f  0x008200dc=0xffffff8f
+  0x008200e0=0xffffff8f  0x008200e4=0xffffff8f
+  0x008200e8=0xfffffffc  0x008200ec=0xfffffffc
+  0x008200f0=0xfffffffc  0x008200f4=0xffffff8f
+  0x008200fc=0xffffffff [OPEN]  0x00823800=0xffffff8f
+  0x00823804=0xffffff8f  0x00823b00=0x00004b8f
+  0x009a0008=0xbadf5040 [PRIV_VIOLATION]  0x009a000c=0x00004b8f
+  0x009a0148=0xffffff0f  0x009a014c=0xffffff8f
+  0x009a0168=0xffffffcf  0x009a03f0=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0554=0xffffffcf  0x009a0bfc=0x171b0426
+  0x00100b10=0xffffff8f  0x00100b38=0xffffff8f
+  0x00100b84=0xffffff88  0x00100b9c=0xffffffcf
+FUSE_OPT_FEATURE_OVR   = 0x00000000
+FUSE_VER               = 0x00000001
+--- ga100 vfi dictionary (kate-land/ga100vfi; read-only, cross-die probe) ---
+  fusectl    FUSECTRL                   = 0xe0040000
+  fusectl    FUSEADDR                   = 0x0000033f
+  fusectl    EN_SW_OVERRIDE             = 0x00000001
+  fusectl    FUSEDEBUG                  = 0x00400000
+  fusectl    CRC_STATUS                 = 0x00004555
+  fusectl    ENABLE_FUSE_PROG_STAT      = 0x00000001
+  fusectl    DISABLE_FUSE_PROG_STAT     = 0xbadf5040 [PRIV_VIOLATION]
+  fusectl    DISABLE_SW_OVR_STAT        = 0x00000001
+  fusectl    FUSEWDATA_PLM              = 0xffffff8f (closed (stock))
+  fusectl    FUSECTRL_PLM               = 0xffffffff (OPEN)
+  fusectl    FUSEOPT_PLM                = 0xffffffff (OPEN)
+  fusectl    RING_GLOBAL_CTL            = 0x00000000
+  fusectl    RING_RESET_PLM             = 0xffffff8f (closed (stock))
+  sec-alias  DEBUG_FEAT_SW_OVR_EN       = 0x00000000
+  sec-alias  IST_DEBUG_FA               = 0xbadf5040 [PRIV_VIOLATION]
+  sec-alias  PRIV_SEC_EN                = 0x00000001
+  sec-alias  SECURE_PRI_SRC_ISO_EN      = 0x00000001
+  sec-alias  PRIVKEY_ACC_DIS            = 0x00000004
+  sec-alias  FEATURE_FUSES_OVR_DIS      = 0x00000000
+  sec-alias  SFK_ACC_DIS                = 0x00000001
+  sec-alias  SECURE_PMU_DEBUG_DIS       = 0x00000001
+  sec-alias  SECURE_SECENG_DEBUG_DIS    = 0x00000001
+  sec-alias  SECURE_NVDEC_DEBUG_DIS     = 0x00000001
+  sec-alias  SECURE_MINION_DEBUG_DIS    = 0x00000001
+  sec-alias  SECURE_GSP_DEBUG_DIS       = 0x00000001
+  sec-alias  HDCP_RAM_ACCESS_DIS        = 0x00000001
+  sec-alias  DEBUG_SW_OVR_EN            = 0x00000000
+  sec-alias  XV2CLK_RETIME_DIS          = 0x00000000
+  sec-alias  SECURE_FUSE_RESENSE_DIS    = 0x00000001
+  sec-alias  SECURED_BURN_FEAT_EN       = 0x00000000
+  sec-alias  SECURE_XUSB_DEBUG_DIS      = 0x00000001
+  sec-alias  SECURE_FUSE_WDATA_WR_SEC   = 0x00000001
+  sec-alias  DEVID_SW_OVR_DIS           = 0x00000001
+  speed-sel  SM_SPEED_SELECT_DP         = 0x00000000
+  speed-sel  SM_SPEED_SELECT_FFMA       = 0x00000000
+  speed-sel  SM_SPEED_SELECT_FMLA16     = 0x00000000
+  speed-sel  SM_SPEED_SELECT_FMLA32     = 0x00000001
+  speed-sel  SM_SPEED_SELECT_IMLA0      = 0x00000000
+  speed-sel  SM_SPEED_SELECT_IMLA1      = 0x00000000
+  speed-sel  SM_SPEED_SELECT_IMLA2      = 0x00000001
+  speed-sel  SM_SPEED_SELECT_IMLA3      = 0x00000000
+  speed-sel  SM_SPEED_SELECT_IMLA4      = 0x00000001
+  status-opt STAT_HALF_FBPA             = 0x00000000
+  status-opt STAT_DISPLAY               = 0x00000000
+  status-opt STAT_DISP_HEAD             = 0x00000000
+  status-opt STAT_NVJPG                 = 0x0000000f
+  status-opt STAT_HALF_LTC              = 0x00000000
+  status-opt STAT_FBIO                  = 0x0000003c
+  status-opt STAT_FBPA                  = 0xbadf5040 [PRIV_VIOLATION]
+  status-opt STAT_GPC                   = 0x00000ff8
+  status-opt STAT_PERLINK               = 0x00000005
+  status-opt STAT_NVDEC                 = 0x0000000e
+  status-opt STAT_SEC                   = 0x00000000
+  status-opt STAT_PCIE_LANE             = 0x00000000
+  status-opt STAT_SPARE_FS              = 0x00000008
+  status-opt STAT_FB_CONFIG             = 0x00000000
+  status-opt STAT_FBP                   = 0x0000003c
+  status-opt STAT_NVENC                 = 0x00000006
+  status-opt STAT_GC6_ISLAND            = 0x00000000
+  status-opt STAT_NVLINK                = 0x00000001
+  status-opt STAT_SYS_PIPE              = 0xbadf5040 [PRIV_VIOLATION]
+  status-opt STAT_OFA                   = 0x00000000
+  opt-dis    FBIO_DISABLE               = 0x00000000
+  opt-dis    FBIO_DEFECTIVE             = 0x00000000
+  opt-dis    FBPA_DISABLE               = 0xbadf5040 [PRIV_VIOLATION]
+  opt-dis    FBPA_DEFECTIVE             = 0xbadf5040 [PRIV_VIOLATION]
+  opt-dis    FBP_DISABLE                = 0x00000000
+  opt-dis    FBP_DEFECTIVE              = 0x00000000
+  opt-dis    PES_DISABLE                = 0xbadf5040 [PRIV_VIOLATION]
+  opt-dis    PES_DEFECTIVE              = 0xbadf5040 [PRIV_VIOLATION]
+  opt-dis    ROP_L2_DISABLE             = 0x00000000
+  opt-dis    ROP_L2_DEFECTIVE           = 0x00000000
+  opt-dis    NVDEC_DISABLE              = 0x00000000
+  opt-dis    NVDEC_DEFECTIVE            = 0x00000000
+  opt-dis    NVENC_DISABLE              = 0x00000000
+  opt-dis    NVENC_DEFECTIVE            = 0x00000000
+  opt-dis    NVJPG_DISABLE              = 0x00000000
+  opt-dis    NVJPG_DEFECTIVE            = 0x00000000
+  opt-dis    OFA_DISABLE                = 0x00000000
+  opt-dis    OFA_DEFECTIVE              = 0x00000000
+  opt-dis    NVLINK_DISABLE             = 0x00000000
+  opt-dis    NVLINK_DEFECTIVE           = 0x00000000
+  opt-dis    SYS_PIPE_DISABLE           = 0x00000000
+  opt-dis    SYS_PIPE_DEFECTIVE         = 0x00000000
+  opt-dis    DISPLAY_DISABLE            = 0x00000000
+  opt-dis    DISPLAY_DEFECTIVE          = 0x00000000
+  opt-dis    DISP_HEAD_DISABLE          = 0x00000000
+  opt-dis    PCIE_LANE_DISABLE          = 0x00000000
+  opt-dis    PCIE_LANE_DEFECTIVE        = 0x00000000
+  opt-dis    PERLINK_DISABLE            = 0x00000005
+  opt-dis    SEC_DISABLE                = 0x00000000
+  opt-dis    GC6_ISLAND_DISABLE         = 0x00000000
+  opt-dis    HALF_FBPA_ENABLE           = 0x00000000
+  opt-dis    HALF_LTC_ENABLE            = 0x00000000
+  opt-dis    FB_CONFIG                  = 0x00000000
+  opt-dis    GEN3_SPEED_DISABLE         = 0x00000000
+  devid      PCIE_DEVIDA                = 0x000028a0
+  devid      PCIE_DEVIDB                = 0x000028e0
+  devid      PCIE_MAGIC_A               = 0x10000001
+  devid      PCIE_MAGIC_B               = 0x00000000
+  devid      PCIE_MAGIC_C               = 0x0001fbe0
+  devid      PCIE_MAGIC_D               = 0x00a0000c
+  tpc-def    TPC_GPC0_DEFECTIVE         = 0x00000000
+  tpc-def    TPC_GPC1_DEFECTIVE         = 0x00000000
+  tpc-def    TPC_GPC2_DEFECTIVE         = 0x00000000
+  tpc-def    TPC_GPC3_DEFECTIVE         = 0x00000000
+  tpc-def    TPC_GPC4_DEFECTIVE         = 0x00000000
+  tpc-def    TPC_GPC5_DEFECTIVE         = 0x00000000
+  tpc-def    TPC_GPC6_DEFECTIVE         = 0x00000000
+  tpc-def    TPC_GPC7_DEFECTIVE         = 0xbadf5040 [PRIV_VIOLATION]
+  cp-shadow  FBP_DISABLE_CP             = 0x00000000
+  cp-shadow  GPC_DISABLE_CP             = 0x00000000
+  cp-shadow  TPC_GPC0_DISABLE_CP        = 0x00000000
+  cp-shadow  TPC_GPC1_DISABLE_CP        = 0x00000000
+  cp-shadow  TPC_GPC2_DISABLE_CP        = 0x00000000
+  cp-shadow  TPC_GPC3_DISABLE_CP        = 0x00000000
+  cp-shadow  TPC_GPC4_DISABLE_CP        = 0x00000000
+  cp-shadow  TPC_GPC5_DISABLE_CP        = 0x00000000
+  cp-shadow  TPC_GPC6_DISABLE_CP        = 0x00000000
+  cp-shadow  TPC_GPC7_DISABLE_CP        = 0xbadf5040 [PRIV_VIOLATION]
+  cp-shadow  FBIO_DISABLE_CP            = 0x00000000
+  cp-shadow  FBPA_DISABLE_CP            = 0xbadf5040 [PRIV_VIOLATION]
+  cp-shadow  NVDEC_DISABLE_CP           = 0x00000000
+  cp-shadow  NVENC_DISABLE_CP           = 0x00000000
+  cp-shadow  NVJPG_DISABLE_CP           = 0x00000000
+  cp-shadow  ROP_L2_DISABLE_CP          = 0x00000000
+  cp-shadow  OFA_DISABLE_CP             = 0x00000000
+  cp-shadow  PCIE_LANE_DISABLE_CP       = 0x00000000
+  cp-shadow  DISPLAY_DISABLE_CP         = 0x00000000
+  cp-shadow  DISP_HEAD_DISABLE_CP       = 0x00000000
+  cp-shadow  SYS_PIPE_DISABLE_CP        = 0x00000001
+  cp-shadow  PES_DISABLE_CP             = 0xbadf5040 [PRIV_VIOLATION]
+  cp-shadow  NVLINK_DISABLE_CP          = 0x00000005
+  cp-shadow  FB_CONFIG_CP_ANCHOR        = 0x00000000
+  PES_GPC    [ 0] 0x00000004 0x00000004 0x00000004 0x00000007 0x00000007 0x00000007 0x00000007 0x00000007
+  PES_GPC    [ 8] 0x00000007 0x00000007 0x00000007 0x00000007 0x00000000 0x00000000 0x00000000 0x00000000
+  ROP_L2_FBP [ 0] 0x00000000 0x00000000 0x00000003 0x00000003 0x00000003 0x00000003 0x00000000 0x00000000
+  ROP_L2_FBP [ 8] 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  TPC_GPC    [ 0] 0x00000030 0x00000030 0x00000030 0x0000003f 0x0000003f 0x0000003f 0x0000003f 0x0000003f
+  TPC_GPC    [ 8] 0x0000003f 0x0000003f 0x0000003f 0x0000003f 0x00000000 0x00000000 0x00000000 0x00000000
+  TPC_GPC    [16] 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  TPC_GPC    [24] 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  TPC_DIS    [ 0] 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  TPC_RECFG  [ 0] 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00010301 0xbadf5040 [PRIV_VIOLATION]
+  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,
+  plain value = read it with GA100 semantics, ffffffff/badf1100 = not decoded here (AD10x fuse-PLM relocation precedent)
+--- turing mirror probe (0x820xxx vs -0x800000 vs -0x7FF000; open-questions #13) ---
+  word                          0x820xxx     -0x800000     -0x7FF000
+  FUSECTRL                 0xe0040000 0xbadf5040 [PRIV_VIOLATION] 0xffffffcf
+  EN_SW_OVERRIDE           0x00000001 0x20000000 0xffffffff
+  FUSEDEBUG                0x00400000 0x00000000 0xffffffcf
+  CRC_STATUS               0x00004555 0xbadf5040 [PRIV_VIOLATION] 0xffffffcf
+  FUSEWDATA_PLM            0xffffff8f 0x00010000 0xbadf5040 [PRIV_VIOLATION]
+  FUSECTRL_PLM             0xffffffff 0x00000000 0xbadf5040 [PRIV_VIOLATION]
+  FUSEOPT_PLM              0xffffffff 0x310581f8 0xbadf5040 [PRIV_VIOLATION]
+  DEBUG_FEAT_SW_OVR_EN     0x00000000 0xff000000 0xbadf5040 [PRIV_VIOLATION]
+  SM_SPEED_SELECT_DP       0x00000000 0x22582244 0x0000f059
+  PRIVKEY_ACC_DIS          0x00000004 0xffffff8f 0xbadf5040 [PRIV_VIOLATION]
+  OPT_GPC_DISABLE          0x00000000 0xbadf5040 [PRIV_VIOLATION] 0xbadf5040 [PRIV_VIOLATION]
+  WDATA_WR_SECURE          0x00000001 0xbadf5040 [PRIV_VIOLATION] 0x020588a1
+  OPT_GPC_DEFECTIVE        0x00000000 0xbadf5108 [BADF] 0xbadf5040 [PRIV_VIOLATION]
+  STAT_GPC                 0x00000ff8 0x00010000 0xbadf5040 [PRIV_VIOLATION]
+  STAT_TPC_GPC0            0x00000030 0x00000000 0xbadf5040 [PRIV_VIOLATION]
+  SBFE                     0x00000000 0xbadf5040 [PRIV_VIOLATION] 0xbadf1100 [UNDECODED]
+  note: mirror == primary means a bit-23 alias (both addresses valid); mirror badf while
+  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks
+  GR_TOPO_409604         = 0x04020003 (byte3 GPC-slots 4 / byte0 active-GPC 3; anchors 06030005/08040003/08040006)
+VERDICT [ada]: NOT_UNLOCKED
+CANARY: cleared + SS gone - a reset hit this boot after the EFI handoff (expected anonymous relock)
+driver service removed (remove-when-done)

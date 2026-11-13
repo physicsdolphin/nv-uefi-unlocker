@@ -19,7 +19,7 @@
 | F3 | chenc222（#62） | RTX 2080，TU104-400，`10de:1e87`，`90.04.0B.00.A5`（原厂 PROM 落盘证实） | 8192 MiB | B760 Intel UEFI（非 CSM）；无核显独显直连；Above4G on（BAR1@`0x400000000`）、ReBAR off、VT-d off | Win + 621.01 / GSP 620.67.01 | v2.1.1/2.1.5/2.1.6 + 8 轮单变量；A–F 轮用 v2.1.7-tu102-diag 与 PR #67 head `cdc634076`（自编 `1aa5651153e82fcc…`） | 默认 + C-load + #67 开关 | 8 轮全 `0x91`（含断电冷启、staging 强制 768MiB `0x3000b000`）；A/B/C 轮（C-load、+PTIMER+host-probe、v67-direct-ss）仍 `0x91`/`exci=0x00900100`。**D/E 轮（搬安全段基址 0x100→0x200 / BOOTVEC 直入）首次改变异常类**：`exci=0x00a00100`、`mbox0=0x31`；F 轮（secure=false）→ `exci=0x50aa2863`、DMEM 完全未动。布局与成功 2080S 逐位相同 | #62 |
 | F4 | ProxVirtualZone（#62 尾） | RTX 2080 SUPER，TU104-450，**`10de:1e81`（与 #14 成功卡同 device ID）**，subsystem `13a1:10de` | 8192 MiB | R9 3900X + MSI MPG X570 | Win11 | 自编译 `c52e8ea`（v2.1.6 谱系） | 默认 + C-load（有效/无效 marker）+ 全套诊断，共 4 轮 | 一致失败：`mailbox0=0x0B`、`exci=0x00900100`、`tu10x_unlock=false`。**同 ID 跨机器分裂的直接实证** | #62 |
 
-另类（非 0x91 族，单列）：**#55**（维护者自试）Z370+10700K（核显开）+2080S 独显单屏、Win10 GSP 610——解锁成功但交棒黑屏 + Windows 蓝屏 `APC_INDEX_MISMATCH`；TU10X PLM relock 只回 `0xffffffef`（差 bit4）。归"交棒完整性"问题（#35/#61 谱系），与本矩阵的 booter 拒收族不同病。
+另类（非 0x91 族，单列）：**#55**（维护者自试）Z370+10700K（核显开）+2080S 独显单屏、Win10 GSP 610——解锁成功但交棒黑屏 + Windows 蓝屏 `APC_INDEX_MISMATCH`；TU10X PLM relock 只回 `0xffffffef`（差 bit4）。归"交棒完整性"问题（#35/#61 谱系），与本矩阵的 booter 拒收族不同病。**（2026-11-09 结案：native-GOP 默认化后维护者实测黑屏/蓝屏均消，虚拟显示器形态一并修复；`0xffffffef` relock 经 #74/#191 确认为 known-good——已入 [csm-compat](csm-compat.md) 失败形态清单 (c)）**
 
 ### A1-S 成功侧
 
@@ -196,6 +196,8 @@ travis 成功的额外信息：证明 C-load 成功**不需要** PTIMER 与 host
 | #82 2060M 6G 1f15 | **推进未治愈** | 0x91 → **0x0B**；FWSEC 全绿；`BOOTER-AUDIT: ns MATCH / dmem MATCH / sec 首字 0xdead5ec1`；R2 无变化 | 同 B 类 |
 | #74 TU102 22G+TB3 | 用户 28 轮自查（第 15-16 轮单变量实锤；**第 17 轮重要修正**） | staging `dev=0x4b782000 [LOW]` ⇒ WPR2 0ms 起；`0x100000000`/`0x110000000` ⇒ `WPR2 never came up`（零残影）；**全低位轮是 V67 模式**：`mailbox0=0x0`=secure-stage 成功但 `PLM still locked - the payload's writes did not happen` → **UEFI 链在该机从未完整跑通**；第 28 轮：签名/radix ≥4G → `BOOTER-C: poll timeout reg=0x8400100`（SEC2 永不停机挂死，非报错）；用户已撤回"邮箱 32 位截断"误读（GA 明文反汇编独立证伪：meta 全 64 位寻址） | **FWSEC/签名/radix staging ≥4GiB 在 TB 链全段不可达**（三种死形：WPR2 不建立/0x89/挂死）；剩余阻塞=Windows 侧 USB4 接管（D 类） |
 | #89 2060 12G 1f03 | **v2.1.8 后用户跑通**（11-01） | v2.1.8 低位默认仍死（EXCI 0x009003ff）→ 用户自改 **FWSEC 走 VRAM staging**（BAR1 写+`TRANSCFG4=(t4&!7)|4` LOCAL_FB+BL DESC codeDma/dataDma 指 VRAM）→ `WPR2 UP after 3ms` 全链绿，20.6→33.7 TFLOPS；**meta 必须留 sysmem**（放 VRAM 则 0x89） | A 类第三形态：低位不够、需 VRAM 载具——"sysmem 自测失败→VRAM 兜底"提案待落码 |
+| #156 2080S Mobile 1e93（DGFF，Area-51m R2） | **v2.1.9 四轮全 0x89（2026-11-03 报，判据链完整）** | **逆向锚定判据链**：①GA 明文码表 `0x2784: mov $r0 0x89`=二次魔数比对失败（`0x278b: 0x8a`=字段 D[+0xac] 比对，未取）→ 0x89=booter 收到的 meta 页内容不对；②宿主 CPU 读回 meta 页 magic 逐位完好（0xdc3aae21371a60b3，与 `0x2388/0x2395` 比对常量同）→ 内存内容正确 → **SEC2 对 sysmem 0x10001f000（≥4GiB）的 DMA 读未送达**；③四路分野：PORTAL 寄存器窗写（booter 33792B IMEM+25088B DMEM readback MATCH，不经 sysmem DMA）✓、FWSEC LOW staging DMA（0x78c31000，WPR2 3ms/GSP-HALT/MAILBOX0=0）✓、FWSEC VRAM staging ✓、**≥4GiB sysmem DMA ✗**（meta→0x89 + 签名 DMA `dma_landed=false`）；④meta-in-VRAM 轮=设计内假阴性（RE 已定 meta DMA 只走 sysmem 孔径），**不构成排除** | 与 #74 毒形同位（"平台不可达的读失败恰好落进 0x89 族"预判命中）但为**原生 PCIe DGFF 非 TB 链**首例——≥4GiB staging 可达性 × 平台变量（VT-d/DGFF 固件层=待判别假设）；`\tx-low-staging.txt` 全局低位轮从未跑=下一单变量。附：FWSEC BL dst=0xfe00≠TU102/TU106 的 0xfd00（TU104M 几何首录，载具已容忍） |
+| **#191** 2070S Max-Q 1ed1（Lenovo Legion 7，Ubuntu 24.04 / 595.99.02） | **v2.1.10 两轮单变量（HIGH → `\tx-low-staging.txt`）**，2026-11-05 报 | ①HIGH：`gate: true`、meta `0x10001f000`、`mailbox0=0x89`、DMEM 全 `0xdead5ec2`、宿主 magic 完好、`unlock=false`；②LOW：meta `0x6afa1000`、`mailbox0=0x0`、`execution verified`、`SS0=0x88888888 SS1=0x8`、系统内 `VERDICT: UNLOCKED`、FP16 +32.0% | **0x89 判据链在第二平台原样复现，且低 staging 首个转绿**——#156 的"≥4GiB sysmem DMA ✗"从单机结论升为跨平台规律；FWSEC 侧 `dst=0xfe00` 与 #156 同为 TU104M 几何。两例均未记 BIOS VT-d → 平台因子入[开放问题 #17](open-questions.md) |
 | #90 2080Ti 11G X79 | 判读纠偏 | UEFI 侧实为成功（PLM 开+selector 写入+unlock_persist=true）；Windows 侧病态疑硬件混杂（630 条 WHEA；断电未跑工具仍病态） | E 类：先排硬件 |
 
 **三个跨机定案**：
@@ -203,7 +205,7 @@ travis 成功的额外信息：证明 C-load 成功**不需要** PTIMER 与 host
 2. diag 分支 `parse_num_ascii` 吃不掉 `0x` 前缀（"0x200" 无声失效、"512" 可用）——坑了 #57 的 E 轮；v2.1.8 修复+回归测试。
 3. `signature DMA never landed` verdict 是 V67 专用检查的恒假阴性（#14 成功轮、#90 实际成功皆有此行）——v2.1.8 文案已改。
 
-**残留类汇总（2026-11-01 更新）**：A=FWSEC 死（staging 带：#74 TB 型已由 v2.1.8 低位默认覆盖；#89 VRAM 型待 FWSEC-VRAM 载具落地）；B=签名/验证域码 0x0B/0x11（#57/#82；**TU 明文 RE 已定案**——key 族 #6 破解后 TU102 全量反汇编：0x0B=终判 32B 哈希比较失败（PSS 尾，0x37dd）、0x11=期望值表 id、0x91=WPR 窗口 1MiB 几何校验（0x2995），见 keychain §7）；C=0x0+sanitize 误读（文案已修）；D=Windows 侧重编程（#82 实测 GSP 615.78/驱动 617.42 init 重编程 FEAT；成功例均 ≥621/620）；E=Windows 病态疑硬件（#90）。另：#91（Catnip202X）提议 DMEM 内 WprMeta 全字段 dump 与成功机 A/B——可由 v2.1.8 的 BOOTER-AUDIT 框架扩展实现。
+**残留类汇总（2026-11-05 更新）**：A=FWSEC 死 / 高位 staging 死（staging 带：TB 型已由 v2.1.8 低位默认覆盖；#89 VRAM 型待 FWSEC-VRAM 载具落地；**#156/#191 的 ≥4GiB meta 型已由 `\tx-low-staging.txt` 覆盖并两平台实证**，平台因子见开放问题 #17）；B=签名/验证域码 0x0B/0x11（#57/#82；**TU 明文 RE 已定案**——key 族 #6 破解后 TU102 全量反汇编：0x0B=终判 32B 哈希比较失败（PSS 尾，0x37dd）、0x11=期望值表 id、0x91=WPR 窗口 1MiB 几何校验（0x2995），见 keychain §7）；C=0x0+sanitize 误读（文案已修）；D=Windows 侧重编程（#82 实测 GSP 615.78/驱动 617.42 init 重编程 FEAT；成功例均 ≥621/620）；E=Windows 病态疑硬件（#90）。另：#91（Catnip202X）提议 DMEM 内 WprMeta 全字段 dump 与成功机 A/B——可由 v2.1.8 的 BOOTER-AUDIT 框架扩展实现。
 
 ## 维护结论（2026-11-01 定案版）
 

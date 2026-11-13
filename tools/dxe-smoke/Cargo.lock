@@ -84,11 +84,13 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "loader"
-version = "2.1.9"
+version = "2.1.12-rc3"
 dependencies = [
  "log",
+ "romcore",
  "sha2",
  "uefi",
+ "uefi-raw",
 ]
 
 [[package]]
@@ -134,6 +136,10 @@ checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "romcore"
+version = "2.1.12-rc3"
 
 [[package]]
 name = "sha2"

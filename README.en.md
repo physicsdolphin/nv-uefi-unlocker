@@ -1,22 +1,31 @@
-# nv-uefi-unlocker
+# nv-uefi-unlocker: Revert Gimpvidia's limit · [FAQ](docs/faq.en.md)
 
 [中文](README.md) | [English](README.en.md)
 
 **Your GeForce runs AI at half speed — this fixes it before the driver even loads.**
 
-[![version](https://img.shields.io/badge/version-2.1.8-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
+## **["U SAY WHAT? — Gimpvidia's limit can be reverted???"](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)**
+
+[![version](https://img.shields.io/badge/version-2.1.10-brightgreen)](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/latest)
 [![GeForce](https://img.shields.io/badge/GeForce-GTX%2016%20%7C%20RTX%2020%2F30%2F40-green)](docs/compatibility.en.md)
 [![platform](https://img.shields.io/badge/platform-UEFI%20pre%20driver%20%7C%20Win%20%2F%20Linux%20%2F%20Hackintosh-blue)](docs/faq.en.md)
 [![license](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
 [![stars](https://img.shields.io/github/stars/physicsdolphin/nv-uefi-unlocker?label=stars&color=yellow)](https://github.com/physicsdolphin/nv-uefi-unlocker/stargazers)
 
-**Measured up to ~2.6× FP16 / BF16 / TF32 tensor throughput · FP8 up to ~1.9× · +14–75% image / video generation · up to +94% DirectML inference kernels · no VBIOS flashing, cleared by power-off** (per-board data in the [compatibility matrix](docs/compatibility.en.md); gains are bounded by power limits and precision paths)
+## A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 + RTX 20 + RTX 30 + RTX 40 series ##
 
-A UEFI pre-driver NVIDIA GPU unlocker for the GTX 16 and RTX 20, 30, and 40 series.
+Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, unlock, and continue into Windows, Linux, or any other operating system. No VBIOS flashing is needed; powering off clears the unlock.
 
-Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, unlock, and continue into Windows or Linux. No VBIOS flashing is needed; powering off clears the unlock.
+**Read first → [the FAQ](docs/faq.en.md)** (USB file layout / relock and sleep / Thunderbolt and eGPU / Secure Boot / safety - most operational questions already have answers there; for the background concepts see [what are UEFI / DXE / chain loading](docs/faq.en.md#uefi-primer))
 
 [Watch the project trailer ↗](https://www.bilibili.com/video/BV1d6xN66ECM/) (Simplified Chinese)
+[Official videos: tool overview ↗](https://www.youtube.com/watch?v=y11Pluqoqhg) · [full unedited walkthrough ↗](https://www.youtube.com/watch?v=hrw1KBTM1EQ)
+
+**Measured up to ~2.6× FP16 / BF16 / TF32 tensor throughput · FP8 up to ~1.9× · +14–75% image / video generation · up to +94% DirectML inference kernels · LLM inference prefill up to +19% (decode +5%) · no VBIOS flashing, cleared by power-off** (per-board data in the [compatibility matrix](docs/compatibility.en.md); gains are bounded by power limits and precision paths — the LLM row is a dual-GPU MoE end-to-end measurement, not a microbenchmark extrapolation)
+
+[![Theoretical post-unlock ceiling chart](docs/tools/tflops-ceiling.en.svg)](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html)
+
+*Theoretical post-unlock ceiling chart (FP16 · desktop) — [open the interactive version](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html): five precision tabs (FP32/TF32/FP16/BF16/FP8), the full GTX 9 – RTX 50 desktop / laptop / pro / mobile-workstation / mining / datacenter lineup, a toggle for as-shipped values; [`?k=fp8`](https://physicsdolphin.github.io/nv-uefi-unlocker/tools/tflops-ceiling.html?k=fp8) deep-links a precision. This is a theoretical yardstick and differs from the measured figures above; see [the theoretical uplift analysis](docs/theoretical-uplift.en.md).*
 
 ## Compatibility at a glance
 
@@ -24,11 +33,120 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | --- | --- |
 | GTX 16 · Turing | Theoretically compatible; field tests welcome |
 | RTX 20 · Turing | Fully compatible; some models have known issues listed in the full matrix |
-| RTX 30 · Ampere GA10x | Fully compatible |
-| RTX 40 · Ada | Fully compatible on laptops and desktops |
+| RTX 30 · Ampere GA10x | Fully compatible, laptops and desktops |
+| RTX 40 · Ada | Fully compatible, laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
 
-[Full compatibility matrix and field results](docs/compatibility.en.md) · [FAQ](docs/faq.en.md)
+## Community success reports and reproductions
+
+The **hardware/model groups** below let you scan straight for your own card name and see whether a success precedent exists (you may not know the PCI ID or chip codename up front!). Sources are partly the [video comment section](https://www.bilibili.com/video/BV1d6xN66ECM/), partly the [community validation archive](docs/community-reports.md); the comment-section portion consists of viewer reports. Where a model has several reports, the most informative one is kept. Current support and known limitations remain in the full [compatibility matrix](docs/compatibility.en.md).
+
+The table distinguishes before/after measurements, post-unlock-only screenshots and text-only reports. Benchmark gains are not application gains; reports involving overclocking or different power settings are marked accordingly.
+
+| Reported hardware | Community report / conditions | Sources |
+| --- | --- | --- |
+| RTX 2050 Laptop 4GB | Full EFI chain passes and Windows-side ssdiag reports UNLOCKED (PLM open, SS overrides live); preliminary PyTorch peaks FP16 25.13 / BF16 25.33 TFLOPS, no strict locked-state A/B yet | [#142](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/142) |
+| RTX 3050 Laptop 6GB (MUXless) | Second in-OS model of the GA107 family: v2.1.10 full chain and Windows ssdiag `UNLOCKED`; same-machine A/B FP16 16.03 → 29.14 (**+82%**), BF16 +75%, TF32 +72%, both FP32 controls flat; **survives driver init but S3/S5 clear it** - hybrid laptops should expect a per-boot replay | [#188](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/188) |
+| RTX 2060 12GB | Passes after the fix; six single-variable rounds and offline PROM analysis placed staging exactly on the 4 GiB boundary (no performance numbers) | [#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89) |
+| RTX 2060 Super 8GB | Full chain passes: FWSEC → WPR2 → BOOT_DIRECT → PLM open → SS0/SS1 readback; signatures restored and Windows handoff normal | [#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12) |
+| RTX 2070 Laptop 8GB | Passes on v2.1.3; first Turing laptop success, and its cross-chip signature drove the >4G allocation fix (no performance numbers) | [#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16) |
+| RTX 2070 8GB (developer's own test) | Full chain passes (FWSEC → BOOT_DIRECT booter → PLM open → SS0/SS1 readback); FP32-accumulate GEMM 36 → 60–63 TFLOPS (+67–75%), GSP mode required | [final result](docs/evidence/m3-tu106/host-and-final-result.md) |
+| RTX 2070 Super Max-Q (laptop) | First `1ed1` in-OS: same-stick two-round A/B - the default HIGH staging always ends 0x89, `\tx-low-staging.txt` turns it green; PyTorch FP16 26.63 → 35.15 TFLOPS (**+32%**), FP32 control flat; `UNLOCKED` under the Linux proprietary driver | [#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191) |
+| RTX 2080 8GB | Passes after the v2.1.8 fix; reporter pinned 0x91 with eight single-variable rounds and a bitwise diff against a working machine (no performance numbers) | [#62](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/62) |
+| RTX 2080 Super 8GB | Retest passes after the 0x91 fix: 46 → 68 TFLOPS (+47.8%); first success in that fix chain | [#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14) |
+| RTX 2080 Ti | Exact A/B on one card: FP16 (FP32 accumulate) sustained 58.70 → 94.97 TFLOPS (+62%), FLOP/clk ×1.80, 60 s soak with 30,287 GEMMs and zero stalls, no TDR/WHEA; FP32/INT8/bandwidth unchanged (300 W cap, GSP on). A separate stock 11GB run survives into the proprietary Linux driver at 60.31 → 89.57 TFLOPS; H3 gain is not obvious | [#125](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/125) · [#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103) · [S41](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318838634673&comment_secondary_id=318838634673) |
+| RTX 2080 Ti 22GB mod | Reports success on the final attempt; no performance comparison | [S33](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322063070336&comment_secondary_id=322417003552) |
+| RTX 3060 12GB | FP16 25.37 → 45.79 TFLOPS; Anima generation 1.20 → 1.94 it/s | [S30](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318661261937&comment_secondary_id=318661261937) · [screenshots](docs/community-success.md#s30) |
+| RTX 3060 Ti (Lenovo OEM desktop) | First per-precision locked-state A/B: FP16 30.25 → 56.41 (1.86x, 1.96x per clock), BF16 1.84x, TF32 1.85x, FP32 SIMT control flat at 0.95–1.01x; the locked state sits at 46.7% of theoretical peak - a direct confirmation that the clamp is exactly one half. Also: v2.1.0 full chain (PLM flip readback, Inno3D Ice Dragon VBIOS cross-flashed) | [#199](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/199) · [#11](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/11) |
+| RTX 3070 8GB (desktop) | USB-boot unlock succeeds, diag confirms it and generation time drops 50%; after system sleep (S4) diag reports not_unlocked and generation time returns. Another v0.2.0 record on the same model reaches the full EFI chain and keeps selectors across FLR, but the state is not retained after entering Windows | [Discussion #129](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/129) · [#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54) |
+| RTX 3070 16GB (Dell OEM modded card) | EFI chain fully green with every readback on the log (PLM flip, SS0/SS1, selectors surviving FLR, native-GOP rebuild); same-machine four-precision A/B: FP16 +79.9%, BF16 +78.8%, TF32 +81.2%, FP32 control +3.9% flat; unlocked SM clocks are *lower* = the emission-rate fingerprint. Card-side prerequisite: **the power mode must be "performance-preferred", otherwise a black screen**; no in-OS readback | [#232](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/232) |
+| RTX 3070 Ti (desktop) | v2.1.10 full chain and **retained in Windows** (ssdiag readback: gate open, SS live); same-script A/B: FP16 33.69 → 71.99 (**2.14x**), BF16 2.09x, TF32 2.20x, FP32/bandwidth controls flat - a desktop data point for the factory-clamped GA10x TF32 | [#194](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/194) |
+| RTX 3070 Laptop 8GB | FP16 42.05 → 82.06 TFLOPS; 150W VBIOS and overclocked setup | [S12](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318487921761&comment_secondary_id=318487921761) · [screenshots](docs/community-success.md#s12) |
+| RTX 3070 Ti Laptop | WMMA FP16 45.51 → 88.84 TFLOPS; cuBLAS FP16 largely unchanged | [S36](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322484248128&comment_secondary_id=322484248128) |
+| RTX 3080 10GB | OS-side UNLOCKED; FP16 53.91 → 84.60 TFLOPS | [S28](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322392362704&comment_secondary_id=322392362704) · [screenshots](docs/community-success.md#s28) |
+| RTX 3080 12G LHR | ComfyUI video generation 800 s → under 500 s (ID not stated) | [community archive](docs/community-reports.md) |
+| RTX 3080 20G | BF16 GEMM 65 → 110–113 (three runs: 110.11/113.01/113.19, 275 W power cap); with models resident in VRAM, qwen2.1 BF16 193.7 → 92.9 s and krea2pornV4 42 → 31.5 s. Also: **first complete closure with Secure Boot on** (shim + self-signed MOK, hand-patched `.sbat`), TF32 1.84–1.87x, FP16/BF16 1.65–1.74x, FP32 flat, video pipeline end-to-end -30.0% with **byte-identical output**; an even 1.75x across three tensor paths with a 32 GiB ReBAR window live | [community archive](docs/community-reports.md) · [#210](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/210) · [D#211](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/211) |
+| RTX 3080 Laptop | Reports success and ~33% higher BF16; no absolute before/after values | [S18](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318503929089&comment_secondary_id=318523189905) |
+| RTX 3080 Ti Laptop | v2.1.0 success report; another reports BF16 45 → 72 TFLOPS with overclocking also mentioned | [S04](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322101380288&comment_secondary_id=322138152256) · [S09](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322187811968&comment_secondary_id=322187811968) |
+| RTX 3080 Ti 20G (native Tongde) | Unlock succeeds; device ID/VBIOS pending (native Tongde is not necessarily ES — could be a repaired card or ES bare die; no performance numbers) | [community archive](docs/community-reports.md) |
+| RTX 3080 Ti (form factor unspecified) | Screenshot: FP16 73.9 → 123.2, unit unspecified; FP32 control largely unchanged | [S48](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318960839137&comment_secondary_id=318960839137) · [screenshots](docs/community-success.md#s48) |
+| RTX 3090 | Qwen-Image2.1 Turbo BF16: nearly 60 → 22 s/image (approximate baseline). Also: post-unlock 8192³ FP16 117–127 TFLOPS with per-watt 0.337 → 0.318 (three power-limit steps, diminishing; **no locked baseline**, so multipliers are only lower bounds). Also a headless-server form (ASUS C621E + BMC): transaction fully green but bootmgr/grub black-screened after handoff, concluded as GOP handle order and fixed (default-ON in rc3) | [S49](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322473751376&comment_secondary_id=322473751376) · [#203](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/203) · [#228](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/228) |
+| RTX 3090 20GB OEM (reporter label) | FP16 77.36 → 115.20 TFLOPS; reporter also notes unlock loss after sleep/resume | [S46](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322654906480&comment_secondary_id=322654906480) · [screenshots](docs/community-success.md#s46) |
+| RTX 3090 Ti | v2.1.10 marker-free full chain plus an **output-hash-level A/B** (SM 1440 → 1015 MHz doing more work at the same power): BF16 **1.66x**, TF32 +58% / FP16 +44% at 273 W undervolt, 300 s steady-state +38%; HWiNFO shows nothing running hotter after the unlock. Also: H3 INT8 workflow at the same 418.5W, total 123.47 → 108.08 s/item | [#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195) · [S25](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322309028240&comment_secondary_id=322309028240) · [screenshots](docs/community-success.md#s25) |
+| RTX 4050 Laptop 6GB | Success report; post-unlock FP16 39.15 TFLOPS only, with overclock settings | [S34](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322434523792&comment_secondary_id=322434523792) · [screenshots](docs/community-success.md#s34) |
+| RTX 4060 Laptop | Screenshot: FP16/FP32 accumulation 31.12 → 54.33 (unit unspecified); generation reports also available | [S01](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318379087793&comment_secondary_id=318379087793) · [S16](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318513166865&comment_secondary_id=318513166865) · [S42](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322579294896&comment_secondary_id=322579294896) · [screenshots](docs/community-success.md#s16) |
+| RTX 4060 Ti 8GB | First 8GB `2803` data point: readback passes (PLM open, SS0/SS1, READOUT_1=0); cuBLAS 4096³ medians FP16 45.59 → 77.36 (+69.7%), BF16 45.64 → 77.74 (+70.3%), TF32 20.06 → 41.91 (+108.9%), FP32 control at noise level | [PR #87](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/87) |
+| RTX 4060 Ti 16GB | Two reporters describe successful unlocks and faster generation, including ASUS B550M | [S05](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318384860033&comment_secondary_id=318425336033) · [S50](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318780355665&comment_secondary_id=318780355665) |
+| RTX 4060 8GB (form factor unspecified) | MOSS Image, 1024×1536, 30 steps: ~240 → ~200 s | [S31](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318678373665&comment_secondary_id=318678373665) |
+| RTX 4070 Laptop (`2860` · ASUS TUF F16) | FP16 N=4096: 33.296 → 64.005 TFLOPS; another success report; a `2860` same-boot EFI chain + ssdiag UNLOCKED (no A/B) | [S21](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322273213728&comment_secondary_id=322273213728) · [S39](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322525434896&comment_secondary_id=322525434896) · [#202](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/202) · [screenshots](docs/community-success.md#s21) |
+| RTX 4070 desktop | FP16 61.99 → 76.32–87.82 TFLOPS (150W/200W conditions); generation 35 → 27 s | [S13](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322202417520&comment_secondary_id=322202417520) · [screenshots](docs/community-success.md#s13) |
+| RTX 4070 (form factor unspecified) | Pony 1024²: 11.1 → 9.0 s; Wan2.2 5B / 49 frames: 96 → 78.2 s | [S44](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318864603793&comment_secondary_id=318864603793) |
+| RTX 4070M mod | AD106 / 10de:2820; success after an update, FP16 40 → 70 (unit unspecified) | [S02](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322092618224&comment_secondary_id=322120397328) |
+| RTX 4070 SUPER | After the bridge BME fix, replay/unlock passes and marker, SS0/SS1 and post-FLR exit readbacks are correct; cuBLAS 8192 medians over seven runs: FP16→FP32 accumulate 70.5 → 100.1, BF16 71.0 → 107.0, TF32 35.5 → 48.4, while FP16 accumulate and FP32 SIMT controls stay flat (220 W) | [#3](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/3#issuecomment-6434240012) |
+| RTX 4070 Ti (ASUS TUF OC) | Local modified v2.1.9: full readback passes (POST-FLR verified, HANDOFF-OUT all correct); cuBLAS 8192³: FP16 80.35 → 137.97 (1.72×), BF16 80.44 → 144.13 (1.79×), FP32 control 1.01× | [Discussion #140](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/140) |
+| RTX 4070 Ti SUPER | Includes an OS-side UNLOCKED screenshot; the 57.00 → 150.93 TFLOPS report also changed overclocking | [S07](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318434036593&comment_secondary_id=318434036593) · [S10](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322192703296&comment_secondary_id=322192703296) · [S23](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318588984337&comment_secondary_id=318588984337) · [S51](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318800216993&comment_secondary_id=318800216993) · [screenshots](docs/community-success.md#s23) |
+| RTX 4080 Laptop | Reports FP16 ~57 → ~80 TFLOPS | [S08](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318467714081&comment_secondary_id=318467714081) |
+| RTX 4080 16GB | Cold boot passes first try: WPR2 → marker → PLM flip → four writes → selector readback → selectors survive AON after FLR → bootmgfw handoff; two independent A/Bs FP16 4096³ 100.53 → 185.50/185.24 (1.85×), BF16 4096³ 100.37 → 192.18/189.44 (1.91×), FP32 control unchanged (340 W cap) | [#53](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/53) · [Discussion #72](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/72) |
+| RTX 4080 SUPER | Reports success and ~1.85×; no application timing | [S24](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318597571313&comment_secondary_id=318597571313) |
+| RTX 4080 SUPER 32GB mod | Includes dual GPUs on TRX40; BF16 107.1 → 191.1, prefill +16.4%/+19.1%, decode +5.5%. Also: the SUBSYS `8986` form gives FP16 1.81x / BF16 1.83x / TF32 1.58x (cross-boot comparison) and **keeps the unlock through driver init with HVCI on** | [S11](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318394280177&comment_secondary_id=318482856705) · [S32](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318683830785&comment_secondary_id=318683830785) · [S43](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322585313104&comment_secondary_id=322585313104) · [#204](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/204) · [context with incomplete test conditions](docs/community-success.md#s32) |
+| RTX 4090 | Screenshot: TF32 79.4 → 148.5 (unit unspecified); reporter also describes ~15–20% faster MOSS BF16 | [S40](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322535665616&comment_secondary_id=322535665616) · [S45](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=322634742704&comment_secondary_id=322634742704) · [screenshots](docs/community-success.md#s45) |
+| RTX 4090 Laptop (configuration screenshot label) | Later reports it works; model comes from their AI configuration screenshot, with no performance comparison. A separate `2757` record has a locked-baseline same-machine A/B (BF16 1.53x, TF32 1.47x, FP32 1.000x control, BIOS dGPU-direct, two independent v2.1.5 successes), but v2.1.10/11 hang at the logo on that machine (suspected old preload x dirty card, flipped off by default), issue stays open | [S38](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318796399937&comment_secondary_id=318815524849) · [#198](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/198) |
+| RTX 5060 Ti 16GB (as display primary) | Blackwell `2d04` has no asset-family mapping and is safely skipped in a dual-GPU machine while the system stays normal (the secondary 4060 Ti passes the full chain); **not an unlock of the 5060 Ti itself**. Since [#168](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/168) ssdiag / diag-unlock / the EFI SAMPLE record its FEAT block and fuses (read-only; the gate is PL3-only and all 3 writes are dropped) — mechanism and exploration status in [docs/blackwell-gb20x-status.md](docs/blackwell-gb20x-status.md) | [#56](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/56) · [#168](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/168) |
+| GTX 1080 Ti (negative control) | All three units in the same machine are correctly skipped; Pascal is outside the unlock target | [#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) |
+| Tesla V100-SXM2-16GB (negative control) | Excluded via `tx-select-bdf.txt` on a dual-GPU machine; the target card unlocks normally | [Discussion #140](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/140) |
+| Quadro P600 (display secondary) | Used as display secondary in an X99 machine without iGPU and correctly skipped with zero writes (negative control); the target 3060 12GB unlocks normally | [Discussion #131](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/131) |
+| Quadro RTX 5000 | Listed by the reporter as a follow-up plan, no measurement yet | [S01](https://www.bilibili.com/video/BV1d6xN66ECM/?comment_on=1&comment_root_id=318379087793&comment_secondary_id=318379087793) |
+
+### Screenshot examples
+
+Click an example for its source and conditions. [All 22 images from 15 reporters, with attribution and notes (Chinese)](docs/community-success.md) · [Source and SHA-256 index](docs/evidence/bilibili-2026-11-02/sources.json).
+
+<table>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 3060 12GB</b><br>
+<a href="docs/community-success.md#s30"><img src="docs/evidence/bilibili-2026-11-02/318661261937-1.png" width="420" alt="RTX 3060 12GB community report"></a><br>
+<a href="docs/community-success.md#s30">original, source and conditions</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 3080 10GB / UNLOCKED</b><br>
+<a href="docs/community-success.md#s28"><img src="docs/evidence/bilibili-2026-11-02/322392362704-2.png" width="420" alt="RTX 3080 10GB / UNLOCKED community report"></a><br>
+<a href="docs/community-success.md#s28">original, source and conditions</a>
+</td>
+</tr>
+<tr>
+<td align="center" valign="top" width="50%">
+<b>RTX 4060 Laptop</b><br>
+<a href="docs/community-success.md#s16"><img src="docs/evidence/bilibili-2026-11-02/318513166865-1.png" width="420" alt="RTX 4060 Laptop community report"></a><br>
+<a href="docs/community-success.md#s16">original, source and conditions</a>
+</td>
+<td align="center" valign="top" width="50%">
+<b>RTX 4070 Laptop</b><br>
+<a href="docs/community-success.md#s21"><img src="docs/evidence/bilibili-2026-11-02/322273213728-1.png" width="420" alt="RTX 4070 Laptop community report"></a><br>
+<a href="docs/community-success.md#s21">original, source and conditions</a>
+</td>
+</tr>
+</table>
+
+## Field cases
+
+Beyond the matrix, these closed cases show the engineering depth behind the tool — each with full logs and an evidence chain:
+
+- **Compute-class P8 lock from a modded VBIOS ([#90](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/90))**: a 2080 Ti's EFI transaction was proven **successful at source level** by disassembling the booter to plain text — the real culprit behind the Windows-side black screen and low clocks was a kingpin-class extreme-testing BIOS flashed onto the card (special BIOS NVIDIA ships to OEM OC labs, with a separate P-state policy for compute workloads). The fingerprint: a `nvidia-smi` power reading far above the retail wall. Four misleading layers (a false-negative verdict line, a WHEA hardware red herring, clean stress tests, a shunt-resistance suspicion) were peeled one by one; the final blow came from years of hands-on card-modding experience recognizing that one number. → [full five-layer chain](docs/community-reports.en.md) · [mechanism open question](docs/open-questions.md)
+- **The X99 + CSM handoff law ([#35](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/35)/[#61](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/61))**: "transaction green but Windows lands Code 12" survived four conclusion reversals before becoming the handoff console-ownership law — independent of the unlock, chip family and topology; CSM off fixes it. Later independently reproduced by an upstream (Zagitta) user on X99. → [the law](docs/faq.en.md#recovery)
+- **Thunderbolt unlocks = low staging ([#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74))**: pinned down the ≥4 GiB DMA unreachability three-death shape on TB platforms with single-variable proof on two machines and two implementations, which made sub-4 GB staging the v2.1.8 default (zero counterexamples since). → [forensics matrix](docs/tu10x-booter-0x91-matrix.md)
+
+Per-precision theoretical uplift (simple classification; for the mechanism derivation, per-generation SM diagrams, and the stressor tool reconciliation see [theoretical uplift](docs/theoretical-uplift.en.md)):
+
+| Precision | Execution unit | Shipped clamp (RTX 20–40) | Ceiling |
+| --- | --- | --- | --- |
+| FP16 · BF16 · TF32 (FP32-accumulate tensor paths) | gen-2–4 Tensor Cores | shipped at half rate | **2×** |
+| FP8 (E4M3/E5M2) | gen-4 Tensor Cores (SM89+) | shipped at half rate | **2×** |
+| FP16 (FP16acc) / INT8 / INT16 / INT32 / FP32 / FP64 | Tensor Cores / CUDA cores / FP64 units | none (factory full-rate) | 1× |
+
+Real-world multiples are bounded by power limits, memory bandwidth, and per-die binning (typically 1.5–2×, approaching 2× when clock-normalized); CMP mining cards are the exception (÷32 clamps across all paths, 32× ceiling).
+
+[Full compatibility matrix and field results](docs/compatibility.en.md) (incl. 4090M 2757 / Alienware m18 R1 ~2x) · [FAQ](docs/faq.en.md)
 
 ## Get started
 
@@ -48,25 +166,23 @@ After restarting, confirm that GSP firmware is running before making the stick. 
 
 ### 2. Prepare the bootable USB stick
 
-Run from the extracted package directory. Select `40` for the 40 series, `30` for the 30 series, or `20` for the 20 / 16 series.
+Run from the extracted package directory. With no `-Family` the script detects this machine's cards and builds exactly the families it finds. Building on another host: `40` for the 40 series, `30` for the 30 series, `20` for the 20 / 16 series. **When one machine holds cards from several generations, comma-list them** (`-Family 30,40` builds exactly those two without dragging unrelated assets); `-Family all` puts all three generations on one stick. A generation left off the stick is skipped at boot and named in `loader.log`.
 
 Windows PowerShell:
 
 ```powershell
-$gpuSeries = "40"
-.\make-usbroot.ps1 -Family $gpuSeries
+.\make-usbroot.ps1
 ```
 
 Linux / WSL / Git Bash:
 
 ```bash
-gpu_series=40
-bash make-usbroot.sh --family "$gpu_series"
+bash make-usbroot.sh
 ```
 
 Windows requires PowerShell 5+; the Linux binary requires glibc ≥ 2.34 (for example, Ubuntu 22.04+ / Debian 12+). Initial generation needs internet access. Resolve download or verification failures without substituting another firmware version.
 
-Files are generated in the local `usbroot/` directory. Copy the firmware files listed at the end of the script to the stick root, then put `BOOTX64.EFI` in `EFI/BOOT/`. The other extraction intermediates do not need to be copied.
+Files are generated in the local `usbroot/` directory, which already contains `EFI/BOOT/BOOTX64.EFI` and only the runtime-needed files. Copy the **contents** of `usbroot/` to the stick root (do not copy the directory itself as `U:\usbroot\`).
 
 ```text
 USB stick (FAT32)
@@ -76,16 +192,26 @@ USB stick (FAT32)
 
 Keep the generated `v67-*.bin` unlock file. [Full file list and purposes](docs/faq.en.md#usb).
 
+**No-manual-copy install (optional)**: after generating, the script probes for EXISTING FAT32 partitions and asks whether to install in one click - an internal disk's **non-boot** data FAT32 partition is offered as a persistent install (boot that volume from the firmware's one-time boot menu afterwards, no stick needed; not every firmware lists internal FAT partitions - the stick remains the universal path), and a USB stick's FAT32 partition for the same copy. The install only appends files: nothing already on the target is overwritten or deleted, differing same-name files refuse the whole target with the list, no partition is ever created/resized/reformatted, the system ESP is never touched and no NVRAM boot entry is written. With no eligible target at all, the script prints how to prepare either route. For scripted runs use `-NoInstallPrompt` / `--no-install-prompt`, or `-InstallTo D:\` / `--install-to <mountpoint>` for an existing target.
+
 Back up an existing `EFI/BOOT/BOOTX64.EFI` before replacing it. Do not copy into the system ESP or change the permanent boot order. See [USB files and options](docs/faq.en.md#usb) for file details, building on another host, GPU selection and advanced options.
+
+Unsure about the machine or driver state? Run the read-only pre-flight first: `ssdiag-x86_64-windows.exe --inventory` on Windows (the separate release asset, no admin) or `python3 tools/diag-unlock.py --inventory` on Linux (no root). It prints the family admission verdict (IN-SCOPE/OUT-OF-SCOPE) plus known cautions (Secure Boot, Turing GSP mode, the relocking driver families) - and it is the no-lookups source of the hardware block an issue report asks for.
 
 ### 3. Boot and verify
 
 1. Select the USB stick in the firmware’s one-time boot menu.
 2. Press **Space or Enter** at the version screen. Any other key or 30 seconds without input aborts the transaction and returns to the OS bootloader. A temporary black screen or frozen frame on the target GPU is expected.
 3. Wait for the automatic OS handoff. The log is `loader.log` at the stick root.
-4. On Windows, run the release’s `ssdiag-x86_64-windows.exe` to check the in-OS state, then compare performance using the same workload. On Linux, run `sudo python3 tools/diag-unlock.py` from a source checkout. See [verification and repair](docs/faq.en.md#ssdiag). Replay after each cold boot.
+4. On Windows, run the `ssdiag-x86_64-windows.exe` that ships as its **own release asset** to check the in-OS state (it is no longer inside the zip - an unsigned host wrapping a kernel driver makes some engines flag the whole package, see [antivirus false positives](docs/faq.en.md#av-fp)), then compare performance using the same workload. On Linux, run `sudo python3 tools/diag-unlock.py` from a source checkout. See [verification and repair](docs/faq.en.md#ssdiag). Replay after each cold boot.
+
+If picking the stick flashes and bounces back to the boot menu (or straight into the OS) with no `loader.log`, the EFI never executed - and nothing was written; usually `EFI/BOOT/BOOTX64.EFI` is missing or Secure Boot is still on. Work through [the no-boot checks](docs/faq.en.md#no-boot).
 
 On STOP, a fault or a stuck black screen, **do not retry in the same session**. Fully power off, remove the stick and boot normally; follow the [recovery instructions](docs/faq.en.md#recovery).
+
+Unlock log green but Windows will not start (`0xc000009a` Recovery screen)? The mechanism and the now-default fix are in [low memory at handoff](docs/handoff-lowmem.en.md).
+
+EFI transaction green but no unlock once the OS is up? **Read [why an unlocked card gets locked again once it reaches the OS](docs/faq.en.md#relock) before opening an issue** - most cases are a platform-side reset or power-removal event, not the driver countering us; that section has the triage, which log lines to copy, and what still helps.
 
 For agent-assisted setup, use the [deployment guide](AGENTS.deploy.md). Copy this request:
 
@@ -125,12 +251,39 @@ This tool unlocks Tensor compute performance. [nvoc](https://github.com/Skyworks
 
 Combined operation can substantially exceed stock power and thermal envelopes; check cooling and power-delivery headroom. [Combined test results and risks](docs/faq.en.md#nvoc-results).
 
+## About the author and team
+
+The author is a long-time hardware-overclocking and GPU-modding enthusiast
+who has overclocked, modded, serviced and operated several hundred NVIDIA
+cards (mining and modded cards included), with years of experience across
+laptop, desktop and server operations, hardware repair, UEFI BIOS modding
+and hardware debugging.
+
+This project is a student-run hobby research effort with the author's
+classmates. Accordingly, every write path in the
+tool is built on a "read-back verification + archived evidence" discipline;
+recovery procedures for failure scenarios are documented under
+[safety constraints](docs/faq.en.md#safety).
+
+AI coding assistants were used during development. As with all code in
+this repository, nothing they produced is trusted by default: the
+transaction core is a behavior-level port of the upstream GPL-2.0
+implementation, must pass the behavioral simulator before touching
+hardware, and every release claim is backed by real-machine read-back —
+the same rule for human- and AI-written code alike.
+
 ## References and repositories
 
 This project is a direct beneficiary and derivative of community work;
 full credits in [docs/credits.md](docs/credits.md) (verified against
-each item's actual role in the repo history). The
-repositories actually studied and cited during development are cloned
+each item's actual role in the repo history).
+
+**Two contributions get their own line** (the full list is [credits.md §6](docs/credits.md)):
+
+- **[8bit2qubit](https://github.com/8bit2qubit) (PR #5)**: diagnosed the true root cause of booter `0x89` — the GPU's upstream PCI bridge had Bus Master disabled, so device DMA got Master Aborts — and supplied the fix (`BridgeMaster`: enable before the transaction, restore on exit) plus a fourth verification card. The desktop-wide failure pattern closed there, and the guard is a mandatory precondition of every transaction to this day. The issue #98 record erratum is also theirs: they checked the source at every release tag and re-ran two builds on the same machine to pin the defect to `4b7e955` rather than the original implementation. See the [bridge-BME root-cause record](docs/bridge-bme-root-cause.md).
+- **[seti9585](https://github.com/seti9585) (#107)**: the native-GOP console rebuild that is the default display-recovery path since v2.1.10 (extract the card's own unmodified stock GOP from its shadowed Option ROM and start it explicitly) was their proposal — their own [RTX4080SUPER-Tensor-Core-Unlocker](https://github.com/seti9585/RTX4080SUPER-Tensor-Core-Unlocker) proved the mechanism first, and their source review of our initial implementation caught the misplaced field in the `EFI_DECOMPRESS` protocol struct (the root cause of the #128 freeze, `edecba5`). Credited in the release notes too; the implementation is behavior-borrowed and independently written (their repository carries no license header).
+
+The repositories actually studied and cited during development are cloned
 into a local, untracked `reference/` directory, grouped by role:
 
 **Transaction-chain sources and first-hand authority**
@@ -214,6 +367,13 @@ into a local, untracked `reference/` directory, grouped by role:
 - [p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock) —
   P104 PCIe Gen2 link tool (PCI config-space operation reference,
   orthogonal to the compute unlock)
+- **CMP clamp prehistory** — [FluidX3D #8](https://github.com/ProjectPhysX/FluidX3D/issues/8)
+  (2023-10-27, `FP_CONTRACT OFF`: the earliest public behavioral evidence
+  of per-instruction-type issue-rate throttling) → [NVIDIA-patcher #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)
+  (2023-12-06, jetcat8848: 170HX FP32 0.395→6.285 TFLOPS 15.9× + the efuse
+  1/2^n hypothesis — the embryo of the nine-selector model, and the thread
+  that led to the 2026 register-level crack); see [docs/credits.md](docs/credits.md)
+  and the prehistory footnote in [theoretical-uplift](docs/theoretical-uplift.en.md) §2
 
 **Reverse-engineering toolchain**
 
@@ -231,32 +391,141 @@ repository.
 - How it works (Simplified Chinese): [power-user edition](https://www.bilibili.com/opus/1264436370549506065) · [beginner edition](https://www.bilibili.com/opus/1264493051219279872)
 - Community discussions and coverage (language tagged per item):
   [Reddit](https://www.reddit.com/r/overclocking/comments/1xj5jp3/new_uefi_gpu_unlocking_tool_revealed_for_windows/) (EN) ·
-  [X/RoundtableSpace](https://x.com/RoundtableSpace/status/2115749232980140458) (EN) ·
-  [X/Pirat_Nation](https://x.com/Pirat_Nation/status/2116303886604739008) (EN) ·
   [TechPowerUp](https://www.techpowerup.com/354316/new-uefi-tool-lifts-nvidias-tensor-cap-on-rtx-20-to-40-series-cards-in-windows?type=Tools) (EN) ·
   [Wccftech](https://wccftech.com/new-nvidia-uefi-gpu-unlocker-brings-up-to-75-higher-ai-compute-performance-to-rtx-20-30-40-series-gpus-on-windows/) (EN) ·
   [NotebookCheck](https://www.notebookcheck.net/UEFI-level-pre-driver-Nvidia-GPU-unlocker-now-available-for-RTX-2xxx-3xxx-and-4xxx-GPUs-on-Windows-and-Linux.1438153.0.html) (EN) ·
-  [Mezha Media](https://mezha.net/eng/news/mezha-2ffa1478104cdc175bc0e096_uefi_pre-driver_nvidia/) (EN) ·
+  [HKEPC](https://www.hkepc.com/27140/) (ZH-HK) ·
+  [ProfesionalReview](https://www.profesionalreview.com/2026/11/01/nv-uefi-unlocker-75-mas-rendimiento-ia-rtx-20-30-40/) (ES) ·
+  [Tom's Hardware](https://www.tomshardware.com/pc-components/gpus/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows-lifts-gpus-fp16-math-performance-up-to-65-percent-uefi-unlocker-covers-rtx-20-30-and-40-series-desktops-and-laptops) (EN) ·
+  [VideoCardz](https://videocardz.com/newz/modders-create-automated-tool-to-unlock-ai-performance-on-nvidia-geforce-rtx-20-30-and-40-series-gpus) (EN) ·
+  [TechNews](https://technews.tw/2026/11/02/open-source-usb-tool-unlocks-nvidias-half-speed-gpu-ai-limiter-on-windows/) (ZH-HK) ·
+  [KOCPC](https://www.kocpc.com.tw/archives/701745) (ZH-HK) ·
+  [Guru3D](https://www.guru3d.com/story/modders-report-up-to-higher-ai-compute-on-geforce-rtx-20-30-and-40-cards/)（EN） ·
+  [Frandroid](https://www.frandroid.com/marques/3306125_ce-logiciel-debride-les-nvidia-geforce-rtx-20-30-et-40)(FR) ·
+  [Mezha Media](https://mezha.net/eng/news/mezha-2ffa1478104cdc175bc0e096_uefi_pre-driver_nvidia/) (EN; [Chinese](https://mezha.net/ch/news/mezha-2ffa1478104cdc175bc0e096_uefi-pre-driver-nvidia-gpu-unlocker/)) ·
   [Digg](https://digg.com/tech/vfyuouiy) (EN) ·
   [XenoSpectrum](https://xenospectrum.com/en/nvidia-uefi-windows-tensor-unlock/) (EN) ·
   [HotRepo](https://hotrepo.ai/physicsdolphin/nv-uefi-unlocker) (EN) ·
   [HardwareCooking](https://www.hardwarecooking.fr/nv-uefi-unlocker-tensor-cores-rtx-20-30-40-windows/) (FR) ·
-  [DNS Club](https://club.dns-shop.ru/amp/digest/187732-instrument-nv-uefi-unlocker-povyishaet-ii-proizvoditelnost-kart/) (RU) ·
   [Playground.ru](https://www.playground.ru/misc/news/novaya_utilita_pozvolyaet_uvelichit_proizvoditelnost_videokart_nvidia_rtx_do_75_v_zadachah_ii-1886614) (RU) ·
   [FanaticosDelHardware](https://fanaticosdelhardware.com/nv-uefi-unlocker-multiplica-hasta-265-veces-el-rendimiento-tensor-de-las-geforce-rtx-en-windows/) (ES) ·
   [OMGPU](https://www.omgpu.com/nvidia-luefi-gpu-unlocker-dope-de-75-lia-des-rtx-20-a-40-sur-windows/) (FR) ·
   [PauseHardware](https://pausehardware.com/nvidia-tensor-rtx-debridees-sous-windows/) (FR) ·
   [HardwarePremium](https://www.hardwarepremium.com/noticias/78275/uefi-nvidia-desbloqueador-rtx-2000-3000-4000/) (ES) ·
   [Gaming-ST](https://gaming-st.com/gpu/nv-uefi-unlocker-windows-rtx20-30-40-tensor-unlock/) (JA) ·
-  [Shahrsakhtafzar](https://www.shahrsakhtafzar.com/fa/news/graphic-card/62809-nvidia-geforce-rtx-tensor-unlock-windows-tool) (FA) ·
-  [Quasar Zone](https://quasarzone.com/bbs/qn_hardware/views/2085634) (KO) ·
-  [GiggleHD](https://gigglehd.com/gg/hard/19358883) (KO) ·
   [GECID](https://ua.gecid.com/news/novij_nstrument_podvoyu_produktivn_st_tenzornih_yader_dlya_v_deokart_rtx_20_40_u_windows/) (UK) ·
   [DicasPC](https://dicaspc.com.br/noticias/nv-uefi-unlocker-libere-ate-75-mais-ia-na-sua-rtx/) (PT-BR) ·
   [Diario da Midia](https://diariodamidia.com.br/autor/thiago-nogueira) (PT-BR) ·
-  [GPU-Unlock.net](https://gpu-unlock.net/) (EN) ·
+  [GPU-Unlock.net](https://gpu-unlock.net/windows) (EN) ·
   [IT-SVR](https://it-svr.com/svrforum-news-3234984/) (KO) ·
-  [HKEPC](https://www.hkepc.com/27140/) (ZH-HK)
+  [ShiftDelete](https://shiftdelete.net/en/nv-uefi-unlocker) (EN) ·
+  [GizNewsDaily](https://giznewsdaily.com/nvidia-gpu-unlocker-at-uefi-pre-driver-level-released-for-rtx-2xxx-4xxx/) (EN) ·
+  [PixLib](https://pixlib.ru/article/nv-uefi-unlocker-kak-uskorit-tenzornye-yadra-rtx-do-75-v-zadachakh-ii) (RU) ·
+  [ShiftDelete forum](https://shiftdelete.net/forum/konular/eski-rtx-kartlara-yapay-zeka-takviyesi-nv-uefi-unlocker.5000006) (TR) ·
+  [WindowsForum](https://windowsforum.com/news/nv-uefi-unlocker-lifts-rtx-20-30-and-40-tensor-core-limits-ai-gains-and-secure-boot-risks.450453/) (EN) ·
+  [eTeknix](https://www.eteknix.com/nv-uefi-unlocker-boosts-ai-performance-by-up-to-75-on-rtx-20-30-and-40-gpus/) (EN) ·
+  [Coolaler](https://www.coolaler.com/nv-uefi-unlocker-%E8%AE%93-rtx-20-30-40-%E9%A1%AF%E5%8D%A1-ai-%E6%95%88%E8%83%BD75%EF%BC%8C%E5%85%8D%E5%88%B7-vbios/) (ZH-HK) ·
+  [GameApps.hk](https://www.gameapps.hk/news/71358/nvidia-rtx-gpu-uefi-unlocker-ai-performance-boost/) (ZH-HK) ·
+  [HyperAI](https://hyper.ai/cn/stories/e969128a0f35dc33e44aeee493d8a16a) (ZH) ·
+  [VGover](https://www.vgover.com/news/243692) (ZH) ·
+  [DreamDigi](https://dreamdigi.tw/35957-2/) (ZH-HK) ·
+  [AHAN](https://news.ahan.net/article/55430) (ZH) ·
+  [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh) (ZH) ·
+  [Xiaoluobo blog "Unlocking FP16 compute on NVIDIA GPUs"](https://www.milobo.moe/2026/1966/) (ZH, personal practice write-up) ·
+  [bailu974 "Secure Boot laptop practice record"](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot) (ZH, stuck-key patch + Insyde per-file trust + ESP-resident deployment) ·
+  [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/) (ID) ·
+  [Silicon Report](https://www.siliconreport.com/open-source-uefi-tool-unlocks-nvidia-gpu-tensor-performance)(EN) ·
+  [Kantan.News](https://kantan.news/news/new-uefi-tool-removes-ai-speed-limitation-on-nvidia-graphics-cards)(EN) ·
+  [digitalcitizen.life](https://www.digitalcitizen.life/new-nvidia-gpu-unlocker-boosts-rtx-20-30-and-40-series-ai-performance-by-up-to-75-on-windows/)(EN) ·
+  [PC Test Bench](https://www.pctestbench.com/nv-uefi-unlocker-rtx-tensor-windows/)(EN) ·
+  [FreeLLM](https://freellm.vip/sites/nv-uefi-unlocker)(EN) ·
+  [Hooshware](https://hooshware.net/news/7b49fb54-b7ab-4779-b799-01958b7601c9)(EN) ·
+  [SECNews](https://www.secnews.gr/en/745864/geforce-rtx-tensor-unlock/) (EN) ·
+  [X/RoundtableSpace](https://x.com/RoundtableSpace/status/2115749232980140458) (EN) ·
+  [X/Pirat_Nation](https://x.com/Pirat_Nation/status/2116303886604739008) (EN) ·
+  [DNS Club](https://club.dns-shop.ru/amp/digest/187732-instrument-nv-uefi-unlocker-povyishaet-ii-proizvoditelnost-kart/) (RU) ·
+  [Shahrsakhtafzar](https://www.shahrsakhtafzar.com/fa/news/graphic-card/62809-nvidia-geforce-rtx-tensor-unlock-windows-tool) (FA) ·
+  [Quasar Zone](https://quasarzone.com/bbs/qn_hardware/views/2085634) (KO) ·
+  [GiggleHD](https://gigglehd.com/gg/hard/19358883) (KO) ·
+  [Facebook/PCMR HUB](https://www.facebook.com/PCMRHUB/posts/nv-uefi-unlocker-is-an-open-source-uefi-level-pre-driver-tool-that-removes-nvidi/1546978424130406/) (EN) ·
+  [YouTube/Max Herrera](https://www.youtube.com/shorts/AMhmWjjpgFk) (EN) ·
+  [Facebook/ComfyUI community](https://www.facebook.com/groups/comfyui/posts/1122947967144569/) (EN) ·
+  [Sohu](https://m.sohu.com/a/1095783758_163726) (ZH) ·
+  [NetEase](https://www.163.com/dy/article/LAM8N7DS05527PMU.html) (ZH) ·
+  [X/NFT_Chen](https://x.com/NFT_Chen/status/2116389085682241717) (ZH) ·
+  [Instagram](https://www.instagram.com/p/DfKvpmvgUoO/) (ZH-HK) ·
+  [NetEase](https://www.163.com/dy/article/LALVCN6L0556OH4N.html) (ZH) ·
+  [X/xiax0603](https://x.com/xiax0603/status/2116550883018494257) (ZH) ·
+  [YouTube/究極完全体ガジェモン](https://www.youtube.com/watch?v=Lc9cadT9Qk0) (JA) ·
+  [Facebook/老N顯示卡](https://www.facebook.com/61579313407097/posts/122190692660977113/) (ZH-HK) ·
+  [GamerSky](https://www.gamersky.com/news/202611/2238729.shtml) (ZH) ·
+  [XFastest](https://news.xfastest.com/169478/nvidia-rtx-20%ef%bc%8f30%ef%bc%8f40-%e9%a1%af%e5%8d%a1%e9%96%8b%e6%ba%90-uefi-%e5%b7%a5%e5%85%b7%e8%a7%a3%e9%8e%96-ai-%e7%ae%97%e5%8a%9b%ef%bc%9artx-4060-%e7%ad%86%e9%9b%bb-fp16-%e6%b8%ac%e8%a9%a6/) (ZH-HK) ·
+  [Tencent News](https://view.inews.qq.com/a/20261101A0AMKJ00) (ZH) ·
+  [Facebook/Coolaler fans](https://www.facebook.com/coolalerfans/posts/1706720778130729/) (ZH-HK) ·
+  [the9.pro](https://news.the9.pro/pt/models/nv-uefi-unlocker/)(PT-BR) ·
+  [TrashExpert](https://trashexpert.ru/news/hardware-news/rtx-uefi-usb-tensor-unlocker-windows)(RU) ·
+  [Facebook/Fier De Mon PC](https://www.facebook.com/FierDeMonPC/posts/1457447876541008/)(FR) ·
+  [PBX Science](https://pbxscience.com/open-source-nv-uefi-unlocker-lifts-tensor-core-limits-on-rtx-20-30-and-40-gpus-with-gains-of-up-to-75-in-tests/)（EN） ·
+  [Fosswire](https://fosswire.org/news/open-source-nv-uefi-unlocker-tool-removes-nvidia-tensor-limi)（EN） ·
+  [YouTube/Kempinator Gaming](https://www.youtube.com/watch?v=TulzjBvbdjo)（EN） ·
+  [YouTube/duffytechnology – overview](https://www.youtube.com/watch?v=y11Pluqoqhg)(EN) ·
+  [YouTube/duffytechnology – full walkthrough](https://www.youtube.com/watch?v=hrw1KBTM1EQ)(EN)
+  [PCGH Extreme forum](https://extreme.pcgameshardware.de/threads/nv-uefi-unlocker-modder-schalten-zusaetzliche-ki-leistung-bei-aelteren-geforce-gpus-frei.679185/) (DE) ·
+  [Hacker News](https://news.ycombinator.com/item?id=50272846) (EN) ·
+  [Global Computer Community](https://globalcomputercommunity.com/index.php?/forums/topic/75-nv-uefi-unlocker-tensor-caps-lifted-in-windows-but-watch-the-board-power/)(EN) ·
+  [zod.kr](https://zod.kr/news/8983775)(KO) ·
+  [Inven](https://www.inven.co.kr/board/party/6292/2046)(KO) ·
+  [Zhihu column "Open-source RTX unlock tool lifts AI performance up to 2.6×"](https://zhuanlan.zhihu.com/p/2100883316778053689) (ZH) ·
+  [Zhihu column "NVIDIA's compute shackle, broken by a USB stick"](https://zhuanlan.zhihu.com/p/2100646007063236973) (ZH) ·
+  [Zhihu Q&A "Tool claims 75% compute unlock without touching the driver"](https://www.zhihu.com/question/2100561991928760186/answer/2100657469844370279) (ZH) ·
+  [Sohu "No VBIOS flash: open-source NV UEFI Unlocker released"](https://www.sohu.com/a/1095795487_100111861) (ZH) ·
+  [Sohu "Developer releases NV UEFI Unlocker"](https://www.sohu.com/a/1095793774_122066678) (ZH) ·
+  [ifeng "One stick lifts RTX 20/30/40 compute by 75%"](https://feng.ifeng.com/c/8xhitqODZUN) (ZH) ·
+  [Sina Finance](https://finance.sina.cn/stock/jdts/2026-11-01/detail-inixfvpr2855473.d.html) (ZH) ·
+  [360game](https://360game.360.cn/article/content?id=6ae7488ae1b470df104a7375) (ZH) ·
+  [Wmzhe "nv-uefi-unlocker removes the RTX tensor throttle"](https://tech.wmzhe.com/article/nv-uefi-unlocker-tensor-unlock.html) (ZH) ·
+  [cbge.top](https://cbge.top/archives/196307) (ZH) ·
+  [GitCode blog "Black screen or BSOD after unlock: full recovery & troubleshooting guide"](https://blog.gitcode.com/bf3d0aaaa2d69cfd458f5cdbf0942826.html) (ZH, troubleshooting-focused) ·
+  [Bilibili "RTX 3080 Ti unlock — full walkthrough"](https://www.bilibili.com/opus/1266090375307591685) (ZH, viewer practice write-up) ·
+  [Cool3c](https://www.cool3c.com/article/253681) (ZH-TW) ·
+  [Bahamut forum "RTX 20/30/40 AI unlock compilation"](https://forum.gamer.com.tw/C.php?bsn=85831&snA=66) (ZH-TW, continuously updated thread) ·
+  [Threads/so_budget_pc](https://www.threads.com/@so_budget_pc/post/DfRoUFpk_iA/) (ZH-TW) ·
+  [Threads/PCDIY!](https://www.threads.com/@pc_market/post/DfPj-cQk4Kg/) (ZH-TW) ·
+  [Threads/5min_ai](https://www.threads.com/@5min_ai/post/DfQgHJwmM9Q/) (ZH-TW, RTX 4060 laptop hands-on) ·
+  [Instagram/PCDIY!](https://www.instagram.com/p/DfPj-eCE-HJ/) (ZH-TW) ·
+  [Facebook/HKEPC](https://www.facebook.com/hkepc/posts/1573603334784893) (ZH-HK, 2080+ reactions) ·
+  [Facebook/TangComputer](https://www.facebook.com/TangComputer/posts/1749128727213602) (ZH-TW) ·
+  [Facebook/Vibe Coding Taiwan (3080 Ti hands-on)](https://www.facebook.com/groups/vibecodingtaiwan/posts/1102733862615084/) (ZH-TW) ·
+  [X/hkepcmedia](https://x.com/hkepcmedia/status/2116590211350335552) (ZH-HK) ·
+  [SoftAntenna](https://softantenna.com/blog/nvidia-geforce-ai-performance-unlocker/) (JA) ·
+  [Modders Inc](https://www.modders-inc.com/uefi-gpu-unlocker-rtx-windows/) (EN) ·
+  [Pureinfotech](https://pureinfotech.com/nvidia-gpu-ai-performance-unlocker-rtx-20-30-40/) (EN) ·
+  [remio](https://www.remio.ai/post/nvidia-tensor-unlock-reaches-windows-through-a-bootable-usb-tool) (EN) ·
+  [Sesame Disk](https://sesamedisk.com/nvidia-rtx-20-30-40-firmware-linux-ai/) (EN) ·
+  [Technwz](https://technwz.com/nvidia-gpu-unlocker-fp16-windows/) (EN) ·
+  [IndieRaiders](https://indieraiders.com/en/products/nv-uefi-unlocker-5949) (EN) ·
+  [PCGH](https://www.pcgameshardware.de/Grafikkarten-Grafikkarte-97980/News/Nv-Uefi-Unlocker-Modder-schalten-zusaetzliche-KI-Leistung-bei-aelteren-Geforce-GPUs-frei-1558504/) (DE) ·
+  [overclocking.com](https://overclocking.com/nv-uefi-unlocker-libere-puissance-ia-rtx-20-30-40/) (FR) ·
+  [geekus.fr](https://geekus.fr/projets/nv-uefi-unlocker/) (FR) ·
+  [LaRevueGeek](https://www.larevuegeek.com/articles/actualites-geforce-rtx-cet-outil-sur-cle-usb-debloque-certains-calculs-ia-sous-windows-article151918) (FR) ·
+  [PCNews.ru](https://pcnews.ru/news/nv_uefi_unlocker_dla_windows_povysaet_ii_proizvoditelnost_rtx_20_rtx_30_i_rtx_40_do_75-1852242.html) (RU) ·
+  [insidepc.tech](https://insidepc.tech/news/hardware-news/nv-uefi-unlocker-rtx-windows-tensor-unlock) (RU) ·
+  [newgadget.club](https://newgadget.club/vidkrytyi-uefi-instrument-znimaie-polovynnyi-ai-limiter-na-gpu-nvidia-u-windows/) (UA) ·
+  [streberi.rs](https://www.streberi.rs/nv-uefi-unlocker-do-75-vise-ai-performansi-na-rtx-20-30-40/) (SR) ·
+  [Vmodtech](https://www.vmodtech.com/th/news/modder-nv-uefi-unlocker) (TH) ·
+  [ChatNews.id](https://chatnews.id/nv-uefi-unlocker-gpu-nvidia) (ID) ·
+  [Reddit/r/DIY_Geeks](https://www.reddit.com/r/DIY_Geeks/comments/1xlbyh8/opensource_nv_uefi_unlocker_lifts_tensor_core/) (EN) ·
+  [Reddit/r/NewMaxx](https://www.reddit.com/r/NewMaxx/comments/1xjratw/new_uefi_tool_lifts_nvidias_tensor_cap_on_rtx_20/) (EN) ·
+  [Reddit/r/fosswire](https://www.reddit.com/r/fosswire/comments/1xl79do/opensource_nvuefiunlocker_tool_removes_nvidia/) (EN) ·
+  [Reddit/r/Amd_Intel_Nvidia](https://www.reddit.com/r/Amd_Intel_Nvidia/comments/1xf014g/modders_unlock_hidden_ai_performance_on_nvidia/) (EN) ·
+  [Reddit/r/LocalLLaMA "GPU unlocks (FP32 accumulation)"](https://www.reddit.com/r/LocalLLaMA/comments/1xgaapw/gpu_unlocks_fp32_accumulation_why_can_it_be/) (EN) ·
+  [YouTube/TechSpark](https://www.youtube.com/watch?v=XowbBF98DW0) (EN) ·
+  [X/Pureinfotech](https://x.com/Pureinfotech/status/2117291128051700105) (EN) ·
+  [X/qwerty__cs](https://x.com/qwerty__cs/status/2116136655719371131) (EN) ·
+  [Instagram/ufd_tech](https://www.instagram.com/reel/De-ToVCgoRJ/) (EN, 120K+ likes) ·
+  [Instagram/moddersinc](https://www.instagram.com/p/DfPiPqrG1CO/) (EN) ·
+  [Instagram/code_signals](https://www.instagram.com/p/DfNV9ywFWPG/) (EN) ·
+  [Instagram/classified.ai](https://www.instagram.com/reel/DfhO_Axgs2-/) (EN)
 
 ## Star History
 

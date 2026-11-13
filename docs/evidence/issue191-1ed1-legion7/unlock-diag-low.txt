@@ -1,0 +1,55 @@
+0000:01:00.0:
+  PMC_BOOT_0=0x164000a1 family=turing 
+  FEAT_PLM  = 0xffffffef (closed (relock+drift))
+  FEAT_SS0  = 0x88888888 [full* full* full* full* full* full* full* full*]
+  FEAT_SS1  = 0x00000008 [full*]
+  READOUT_1 = 0x00000000 full speed
+  --- core/debug block (ssdiag 0.6.4 surface) ---
+  PMC_BOOT_0             = 0x164000a1
+  PSTRAPS_SET0           = 0x00400080
+  PSTRAPS_SET1           = 0x02013000
+  FB_SIZE_MIB            = 0xbadf5040 [PRIV_VIOLATION]
+  GFW_PLM                = 0xffffff8f
+  GFW_SCRATCH            = 0x000003ff
+  BSI_SCRATCH15          = 0x6a2001bf
+  VGA_WORKSPACE          = 0x00000001
+  WPR2_LO                = 0x01f77000
+  WPR2_HI                = 0x01ffee00
+  MMU_PLM                = 0xbadf5040 [PRIV_VIOLATION]
+  MMU_LOCK_LO            = 0x1ffffff0
+  MMU_LOCK_HI            = 0x00000000
+  GSP_CPUCTL             = 0x00000010
+  GSP_EXCI               = 0x00000000
+  SEC2_CPUCTL            = 0x00000020
+  SEC2_MBOX0             = 0x00000000
+  SEC2_MBOX1             = 0x00000000
+  SEC2_EXCI              = 0x00003911
+  FUSE_VER_DECODE        = 0xbadf5040 [PRIV_VIOLATION]
+  --- privileged (badf at PL0 is the norm, still data) ---
+  FUSE_OPT_FEATURE_OVR   = 0xbadf5040 [PRIV_VIOLATION]
+  FUSE_VER               = 0xbadf5040 [PRIV_VIOLATION]
+  --- family-specific / survey (badf on the wrong die is expected) ---
+  WPR_PLM                = 0xbadf5040 (closed (non-standard)) [PRIV_VIOLATION]
+  WPR_CFG_PLM            = 0xbadf5040 (closed (non-standard)) [PRIV_VIOLATION]
+  FBPA_PLM               = 0xffffffcf (closed (non-standard))
+  AD1X_CYA               = 0x00000008
+  AD1X_CFG               = 0x00000002
+  AD1X_XVE_PLM           = 0xbadf5040 (closed (non-standard)) [PRIV_VIOLATION]
+  AD1X_BAR1_CAP_MIRROR   = 0x00001c00
+  0x08200d0=0xbadf5040  0x08200d4=0xbadf5040  0x08200d8=0xbadf5040  0x08200dc=0xbadf5040
+  0x08200e0=0xffffff8f  0x08200e4=0xffffff8f  0x08200e8=0xbadf5040  0x08200ec=0xbadf5040
+  0x08200f0=0xbadf5040  0x08200f4=0xffffff8f  0x08200fc=0xffffffff  0x0823800=0xbadf5040
+  0x0823804=0xbadf5040  0x0823b00=0xbadf5040  0x09a0008=0x49a40a0a  0x09a000c=0xff053977
+  0x09a0148=0xffffffcf  0x09a014c=0xbadf5040  0x09a0168=0xffffffcf  0x09a03f0=0xbadf5040
+  0x09a0554=0xffffffcf  0x09a0bfc=0x3628043f  0x0100b10=0xffffff8f  0x0100b38=0xffffff8f
+  0x0100b84=0xffffff88  0x0100b9c=0xbadf5040
+  --- ampere/ada FEAT sweep ---
+  0x0823800=0xbadf5040  0x0823808=0xbadf5040  0x082380c=0xbadf5040  0x0823810=0xbadf5040  0x0823814=0xbadf5040
+  0x0823824=0xbadf5040  0x0823828=0xbadf5040  0x082382c=0xbadf5040  0x0823b00=0xbadf5040
+  CANARY_A/B = 0x00000000/0x000003eb -> other
+  VERDICT: UNLOCKED (override values live)
+  ReBAR BAR1: supported [1G/2G/4096G/8192G/16384G/32768G/65536G/131072G] current disabled (size_idx 0, ctrl 0x0460, cap 0x03f003f)
+  ReBAR BAR3: supported [4096G] current 2MiB (size_idx 1, ctrl 0x0801, cap 0x0010004)
+  ReBAR BAR5: supported [1G/2G/4G/16G/64G] current 8MiB (size_idx 3, ctrl 0x0503, cap 0x0000573)
+  ReBAR BAR6: supported [-] current disabled (size_idx 0, ctrl 0x0010, cap 0x0000001)
+  ReBAR BAR7: supported [-] current 4MiB (size_idx 2, ctrl 0x0002, cap 0x0000000)

@@ -1,0 +1,16 @@
+# In-OS ssdiag excerpt (TU106 1f07, first Windows session after the
+# keep-open handoff, 2026-11-08). Only the decisive tail was captured;
+# the full output and the driver version line were not archived.
+
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xffffffff (OPEN)
+  turing 0x4096xx      SS0       = 0x88888888 [0* 0* 0* 0* 0* 0* 0* 0*]
+  turing 0x4096xx      READOUT   = 0x00000000 [full speed]
+  turing 0x4096xx      SS1       = 0x00000008 [0*]
+  0x823xxx amp/ada/gb  PLM       = 0xbadf5040 (closed (non-standard))
+  0x823xxx amp/ada/gb  SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  0x823xxx amp/ada/gb  SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  READOUT_1 = 0xbadf5040 [PRIV_VIOLATION]
+
+VERDICT [turing]: UNLOCKED (override values live)
+CANARY: intact + SS live - no reset, nothing rewrote the state after handoff

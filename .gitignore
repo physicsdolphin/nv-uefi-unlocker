@@ -29,3 +29,24 @@ payload_*
 
 # isolated QEMU DXE harness build
 /tools/dxe-smoke/target/
+
+# local IDE / agent session state
+/.idea/
+/.zcode/
+
+# local release artifacts (only the make-* scripts are tracked; binaries and
+# per-run stick roots stay local and are distributed via GitHub Releases)
+/release/*.EFI
+/release/*.EFI.*
+/release/SHA256SUMS*
+/release/usbroot*/
+/release/v*/
+/release/inputs/
+/release/assets-tu10x/
+/release/assets-x86_64-windows.exe
+/release/assets-x86_64-linux
+romcore/testdata/
+
+# working drafts (notes and reply drafts, kept local)
+/docs/drafts/
+/inputs/

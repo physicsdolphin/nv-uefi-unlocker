@@ -12,6 +12,7 @@ use log::info;
 use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams};
 use uefi::proto::console::gop::GraphicsOutput;
 use uefi::proto::device_path::DevicePath;
+use uefi::proto::loaded_image::LoadedImage;
 use uefi::{Handle, Identify};
 
 use crate::pci::PciIo;
@@ -25,7 +26,7 @@ fn open_count(handle: Handle) -> usize {
 
 /// Raw device-path bytes of a handle (same technique as the chainload
 /// self-volume fingerprint).
-fn device_path_bytes(handle: Handle) -> Option<alloc::vec::Vec<u8>> {
+pub(crate) fn device_path_bytes(handle: Handle) -> Option<alloc::vec::Vec<u8>> {
     let dp = unsafe {
         boot::open_protocol::<DevicePath>(
             OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
@@ -120,9 +121,25 @@ fn log_openers(label: &str, handle: Handle, guid: &uefi::Guid) {
         }
         for i in 0..n {
             let e = &*buf.add(i);
+            // Issue #107 logging ask: identify the DRIVING IMAGE behind each
+            // opener (BiosVideo vs the vendor GOP driver build), not just the
+            // opaque agent pointer. Image base+size is a stable per-build
+            // fingerprint; a recursive ConnectController hang log then shows
+            // exactly which display driver was being (re)selected.
+            let image_note = match boot::open_protocol::<LoadedImage>(
+                OpenProtocolParams {
+                    handle: Handle::from_ptr(e.agent.cast()).unwrap_or(handle),
+                    agent: boot::image_handle(),
+                    controller: None,
+                },
+                OpenProtocolAttributes::GetProtocol,
+            ) {
+                Ok(li) => alloc::format!(" image={:p}+{:#x}", (li.info().0).cast::<u8>(), li.info().1),
+                Err(_) => alloc::string::String::new(),
+            };
             info!(
-                "DIAG {label}: {:?} agent={:p} controller={:p} attr={:#x} count={}",
-                handle, e.agent, e.controller, e.attributes, e.open_count
+                "DIAG {label}: {:?} agent={:p} controller={:p} attr={:#x} count={}{}",
+                handle, e.agent, e.controller, e.attributes, e.open_count, image_note
             );
         }
         if let Some(p) = core::ptr::NonNull::new(buf.cast::<u8>()) {
@@ -136,6 +153,10 @@ fn log_openers(label: &str, handle: Handle, guid: &uefi::Guid) {
 /// GPU. Pathless GOPs (firmware splitters / ConSplitter) are skipped by the
 /// detach below; this records what stays alive on top of the target.
 fn log_display_topology(pci_handle: Handle) {
+    if crate::ultrafast() {
+        info!("DIAG topology: ultrafast - skipped (opener/openers dumps are diagnostic-only)");
+        return;
+    }
     log_openers("PCIIO-OPENERS", pci_handle, &PciIo::GUID);
     let Ok(h) = boot::locate_handle_buffer(boot::SearchType::ByProtocol(&GraphicsOutput::GUID)) else {
         info!("DIAG GOP-TOPOLOGY: no GOP handles");
@@ -203,11 +224,48 @@ pub fn pm_preflight(pci: &PciIo) -> Result<PmEntry, &'static str> {
     Ok(PmEntry { cap: Some(cap), pmcsr: before, warm })
 }
 
-/// Staged detach + exclusive claim. Returns the config-space baseline taken
-/// while exclusively owned (drift reference for the post-transaction check).
-pub fn detach_and_claim(pci_handle: Handle) -> Result<alloc::vec::Vec<u32>, &'static str> {
+/// What `detach_and_claim` hands to the transaction: the config-space
+/// baseline (drift reference for the post-transaction check) and the
+/// firmware-tracked PciIo attributes captured BEFORE the claim's
+/// Set(0x0007) rewrote them - the handoff restores the VGA forwarding
+/// subset from here (issue #109 chain-2 code-12 class: the boot-VGA
+/// owner must hold legacy VGA at handoff).
+pub struct Claim {
+    pub baseline: alloc::vec::Vec<u32>,
+    pub initial_attrs: Option<u64>,
+}
+
+/// Staged detach + exclusive claim. Returns the config-space baseline
+/// taken while exclusively owned (drift reference for the
+/// post-transaction check).
+pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     info!("DETACH: staged console/driver detach begin (TOTORONG craft)");
     log_display_topology(pci_handle);
+    // Attributes BEFORE the claim rewrites them - read on the still-bound
+    // device through a non-exclusive GetProtocol open.
+    let initial_attrs = {
+        // Safety: GetProtocol open, read-only call into the protocol.
+        match unsafe {
+            boot::open_protocol::<PciIo>(
+                OpenProtocolParams { handle: pci_handle, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        } {
+            Ok(pci) => {
+                let attrs = pci.attributes_get();
+                info!(
+                    "DETACH: pre-claim attributes raw={:#x} (VGA legacy subset {:#x} = 0x001C mask; 0x0300 alone means IO|MEM decode with no legacy VGA routing)",
+                    attrs.unwrap_or(0),
+                    attrs.unwrap_or(0) & 0x001C
+                );
+                attrs
+            }
+            Err(e) => {
+                info!("DETACH: pre-claim attribute capture failed {:?}", e.status());
+                None
+            }
+        }
+    };
 
     // Stage 1+2: disconnect every driver bound to the TARGET GPU's GOP
     // handle (ConSplitter TextOut agent + GraphicsConsole; the UEFI
@@ -241,6 +299,13 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<alloc::vec::Vec<u32>, &'st
             }
             let before = open_count(gop);
             info!("DETACH: stage GOP handle {:?} protocols {}", gop, before);
+            // #170 diag (D): from here until the reconnect the console stack
+            // is being torn down; any mirror write now goes through a
+            // half-dead stack. Muting BEFORE the disconnect splits the hang:
+            // survives = killed by a Stop() (H2), still hangs = killed by
+            // writing to the detached console (H1).
+            info!("DETACH: console mirror MUTED until reconnect");
+            crate::logging::mute_console();
             let st = boot::disconnect_controller(gop, None, None);
             let after = open_count(gop);
             info!(
@@ -315,7 +380,8 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<alloc::vec::Vec<u32>, &'st
     if baseline[1] & 0x2 == 0 {
         return Err("PCI command MEMORY bit did not stick after both enable paths");
     }
-    Ok(baseline)
+    Ok(Claim { baseline, initial_attrs })
+
 }
 
 /// Post-transaction GOP/console reconnect (TOTORONG craft): after the FLR
@@ -342,7 +408,11 @@ pub fn reconnect_all(pci_handle: uefi::Handle) {
     // validated on the pathless-survivor shape and leaves the console
     // stack to bootmgfw - the Z170-A control proved bootmgfw's own
     // re-establishment suffices whenever it can bind at all.
-    let force_nonrec = crate::tx::read_boot_file("\\tx-reconnect-nonrecursive.txt").is_some();
+    // probe_file, NOT read_boot_file: the UI switches are zero-byte files
+    // by design, and read_boot_file refuses size==0 (issue #106 - a
+    // dropped EMPTY marker was silently ignored and the recursive hang
+    // came back).
+    let force_nonrec = crate::tx::probe_file("\\tx-reconnect-nonrecursive.txt");
     let recursive = if force_nonrec {
         info!("RECONNECT: \\tx-reconnect-nonrecursive.txt present - forcing NON-recursive (vendor GOP bind only; console stack left to bootmgfw)");
         false
@@ -370,4 +440,41 @@ pub fn stale_pathless_gop() -> bool {
         info!("RECONNECT: pathless GOP survived the detach - vendor GOP only (non-recursive)");
     }
     stale
+}
+
+/// VGA forwarding bits (EDK2 PciIo.h): VGA_PALETTE_IO | VGA_MEMORY |
+/// VGA_IO. The 16-bit-decode variants are excluded - no board in the
+/// compatibility matrix reports them on the GPU function.
+pub const VGA_ATTR_MASK: u64 = 0x001C;
+
+/// Chain-2 code-12 fix (issue #109, the #35 refined law): at handoff the
+/// boot-VGA owner must hold the legacy VGA resources. POST decides that
+/// owner (the board with the monitor), but the detach/console-stop/FLR
+/// sequence can drop our own VGA attributes on the floor - Windows
+/// arbitration then finds no anchored owner and refuses the legacy ranges
+/// (pnputil signature: 3B0-3DF / A0000-BFFFF missing). Unconditional,
+/// idempotent, read back: re-Enable the pre-claim VGA subset captured at
+/// [`detach_and_claim`]. BME is deliberately untouched - each handoff
+/// path owns its own bus-master semantics.
+pub fn restore_vga(gpu: &PciIo, initial_attrs: Option<u64>) {
+    let vga = initial_attrs.unwrap_or(0) & VGA_ATTR_MASK;
+    if vga == 0 {
+        // A fact, not a shrug: an empty subset means the firmware granted no
+        // VGA bit at all, so chain-2 cannot engage on this board by
+        // construction (#128, #109). It is NOT evidence that no legacy-VGA
+        // conflict exists - the common raw form is 0x300 (IO|MEMORY only).
+        info!(
+            "VGA-RESTORE: pre-claim VGA subset empty (raw={:#x}) - chain-2 cannot engage on this board; IO|MEMORY-only (0x300) is the usual shape, not proof of no legacy-VGA conflict",
+            initial_attrs.unwrap_or(0)
+        );
+        return;
+    }
+    let st = gpu.attributes_enable_op(vga);
+    info!("VGA-RESTORE: VGA attributes {vga:#x} Enable={st:?}");
+    let cmd = gpu.config_read_u16(0x04);
+    if cmd & 0x2 == 0 {
+        // MEM decode is required for the vendor GOP to work at all; the
+        // reconnect paths leave it on, but refuse to hand over without it.
+        info!("VGA-RESTORE: WARNING command={cmd:#06x} - MEMORY decode off");
+    }
 }

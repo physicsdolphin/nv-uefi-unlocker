@@ -1,0 +1,130 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:03.0-1" from PciRoot(0x0)/Pci(0x3,0x0)/USB(0x0,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:03.0-1" from PciRoot(0x0)/Pci(0x3,0x0)/USB(0x0,0x0)
+[    137ms] INFO : loader::logging: log file \loader.log opened on boot volume
+[    307ms] INFO : loader::logging: nv-uefi-unlocker v2.1.12-rc3 (tx builds carry the gated transaction; readonly = console output only)
+[    390ms] INFO : loader: BOOT: logger init returned, main continuing
+[    488ms] INFO : loader: BOOT: diag7 log-commit=0 (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)
+[    591ms] INFO : loader: WATCHDOG: disabled
+[    672ms] INFO : loader::banner: ==================================================
+[    674ms] INFO : loader::banner:  nv-uefi-unlocker v2.1.12-rc3 (built Sat 2026-11-14 02:00:09 +08:00)
+[    755ms] INFO : loader::banner:  read-only build: enumerate + sample + chain-load
+[    757ms] INFO : loader::banner:  console output only; no GPU writes by design
+[    759ms] INFO : loader::banner: ==================================================
+[    760ms] INFO : loader::banner: PHASE: CONFIRM
+[    822ms] INFO : loader::pci: DIAG-CONSOLE-OUT: handle Handle(0x7e7a7e18) has no device path
+[    906ms] INFO : loader::pci: DIAG-CONSOLE-IN: handle Handle(0x7e7a8898) has no device path
+[    992ms] INFO : loader::pci: DIAG-BOOTVOL: device Handle(0x7e5b4618) uart=false anchor=0000:00:03.0 = 8086:24cd dp=02010c00d041030a000000000101060000030305060000007fff0400
+[   1073ms] INFO : loader::chainload: EARLY: reconnect pass over 7 PciIo handles (NVIDIA display skipped)
+[   1318ms] INFO : loader::chainload: EARLY: reconnect pass done
+[   1389ms] INFO : loader::keywait: INPUT-SETTLE: ConIn reset ok
+[   1390ms] INFO : loader::keywait: INPUT-SETTLE: drained 0 buffered key(s)
+[   1692ms] INFO : loader::keywait: INPUT-SETTLE: settle done after 300 ms, discarded 0 key(s), quiet 300 ms, 0 swallowed after suppression
+[   1736ms] INFO : loader: CONFIRM: no armed marker - Space/Enter/30s confirm semantics
+[  31823ms] INFO : loader::keywait: CONFIRM: timeout, proceeding (read-only default)
+[  31970ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[  32203ms] INFO : loader::pci: ENUMERATE: 7 PciIo handles
+[  32206ms] INFO : loader::pci: PCI 0000:00:00.0 8086:29c0 class 000600
+[  32208ms] INFO : loader::pci: PCI 0000:00:01.0 1234:1111 class 000300
+[  32210ms] INFO : loader::pci: PCI 0000:00:02.0 8086:10d3 class 000200
+[  32213ms] INFO : loader::pci: PCI 0000:00:03.0 8086:24cd class 000c03
+[  32215ms] INFO : loader::pci: PCI 0000:00:1f.0 8086:2918 class 000601
+[  32218ms] INFO : loader::pci: PCI 0000:00:1f.2 8086:2922 class 000106
+[  32220ms] INFO : loader::pci: PCI 0000:00:1f.3 8086:2930 class 000c05
+[  32222ms] INFO : loader::gop: PHASE: GOP-PROBE (read-only)
+[  32308ms] INFO : loader::gop: GOP-PROBE: 2 GOP handles
+[  32403ms] INFO : loader::gop: GOP handle Handle(0x7e662918): 1280x800 Bgr
+[  32406ms] INFO : loader::gop: GOP handle Handle(0x7e7a7e18): 1280x800 Bgr
+[  32450ms] INFO : loader: SAMPLE: no NVIDIA GPU selected or present, skipped (negative control path)
+[  32501ms] INFO : loader::chainload: CHAIN-PRE: no \tx-preload.txt - preload is opt-in since #198, legacy chain path
+[  32604ms] INFO : loader::chainload: PHASE: CHAIN
+[  32702ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x1780000-0x7bb6c000 (1955 MiB) type=CONVENTIONAL
+[  32804ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7bb6c000-0x7bb8c000 (0 MiB) type=BOOT_SERVICES_DATA
+[  32904ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7bb8c000-0x7dd00000 (33 MiB) type=CONVENTIONAL
+[  32987ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7dd00000-0x7de01000 (1 MiB) type=BOOT_SERVICES_DATA
+[  33071ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7de01000-0x7de3c000 (0 MiB) type=LOADER_CODE
+[  33152ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7de3c000-0x7de4a000 (0 MiB) type=CONVENTIONAL
+[  33236ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7de4a000-0x7e403000 (5 MiB) type=BOOT_SERVICES_DATA
+[  33321ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e403000-0x7e4ab000 (0 MiB) type=BOOT_SERVICES_CODE
+[  33420ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e4ab000-0x7e4d2000 (0 MiB) type=BOOT_SERVICES_DATA
+[  33570ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e4d2000-0x7e5b2000 (0 MiB) type=BOOT_SERVICES_CODE
+[  33641ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e5b2000-0x7e617000 (0 MiB) type=BOOT_SERVICES_DATA
+[  33736ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e617000-0x7e639000 (0 MiB) type=BOOT_SERVICES_CODE
+[  33820ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e639000-0x7e63a000 (0 MiB) type=BOOT_SERVICES_DATA
+[  33904ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e63a000-0x7e650000 (0 MiB) type=BOOT_SERVICES_CODE
+[  33986ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e650000-0x7e652000 (0 MiB) type=BOOT_SERVICES_DATA
+[  34068ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e652000-0x7e660000 (0 MiB) type=BOOT_SERVICES_CODE
+[  34155ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e660000-0x7e667000 (0 MiB) type=BOOT_SERVICES_DATA
+[  34236ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e667000-0x7e66d000 (0 MiB) type=BOOT_SERVICES_CODE
+[  34336ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e66d000-0x7e692000 (0 MiB) type=BOOT_SERVICES_DATA
+[  34436ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e692000-0x7e6ae000 (0 MiB) type=BOOT_SERVICES_CODE
+[  34520ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6ae000-0x7e6af000 (0 MiB) type=BOOT_SERVICES_DATA
+[  34588ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6af000-0x7e6b4000 (0 MiB) type=BOOT_SERVICES_CODE
+[  34686ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6b4000-0x7e6b9000 (0 MiB) type=BOOT_SERVICES_DATA
+[  34769ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6b9000-0x7e6e3000 (0 MiB) type=BOOT_SERVICES_CODE
+[  34855ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6e3000-0x7e6e6000 (0 MiB) type=BOOT_SERVICES_DATA
+[  34953ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6e6000-0x7e6f3000 (0 MiB) type=BOOT_SERVICES_CODE
+[  35025ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6f3000-0x7e6f5000 (0 MiB) type=BOOT_SERVICES_DATA
+[  35092ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e6f5000-0x7e711000 (0 MiB) type=BOOT_SERVICES_CODE
+[  35161ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e711000-0x7e716000 (0 MiB) type=BOOT_SERVICES_DATA
+[  35287ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e716000-0x7e727000 (0 MiB) type=BOOT_SERVICES_CODE
+[  35370ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e727000-0x7e728000 (0 MiB) type=BOOT_SERVICES_DATA
+[  35468ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e728000-0x7e72d000 (0 MiB) type=BOOT_SERVICES_CODE
+[  35552ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e72d000-0x7e72f000 (0 MiB) type=BOOT_SERVICES_DATA
+[  35617ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e72f000-0x7e748000 (0 MiB) type=BOOT_SERVICES_CODE
+[  35669ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e748000-0x7e74d000 (0 MiB) type=BOOT_SERVICES_DATA
+[  35769ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e74d000-0x7e776000 (0 MiB) type=BOOT_SERVICES_CODE
+[  35850ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e776000-0x7e777000 (0 MiB) type=BOOT_SERVICES_DATA
+[  35951ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e777000-0x7e7a1000 (0 MiB) type=BOOT_SERVICES_CODE
+[  36035ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7a1000-0x7e7a3000 (0 MiB) type=BOOT_SERVICES_DATA
+[  36102ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7a3000-0x7e7a7000 (0 MiB) type=BOOT_SERVICES_CODE
+[  36170ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7a7000-0x7e7ab000 (0 MiB) type=BOOT_SERVICES_DATA
+[  36238ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7ab000-0x7e7b6000 (0 MiB) type=BOOT_SERVICES_CODE
+[  36319ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7b6000-0x7e7b9000 (0 MiB) type=BOOT_SERVICES_DATA
+[  36402ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7b9000-0x7e7bd000 (0 MiB) type=BOOT_SERVICES_CODE
+[  36485ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7bd000-0x7e7c1000 (0 MiB) type=BOOT_SERVICES_DATA
+[  36585ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e7c1000-0x7e800000 (0 MiB) type=BOOT_SERVICES_CODE
+[  36653ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7e800000-0x7ea00000 (2 MiB) type=BOOT_SERVICES_DATA
+[  36735ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea00000-0x7ea09000 (0 MiB) type=BOOT_SERVICES_CODE
+[  36904ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea09000-0x7ea12000 (0 MiB) type=BOOT_SERVICES_DATA
+[  36985ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea12000-0x7ea1b000 (0 MiB) type=BOOT_SERVICES_CODE
+[  37069ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea1b000-0x7ea1e000 (0 MiB) type=BOOT_SERVICES_DATA
+[  37152ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea1e000-0x7ea36000 (0 MiB) type=BOOT_SERVICES_CODE
+[  37219ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea36000-0x7ea37000 (0 MiB) type=BOOT_SERVICES_DATA
+[  37286ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea37000-0x7ea3c000 (0 MiB) type=BOOT_SERVICES_CODE
+[  37373ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea3c000-0x7ea41000 (0 MiB) type=BOOT_SERVICES_DATA
+[  37452ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7ea41000-0x7eb02000 (0 MiB) type=RUNTIME_SERVICES_DATA
+[  37534ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb02000-0x7eb09000 (0 MiB) type=BOOT_SERVICES_CODE
+[  37618ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb09000-0x7eb0c000 (0 MiB) type=BOOT_SERVICES_DATA
+[  37700ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb0c000-0x7eb2d000 (0 MiB) type=BOOT_SERVICES_CODE
+[  37785ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb2d000-0x7eb2f000 (0 MiB) type=BOOT_SERVICES_DATA
+[  37867ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb2f000-0x7eb42000 (0 MiB) type=BOOT_SERVICES_CODE
+[  37949ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb42000-0x7eb47000 (0 MiB) type=BOOT_SERVICES_DATA
+[  38050ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb47000-0x7eb50000 (0 MiB) type=BOOT_SERVICES_CODE
+[  38152ms] INFO : loader::chainload: CHAIN-MEMMAP: 0x7eb50000-0x7eb53000 (0 MiB) type=BOOT_SERVICES_DATA
+[  38233ms] INFO : loader::chainload: CHAIN-MEMMAP: 1995 MiB conventional / 37 MiB resident (LOADER+BS) below 4GiB, largest block 1955 MiB (103 descriptors, 64 shown)
+[  38334ms] INFO : loader::chainload: CHAIN-MEMMAP-TYPES: counted=103/103 reserved=4 loader_code=1 loader_data=0 bs_code=37 bs_data=41 rt_code=1 rt_data=3 conv=8 unusable=0 acpi_reclaim=1 acpi_nv=6 mmio=1 mmio_port=0 pal=0 pmem=0 oem=0 | tiny_conv(<=64KiB): 3 blocks, 0 MiB
+[  38522ms] INFO : loader::chainload: CHAIN-BOOT: BootOrder 3 entries
+[  38601ms] INFO : loader::chainload: CHAIN-BOOT: [0] Boot0001: attrs=0x1 desc="UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:03.0-1" path= node(0x02,0x01,12) node(0x01,0x01,6) node(0x03,0x05,6) END
+[  38692ms] INFO : loader::chainload: CHAIN-BOOT: [1] Boot0000: attrs=0x109 desc=",UiApp" path= node(0x04,0x07,20) node(0x04,0x06,20) END
+[  38784ms] INFO : loader::chainload: CHAIN-BOOT: [2] Boot0002: attrs=0x1 desc=",EFI Internal Shell" path= node(0x04,0x07,20) node(0x04,0x06,20) END
+[  38885ms] INFO : loader::chainload: CHAIN-BOOT: no Windows Boot Manager among the firmware's boot options
+[  38968ms] INFO : loader::chainload: CHAIN: reconnect pass over 7 PciIo handles (NVIDIA display skipped)
+[  39075ms] INFO : loader::chainload: CHAIN: reconnect pass done
+[  39132ms] INFO : loader::chainload: CHAIN: 1 SimpleFileSystem handles
+[  39216ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: 3 entries, self=Boot0001
+[  39283ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [0] Boot0001 is this boot (self) - skipped
+[  39351ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [1] Boot0000 matched no SimpleFileSystem volume - prefix nodes: [0] 0x04/0x07/20:c9bdb87cebf8344faaea3ee4af6516a1 [1] 0x04/0x06/20:21aa2c4614760345836e8ab6f4662331
+[  39421ms] INFO : loader::chainload: CHAIN-BOOT: fs[0] Handle(0x7e5b4618) vol=02010c00d041030a00000000010106000003030506000000 | first divergence node 0 (prefix 40 B, volume 24 B): [0] 0x02/0x01/12:d041030a00000000 [1] 0x01/0x01/6:0003 [2] 0x03/0x05/6:0000
+[  39494ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: [2] Boot0002 matched no SimpleFileSystem volume (scope 40 B, 2 node(s); full divergence table already printed this boot)
+[  39567ms] INFO : loader::chainload: CHAIN-BOOT: firmware resolve: no resolvable firmware option - volume scan fallback
+[  39804ms] INFO : loader::chainload: CHAIN: no specific candidate on Handle(0x7e5b4618) (own=true, probes=12)
+[  39902ms] INFO : loader::chainload: CHAIN: generic fallback skipped on own volume Handle(0x7e5b4618)
+[  39983ms] INFO : loader::chainload: CHAIN: no OS loader found on any filesystem.
+[  40065ms] INFO : loader::chainload: CHAIN: unlock is COMPLETE and logged - the GPU is in a normal cold state.
+[  40150ms] INFO : loader::chainload: CHAIN: boot the machine into its UEFI boot menu / built-in shell and
+[  40232ms] INFO : loader::chainload: CHAIN: start the desired OS manually; no further tool action is needed.
+[  40300ms] INFO : loader: CHAIN: failed: NOT_FOUND
+[  40398ms] INFO : loader: FINAL: read-only run complete; nothing was written to the GPU, nothing to restore. Safe to reboot.
+BdsDxe: loading Boot0000 "UiApp" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(462CAA21-7614-4503-836E-8AB6F4662331)
+BdsDxe: starting Boot0000 "UiApp" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(462CAA21-7614-4503-836E-8AB6F4662331)
+[2J[01;01H[2J[01;01H[=3h[2J[01;01H[0m[30m[40m[01;01H                                                                                [02;01H                                                                                [03;01H                                                                                [04;01H                                                                                [05;01H                                                                                [06;01H                                                                                [07;01H                                                                                [08;01H                                                                                [09;01H                                                                                [10;01H                                                                                [11;01H                                                                                [12;01H                                                                                [13;01H                                                                                [14;01H                                                                                [15;01H                                                                                [16;01H                                                                                [17;01H                                                                                [18;01H                                                                                [19;01H                                                                                [20;01H                                                                                [21;01H                                                                                [22;01H                                                                                [23;01H                                                                                [24;01H                                                                                [25;01H                                                                                                                                                                [01;01H[0m[34m[47m[01;01H                                                                                [02;01H                                                                                [03;01H                                                                                [04;01H                                                                                [05;01H                                                                                [06;01H                                                                                [01;01H[02;02HStandard PC (Q35 + ICH9, 2009)[03;02Hpc-q35-11.1[03;54H2.00 GHz[04;02Hedk2-stable202408-prebuilt.qemu.org[04;54H2048 MB RAM[05;02H[05;54H[06;02H[06;54H[0m[37m[40m[21;01H                                                                                [22;01H                                                                                [23;01H                                                                                [24;01H                                                                                [21;01H[0m[30m[40m[25;53H  [25;54H  [25;55H  [25;56H  [25;57H  [25;58H  [25;59H  [25;60H  [25;61H  [25;62H  [25;63H  [25;64H  [25;65H  [25;66H  [25;67H  [25;68H  [25;69H  [25;70H  [25;71H  [25;72H  [25;73H  [0m[30m[47m[07;01H                                                                                [08;01H                                                                                [09;01H                                                                                [10;01H                                                                                [11;01H                                                                                [12;01H                                                                                [13;01H                                                                                [14;01H                                                                                [15;01H                                                                                [16;01H                                                                                [17;01H                                                                                [18;01H                                                                                [19;01H                                                                                [20;01H                                                                                [07;01H[07;01H                                                                                [0m[37m[40m[08;31H<Standard English>[0m[30m[47m[08;49H         [08;01H   [08;04HSelect Language            [0m[34m[47m[09;01H   [09;04H                                                      [0m[30m[47m[10;01H   [10;02H►[10;04HDevice Manager                                        [11;01H   [11;02H►[11;04HBoot Manager                                          [12;01H   [12;02H►[12;04HBoot Maintenance Manager                              [0m[34m[47m[13;01H   [13;04H                                                      [0m[30m[47m[14;01H   [14;04HContinue                                              [15;01H   [15;04HReset                                                 [16;01H                                                         [17;01H                                                         [18;01H                                                         [19;01H                                                         [20;01H                                                                                [0m[37m[40m[23;02H [22;02H [22;53H                         [22;27H                          [23;53H                           [23;03H↑↓=Move Highlight       [22;03H                        [23;27H<Enter>=Select Entry      [0m[34m[47m[08;58HThis is the option     [09;58Hone adjusts to change  [10;58Hthe language for the   [11;58Hcurrent system         [12;58H                       [13;58H                       [14;58H                       [15;58H                       [16;58H                       [17;58H                       [18;58H                       [19;58H                       [19;80H

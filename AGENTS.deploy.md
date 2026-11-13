@@ -12,9 +12,10 @@ nv-uefi-unlocker is a UEFI pre-driver unlocker for GTX 16 and RTX 20/30/40 serie
 | Turing GSP prerequisites | [Turing](docs/faq.en.md#turing) |
 | Linux RTD3 / hybrid display / eGPU | [RTD3](docs/faq.en.md#linux), [display](docs/faq.en.md#display), [Thunderbolt](docs/faq.en.md#thunderbolt) |
 | In-OS read-back and recovery | [ssdiag](docs/faq.en.md#ssdiag), [recovery](docs/faq.en.md#recovery) |
+| Green log but Windows will not start (`0xc000009a`) | [Handoff memory](docs/handoff-lowmem.en.md), [FAQ](docs/faq.en.md#handoff) |
 
 1. Discover the **target** GPU model, PCI vendor:device, BDF, OS, driver, display mode, Secure Boot state and intended USB volume. On Windows use `nvidia-smi -q` and device/volume inventory; on Linux also use `lspci -nn` and `lsblk -f`. Distinguish the build host from the target. Ask only for facts you cannot discover. Never infer a USB drive letter/device or overwrite an unidentified volume.
-2. Map the target using the compatibility document, not the model number alone. GTX 16/RTX 20 → `tu10x`; RTX 30 GA10x → `ga102`; RTX 40 → `ad102`. GA100, pre-Turing and Blackwell are unsupported. Record unresolved model/platform issues, particularly TU10x 0x91, before proposing a hardware attempt; do not claim an unverified card was tested.
+2. Map the target using the compatibility document, not the model number alone. RTX 20 → `tu10x`; GTX 16 (TU116/117) → `tu11x` (RE-derived experimental route, issue #151); RTX 30 GA10x → `ga102`; RTX 40 → `ad102`. GA100, pre-Turing and Blackwell are unsupported. Record unresolved model/platform issues, particularly TU10x 0x91, before proposing a hardware attempt; do not claim an unverified card was tested.
 3. For multi-GPU systems identify the intended card. Default loader behavior processes every supported GPU. To target one, write its actual BDF (`bb:dd.f` or `dddd:bb:dd.f`) to USB-root `tx-select-bdf.txt`; a missing/unparsable match aborts selection. Do not substitute another card.
 
 ## Prepare
@@ -37,28 +38,30 @@ Run the maker on the TARGET machine with no family argument: it enumerates the m
 bash make-usbroot.sh
 ```
 
-Only when the maker runs on a DIFFERENT machine than the target, pass the identified family explicitly (`-Family ad102|ga102|tu10x`, aliases `40`/`30`/`20`) — or `-Family all` / `--family all` to build all three families onto one stick.
+Only when the maker runs on a DIFFERENT machine than the target, pass the identified family explicitly (`-Family ad102|ga102|tu10x`, aliases `40`/`30`/`20`) — or, **when the target holds cards from several generations, comma-list them** (`-Family 30,40`) — or `-Family all` / `--family all` to build all three families onto one stick.
 
 Default output/work directories are `usbroot` / `inputs`. Windows needs PowerShell 5+; the prebuilt Linux assets binary needs glibc ≥ 2.34 (bash maker also requires bash 4+, GNU utilities, curl or wget). On Windows TLS failures, consult the FAQ's WSL/Git Bash alternative. A pinned input download/hash failure is a hard stop: do not replace versions or disable validation.
 
-`-SkipGspCheck` / `--skip-gsp-check` is only for generating on a different machine; it does not waive target GSP prerequisites. Offline Turing proven-blob selection uses `-ProvenBlob` / `--proven-blob` with the pinned archive. Do not use these switches to force an unready target through the gate.
+`-SkipGspCheck` / `--skip-gsp-check` is only for generating on a different machine; it does not waive target GSP prerequisites. Offline Turing proven-blob selection uses `-ProvenBlob` / `--proven-blob` with the pinned archive. The Turing GSP gate **warns, never blocks**: stick regeneration does not gate on the build host's state, the warning text carries the target-side fix, and the target machine's GSP prerequisites are what matter. Host card detection reads the driver's bound-device list (`Services\nvlddmkm\Enum`) first, so display-class registry keys orphaned by previously removed cards (repair benches) are ignored, with the trimmed ids reported as ghost warnings.
 
 If building from source is needed, follow [Build](README.en.md#build-from-source-optional): `rustup target add x86_64-unknown-uefi`, `cargo build --release`, `cargo efi-tx`, `cargo xt`. Pass `target/release/assets[.exe]` and `target/x86_64-unknown-uefi/release/loader.efi` explicitly to the maker using `-AssetsExe`/`-BootEfi` or `--assets`/`--boot-efi`. `cargo efi` is read-only and cannot unlock. The ssdiag crate is separate: build it on Windows with `cargo build --release --manifest-path tools/ssdiag/Cargo.toml` if it is not obtained from a release.
 
 ## Assemble and check the USB
 
-Use an identified FAT32 USB volume; preserve existing files and back up any destination `EFI/BOOT/BOOTX64.EFI`. Do not format a volume without explicit authorization. Generate into a local staging directory, not directly onto an existing boot medium: maker removes matching earlier assets from its output directory.
+Use an identified FAT32 USB volume; preserve existing files and back up any destination `EFI/BOOT/BOOTX64.EFI`. Do not format a volume without explicit authorization. Generate into a local staging directory by default: maker removes matching earlier assets from its output directory. Passing a mounted stick root (`-Out G:\` / `--out /media/stick`) is also fine - the maker detects it, only matching asset names are refreshed, and it prints "nothing to copy".
 
-The maker output is **flat and contains intermediates**. Use its final `expected` list, not every `.bin` in the output. Required destination files (`F` = normalized family):
+After generating, the maker probes for EXISTING FAT32 partitions and offers a one-click install: an internal (non-USB) disk's **non-boot** data FAT32 partition (persistent install, booted afterwards from the one-time boot menu) or a USB stick's FAT32 partition. The install only appends files - nothing already on the target is overwritten or deleted, and a differing same-name file refuses the whole target with the list; an in-place upgrade is allowed only when the target root's `nvuu-stick.json` identifies a previous nv-uefi-unlocker layout. No partition is created, resized or reformatted, the system ESP is never touched, and no NVRAM boot entry is written. `-NoInstallPrompt` / `--no-install-prompt` skips the offer; `-InstallTo D:\` / `--install-to <mountpoint>` names a target explicitly (same eligibility checks). A layout on an internal partition boots through the firmware's one-time boot menu, and not every firmware lists internal FAT volumes - the stick stays the universal path. Windows classification is BusType-based: a SATA-attached enclosure counts as internal; USB counts as removable.
+
+The maker output contains only the runtime set (`EFI/BOOT/BOOTX64.EFI` plus the flat asset files; extraction intermediates and forensic dumps are no longer emitted - set `ASSETS_DEBUG_C=1` for forensics). Use its final `expected` list. Required destination files (`F` = normalized family, `tu11x` for GTX 16):
 
 | Destination | Source / condition |
 | --- | --- |
 | `EFI/BOOT/BOOTX64.EFI` | generated `BOOTX64.EFI` (source build: maker copies `loader.efi` under this name) |
 | USB root | `booter_load_F.bin`, `gsp_boot_desc_F.bin`, `gsp_boot_F.bin`, `fwimage_F.bin`, `fwsignature_F.bin`, `v67-F-four-plm.bin` |
 | USB root, `ad102` / `ga102` | `scrubber_ad10x.bin` |
-| USB root, `tu10x` | `sec2_bl_tu10x.bin`; preserve generated `gsp-gate.txt` as the build record |
+| USB root, `tu10x` / `tu11x` | `sec2_bl_<family>.bin`; preserve generated `gsp-gate.txt` as the build record |
 
-Verify the destination set and family against maker output before calling media preparation complete. Never mix families within a single-family build; the only sanctioned multi-family form is an explicit `-Family all` / `--family all` stick shipped as the full expected union. Do not copy extraction intermediates as loader assets. Missing `v67-F-four-plm.bin` means replay, which still performs GPU writes/firmware execution/reset; it is not read-only diagnosis.
+Verify the destination set, the exact `EFI/BOOT/BOOTX64.EFI` path and family against maker output before calling media preparation complete, and confirm Secure Boot is off or the self-signed EFI is trusted; a stick that flashes and bounces back to the menu with no `loader.log` never ran the EFI (see the FAQ's no-boot entry). A single-family build must not be used on a mixed-generation target; the sanctioned multi-family forms are the exact comma list (`-Family 30,40`) or `-Family all` / `--family all` shipped as the full expected union. Do not copy extraction intermediates as loader assets. Missing `v67-F-four-plm.bin` means replay, which still performs GPU writes/firmware execution/reset; it is not read-only diagnosis.
 
 Do not write the system ESP, change NVRAM BootOrder, install a resident boot entry or format/repartition disks as part of the default workflow. Inspect existing markers before handoff; normal deployment must leave `i_know_what_i_am_doing.txt` absent (it enables automatic execution after 5 seconds). Back up an existing armed marker outside the USB root before removing it; retain armed mode only for an explicit unattended-operation request. Preserve normal manual confirmation. Advanced markers such as `no-reconnect.txt` need a matching FAQ symptom; do not blanket-enable workarounds.
 

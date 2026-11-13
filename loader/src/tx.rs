@@ -1,7 +1,7 @@
-//! M3-class transaction machinery — behavioral port of unlock_610.c
-//! (falcon_reset / poll_us / falcon_dma / falcon_hs prevalidation) to the
+//! M3-class transaction machinery - behavioral port of unlock_610.c
+//! (falcon_reset / poll_us / falcon_dma_unblock / authority_scan, plus the
+//! tx_portal register-portal placement that replaced falcon_hs) to the
 //! uefi-rs PciIo BAR0 window. Compiled ONLY with `--features tx`;
-#![allow(dead_code)] // pre-wired ahead of the M3 gate; test surface lives in sim/
 //! the default shipped binary carries zero GPU-write paths (constitution 1.7).
 
 use core::cell::UnsafeCell;
@@ -22,34 +22,41 @@ pub mod eng {
 }
 
 pub mod regs {
-    pub const GFW_PLM: u32 = 0x0011_8128;
     pub const GFW_BOOT: u32 = 0x0011_8234;
     pub const GFW_CPUCTL: u32 = 0x0011_0100;
-    pub const FB_SIZE_MIB: u32 = 0x0011_83a4;
     /// BSI_SCRATCH15: bits 31:29 = scrubber/handoff state (1 = DONE, the
     /// firmware-window state the community chains enter through).
     pub const BSI_SCRATCH15: u32 = 0x0011_80fc;
-    pub const MMU_PLM: u32 = 0x001f_a7c8;
     pub const WPR2_LO: u32 = 0x001f_a824;
     pub const WPR2_HI: u32 = 0x001f_a828;
-    pub const MMU_LOCK_LO: u32 = 0x001f_a82c;
-    pub const MMU_LOCK_HI: u32 = 0x001f_a830;
     pub const FEAT_PLM: u32 = 0x0082_3804;
     pub const FEAT_SS0: u32 = 0x0082_381c;
     pub const FEAT_SS1: u32 = 0x0082_3820;
     /// Effective-speed readout (nine 3-bit fields; all 0 = full rate).
     pub const FEAT_READOUT_1: u32 = 0x0082_3818;
+    /// PBUS software-scratch words, indexed by `NV_PBUS_SW_SCRATCH(i) =
+    /// 0x1400 + i*4` (dev_bus.h, same formula on every family Turing..Ada).
+    /// The open driver only ever writes index 0x1E
+    /// (`NV_PBUS_SW_RESET_BITS_SCRATCH_REG`, g_gpu_nvoc.h:914, in the
+    /// drain/reset-recommended path); every other `gpuWritePBusScratch`
+    /// caller is the VBIOS/devinit. Indices 0x20/0x21 (= 0x1480/0x1484) sit
+    /// clear of 0x1E and of the Blackwell named 0x2D/0x37. Reset-domain
+    /// registers: any FLR, SBR or rail-off clears them, which is exactly the
+    /// witness we want.
+    pub const CANARY_A: u32 = 0x0000_1480;
+    pub const CANARY_B: u32 = 0x0000_1484;
+    /// Arbitrary constants carrying the issue numbers, so a value found in a
+    /// report is unmistakably ours and not a VBIOS leftover.
+    pub const CANARY_MAGIC_A: u32 = 0x0164_c0de;
+    pub const CANARY_MAGIC_B: u32 = 0x0165_cafe;
+    /// Always-readable boot-strap word (chip id): control for the read path.
+    pub const PMC_BOOT_0: u32 = 0x0000_0000;
     // Ada four-write chain
     pub const WPR_PLM: u32 = 0x001f_a7c4;
     pub const WPRCFG_PLM: u32 = 0x001f_a7cc;
     pub const FBPA_PLM: u32 = 0x009a_0148;
 
     pub const GFW_BOOT_COMPLETED: u32 = 0xff;
-    pub const CPUCTL_HALTED: u32 = 0x10;
-    /// Falcon DMA command for an IMEM block (unlock_610 dma_cmd(true)).
-    pub const DMA_CMD_IMEM: u32 = 6 << 8 | 0x14;
-    /// DMEM variant (dma_cmd(false)).
-    pub const DMA_CMD_DMEM: u32 = 6 << 8; // gpu_unlock_dma_cmd(false): plain 0x600
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,6 +79,55 @@ pub enum TxError {
 
 pub fn inaccessible(value: u32) -> bool {
     value == !0u32 || (value & 0xffff_0000) == 0xbadf_0000
+}
+
+/// Canary verdict from a pair of scratch reads: "intact", "cleared",
+/// "mixed" (one of the two survived - a narrow-domain reset), "unreadable"
+/// (both poison) or "other" (rewritten to a third value, e.g. devinit).
+pub fn canary_verdict(a: u32, b: u32) -> &'static str {
+    let ia = inaccessible(a);
+    let ib = inaccessible(b);
+    if ia && ib {
+        return "unreadable";
+    }
+    match (a == regs::CANARY_MAGIC_A, b == regs::CANARY_MAGIC_B) {
+        (true, true) => "intact",
+        (false, false) if a == 0 && b == 0 => "cleared",
+        (false, false) => "other",
+        _ => "mixed",
+    }
+}
+
+/// Arm the reset canary (issues #164/#165): write two magic words into the
+/// PBUS software-scratch block and read them straight back. Must run AFTER
+/// the last reset the chain performs on purpose (the FLR) and BEFORE the
+/// console rebuild, so the POST-GOP and in-OS readbacks measure the actors
+/// we did not perform ourselves. Read-only diagnostics never touch these.
+///
+/// Call direction: AON (FEAT) dying says "rail-off / full-chip reset",
+/// scratch dying while the AON values are intact says "FLR/SBR-class reset",
+/// both intact says "no reset - the writer was a plain register write".
+pub fn canary_arm(gpu: &TxGpu) {
+    let (pre_a, pre_b) = (gpu.read32_raw(regs::CANARY_A), gpu.read32_raw(regs::CANARY_B));
+    let ctrl = gpu.read32_raw(regs::PMC_BOOT_0);
+    info!(
+        "CANARY-PRE: a={pre_a:#010x} b={pre_b:#010x} ctrl_pmc_boot_0={ctrl:#010x} (as found before any write)"
+    );
+    if probe_file("\\tx-no-canary.txt") {
+        info!("CANARY: \\tx-no-canary.txt present - arm skipped");
+        return;
+    }
+    gpu.write32(regs::CANARY_A, regs::CANARY_MAGIC_A);
+    gpu.write32(regs::CANARY_B, regs::CANARY_MAGIC_B);
+    let (a, b) = (gpu.read32_raw(regs::CANARY_A), gpu.read32_raw(regs::CANARY_B));
+    if canary_verdict(a, b) == "intact" {
+        info!("CANARY-SET: a={a:#010x} b={b:#010x} readback ok (armed after the last reset in the chain)");
+    } else {
+        info!(
+            "CANARY-SET: a={a:#010x} b={b:#010x} readback FAILED (verdict {}) - treats the block as not writable on this chip",
+            canary_verdict(a, b)
+        );
+    }
 }
 
 /// BAR0-backed engine view.
@@ -237,6 +293,10 @@ pub fn falcon_dma_unblock(gpu: &TxGpu, base: u32, fbif: u32) -> Result<(), TxErr
 /// block localizes the authority gate. +0x3c4 is TOTORONG's reset-PLM
 /// candidate. Data ports (IMEMD/DMEMD) are skipped to avoid side effects.
 pub fn authority_scan(gpu: &TxGpu) {
+    if crate::ultrafast() {
+        info!("AUTH-SCAN: ultrafast - skipped (pre-ignition differential probe is diagnostic-only)");
+        return;
+    }
     const GSP: u32 = 0x0011_0000;
     const SEC2: u32 = 0x0084_0000;
     const GSP2: u32 = 0x0011_1000;
@@ -336,150 +396,6 @@ pub fn falcon_authority_probe(gpu: &TxGpu, base: u32, name: &str) -> u32 {
     stuck
 }
 
-/// DMATRFMOFFS is 24 bits, FBOFFS is 32 bits, and BASE is 49 bits.
-/// Reject truncation/wrap before submitting any part of a transfer.
-pub fn falcon_dma_valid(dest: u32, mem_off: u32, src: u64, size: u32) -> bool {
-    size != 0
-        && (size as u64 | dest as u64 | mem_off as u64 | src) & 255 == 0
-        && dest as u64 + size as u64 <= 1 << 24
-        && mem_off as u64 + size as u64 <= 1 << 32
-        && src < 1 << 49
-        && mem_off as u64 + size as u64 <= (1u64 << 49) - src
-}
-
-/// Falcon DMA transfer (unlock_610.c falcon_dma, 1:1): idle poll ->
-/// program source address -> per-256B chunks -> done poll.
-pub fn falcon_dma(
-    gpu: &TxGpu,
-    base: u32,
-    mut dest: u32,
-    mut mem_off: u32,
-    src: u64,
-    size: u32,
-    cmd: u32,
-) -> Result<(), TxError> {
-    info!("Falcon DMA: base={base:#x} dest={dest:#x} offset={mem_off:#x} src={src:#x} size={size:#x} cmd={cmd:#x}");
-    if !falcon_dma_valid(dest, mem_off, src, size) {
-        return Err(TxError::EInval);
-    }
-    gpu.poll_us(base + 0x118, 1, 0, 1_000_000, true)?;
-    gpu.write32(base + 0x110, (src >> 8) as u32);
-    gpu.write32(base + 0x128, ((src >> 8) >> 32) as u32 & 0x1ff);
-    let mut done = 0u32;
-    while done < size {
-        // Wait for FIFO space; on stall, dump state and try a kick round:
-        // re-write XFER_EXT_BASE (same value) - some Falcon generations
-        // require the base register touch to re-arm the transfer engine
-        // after the 32-slot queue fills.
-        if let Err(e) = gpu.poll_us(base + 0x118, 1, 0, 1_000_000, true) {
-            info!("Falcon DMA progress: done={done} total={size}");
-            dma_stall_dump(gpu, base);
-            let mut recovered = false;
-            for round in 0..3 {
-                boot::stall(core::time::Duration::from_millis(1000));
-                // Kick 1: re-arm the external base register.
-                gpu.write32(base + 0x110, (src >> 8) as u32);
-                gpu.write32(base + 0x128, ((src >> 8) >> 32) as u32 & 0x1ff);
-                // Kick 2: nudge the block-on-fifo register (0 then re-check).
-                gpu.write32(base + 0x10c, 0);
-                if let Ok(()) = gpu.poll_us(base + 0x118, 1, 0, 1_000_000, true) {
-                    info!("Falcon DMA: recovered after kick round {round} - resuming at done={done}");
-                    recovered = true;
-                    break;
-                }
-                dma_stall_dump(gpu, base);
-            }
-            if !recovered {
-                return Err(e);
-            }
-        }
-        // PORT experiment: blocks 32+ issue on PORT 1 (cmd bits12:14) - if
-        // the stall is port-0-local queue state, the transfer completes.
-        let cmd_port = if done >= 32 * 256 { cmd | (1 << 12) } else { cmd };
-        gpu.write32(base + 0x114, dest);
-        gpu.write32(base + 0x11c, mem_off);
-        gpu.write32(base + 0x118, cmd_port);
-        done += 256;
-        dest += 256;
-        mem_off += 256;
-        // Golden-sample trace: full register picture at block boundaries
-        // (blocks 0-2 right after issue, and the 30-34 window where the
-        // queue stalls) - pins the semantics of 0x118 bit0 and 0x120
-        // empirically instead of trusting cross-generation docs.
-        let blk = done / 256;
-        if blk <= 3 || (30..=34).contains(&blk) {
-            let c118 = gpu.pci.bar_read_u32(gpu.bar, (base + 0x118) as u64);
-            let c120 = gpu.pci.bar_read_u32(gpu.bar, (base + 0x120) as u64);
-            let c11c = gpu.pci.bar_read_u32(gpu.bar, (base + 0x11c) as u64);
-            info!("DMA-BLK {blk}: 0x118={c118:#010x} 0x120={c120:#010x} 0x11c={c11c:#010x}");
-        }
-    }
-    gpu.poll_us(base + 0x118, 2, 2, 1_000_000, true)
-}
-
-/// Read-only state dump at a DMA stall (EXCI has the exception reason).
-fn dma_stall_dump(gpu: &TxGpu, base: u32) {
-    let r = |off: u32| gpu.pci.bar_read_u32(gpu.bar, (base + off) as u64);
-    let cpuctl = r(0x100);
-    let dmactl = r(0x10c);
-    let cmd_last = r(0x118);
-    let exci = r(0x0d0);
-    let rm = r(0x084);
-    let bootvec = r(0x104);
-    let hwcfg = r(0x0f4);
-    let xfer_status = r(0x120);
-    info!(
-        "DMA-STALL dump: CPUCTL={cpuctl:#010x} (halt={} stop={} iready={}) DMACTL={dmactl:#010x} CMD={cmd_last:#010x} EXCI={exci:#010x} RM={rm:#010x} BOOTVEC={bootvec:#010x} HWCFG={hwcfg:#010x}",
-        cpuctl >> 4 & 1,
-        cpuctl >> 5 & 1,
-        cpuctl >> 3 & 1,
-    );
-    info!(
-        "DMA-STALL: XFER_STATUS={xfer_status:#010x} (loads_pending={} stores_pending={} pending={})",
-        xfer_status >> 24 & 7,
-        xfer_status >> 16 & 7,
-        xfer_status >> 1 & 1,
-    );
-    // EXCI field decode (falcon v4): bits8-16 exception, 17:16 substatus (best effort)
-    if exci != 0 {
-        info!("DMA-STALL: EXCI code={:#05x} sub={:#03x}", exci >> 8 & 0xffff, exci >> 24 & 0xff);
-    }
-}
-
-/// falcon_hs geometry prevalidation (before any reset or transfer):
-/// Range = image-offset arithmetic; Inval = DMA geometry rejected.
-pub fn hs_prevalidate(
-    image: u64,
-    code_off: u32,
-    code_size: u32,
-    code_va: u32,
-    code_pa: u32,
-    data_off: u32,
-    data_size: u32,
-    data_pa: u32,
-) -> Result<u64, TxError> {
-    let (code_off, code_va, data_off) = (code_off as u64, code_va as u64, data_off as u64);
-    if image > u64::MAX - code_off
-        || image + code_off < code_va
-        || image > u64::MAX - data_off
-    {
-        return Err(TxError::ERange);
-    }
-    let code_src = image + code_off - code_va;
-    if !falcon_dma_valid(code_pa, code_va as u32, code_src, code_size)
-        || (data_size != 0 && !falcon_dma_valid(data_pa, 0, image + data_off, data_size))
-    {
-        return Err(TxError::EInval);
-    }
-    Ok(code_src)
-}
-
-/// Issue #4.2 escape hatch: Turing entry with WPR2 up but WITHOUT the
-/// firmware-window evidence (GFW completed + GSP not started) refuses unless
-/// the operator drops this marker on the stick root - a deliberate, per-stick
-/// accept of the ambiguous warm state.
-pub const ACCEPT_WARM_WPR2_MARKER: &str = "\\tx-accept-warm-wpr2.txt";
-
 /// Cold-state guards (task brief 9.6 semantics).
 /// `post_flr`: we just FLR'd the function ourselves - the GPU's own re-boot
 /// re-provisions WPR2 (measured 0xe00), which is NOT the "already used"
@@ -496,6 +412,17 @@ pub const ACCEPT_WARM_WPR2_MARKER: &str = "\\tx-accept-warm-wpr2.txt";
 /// WPR2-provenance discriminator - the TU106 firmware-window entry measures
 /// handoff=1 there (evidence/tu106-triage-regression), so anchoring the
 /// accept on any handoff value would mis-refuse legitimate entries.
+pub const ACCEPT_WARM_WPR2_MARKER: &str = "\tx-accept-warm-wpr2.txt";
+
+/// Turing transaction families (issue #151 route split): "tu10x" =
+/// TU102/104/106, "tu11x" = TU116/117. Same FEAT block (0x4096xx —
+/// verified on TU102/TU106, same-family block assumed for TU116/117),
+/// same sequencing and no-FLR semantics; only the booter archive, patch
+/// signature and payload park word are die-specific.
+pub(crate) fn family_is_turing(family: &str) -> bool {
+    family == "tu10x" || family == "tu11x"
+}
+
 pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxError> {
     // Preflight: is BAR0 decoding at all? Right after the MEM enable a powered
     // dGPU answers; one parked by the EC in D3cold (iGPU-only boot: no GOP on
@@ -510,7 +437,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     // unlock survives FLR there). Turing: 0x409650, and the unlock does NOT
     // survive FLR (13th fire) - so a live Turing unlock must be detected and
     // SKIPPED, never reset over.
-    let feat_plm_addr = if family == "tu10x" { 0x0040_9650 } else { regs::FEAT_PLM };
+    let feat_plm_addr = if family_is_turing(family) { 0x0040_9650 } else { regs::FEAT_PLM };
     // Same-block corroboration BEFORE the PLM is consulted (Catnip review,
     // PR #65): a dead block answers all-ones for every address, so PLM=
     // all-ones alone cannot distinguish "open" from "not answering". The
@@ -522,7 +449,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     // EClaimUnreadable (the PLM is never consulted); ANY other value,
     // INCLUDING BADF, is an answered transaction and proves the block alive
     // (the Turing locked cluster answers badf5040 on every register at PL0).
-    let corroborator_addr = if family == "tu10x" { 0x0040_9664 } else { regs::FEAT_SS0 };
+    let corroborator_addr = if family_is_turing(family) { 0x0040_9664 } else { regs::FEAT_SS0 };
     match gpu.pci.bar_try_read_u32(gpu.bar, corroborator_addr as u64) {
         None => {}
         Some(v) if v == !0u32 => {
@@ -548,7 +475,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
     }
     let hi = gpu.read32(regs::WPR2_HI)?;
     if hi != 0 && !post_flr {
-        if family != "tu10x" {
+        if !family_is_turing(family) {
             info!("claim: EBUSY (WPR2 hi={hi:#x})");
             return Err(TxError::EBusy);
         }
@@ -576,18 +503,13 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
             return Err(TxError::EBusy);
         }
     } else if hi != 0 {
-        if family == "tu10x" {
+        if family_is_turing(family) {
             info!("claim: WPR2 hi={hi:#x} up at entry (self-FLR re-provisioned - accepted)");
         } else {
             info!("claim: post-FLR WPR2 hi={hi:#x} (self-induced, accepted)");
         }
     }
     Ok(())
-}
-
-/// GFW completion wait (bounded poll; 2.05s per gfw_eval.h).
-pub fn gfw_wait(gpu: &TxGpu) -> Result<(), TxError> {
-    gpu.poll_us(regs::GFW_BOOT, 0xff, regs::GFW_BOOT_COMPLETED, 2_050_000, true)
 }
 
 /// C-reference host probe writes (issue #17/#62 matrix, \tx-host-probe.txt).
@@ -655,137 +577,14 @@ fn ptimer_seed_reference(gpu: &TxGpu) {
     info!("PTIMER-SEED: reference seed={ns:#x} (month-start + h:m:s, day field omitted per the reference)");
 }
 
-/// falcon_hs full port (unlock_610.c 347-432): prevalidate -> reset ->
-/// FBIF physical mode -> code/data DMAs -> signature/selection regs ->
-/// boot vector + mailboxes -> start (CPUCTL alias path aware) -> wait.
-/// `image` is the DMA (device) address of the firmware image.
-pub fn falcon_hs(
-    gpu: &TxGpu,
-    base: u32,
-    fbif: u32,
-    falcon2: u32,
-    code_off: u32,
-    code_size: u32,
-    code_va: u32,
-    code_pa: u32,
-    data_off: u32,
-    data_size: u32,
-    data_pa: u32,
-    sig_dmem: u32,
-    engine_mask: u32,
-    ucode_id: u32,
-    image: u64,
-    mailbox0: u32,
-    mailbox1: u32,
-    wait_plm: bool,
-) -> Result<(), TxError> {
-    // Transfer sizes are rounded up to the 256B Falcon DMA granularity
-    // (the image tail is zero-filled by the caller, so the extra bytes
-    // transfer zeros - same semantics as the reference's rounded image).
-    let code_size = (code_size + 255) & !255;
-    let data_size = (data_size + 255) & !255;
-    info!("Falcon HS: image={image:#x} code={code_size:#x}@va={code_va:#x} data={data_size:#x}@off={data_off:#x} sig_dmem={sig_dmem:#x} eng={engine_mask:#x} ucode={ucode_id}");
-    let code_src = hs_prevalidate(image, code_off, code_size, code_va, code_pa, data_off, data_size, data_pa)?;
-    info!("Falcon HS: prevalidate ok (code_src={code_src:#x})");
-    falcon_reset(gpu, base, fbif, falcon2, true)?;
-
-    // FBIF: physical addressing mode.
-    let mut trans = gpu.read32(fbif + 0x24)?;
-    trans |= 1 << 7;
-    gpu.write32(fbif + 0x24, trans);
-    gpu.write32(base + 0x10c, 0);
-    // Read-back (constitution 1.1): UC_BLOCK_ON_FIFO must actually clear.
-    let block_on_fifo = gpu.read32(base + 0x10c).unwrap_or(0);
-    let caps = gpu.pci.bar_read_u32(gpu.bar, (base + 0x108) as u64);
-    info!(
-        "Falcon HS: BLOCK_ON_FIFO after write0 = {block_on_fifo:#010x}; CAPS={caps:#010x} (code={}K data={}K fifo={}K slots={})",
-        (caps >> 0 & 0x1ff) * 256 / 1024,
-        (caps >> 9 & 0x1ff) * 256 / 1024,
-        (caps >> 18 & 0xff) * 256 / 1024,
-        caps >> 26 & 0x3f
-    );
-    let mut trans = gpu.read32(fbif)?;
-    trans = (trans & !7u32) | 5;
-    gpu.write32(fbif, trans);
-    // FBIF write-back verification (constitution 1.1): if the FBIF domain
-    // is gated (BSI handoff != DONE), these writes may be silently dropped
-    // and every DMA fetch would be rejected at translation = the queue
-    // fills but nothing is consumed.
-    let ctl_rb = gpu.read32(fbif + 0x24);
-    let trans_rb = gpu.read32(fbif)?;
-    let dmactl_rb = gpu.read32(base + 0x10c).unwrap_or(0);
-    info!(
-        "Falcon HS: FBIF verify - CTL(+24)={:010x} TRANSCFG(0)={:010x} DMACTL={:010x}",
-        ctl_rb.unwrap_or(0),
-        trans_rb,
-        dmactl_rb
-    );
-    // Post-reset IMEM state probes (read-only): page-tag/scrub hypothesis
-    // for the 8KB DMA stall. IMEMC0 carries SECRET(bit28)/BLK(bits23:8);
-    // a 250ms settle lets any asynchronous scrub finish before DMA.
-    boot::stall(core::time::Duration::from_millis(250));
-    let imemc0 = gpu.pci.bar_read_u32(gpu.bar, (base + 0x180) as u64);
-    let hw = gpu.read32(base + 0xf4)?;
-    let bsi = gpu.pci.bar_read_u32(gpu.bar, regs::BSI_SCRATCH15.into());
-    info!(
-        "Falcon HS: post-reset IMEMC0={imemc0:#010x} (secret={} scrub_active={} blk={}) HWCFG={hw:#010x} BSI_SCRATCH15={bsi:#010x} (scrubber_handoff={})",
-        imemc0 >> 28 & 1,
-        imemc0 >> 31 & 1,
-        imemc0 >> 8 & 0xffff,
-        bsi >> 29 & 7,
-    );
-
-    falcon_dma(gpu, base, code_pa, code_va, code_src, code_size, regs::DMA_CMD_IMEM)?;
-    if data_size != 0 {
-        falcon_dma(gpu, base, data_pa, 0, image + data_off as u64, data_size, regs::DMA_CMD_DMEM)?;
-    }
-
-    // Signature + engine selection, then boot vector and mailboxes.
-    gpu.write32(falcon2 + 0x210, sig_dmem);
-    gpu.write32(falcon2 + 0x19c, engine_mask);
-    gpu.write32(falcon2 + 0x198, ucode_id & 0xff);
-    gpu.write32(falcon2 + 0x180, 1);
-    gpu.write32(base + 0x104, code_va);
-    gpu.write32(base + 0x40, mailbox0);
-    gpu.write32(base + 0x44, mailbox1);
-
-    let cpuctl = gpu.read32(base + 0x100)?;
-    info!("Falcon start: base={base:#x} cpuctl={cpuctl:#x} code_va={code_va:#x} sig_dmem={sig_dmem:#x} engine_mask={engine_mask:#x} ucode={ucode_id} mailbox={mailbox1:#x}:{mailbox0:#x}");
-    if cpuctl & (1 << 6) != 0 {
-        gpu.write32(base + 0x130, 1 << 1); // CPUCTL alias start path
-    } else {
-        gpu.write32(base + 0x100, 1 << 1);
-    }
-
-    if wait_plm {
-        // ~5s budget at the poll step rate; the PLM cold->open transition
-        // is the payload-execution proof.
-        let max_iters = 5_000_000 / 75 + 1;
-        for _ in 0..max_iters {
-            let engine = gpu.pci.bar_read_u32(gpu.bar, (base + 0x100) as u64);
-            if engine == !0u32 || engine & 0xffff_0000 == 0xbadf_0000 {
-                return Err(TxError::ENodev);
-            }
-            let plm = gpu.pci.bar_read_u32(gpu.bar, regs::FEAT_PLM as u64);
-            if plm == !0u32 {
-                return Ok(()); // cold entry was closed: this transition proves execution
-            }
-            if engine & (1 << 4) != 0 {
-                info!("early PLM failed: cpuctl={engine:#x} plm={plm:#x}");
-                return Err(TxError::EIO);
-            }
-            stall(Duration::from_micros(75));
-        }
-        return Err(TxError::ETimeout { tolerated: false });
-    }
-    // Non-PLM wait: HALT bit.
-    gpu.poll_us(base + 0x100, 1 << 4, 1 << 4, 5_000_000, true)
-}
-
 /// List every entry in the boot-volume root: names + sizes as the FIRMWARE
 /// sees them (kills hidden-extension / rename / placement hypotheses in
 /// one log).
 pub fn list_root_entries() {
+    if crate::ultrafast() {
+        info!("TX-ROOT-DIR: ultrafast - skipped (stick-content dump is diagnostic-only)");
+        return;
+    }
 
     // Directory = FileHandle; read entries RAW (RegularFile::read) and parse
     // the EFI_FILE_INFO layout ourselves: size/file_size/physical_size
@@ -793,7 +592,7 @@ pub fn list_root_entries() {
     // UCS-2 from offset 80. This bypasses uefi's entry API, whose error
     // path instantiates CStr16 helpers that reference wcslen under LTO.
     let Ok(mut fs) = crate::volumes::marker_fs() else {
-        info!("TX-ASSET-DIAG: get_image_file_system FAILED");
+        info!("TX-ASSET-DIAG: marker volume open FAILED");
         return;
     };
     let Ok(mut dir) = fs.open_volume() else {
@@ -897,11 +696,11 @@ fn pre_flr_experiment(handle: uefi::Handle) -> bool {
     true
 }
 
-/// Does this path exist as a readable regular file? No size gate and no content:
-/// the UI switches are zero-byte marker files by design (`\tx-require-d0.txt`
-/// is documented as "drop an empty file"), so anything that treats "size 0" as
-/// "absent" silently disables them. Kept separate from the asset reader, whose
-/// size rules are about DMA windows, not about intent.
+
+
+/// Does this path exist as a readable regular file? No size gate and no
+/// content: the UI switches are zero-byte marker files by design, so
+/// anything that treats "size 0" as "absent" silently disables them.
 pub fn probe_file(path: &str) -> bool {
     if crate::volumes::armed().is_some() && path.ends_with(".txt") {
         return crate::volumes::policy_file(path).is_some();
@@ -920,12 +719,6 @@ pub fn probe_file(path: &str) -> bool {
         .is_ok()
 }
 
-/// Formatted variant: substitutes `{}` with `family` then reads.
-pub fn read_boot_file_fmt(pattern: &str, family: &str) -> Option<alloc::vec::Vec<u8>> {
-    let path = alloc::format!("{}", pattern.replacen("{}", family, 1));
-    read_boot_file(&path)
-}
-
 /// Asset paths that MUST exist for one family's transaction (the optional
 /// `\v67-direct-ss.bin` override is deliberately not probed: its absence is
 /// a legitimate chain-replay configuration).
@@ -940,8 +733,8 @@ fn family_asset_paths(family: &str) -> alloc::vec::Vec<alloc::string::String> {
     ] {
         v.push(alloc::format!("{}", p.replacen("{}", family, 1)));
     }
-    if family == "tu10x" {
-        v.push("\\sec2_bl_tu10x.bin".into());
+    if family_is_turing(family) {
+        v.push(alloc::format!("\\sec2_bl_{family}.bin"));
     } else {
         v.push("\\scrubber_ad10x.bin".into());
     }
@@ -1037,40 +830,77 @@ enum Inner {
 /// follow-up): the armed-countdown prep warms the family's files into RAM
 /// while the wait window still has time to give, so the post-countdown
 /// transaction pays memory speed instead of USB. Keyed by path, written
-/// once per path, hits hand out a reference-counted clone of the retained
-/// copy (a 29 MB fwimage memcpy is single digit milliseconds; the Arc keeps
-/// the RETAINED side single so residency is bytes-once - audit M4).
-/// Deliberately NOT covering `probe_file` - UI switches are zero-byte
-/// markers whose presence checks keep their own live-open semantics.
-/// Aggregate retention is capped (audit M4: the cache lives in a resident
-/// component; multi-family prefetch must not accumulate unbounded) and the
-/// whole cache is dropped once the phases end (`asset_cache_clear`).
-struct AssetCacheCell(UnsafeCell<AssetCache>);
-
-struct AssetCache {
-    entries: alloc::vec::Vec<(alloc::string::String, alloc::sync::Arc<Inner>)>,
-    bytes: usize,
-}
+/// once per path, hits return a clone (a 29 MB fwimage memcpy is single
+/// digit milliseconds). Deliberately NOT covering `probe_file` - UI
+/// switches are zero-byte markers whose presence checks keep their own
+/// live-open semantics.
+struct AssetCacheCell(UnsafeCell<alloc::vec::Vec<(alloc::string::String, Inner)>>);
 
 // Safety: UEFI applications are single-threaded during boot services.
 unsafe impl Sync for AssetCacheCell {}
 unsafe impl Send for AssetCacheCell {}
 
-/// Retention budget for the read-through cache (audit M4).
-const ASSET_CACHE_CAP_BYTES: usize = 256 << 20;
+static ASSET_CACHE: AssetCacheCell = AssetCacheCell(UnsafeCell::new(alloc::vec::Vec::new()));
 
-static ASSET_CACHE: AssetCacheCell =
-    AssetCacheCell(UnsafeCell::new(AssetCache { entries: alloc::vec::Vec::new(), bytes: 0 }));
+/// `\tx-no-asset-cache.txt` (issue #146): when present, the read-through
+/// cache is disabled - every asset read goes to the stick at use time and
+/// nothing asset-sized stays resident across the chain. Diagnostic knob:
+/// splits "resident asset bytes at handoff" from "the transaction itself".
+static ASSET_CACHE_OFF: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+static ASSET_CACHE_OFF_PROBED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
 
-/// Drop the whole read-through cache (audit M4: the DXE driver stays
-/// resident for the rest of the boot; the prep's justification is that it
-/// is discardable, so its memory is).
-pub fn asset_cache_clear() {
+/// Probe the disable marker once (memoized): the stick cannot change
+/// mid-boot, so the result is sticky for the session.
+fn asset_cache_disabled() -> bool {
+    use core::sync::atomic::Ordering;
+    if ASSET_CACHE_OFF_PROBED.swap(true, Ordering::Relaxed) {
+        return ASSET_CACHE_OFF.load(Ordering::Relaxed);
+    }
+    let off = probe_file(r"\tx-no-asset-cache.txt");
+    ASSET_CACHE_OFF.store(off, Ordering::Relaxed);
+    if off {
+        info!("TX-ASSET-CACHE: \\tx-no-asset-cache.txt present - read-through cache disabled (nothing asset-sized stays resident)");
+    }
+    off
+}
+
+/// Hand the read-through cache back to the firmware allocator before the
+/// chain (issue #146). **Default since v2.1.11**: past this point nothing
+/// re-reads an asset, and the ~84 MiB pool allocation sits in the middle of
+/// the one large conventional run below 4 GiB that a Windows OS loader
+/// allocates its boot block from. winload does not stitch descriptors
+/// together, so the carve-out alone is enough to fail that reservation
+/// (0xc000009a) on a 32 GiB machine with 2.4 GiB still free - see
+/// docs/handoff-lowmem.en.md.
+///
+/// Runs on every path that reaches the chain (transaction, abort control and
+/// `\tx-dry-run.txt` alike); freeing is idempotent. `\tx-keep-assets.txt`
+/// opts out (A/B, and an escape hatch if a future machine ever wants the
+/// pre-warmed cache back); `\tx-free-assets.txt` is still accepted and is now
+/// a no-op. Pool backing pages are returned on drop, so this genuinely
+/// shrinks the handoff map; CHAIN-MEMMAP right after is the read-back
+/// (constitution §1.1). The DXE driver form calls it at the end of the
+/// phase sequence instead (it never chains) - the residency argument
+/// (audit M4: the driver stays resident for the rest of the boot) applies
+/// there, and the keep-assets opt-out is honored the same way.
+pub fn handoff_free_assets() {
+    if probe_file(r"\tx-keep-assets.txt") {
+        info!("TX-ASSET-CACHE: \\tx-keep-assets.txt present - cache left resident across the chain");
+        return;
+    }
+    clear_asset_cache();
+}
+
+fn clear_asset_cache() {
     // Safety: single-threaded boot services; pointer use confined here.
     let cache = unsafe { &mut *ASSET_CACHE.0.get() };
-    cache.entries.clear();
-    cache.entries.shrink_to_fit();
-    cache.bytes = 0;
+    let (n, bytes) = cache.iter().fold((0usize, 0usize), |(n, b), (_, e)| {
+        (n + 1, b + match e { Inner::Content(v) => v.len(), _ => 0 })
+    });
+    cache.clear();
+    cache.shrink_to_fit();
+    info!("TX-ASSET-CACHE: cleared {n} entries, {bytes} bytes handed back to the firmware allocator");
 }
 
 /// Warm the read-through cache with one family's whole asset set, exactly
@@ -1084,11 +914,10 @@ pub fn prefetch_family_assets(family: &str) {
     let _ = read_asset_fmt("\\gsp_boot_{}.bin", family);
     let _ = read_asset_fmt("\\fwimage_{}.bin", family);
     let _ = read_asset_fmt("\\fwsignature_{}.bin", family);
-    if family != "tu10x" { let _ = read_asset("\\scrubber_ad10x.bin"); }
     let _ = read_asset("\\v67-direct-ss.bin");
     let _ = read_asset_fmt("\\v67-{}-four-plm.bin", family);
-    if family == "tu10x" {
-        let _ = read_asset("\\sec2_bl_tu10x.bin");
+    if family_is_turing(family) {
+        let _ = read_asset_fmt("\\sec2_bl_{}.bin", family);
     }
 }
 
@@ -1101,30 +930,27 @@ pub fn read_boot_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_boot_file_inner(path: &str) -> Inner {
+    // DXE driver form (PR #100): .txt controls come from the pinned policy
+    // snapshot of the authorized volume, never from a live filesystem probe
+    // (audit F1). The application form is unaffected (nothing armed).
     if crate::volumes::armed().is_some() && path.ends_with(".txt") {
         return match crate::volumes::policy_file(path) {
             Some(bytes) => Inner::Content(bytes),
             None => Inner::Absent,
         };
     }
+    // Diagnostic bypass (issue #146): the knob is probed once, memoized.
+    if asset_cache_disabled() {
+        return read_boot_file_uncached(path);
+    }
     // Read-through cache first (armed prep warms it; see AssetCacheCell).
     // Safety: single-threaded boot services; pointer use confined here.
     let cache = unsafe { &mut *ASSET_CACHE.0.get() };
-    if let Some((_, hit)) = cache.entries.iter().find(|(p, _)| p == path) {
-        return hit.as_ref().clone();
+    if let Some((_, hit)) = cache.iter().find(|(p, _)| p == path) {
+        return hit.clone();
     }
     let fresh = read_boot_file_uncached(path);
-    // Retention cap (audit M4): keep the aggregate bounded. Content-size
-    // assets only; failure states are tiny and always cached (their abort
-    // semantics must survive a later cap).
-    let retain_bytes = match &fresh {
-        Inner::Content(v) => v.len(),
-        Inner::Absent | Inner::Failed => 0,
-    };
-    if cache.bytes + retain_bytes <= ASSET_CACHE_CAP_BYTES {
-        cache.bytes += retain_bytes;
-        cache.entries.push((alloc::string::String::from(path), alloc::sync::Arc::new(fresh.clone())));
-    }
+    cache.push((alloc::string::String::from(path), fresh.clone()));
     fresh
 }
 
@@ -1134,6 +960,9 @@ fn read_boot_file_uncached(path: &str) -> Inner {
         Ok(p) => p,
         Err(_) => { info!("TX-ASSET-DIAG: {path} not UCS-2 convertible"); return Inner::Failed; }
     };
+    // Keep the &str form: the issue-#139 subfolder retry runs after `path`
+    // is shadowed by the CStr16 the file protocol takes.
+    let orig_path = path;
     let path: &uefi::CStr16 = &path_c;
     use alloc::vec::Vec;
     use uefi::proto::media::file::{File, FileInfo, FileMode, FileAttribute};
@@ -1151,6 +980,29 @@ fn read_boot_file_uncached(path: &str) -> Inner {
         Err(e) => {
             // NOT_FOUND is the one error that means "the stick does not carry it".
             if e.status() == uefi::Status::NOT_FOUND {
+                // Issue #139: both makers default to `-Out .\usbroot`, and a user
+                // who runs them with the STICK as the working directory leaves the
+                // whole folder on the volume instead of its contents. Root-only
+                // reads turned that into a silent "card skipped" with no unlock
+                // attempt at all (symptom: transaction never ran, ssdiag says
+                // NOT_UNLOCKED, reporter files it as a failed unlock).
+                // One read-only retry, one level down, guarded against recursion.
+                // Assets only: markers (\tx-*.txt) are UI switches, they are
+                // never part of the maker's output folder, and probing that
+                // folder for them produced a confusing line in field logs
+                // (issue #165: "\usbroot\tx-select-bdf.txt fs open failed
+                // ACCESS_DENIED" on a stick where the marker simply did not
+                // exist - it reads like a fault, it is not one).
+                let asset_shaped = orig_path.ends_with(".bin");
+                if asset_shaped && !orig_path.starts_with("\\usbroot\\") {
+                    let alt = alloc::format!("\\usbroot{}", orig_path);
+                    let probe = read_boot_file_uncached(&alt);
+                    if matches!(probe, Inner::Content(_)) {
+                        info!("TX-ASSET-DIAG: {path} absent at the volume root - using {alt}");
+                        info!("TX: assets sit in a subfolder - the loader reads only the volume root; copy the CONTENTS of \\usbroot\\ to the stick root, keeping EFI/BOOT/BOOTX64.EFI (issues #139/#142)");
+                        return probe;
+                    }
+                }
                 info!("TX-ASSET-DIAG: {path} absent");
                 return Inner::Absent;
             }
@@ -1212,8 +1064,6 @@ pub struct TxAssets {
     /// Generic falcon BL (sec2_bl_tu10x.bin, 768B) - Turing FWSEC
     /// BOOT_WITH_LOADER only; the GA10x/Ada HS path ignores it.
     pub bl: Option<alloc::vec::Vec<u8>>,
-    /// Scrubber bytes loaded and authenticated before any GPU interaction.
-    pub scrubber: Option<alloc::vec::Vec<u8>>,
 }
 
 /// Asset size validation BEFORE any GPU interaction (issue #4.3): the DMA
@@ -1248,7 +1098,33 @@ pub fn validate_asset_sizes(assets: &TxAssets) -> Result<(), TxError> {
 /// guards -> gfw -> layout -> FWSEC ignition (WPR2) -> [booter fire ->
 /// triad -> selectors -> signature restore -> FLR + post-FLR].
 /// The bracketed tail lands with the booter-publication tranche.
-pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle) -> Result<(), TxError> {
+///
+/// `_identity` is `None` when the opt-in identity gate is not configured
+/// (`\tx-prom-sha256.txt` absent - field-proven default, unchanged), `Some`
+/// when it is configured and `identity::authorize` verified this card. The
+/// call site (`tx_one_card`) cannot reach this function at all without
+/// going through `authorize()` first and handling its `Refused` case, so
+/// the gate - when an operator opts into it - cannot be bypassed by a
+/// missed call site.
+///
+/// `bridge_slot` is the caller-owned BridgeMaster guard (None = never armed
+/// yet, including when `\tx-no-bridge-master.txt` skips the enable). This
+/// function arms it mid-transaction and releases it ONLY on the clean
+/// success tail; on an error return the guard comes back armed and the
+/// caller must release it AFTER its `emergency_flr` (post-reset nothing can
+/// be in flight through the bridges) - releasing earlier would clear
+/// bus-master under possibly-live DMA (booter 0x89 family), never releasing
+/// would carry our bus-master bits across the handoff into Windows (dirty
+/// BME shape, known-pit #3/#9). Skip-class errors (EALREADY/EWarm/EBusy/
+/// EClaimUnreadable) all return before the arm point, so their slot stays
+/// None.
+pub fn run_transaction(
+    gpu: &TxGpu,
+    assets: &TxAssets,
+    pci_handle: uefi::Handle,
+    _identity: Option<crate::identity::VerifiedIdentity<'_>>,
+    bridge_slot: &mut Option<crate::pci::BridgeMaster>,
+) -> Result<(), TxError> {
     info!("TX: BEGIN (phases: detach claim pre-flr scrub gfw layout fwsec booter verify selectors restore flr)");
 
     // Experimental override (\tx-force-continue.txt): on a booter-stage
@@ -1265,9 +1141,29 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // driver-exact configuration. Gated to 'tu10x' so GA10x/Ada keep the
     // allocation path they were field-verified with. \tx-low-staging.txt
     // reverts even tu10x to the legacy path (A/B testing).
-    let high_staging = assets.family == "tu10x" && !probe_file("\\tx-low-staging.txt");
+    let high_staging = family_is_turing(assets.family) && !probe_file("\\tx-low-staging.txt");
     crate::pci::set_high_staging(high_staging);
     info!("TX: >4GB staging gate: {high_staging} (family {})", assets.family);
+
+    // FEAT gate at handoff. DEFAULT (all families): the gate stays OPEN -
+    // the SS override values are the payload and they are AON, so the open
+    // gate buys the in-OS write surface (ssdiag --reapply) at no cost to
+    // the unlock. The 2026-11-08 TU106 bench closed the old Run A/B
+    // question: PLM open at handoff is healthy end-to-end on the GSP-mode
+    // driver stack (loader -> card's own GOP rebuild -> Windows driver ->
+    // in-OS readback, canary intact, PLM still 0xffffffff in Windows); the
+    // fires-13/14 negative ("PLM open kills the Windows Turing driver")
+    // predates the GSP-mode driver being the only supported Turing path and
+    // did not reproduce (docs/evidence/tu106-1f07/keep-open-2026-11-08/).
+    // GA10x/Ada always shipped gate-open; Turing now joins them.
+    // \tx-relock.txt restores the legacy closing write for all three
+    // families - the GA10x/Ada arm of that marker has never been benched.
+    let tx_relock = probe_file("\\tx-relock.txt");
+    if tx_relock {
+        info!("TX: \\tx-relock.txt present - the FEAT gate gets RELOCKED at handoff (legacy shape)");
+    } else if family_is_turing(assets.family) {
+        info!("TX: FEAT gate stays OPEN at handoff (default since 2026-11-08; \\tx-relock.txt restores the legacy relock)");
+    }
 
     // Resume-entry preflight FIRST, before anything is detached or written:
     // a non-D0 entry means the firmware did not POST this card (sleep/resume
@@ -1289,10 +1185,13 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // TOTORONG craft: all console + vendor drivers off the device, PciIo
     // exclusively claimed, IO|MEM|BME enabled, config baseline captured.
     // (Black screen starts here by design; the log file keeps recording.)
-    if let Err(e) = crate::tx_detach::detach_and_claim(pci_handle) {
-        info!("TX: detach+claim FAILED: {e}");
-        return Err(TxError::ENodev);
-    }
+    let claim = match crate::tx_detach::detach_and_claim(pci_handle) {
+        Ok(c) => c,
+        Err(e) => {
+            info!("TX: detach+claim FAILED: {e}");
+            return Err(TxError::ENodev);
+        }
+    };
     info!("TX: detach+claim ok");
 
     // PRE-FLR (reference never does this, but it also never runs in a
@@ -1322,11 +1221,14 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // diagnostic); \tx-ptimer-seed.txt seeds PTIMER from the RTC (PLM
     // anti-replay validation needs sane GPU time; the reference omits the
     // day-of-month field - preserved verbatim, not a precise wall clock).
-    if assets.family == "tu10x" {
-        if read_boot_file("\\tx-host-probe.txt").is_some() {
+    if family_is_turing(assets.family) {
+        // probe_file, not read_boot_file: these are UI switches (zero-byte
+        // files by design); read_boot_file refuses size==0, so a dropped
+        // EMPTY marker was silently ignored (issue #106).
+        if probe_file("\\tx-host-probe.txt") {
             host_probe_reference(gpu);
         }
-        if read_boot_file("\\tx-ptimer-seed.txt").is_some() {
+        if probe_file("\\tx-ptimer-seed.txt") {
             ptimer_seed_reference(gpu);
         }
     }
@@ -1339,9 +1241,9 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // gated state decides the next fix round. Turing: the proven cmp50hx
     // chain has NO scrubber step and the AD10x ucode EIO'd on TU106
     // (first fire 2026-10-27) - don't fire a foreign binary at it.
-    if assets.family == "tu10x" {
-        info!("TX-tu10x: scrubber step skipped (not part of the proven Turing chain; BSI handoff state logged above)");
-    } else if let Err(e) = crate::tx_fwsec::scrubber_if_needed(gpu, assets.scrubber.as_deref()) {
+    if family_is_turing(assets.family) {
+        info!("TX-{}: scrubber step skipped (not part of the proven Turing chain; BSI handoff state logged above)", assets.family);
+    } else if let Err(e) = crate::tx_fwsec::scrubber_if_needed(gpu) {
         info!(
             "TX: scrubber did not complete ({e:?}) - proceeding without it (community chain shape)"
         );
@@ -1356,7 +1258,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let layout = crate::tx_fwsec::layout_from_registers(gpu, assets.family, gsp_image_size, boot_size)?;
     info!("TX: layout ok (frts={:#x})", layout.frts_offset);
 
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // Turing has no AD10x scrubber step in the proven chain (cmp50hx
         // runs FWSEC/booter without one), and the AD10x scrubber ucode is a
         // different binary that EIO'd on TU106 (first fire, 2026-10-27).
@@ -1369,11 +1271,11 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         let wpr_lo = gpu.read32(regs::WPR2_LO)?;
         if wpr_hi >> 4 != 0 {
             info!(
-                "TX-tu10x: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (already up, POST/FLR provisioned) - FWSEC fire SKIPPED (cmp50hx mainline path) [fwsec=skipped]"
+                "TX-{}: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (already up, POST/FLR provisioned) - FWSEC fire SKIPPED (cmp50hx mainline path) [fwsec=skipped]", assets.family
             );
         } else {
             info!(
-                "TX-tu10x: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (cold) - FWSEC will be fired by the loader [fwsec=ran]"
+                "TX-{}: entry WPR2 lo={wpr_lo:#x} hi={wpr_hi:#x} (cold) - FWSEC will be fired by the loader [fwsec=ran]", assets.family
             );
             let bl = match &assets.bl {
                 Some(b) => b,
@@ -1396,7 +1298,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let boot_image_len = assets.gsp_boot.len() as u32;
     let desc = assets.boot_desc.as_ref().ok_or(TxError::EInval)?;
     let mut boot = tb::boot_desc_parse(desc, boot_image_len)?;
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // cmp50hx-proven BL topology (live-driver WPR meta dump 2026-08-21 +
         // their proven runs): first 0x6000 bytes of the GspRmBoot image with
         // code@0x1800 / data@0x800 / manifest@0x0. Our v4-desc 4KB image has
@@ -1438,7 +1340,12 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // (SIG_PROD, 16B AES at patch_loc), so the per-fuse slot
             // selection is moot; index 0 is the only choice (the community
             // path patches the literal SIG_PROD bytes likewise). Fourth
-            // TU106 fire failed exactly on this read (2026-10-27).
+            // TU106 fire failed exactly on this read (2026-10-27). Kernel
+            // cross-check (2026-11-01): Turing's dev_fuse.h carries NO
+            // FPF_SEC2/FPF_GSP ucode-version registers at all and
+            // kernel_sec2_tu102.c has no ksec2ReadUcodeFuseVersion - the
+            // kernel never walks a fuse table for the Turing BOOT_DIRECT
+            // booter, which is what those badf5040 reads were telling us.
             let fuse_ver = if hdr.num_sigs == 1 {
                 0
             } else {
@@ -1458,7 +1365,8 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     }
 
     // Radix over the GSP-RM image (84 MiB) — one big contiguous DMA block.
-    let radix = tb::radix_build(gpu, &assets.gsp_image)?;
+    // mut: the STAGING-FALLBACK retry rebinds it to a LOW-band rebuild.
+    let mut radix = tb::radix_build(gpu, &assets.gsp_image)?;
 
     // WprMeta publication (first signature call) then fire.
     {
@@ -1471,23 +1379,23 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     info!("TX: WprMeta published (payload_mode={payload_mode})");
 
     // Bus master on the bridges above the GPU, with the DMA path logged before
-    // and after. The guard lives until run_transaction returns, early error
-    // returns included, then clears what it set.
+    // and after.
     // \tx-no-bridge-master.txt skips the bridge writes (guarded-overlay parity
     // T3): on boards whose bridges already carry BME the enable is a no-op
     // anyway - the marker exists to rule the write itself out on boards where
     // the log above shows it actually set a bit.
-    // The guard is hoisted out of the branch so it lives until run_transaction
-    // returns, as the comment above promises - bound inside the else block it
-    // would drop at the closing brace and clear BME again before the booter
-    // fires (booter 0x89 family, PR #87).
+    // The guard lives in the CALLER's slot (see run_transaction's doc
+    // comment): armed here, released on the clean success tail below, and on
+    // any error return handed back to the caller - which releases it only
+    // after its emergency FLR. Release is explicit (see BridgeMaster's doc
+    // comment): nothing implicitly clears it on the way out any more, so
+    // both exit paths restore instead of one abandoning the write.
     crate::pci::log_dma_path("before-bridge-bme", gpu.pci);
-    let _bridge_master;
     if probe_file("\\tx-no-bridge-master.txt") {
         info!("TX: \\tx-no-bridge-master.txt present - BridgeMaster::enable skipped (guarded-overlay parity)");
-        _bridge_master = None;
+        *bridge_slot = None;
     } else {
-        _bridge_master = Some(crate::pci::BridgeMaster::enable(gpu.pci));
+        *bridge_slot = Some(crate::pci::BridgeMaster::enable(gpu.pci));
     }
     crate::pci::log_dma_path("after-bridge-bme", gpu.pci);
 
@@ -1559,8 +1467,10 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     // Turing boots the booter DIRECT (BOOT_DIRECT, bBootFromHs=FALSE): the
     // whole image is port-loaded NS+SEC+DMEM with BOOTVEC=0; the GA10x/Ada
     // BootFromHs path loads only the secure segment through BROM params.
-    if assets.family == "tu10x" {
-        if read_boot_file("\\tx-sec2-c-load.txt").is_some() {
+    if family_is_turing(assets.family) {
+        // probe_file, not read_boot_file: zero-byte UI switch (issue #106 -
+        // read_boot_file refuses size==0 and the empty marker never fired).
+        if probe_file("\\tx-sec2-c-load.txt") {
             // Issue #17/#62 matrix: full C-reference fire (no reset, FBIF
             // CTL bit7 without TRANSCFG rewrite, 3s quiet window). Default
             // OFF - the field-proven shape above stays the default.
@@ -1591,11 +1501,184 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     info!("TX: booter fired");
 
     let meta_view = unsafe { core::slice::from_raw_parts(meta_dma.host, tb::WPR_META_SIZE) };
-    let booter_ok = if assets.family == "tu10x" {
+    let mut booter_ok = if family_is_turing(assets.family) {
         tb::verify_execution_tu10x(gpu, payload_mode, meta_view).is_ok()
     } else {
         tb::verify_execution(gpu, assets.family, payload_mode, meta_view).is_ok()
     };
+
+    // STAGING-FALLBACK (issues #74/#156/#191): a Turing payload run that dies
+    // on SEC2 mailbox0 == 0x89 while the HOST view of the published meta page
+    // still carries the intact magic has exactly one meaning on the GA
+    // plaintext code table (0x2784 = second magic compare failed): our write
+    // landed in DRAM and SEC2's >=4GiB DMA read of it did not deliver - the
+    // unreachable-high staging band.
+    //
+    // Retry vehicle (1e93 field falsification, 2026-11-09, issues #156): the
+    // original vehicle - same-run LOW re-stage + a plain re-fire through
+    // booter_fire_direct's engine reset - is DEAD on the machines this gate
+    // exists for. After one completed booter run (halt + sanitize) the engine
+    // reset no longer hands the FBIF write surface back: falcon_dma_unblock
+    // writes TRANSCFG0=0x115/DMACTL=0x0 and reads back 0x114/0x80 -
+    // deterministic EIO at the unblock, before the portal reload is reached
+    // (the reporter's three-row FBIF table). The retry is therefore a
+    // FUNCTION-LEVEL FLR (cold engine, cold FBIF) + a full FWSEC
+    // re-ignition (the FLR wipes WPR2) + the LOW-band re-stage + the fire.
+    // Nothing is unlocked at this point - the PLM never opened and zero
+    // payload writes happened - so the FLR has no state to destroy (the
+    // Turing FEAT PLM sits at factory and FLR resets it to the same).
+    // payload_mode=false on the flr mechanics: the selectors are still at
+    // factory and flr_phase's payload verdicts (SS==unlock) must not fire.
+    // Everything the booter DMA-reads moves (meta, signature, radix+RM
+    // image, boot image); the booter IMAGE is portal-copied and stays. The
+    // mirror class never enters here: the sub-4GB read lock fails a
+    // different status (0x91, issues #16/#57) or succeeds outright, and a
+    // corrupt host page is a buffer-side bug no retry can fix.
+    if !booter_ok && !force_continue
+        && family_is_turing(assets.family) && payload_mode && !vram_fb
+    {
+        if crate::pci::high_staging() {
+            let mbox0 = gpu.pci.bar_read_u32(gpu.bar, (crate::tx::eng::SEC2 + 0x40) as u64);
+            let magic_ok = u64::from_le_bytes(meta_view[0..8].try_into().expect("meta is 256B"))
+                == tb::WPR_META_MAGIC;
+            if mbox0 == 0x89 && magic_ok {
+                info!("STAGING-FALLBACK: booter 0x89 with host meta magic intact = the >=4GiB staging read did not deliver (issues #74/#156/#191 class) - one retry after a function-level FLR + FWSEC re-ignition, LOW band");
+                crate::pci::set_high_staging(false);
+                // FLR first: the whole function back to power-on defaults -
+                // that includes the FBIF domain the first run left write-dead.
+                if let Err(e) = tb::flr_phase(gpu, &assets.family, false) {
+                    info!("STAGING-FALLBACK: FLR failed ({e:?}) - canonical failure path follows");
+                    return Err(TxError::EIO);
+                }
+                info!("STAGING-FALLBACK: FLR done (cold engine, WPR2 wiped) - FWSEC re-ignition follows");
+                // Re-arm the GPU's bus-master bit before the re-ignition
+                // (1e93 rc2 field, issue #156): flr_phase restores command
+                // WITHOUT BME by design - correct for the main chain's
+                // handoff, fatal for a retry, because the FWSEC BL fetches
+                // its staged image through sysmem DMA. First fire works
+                // (claim set cmd=0x0007), retry wedges: core launches
+                // (CPUCTL leaves HALTED, reads 0x0) but the DMA fetch never
+                // completes - no EXCI, no mailbox, WPR2 never up.
+                let cmd_pre = gpu.pci.config_read_u16(0x04);
+                gpu.pci.cfg_write_u16(0x04, cmd_pre | 0x0004);
+                let cmd_rb = gpu.pci.config_read_u16(0x04);
+                info!(
+                    "STAGING-FALLBACK: GPU BME re-armed (cmd={cmd_pre:#06x} -> {cmd_rb:#06x}) - the FWSEC BL sysmem DMA fetch needs bus master"
+                );
+                if cmd_rb & 0x0004 == 0 {
+                    info!("STAGING-FALLBACK: BME did not stick - the re-ignition below will wedge at the BL DMA fetch");
+                }
+                // The FLR tore WPR2 down; the booter stage needs it back.
+                let bl = match assets.bl.as_ref() {
+                    Some(b) => b,
+                    None => {
+                        info!("STAGING-FALLBACK: \\sec2_bl_tu10x.bin unavailable - cannot re-ignite FWSEC");
+                        return Err(TxError::ENodev);
+                    }
+                };
+                if let Err(e) = crate::tx_fwsec::fwsec_ignite_tu10x(gpu, &layout, bl) {
+                    info!("STAGING-FALLBACK: FWSEC re-ignition failed ({e:?}) - canonical failure path follows");
+                    return Err(TxError::EIO);
+                }
+                info!("STAGING-FALLBACK: FWSEC re-ignited, WPR2 re-verified - re-staging in the LOW band");
+                let sig2 = gpu.pci.dma_alloc(sig_size.max(4096));
+                let meta2 = gpu.pci.dma_alloc(tb::WPR_META_SIZE);
+                let boot2 = gpu.pci.dma_alloc(assets.gsp_boot.len());
+                let radix2 = tb::radix_build(gpu, &assets.gsp_image);
+                match (sig2, meta2, boot2, radix2) {
+                    (Ok(mut sig2), Ok(mut meta2), Ok(mut boot2), Ok(mut radix2)) => {
+                        unsafe {
+                            match &assets.v67 {
+                                Some(v67) => core::ptr::copy_nonoverlapping(
+                                    v67.as_ptr(), sig2.host, tb::V67_SIZE),
+                                None => core::ptr::copy_nonoverlapping(
+                                    assets.stock_sig.as_ptr(), sig2.host, assets.stock_sig.len()),
+                            }
+                            core::ptr::copy_nonoverlapping(
+                                assets.gsp_boot.as_ptr(), boot2.host, assets.gsp_boot.len());
+                        }
+                        let packed = unsafe {
+                            let m = core::slice::from_raw_parts_mut(meta2.host, tb::WPR_META_SIZE);
+                            tb::wpr_meta_pack(m, &layout, assets.family, 1 << 20,
+                                sig2.dev, sig_size as u64, radix2.level0,
+                                assets.gsp_image.len() as u64, boot2.dev, &boot).is_ok()
+                        };
+                        if packed {
+                            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                            let fired = if probe_file("\\tx-sec2-c-load.txt") {
+                                tb::booter_fire_direct_c(gpu, &hdr, booter_view, meta2.dev)
+                            } else {
+                                tb::booter_fire_direct(gpu, &hdr, booter_view, meta2.dev)
+                            };
+                            match fired {
+                                Ok(()) => {
+                                    let mv2 = unsafe {
+                                        core::slice::from_raw_parts(meta2.host, tb::WPR_META_SIZE)
+                                    };
+                                    booter_ok =
+                                        tb::verify_execution_tu10x(gpu, payload_mode, mv2).is_ok();
+                                    if booter_ok {
+                                        info!("STAGING-FALLBACK: LOW-band retry verified - staging rebound to the LOW buffers (staging=low(fallback))");
+                                        // Hygiene (#146 class): the dead high-band
+                                        // staging does not ride through the handoff.
+                                        let _ = sig_dma.release(gpu.pci);
+                                        let _ = meta_dma.release(gpu.pci);
+                                        let _ = boot_dma.release(gpu.pci);
+                                        let _ = radix.dma.release(gpu.pci);
+                                        sig_dma = sig2;
+                                        meta_dma = meta2;
+                                        boot_dma = boot2;
+                                        radix = radix2;
+                                    } else {
+                                        info!("STAGING-FALLBACK: LOW-band retry failed as well - a band alone is not the whole story; canonical failure path follows (VT-d ON blocks both bands - check BIOS; also the DMA-PATH BME lines)");
+                                        unsafe {
+                                            let m = core::slice::from_raw_parts_mut(
+                                                meta2.host, tb::WPR_META_SIZE);
+                                            tb::signature_restore(
+                                                m, stock_dma.dev, assets.stock_sig.len() as u64);
+                                        }
+                                        let _ = sig2.release(gpu.pci);
+                                        let _ = meta2.release(gpu.pci);
+                                        let _ = boot2.release(gpu.pci);
+                                        let _ = radix2.dma.release(gpu.pci);
+                                    }
+                                }
+                                Err(e) => {
+                                    info!("STAGING-FALLBACK: retry fire failed ({e:?}) - canonical failure path follows");
+                                    let _ = sig2.release(gpu.pci);
+                                    let _ = meta2.release(gpu.pci);
+                                    let _ = boot2.release(gpu.pci);
+                                    let _ = radix2.dma.release(gpu.pci);
+                                }
+                            }
+                        } else {
+                            info!("STAGING-FALLBACK: meta repack failed on the LOW buffers - canonical failure path follows");
+                            let _ = sig2.release(gpu.pci);
+                            let _ = meta2.release(gpu.pci);
+                            let _ = boot2.release(gpu.pci);
+                            let _ = radix2.dma.release(gpu.pci);
+                        }
+                    }
+                    (s, m, b, r) => {
+                        // Partial allocation failure: release whatever landed,
+                        // never abort the unwind on the fallback's own budget.
+                        info!("STAGING-FALLBACK: LOW-band realloc incomplete (sig={:?} meta={:?} boot={:?} radix={:?}) - canonical failure path follows",
+                            s.as_ref().err(), m.as_ref().err(), b.as_ref().err(), r.as_ref().err());
+                        if let Ok(mut x) = s { let _ = x.release(gpu.pci); }
+                        if let Ok(mut x) = m { let _ = x.release(gpu.pci); }
+                        if let Ok(mut x) = b { let _ = x.release(gpu.pci); }
+                        if let Ok(mut x) = r { let _ = x.dma.release(gpu.pci); }
+                    }
+                }
+            } else {
+                info!("STAGING-FALLBACK: not attempted - the signature does not match the band class (mbox0={mbox0:#x}, meta magic {})",
+                    if magic_ok { "intact" } else { "CORRUPT (buffer-side)" });
+            }
+        } else {
+            info!("STAGING-FALLBACK: not attempted - staging already in the LOW band (\\tx-low-staging.txt or non-Turing gate)");
+        }
+    }
+
     if !booter_ok && !force_continue {
         // Canonical failure-path invariant (unlock_610.c restores the stock
         // signature before the unwind; -EPROTO otherwise): never leave a
@@ -1626,9 +1709,9 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // writes - separates "PLM open" from "the 0x88888888/0x8 values"
             // as the Code-43 variable. Turing SS0/SS1 live at 0x409664/6c,
             // NOT the GA10x/Ada 0x82381c/820 (cmp50hx lines 294-296).
-            let no_ss = assets.family == "tu10x"
+            let no_ss = family_is_turing(assets.family)
                 && crate::tx::probe_file("\\tu10x-no-ss.txt");
-            let (ss0_at, ss1_at) = if assets.family == "tu10x" {
+            let (ss0_at, ss1_at) = if family_is_turing(assets.family) {
                 (tb::TU10X_FEAT_SS0, tb::TU10X_FEAT_SS1)
             } else {
                 (0x0082_381c, 0x0082_3820)
@@ -1644,11 +1727,17 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // Turing: with the payload's PLM open, sweep the real FEAT block
             // - the factory clamp state (open question #10) is readable here
             // for the first time, BEFORE the FLR wipes the override inputs.
-            if assets.family == "tu10x" {
-                for off in (0x0040_9600..0x0040_9700).step_by(4) {
-                    let v = gpu.pci.bar_read_u32(gpu.bar, off as u64);
-                    if v != 0 {
-                        info!("TU10X FEAT sweep 0x{off:06x} = {v:#010x}");
+            // The four decisive values (PLM/SS0/SS1/READOUT) reappear in
+            // HANDOFF-OUT either way, so ultrafast skips the per-dword flood.
+            if family_is_turing(assets.family) {
+                if crate::ultrafast() {
+                    info!("TU10X FEAT sweep: ultrafast - skipped (quadruple still in HANDOFF-OUT)");
+                } else {
+                    for off in (0x0040_9600..0x0040_9700).step_by(4) {
+                        let v = gpu.pci.bar_read_u32(gpu.bar, off as u64);
+                        if v != 0 {
+                            info!("TU10X FEAT sweep 0x{off:06x} = {v:#010x}");
+                        }
                     }
                 }
             }
@@ -1666,30 +1755,32 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
                 tb::signature_restore(meta, stock_dma.dev, assets.stock_sig.len() as u64);
                 core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
                 info!("TX: stock signature restored");
-    // TU10x: RE-LOCK the FEAT block PLM before handoff. The 13th/14th fires
-    // proved the Windows Turing driver dies with 0x409650 left at 0xffffffff
-    // (Run A/B), and runs fine with it locked (Run C) - the PLM is only the
-    // WRITE gate; the SS override values are the payload. Open -> write ->
-    // close, then read back: if SS0/SS1 keep the unlock values behind the
-    // re-locked gate, the unlock ships protected; if they revert, the
-    // override is gate-bound and the Turing unlock needs the open state
-    // (which the driver rejects - the CMP references are headless cards
-    // where no display driver ever re-validates this block).
-    if assets.family == "tu10x" && booter_ok {
+    // Legacy FEAT relock, Turing arm, now marker-gated (\tx-relock.txt) -
+    // the default since the 2026-11-08 keep-open bench is to hand the gate
+    // OPEN (see the gate note at the top of this function). The
+    // fires-13/14 history: Run A/B read the open gate as the Code-43
+    // variable on the then-default non-GSP driver stack; the 2026-11-08
+    // bench did not reproduce it end-to-end on the GSP-mode stack, so the
+    // closing write ships only behind the marker. Turing FEAT lives at
+    // 0x4096xx (cmp50hx lines 294-296). The GA10x/Ada arm of the marker
+    // fires post-FLR instead (see the FLR else-branch below) - never
+    // benched either way, so its readback line is the record.
+    if booter_ok && tx_relock && family_is_turing(assets.family) {
         gpu.pci.bar_write_u32(0, 0x0040_9650 as u64, 0xffff_ff8f);
         let plm_rb = gpu.pci.bar_read_u32(0, 0x0040_9650 as u64);
         let ss0_rb = gpu.pci.bar_read_u32(0, 0x0040_9664 as u64);
         let ss1_rb = gpu.pci.bar_read_u32(0, 0x0040_966c as u64);
         // Once the payload opened the block, bits 5:6 resist host clears:
-        // 0xffffffef is the proven handoff end state (TU106 and TU104
-        // identical); a full 0xffffff8f readback would be the surprise.
+        // 0xffffffef is the proven relock end state there (TU106 and TU104
+        // identical); a full 0xffffff8f readback would be the surprise
+        // (and has been seen on a TU102 22G, SS still unlocked).
         let plm_note = match plm_rb {
             0xffff_ffef => "known-good (bits 5:6 sticky-open)",
             0xffff_ff8f => "fully closed",
             _ => "UNEXPECTED",
         };
         info!(
-            "TU10X PLM relock: plm={plm_rb:#010x} {plm_note} SS0={ss0_rb:#010x} SS1={ss1_rb:#010x} unlock_persist={}",
+            "FEAT PLM relock [tu10x]: plm={plm_rb:#010x} {plm_note} SS0={ss0_rb:#010x} SS1={ss1_rb:#010x} unlock_persist={}",
             ss0_rb == 0x8888_8888 && ss1_rb == 0x8
         );
     }
@@ -1699,7 +1790,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
             // EXPECTED verdict under a locked PLM and must not abort the
             // unwind. No signature restore - the booter never consumed the
             // meta page.
-            let (ss0_at, ss1_at) = if assets.family == "tu10x" {
+            let (ss0_at, ss1_at) = if family_is_turing(assets.family) {
                 (tb::TU10X_FEAT_SS0, tb::TU10X_FEAT_SS1)
             } else {
                 (0x0082_381c, 0x0082_3820)
@@ -1710,7 +1801,7 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         }
     }
 
-    if assets.family == "tu10x" {
+    if family_is_turing(assets.family) {
         // NO FLR on Turing: the FEAT PLM does NOT survive FLR there (13th
         // fire 2026-10-27: post-FLR plm relocked to 0xffffff8f, unlike Ada
         // where the AON island holds the unlock across FLR). The booter's
@@ -1722,26 +1813,85 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
         let flr_expect_unlock = payload_mode && booter_ok;
         tb::flr_phase(gpu, assets.family, flr_expect_unlock)?;
         info!("POST-FLR: verified{}", if flr_expect_unlock { " (selectors survive AON)" } else { "" });
+        if payload_mode && booter_ok && tx_relock {
+            // GA10x/Ada arm of \tx-relock.txt: close the gate AFTER the FLR
+            // verdict so the unbenched read-gating question (do SS reads
+            // survive a re-close on these families?) cannot pollute the
+            // AON-survival check above. AON holds across FLR either way;
+            // the readback is the record, shape never benched.
+            gpu.pci.bar_write_u32(0, crate::tx::regs::FEAT_PLM as u64, 0xffff_ff8f);
+            let plm_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_PLM as u64);
+            let ss0_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_SS0 as u64);
+            let ss1_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_SS1 as u64);
+            info!(
+                "FEAT PLM relock [ga10x/ada, post-FLR, shape never benched]: plm={plm_rb:#010x} SS0={ss0_rb:#010x} SS1={ss1_rb:#010x}"
+            );
+        }
     }
+
+    // Arm the reset canary here: after the chain's own last reset (the FLR
+    // above, or its Turing skip) and before the console rebuild, so every
+    // later readback attributes a change to someone other than us.
+    canary_arm(gpu);
 
     // Read-only handoff PCI snapshot (issue #61 ask #2): the config state
     // Windows will inherit, logged before the reconnect touches anything.
-    crate::pci::diag_handoff_pci(gpu.pci);
+    if !crate::ultrafast() {
+        crate::pci::diag_handoff_pci(gpu.pci);
+    }
 
     // Restore the display path before handing off (TOTORONG craft): the
     // FLR-rebooted function re-binds its vendor GOP/driver stack. Non-fatal
     // - bootmgfw self-establishes a console regardless.
-    // Turing: reconnect ON by default. The full 16-fire series + the
-    // GSP-mode Windows closure (2026-10-27) showed the TDRs came from the
-    // LEGACY driver path (EnableGpuFirmware unset), not from the GOP
-    // devinit - with the GSP-mode driver the unlock session is stable, and
-    // the reconnect just restores the boot console earlier (Run A's
-    // shape-change when it was removed turned out to be coincidental).
-    // A \tu10x-no-reconnect.txt marker skips it again for experiments.
-    if assets.family == "tu10x" && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
+    //
+    // DEFAULT since the native-GOP merge: rebuild the console with the
+    // card's OWN GOP driver from its shadowed ROM ("however the console
+    // came up, that is how it continues"). Rationale (issues #106/#107/
+    // #133/#134/#157): the firmware ConnectController hard-hangs on CSM
+    // boards, and a wrong reconnect is worse than none - on ANY failure
+    // the console stays however boot left it and bootmgfw self-establishes
+    // (field-proven across four Z170 rounds: both native-GOP outcomes and
+    // the zero-reconnect path all reached Windows). A wrong reconnect
+    // being worse than none is the design axiom here.
+    // `\tx-reconnect-legacy.txt` restores the old reconnect_all path
+    // (recursive + PR#13 non-recursive logic) as an escape hatch;
+    // `\tu10x-no-reconnect.txt` keeps its experimental skip for Turing.
+    if family_is_turing(assets.family) && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
         info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
-    } else {
+    } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
+        info!("TX: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
         crate::tx_detach::reconnect_all(pci_handle);
+    } else if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
+        info!("TX: native-GOP recovery failed: {e} - console left to bootmgfw (a wrong reconnect is worse than none)");
+    }
+    // Chain-2 code-12 fix (issue #109, unconditional): whatever the
+    // reconnect decision was, the boot-VGA owner must hold legacy VGA at
+    // handoff. Idempotent, read back, BME untouched.
+    crate::tx_detach::restore_vga(gpu.pci, claim.initial_attrs);
+    // The HANDOFF-PCI snapshot above runs before this restore, so its
+    // bridge lines are the detach-time intermediate state, not the state
+    // Windows inherits (issue #165: the only recorded bridgectl for the
+    // VGA-owning root port was 0x0010 with no FINAL counterpart). Re-dump
+    // the routing bits now, after the console rebuild and the VGA restore.
+    if !crate::ultrafast() {
+        crate::pci::diag_bridge_routing("HANDOFF-VGA-FINAL");
+    }
+
+    // #170 diag (D): the console stack is either rebuilt or deliberately
+    // left alone - re-enable the mirror. This first post-detach console
+    // write is the H1 probe: a hang here (screen frozen, log line absent)
+    // says the console OBJECT kills, not the disconnect's Stop() calls.
+    crate::logging::unmute_console();
+    info!("CONSOLE: mirror re-enabled after reconnect");
+
+    // POST-GOP readback (issue #164): the reconnect/native-GOP rebuild above
+    // StartImage'd the card's own driver AFTER the POST-FLR verify (the
+    // legacy path reconnects the vendor stack instead), so the
+    // last state readback before this point predates a driver load. Cheap,
+    // read-only, and the only way to tell "the console rebuild re-derived
+    // the FEAT block" apart from "the Windows driver pass did".
+    if !crate::ultrafast() {
+        tb::probe_post_console(gpu, &assets.family, payload_mode, tx_relock);
     }
 
     // Unwind: release every DMA buffer.
@@ -1752,7 +1902,15 @@ pub fn run_transaction(gpu: &TxGpu, assets: &TxAssets, pci_handle: uefi::Handle)
     let _ = boot_dma.release(gpu.pci);
     let mut radix = radix;
     let _ = radix.dma.release(gpu.pci);
-    info!("FINAL: transaction complete, all DMA released");
+    // Clear bridge bus-master only here, on the clean success tail (see
+    // BridgeMaster's doc comment). Every `?` between the arm point and
+    // this line returns Err without reaching it - the guard goes back to the
+    // caller still armed, and the caller releases it after its emergency FLR.
+    if let Some(bm) = bridge_slot.as_mut() {
+        bm.release();
+        info!("TX: bridge BME restored (clean success tail)");
+    }
+    info!("FINAL: transaction complete, all DMA released, bridge BME restored");
     Ok(())
 }
 
@@ -1847,6 +2005,13 @@ pub fn flr_once(pci: &crate::pci::PciIo) {
 /// compared directly (a mismatch after boot localizes the consumer that undid
 /// the writes - driver reinit, rail cut, or nothing at all).
 pub fn handoff_out(pci: &crate::pci::PciIo) {
+    // #170 diag (D): every error/abort path lands here with the mirror still
+    // muted from the detach; re-enable before the verdict lines so the
+    // failure is visible (the probe line is the unmute site's own report).
+    if crate::logging::console_muted() {
+        crate::logging::unmute_console();
+        info!("CONSOLE: mirror re-enabled at handoff (detach path did not reconnect)");
+    }
     let rd = |off: u32| pci.bar_read_u32(0, off as u64);
     let (ss0, ss1) = (rd(regs::FEAT_SS0), rd(regs::FEAT_SS1));
     let readout = rd(regs::FEAT_READOUT_1);
@@ -1862,6 +2027,21 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
         rd(crate::tx_booter::TU10X_FEAT_READOUT),
     );
     let wpr_hi = rd(regs::WPR2_HI);
+    // Canary pair (issue #164 triage): WPR2 is the one register the booter
+    // itself wrote this boot (the staging window). If WPR2_LO still carries
+    // the booter's window base in the OS while the FEAT block reverted, the
+    // chip was never reset and the FEAT change was a *write*; if both are
+    // gone, a reset/power-removal happened. Read-only, logged next to the
+    // FEAT values so the two always travel together in the report.
+    let wpr_lo = rd(regs::WPR2_LO);
+    // Reset canary: armed after the FLR, so a cleared scratch pair here (with
+    // the FEAT values still right) is a reset we did not perform - the case
+    // that points at the platform, not the Windows driver pass. The canary
+    // rides in EVERY profile now (ultrafast included - the pair costs two
+    // writes and two reads); an operator who genuinely wants it gone uses
+    // the explicit \tx-no-canary.txt opt-out.
+    let (a, b) = (rd(regs::CANARY_A), rd(regs::CANARY_B));
+    let can_field = alloc::format!("{}({a:#010x}/{b:#010x})", canary_verdict(a, b));
     let (pmcsr, dstate) = match pci.pm_cap() {
         Some(cap) => {
             let v = pci.pmcsr(cap);
@@ -1869,8 +2049,14 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
         }
         None => (0u16, 0xffu16),
     };
+    // Family-tagged booleans (Catnip's #120 audit): tu10x_unlock reads the
+    // Turing cluster, the other three read the GA10x/Ada block - on a
+    // Turing card the 0x823xxx reads are structurally badf5040, so the
+    // untagged booleans read as a verdict they cannot express (issue #102
+    // chased a nonexistent EFI-side failure on exactly this shape).
+    let (ga_prefix, tu_prefix) = ("ga/ada:", "tu10x:");
     info!(
-        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_hi={wpr_hi:#x} pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | tu10x_unlock={} ss0_unlock={} ss1_unlock={} plm_open={}",
+        "HANDOFF-OUT: ss0={ss0:#010x} ss1={ss1:#x} readout1={readout:#010x} feat_plm={plm:#010x} wpr2_lo={wpr_lo:#010x} wpr2_hi={wpr_hi:#x} canary={can_field} pmcsr={pmcsr:#06x} dstate=D{dstate} | tu10x: plm={tplm:#010x} ss0={tss0:#010x} ss1={tss1:#010x} readout={treadout:#010x} | {tu_prefix}unlock={} {ga_prefix}ss0_unlock={} ss1_unlock={} plm_open={}",
         // Relock-aware (issues #12/#14): the shipped tu10x chain closes the
         // PLM gate after the SS writes (open -> write -> close), so the
         // success shape is the SS override persisted behind a closed gate -

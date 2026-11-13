@@ -44,6 +44,32 @@ pub struct Faults {
     pub post_flr_alien_wpr: bool,
     /// Signature restoration into the meta fails to land the stock bytes.
     pub signature_restore_fail: bool,
+    /// DMA free at `fail_free_at` (1-based) fails - makes the unwind phase
+    /// genuinely fallible (issue #22: the drain loop previously could not
+    /// fail, so the "unwind" phase error was unproducible and t18 was a
+    /// tautology).
+    pub fail_free_at: Option<u32>,
+    /// Platform cannot deliver SEC2 DMA reads from >=4GiB sysmem (issues
+    /// #74/#156/#191): with the HIGH band staged the booter dies at the meta
+    /// magic compare (mailbox0 = 0x89) while the HOST view stays intact.
+    pub high_band_unreachable: bool,
+    /// The harder platform: LOW band does not deliver either (#57 analog,
+    /// HIGH->0x11 / LOW->0x91/0x89) - the fallback retry must fail too.
+    pub both_bands_unreachable: bool,
+    /// Mirror class (issues #16/#57): the card locks sub-4GB sysmem reads -
+    /// staging LOW fails with 0x91 regardless of the loader's retry gate.
+    pub sub4gb_lock: bool,
+    /// Host-side meta page corruption (buffer-side bug): 0x89, but the
+    /// fallback gate must NOT fire - no retry can fix our own memory.
+    pub meta_magic_corrupt: bool,
+    /// 1e93 field falsification (2026-11-09, issue #156): after one
+    /// completed booter run (halt + sanitize) an engine reset no longer
+    /// hands the FBIF write surface back - falcon_dma_unblock writes
+    /// TRANSCFG0=0x115/DMACTL=0x0 and reads back 0x114/0x80, deterministic
+    /// EIO. Only a function-level FLR returns the engine to cold. The
+    /// loader's fallback must therefore FLR + re-ignite FWSEC, not just
+    /// re-fire through the reset dance.
+    pub fbif_write_dead_after_run: bool,
 }
 
 /// Payload return-path shape (canonical falcon_hs `wait_plm` split).
@@ -100,12 +126,23 @@ pub struct Transaction<'a> {
     /// Operator-marker analog of the loader's \tx-accept-warm-wpr2.txt:
     /// accept an up WPR2 whose evidence is inconclusive.
     pub warm_wpr2_marker: bool,
+    /// Staging band gate (loader analog: >4GB staging is the Turing default,
+    /// \tx-low-staging.txt forces LOW). The STAGING-FALLBACK retry flips it
+    /// false; the phase log carries the evidence.
+    pub staging_high: bool,
+    staging_fallback_used: bool,
     // bookkeeping (unwind contract)
     dma_live: usize,
     dma_allocs: usize,
     dma_frees: usize,
     bme_set: bool,
     bme_was_dirty: bool,
+    // Completed booter runs (halt seen, verdict whatever it is) - drives the
+    // fbif_write_dead_after_run teeth (second fire needs a prior FLR).
+    booter_runs: u32,
+    // Set by the fallback's FLR modeling: the FBIF write surface is cold
+    // again and a second fire may proceed on a fbif-dead platform.
+    fbif_restored: bool,
     // Execution evidence as READ, never recomputed from Faults: the Report has to
     // describe the model's state, not the switches the test constructed.
     last_marker: Option<u32>,
@@ -125,12 +162,16 @@ impl<'a> Transaction<'a> {
             shape: PayloadShape::AdaTriad,
             tu10x_entry: false,
             warm_wpr2_marker: false,
+            staging_high: false,
+            staging_fallback_used: false,
             dma_live: 0,
             last_marker: None,
             last_cpuctl: None,
             last_plm: None,
             fwsec_done: false,
             booter_done: false,
+            booter_runs: 0,
+            fbif_restored: false,
             dma_allocs: 0,
             dma_frees: 0,
             bme_set: false,
@@ -247,6 +288,15 @@ impl<'a> Transaction<'a> {
 
     /// FWSEC BOOT_WITH_LOADER ignition; installs WPR2 in the fake.
     fn fwsec(&mut self) -> Result<(u32, u32), PhaseError> {
+        // Bus-master guard (rc2 field, issue #156): the FWSEC BL fetches its
+        // staged image through sysmem DMA - with the device's BME cleared
+        // the fetch silently never completes (core running CPUCTL=0x0, no
+        // EXCI, no mailbox, WPR2 never up). The cold fire has BME from the
+        // claim; a post-FLR retry must re-arm it first.
+        if !self.bme_set {
+            return Err(PhaseError::new("fwsec",
+                "GPU bus master is off - the FWSEC BL sysmem DMA fetch would wedge (issue #156 rc2 field)"));
+        }
         self.alloc_dma_page()?;
         let want = (0x1fff_fe00u32, 0x0400_0000u32);
         let install = if self.faults.wpr2_mismatch {
@@ -283,6 +333,91 @@ impl<'a> Transaction<'a> {
                 return Err(PhaseError::new("booter", "BCR switch stuck at 0"));
             }
         }
+        // STAGING-FALLBACK analog (issues #74/#156/#191): the booter's first
+        // device read is the meta page; on a platform that cannot deliver
+        // >=4GiB DMA reads that compare fails (mailbox0 = 0x89, the GA
+        // plaintext second-magic-compare status) while the HOST view of the
+        // page stays intact. The loader retries ONCE in the LOW band through
+        // a function-level FLR + FWSEC re-ignition + the fire - NOT a plain
+        // re-fire: on the real machines (1e93, issue #156, 2026-11-09) the
+        // engine reset alone cannot restore the FBIF write surface after a
+        // completed run. Mirror classes must NOT retry: the sub-4GB read
+        // lock (#16) fails a different status (0x91) on LOW, and a corrupt
+        // host page is a buffer-side bug no retry fixes.
+        if self.payload && self.shape == PayloadShape::AdaTriad {
+            let corrupt = self.faults.meta_magic_corrupt;
+            let dead_high = self.staging_high
+                && (self.faults.high_band_unreachable || self.faults.both_bands_unreachable);
+            let locked_low = !self.staging_high && self.faults.sub4gb_lock;
+            if dead_high || locked_low || corrupt {
+                let (code, why) = if corrupt {
+                    (0x89u32, "meta magic CORRUPT on the host view (buffer-side, not band)")
+                } else if locked_low {
+                    (0x91, "sub-4GB read lock (mirror class, issues #16/#57)")
+                } else {
+                    (0x89, ">=4GiB staging read undelivered (issues #74/#156/#191 class)")
+                };
+                self.gpu.force_write(SEC2_MAILBOX0, code);
+                self.gpu.force_write(regs::SEC2_CPUCTL, regs::CPUCTL_HALTED);
+                let mbox0 = self.gpu.read(SEC2_MAILBOX0);
+                let cpuctl = self.gpu.read(regs::SEC2_CPUCTL);
+                self.last_marker = Some(mbox0);
+                self.last_cpuctl = Some(cpuctl);
+                // Run 1 is complete (halt + sanitize happened, verdict
+                // whatever it is) - the FBIF surface is now write-dead on a
+                // fbif_write_dead_after_run platform.
+                self.booter_runs += 1;
+                // The loader's fallback gate: 0x89 + intact host magic + high
+                // band staged + one shot only.
+                if code == 0x89 && !corrupt && self.staging_high && !self.staging_fallback_used {
+                    self.staging_fallback_used = true;
+                    self.staging_high = false;
+                    self.note(format!(
+                        "STAGING-FALLBACK: {why} - one retry after a function-level FLR + FWSEC re-ignition, LOW band"
+                    ));
+                    if self.faults.both_bands_unreachable {
+                        return Err(PhaseError::new("verify",
+                            "STAGING-FALLBACK: LOW-band retry also undelivered (both bands unreachable, #57 analog)"));
+                    }
+                    // The 1e93 vehicle (issue #156, 2026-11-09): the plain
+                    // engine-reset re-fire cannot stick - the loader FLRs
+                    // (wiping WPR2) and re-ignites FWSEC before the fire.
+                    if self.faults.fbif_write_dead_after_run {
+                        self.gpu.force_write(regs::WPR2_LO, 0);
+                        self.gpu.force_write(regs::WPR2_HI, 0);
+                        // The FLR drops the device's bus-master enable (the
+                        // loader's flr_phase restores command WITHOUT BME by
+                        // design). The FWSEC BL fetches its staged image via
+                        // sysmem DMA and wedges forever without it (rc2
+                        // field, issue #156, 2026-11-10: CPUCTL 0x0 core
+                        // running, no EXCI, no mailbox, WPR2 never up).
+                        self.bme_set = false;
+                        self.fwsec_done = false;
+                        // Re-arm bus master - the fix under test. Removing
+                        // this line makes fwsec() below fail with the field
+                        // wedge signature.
+                        self.bme_set = true;
+                        self.note("STAGING-FALLBACK: GPU BME re-armed for the FWSEC BL sysmem DMA fetch");
+                        self.fwsec()?;
+                        self.fbif_restored = true;
+                        self.note("STAGING-FALLBACK: FLR + FWSEC re-ignition done (1e93 vehicle) - re-firing in the LOW band");
+                    }
+                    // Fall through: the fire below is attempt 2, LOW band.
+                } else {
+                    return Err(PhaseError::new("verify", format!(
+                        "booter failed: {why} - fallback gate not met (needs 0x89 + intact host magic + high band, one shot)"
+                    )));
+                }
+            }
+        }
+        // FBIF teeth (1e93): a second fire on a platform whose FBIF write
+        // surface died with the first run must refuse unless the fallback's
+        // FLR modeling restored it. Removing the FLR step from the fallback
+        // makes exactly this branch fire (the reporter's bare-run EIO shape).
+        if self.faults.fbif_write_dead_after_run && self.booter_runs >= 1 && !self.fbif_restored {
+            return Err(PhaseError::new("booter",
+                "FALCON-UNBLOCK: FBIF writes do not stick after a booter run (1e93) - the fire surface needs a function-level FLR"));
+        }
         // Reset SEC2 with propagation semantics; assert then wait.
         self.gpu.write(regs::SEC2_RESET, 1);
         for _ in 0..16 {
@@ -292,6 +427,13 @@ impl<'a> Transaction<'a> {
         }
         if self.gpu.read(regs::SEC2_RESET) & 1 == 0 {
             return Err(PhaseError::new("booter", "reset never propagated"));
+        }
+        // De-assert (ksec2ResetHw_TU102 ENDS at RESET_FALSE - AGENTS §9.2);
+        // a reset left asserted would poison every later host read with
+        // FECS_PRI_RESET bits. De-assertion is read-back verified too.
+        self.gpu.write(regs::SEC2_RESET, 0);
+        if self.gpu.read(regs::SEC2_RESET) & 1 != 0 {
+            return Err(PhaseError::new("booter", "reset never de-asserted"));
         }
         // Fire. Replay uses the stock-booter behavior (Halt mode: SEC2
         // halts, nothing else written) - Full mode would model the payload
@@ -462,7 +604,14 @@ impl<'a> Transaction<'a> {
 
     /// Full unwind: free DMA, restore BME. Nothing may leak.
     fn unwind(&mut self, mut result: Result<(), PhaseError>) -> Result<(), PhaseError> {
-        for _ in 0..self.dma_live {
+        // Freeing is fallible (fail_free_at = 1-based index): a failed free
+        // stops the drain, leaks the rest, and reports the unwind phase -
+        // this is the branch the old unconditional drain could never reach.
+        let n = self.dma_live;
+        for k in 0..n as u32 {
+            if self.faults.fail_free_at == Some(k + 1) {
+                break;
+            }
             self.dma_live -= 1;
             self.dma_frees += 1;
         }

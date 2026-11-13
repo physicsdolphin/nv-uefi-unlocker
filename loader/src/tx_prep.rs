@@ -47,10 +47,18 @@ impl PrepState {
                 self.gpus = Some(pci::enumerate());
             }
             1 => {
-                crate::gop::enumerate_gop();
+                // Ultrafast skips the probe everywhere (main.rs mirrors this
+                // on the non-armed path); the step order stays identical.
+                if crate::ultrafast() {
+                    info!("GOP-PROBE: ultrafast - skipped");
+                } else {
+                    crate::gop::enumerate_gop();
+                }
             }
             2 => {
-                if let Some(gpus) = &self.gpus {
+                if crate::ultrafast() {
+                    info!("SAMPLE: ultrafast - skipped");
+                } else if let Some(gpus) = &self.gpus {
                     if let Some(gpu) = gpus.first() {
                         crate::sample::run(gpu);
                     } else {
@@ -61,7 +69,7 @@ impl PrepState {
             3 => {
                 if let Some(gpus) = &self.gpus {
                     for t in pci::select_tx_targets(gpus) {
-                        if let Some(family) = crate::runner::asset_family(t.device_id) {
+                        if let Some(family) = crate::asset_family(t.device_id) {
                             if !self.families.contains(&family) {
                                 self.families.push(family);
                             }
@@ -140,11 +148,15 @@ pub fn armed_confirm_with_prep(seconds: u64) -> Confirm {
             info!(
                 "CONFIRM: key {key:?} during the {seconds}s armed countdown - ABORT (no GPU writes this boot)"
             );
-            // The prep's whole justification is that it is discardable
-            // (audit M4): an aborted run frees its prefetch immediately.
-            crate::tx::asset_cache_clear();
             return Confirm::Abort;
         }
-        uefi::boot::stall(Duration::from_millis(50));
+        // The 50 ms tick paces the countdown; once the deadline has passed
+        // (armed seconds = 0), pacing buys nothing - drop to a 5 ms tick so
+        // the abort key poll still breathes without idling the prep steps.
+        let pacing_done = match (deadline_ms, crate::timing::ms_since_entry()) {
+            (Some(dl), Some(now)) => now >= dl,
+            _ => waited_ticks >= budget_ticks,
+        };
+        uefi::boot::stall(Duration::from_millis(if pacing_done { 5 } else { 50 }));
     }
 }
