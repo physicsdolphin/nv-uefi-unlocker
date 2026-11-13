@@ -1044,7 +1044,7 @@ def report(bar, tag="", devpath=None):
     # the OQ#19 polarity discriminator (GA106 byte0 4 -> masks bit=off,
     # 7 -> bit=on).
     gr = bar.rd(0x0040_9604)
-    print(f"  GR_TOPO_409604         = {gr:#010x}"
+    print(f"  GR_TOPO_409604 0x00409604 = {gr:#010x}"
           f" (byte3 GPC-slots {(gr >> 24) & 0xff} / byte0 active-GPC {gr & 0xff};"
           " anchors 06030005/08040003/08040006)")
     for i in range(0, len(PLM_SURVEY), 4):

@@ -1829,10 +1829,10 @@ fn off_h(off: u32) -> String {
 fn cell_val(v: u32) -> String {
     if badf_bucket(v).is_some() {
         if COLOR_ON.load(std::sync::atomic::Ordering::Relaxed) {
-            // red digits, house prefix coloring kept
-            format!("[33m![31m{v:09x}[0m")
+            // bright red over the whole 10-char cell (0x + digits)
+            format!("[91m0x{v:08x}[0m")
         } else {
-            format!("!{v:09x}") // '!' + 9 hex digits = 10 chars = 0x + 8
+            format!("{v:#010x}") // plain: the badf value itself is the marker
         }
     } else {
         hx32(v) // normal values keep the house yellow-0x + cyan-digits style
@@ -4087,7 +4087,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                 None => String::new(),
             },
         };
-        println!("  {name:<18} = {}{note}", hx32(v));
+        println!("  {name:<18} {}= {}{note}", off_h(*off), hx32(v));
     }
     // GA100 PR#55 SM banks: 8 dwords per row, badf values colored red (no
     // per-cell bucket text - columns stay aligned). On consumer dies the
@@ -4180,7 +4180,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         ("ROP_GPC_ADA", AD10X_ROP_PER_GPC_BASE, 12u32),
     ] {
         for chunk in (0..count).step_by(8) {
-            print!("  {label:<10} {}", off_h(base + chunk * 4));
+            print!("  {label:<14} {}", off_h(base + chunk * 4));
             for i in chunk..(chunk + 8).min(count) {
                 print!(" {}", cell_val(rd(base + i * 4)));
             }
@@ -4191,11 +4191,10 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     {
         // ClockManager +0x2f0 VF/Speedo trims: 10-bit words = signed 6-bit
         // temperature trim + 4-bit voltage trim (issue #147 UV relevance).
-        print!("  CLK_TRIMS  ");
+        println!("  CLK_TRIMS   (10-bit words: s6 temp + s4 volt fields)");
         for t in CLK_VF_SPEEDO_TRIMS {
-            print!(" {}", cell_val(rd(t)));
+            println!("    {} = {}", off_h(t), cell_val(rd(t)));
         }
-        println!(" (10-bit: s6 temp + s4 volt fields)");
         // VBIOS app08 override-pair regions: 0x6ae4 writes (Data, Control|=1)
         // pairs here at PL2. Word pairs, 4 per line, non-zero ones only.
         for (base, pairs) in VBIOS_OVR_PAIR_REGIONS {
@@ -4210,7 +4209,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     if printed > 0 {
                         println!();
                     }
-                    print!("  OVR_PAIRS  {base:#010x}");
+                    print!("  OVR_PAIRS  {}", off_h(base));
                 }
                 print!(" d={} c={}", cell_val(d), cell_val(c));
                 printed += 1;
@@ -4224,7 +4223,9 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         // 0x823b24/28 bit6 = PL2 (checked by VBIOS app08 before its 64 pairs).
         let pl0we = rd(PLM_PL0_WE);
         println!(
-            "  PLM_PL0_WE bit4={} (FUSECTRL_PLM bit4; 1=host-level writes enabled)",
+            "  PLM_PL0_WE {} = {} bit4={} (FUSECTRL_PLM bit4; 1=host-level writes enabled)",
+            off_h(PLM_PL0_WE),
+            hx32(pl0we),
             (pl0we >> 4) & 1
         );
         for p in PLM_PL2_WE {
@@ -4294,7 +4295,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
         ] {
             for chunk in (0..count).step_by(8) {
-                print!("  {label:<10} {}", off_h(base - 0x7FF_000 + chunk * 4));
+                print!("  {label:<14} {}", off_h(base - 0x7FF_000 + chunk * 4));
                 for i in chunk..(chunk + 8).min(count) {
                     print!(" {}", cell_val(t(base + i * 4)));
                 }
@@ -4325,7 +4326,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     let gr = rd(0x0040_9604);
     let b3 = (gr >> 24) & 0xff;
     let b0 = gr & 0xff;
-    println!("  GR_TOPO_409604         = {} (byte3 GPC-slots {b3} / byte0 active-GPC {b0}; anchors 06030005/08040003/08040006)", hx32(gr));
+    println!("  GR_TOPO_409604 {} = {} (byte3 GPC-slots {b3} / byte0 active-GPC {b0}; anchors 06030005/08040003/08040006)", off_h(0x0040_9604), hx32(gr));
 }
 
 // ---------------------------------------------------------------- stage timing
@@ -4922,20 +4923,13 @@ mod tests {
 
     #[test]
     fn cell_val_width_stable_across_buckets() {
-        // Multi-column rule (2026-11-13 user directive): plain mode marks
-        // badf with a width-stable '!' prefix so columns never shift. The
-        // assertion is on VISIBLE width - ANSI escapes add bytes, not
-        // columns - so strip them before measuring, whatever COLOR_ON
-        // happens to be during the test run.
-        let visible = |s: &str| s.replace('\x1b', "[").chars().filter(|_| true).count();
-        let strip = |s: String| s.replace(['\x1b', '[', ']', ';'], "").split('m').next().unwrap_or("").to_string();
-        let normal = cell_val(0x1234_5678);
-        let badf = cell_val(0xBADF_5040);
-        let nv = strip(normal.clone());
-        let bv = strip(badf.clone());
-        assert_eq!(nv.chars().count(), bv.chars().count(), "{normal} vs {badf}");
-        let _ = visible("");
-        assert!(badf.contains('!') || badf.contains('\x1b')); // marked either way
+        // Multi-column contract (final, 2026-11-13): badf keeps the plain
+        // 0xbadf5040 text in colorless mode (identical width to a normal
+        // cell - columns never shift; the bright-red color IS the marker
+        // when ANSI is on).
+        let plain_len = format!("{:#010x}", 0x1234_5678u32).len();
+        assert_eq!(cell_val(0x1234_5678).len(), plain_len);
+        assert_eq!(cell_val(0xBADF_5040).len(), plain_len, "colorless badf keeps the plain form");
         assert_eq!(cell_val(0xFFFF_FFFF), format!("{:#010x}", 0xFFFF_FFFFu32)); // NO_DECODE stays plain
     }
 
