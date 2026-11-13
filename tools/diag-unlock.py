@@ -329,7 +329,7 @@ GA100_TPC_STATUS_BASE = 0x0082_0C38
 # GB20x HAL 67-71 PES/OFA relocation.
 AD10X_ROP_PER_GPC_BASE = 0x0082_2880
 AD10X_TPC_RECONFIG_BASE = 0x0082_2800
-CLK_VF_SPEEDO_TRIMS = [0x0082_13A0, 0x0082_13A4, 0x0082_13A8, 0x0082_13AC]
+CLK_VF_SPEEDO_TRIMS = [0x0082_13A0, 0x0082_13A4, 0x0082_13A8, 0x0082_13AC, 0x0082_13B0, 0x0082_13B4, 0x0082_13B8]
 VBIOS_OVR_PAIR_REGIONS = [(0x0082_2148, 23), (0x0082_2300, 41)]
 PLM_PL0_WE = 0x0082_00F8  # bit4 = PL0 write enable
 PLM_PL2_WE = [0x0082_3B24, 0x0082_3B28]  # bit6 = PL2 write enable
@@ -1047,13 +1047,14 @@ def report(bar, tag="", devpath=None):
             if printed % 4 == 0:
                 if printed > 0:
                     print()
-                print(f"  OVR_PAIRS  {base:#010x}", end="")
+                # row header = this line's first pair address (pairs step +8)
+                print(f"  OVR_PAIRS  {off:#010x}", end="")
             print(f" d={d:#010x} c={c:#010x}", end="")
             printed += 1
         if printed > 0:
             print()
     pl0we = bar.rd(PLM_PL0_WE)
-    print(f"  PLM_PL0_WE bit4={(pl0we >> 4) & 1} (FUSECTRL_PLM bit4; 1=host-level writes enabled)")
+    print(f"  PLM_PL0_WE {PLM_PL0_WE:#010x} = {pl0we:#010x} bit4={(pl0we >> 4) & 1} (FUSECTRL_PLM bit4; 1=host-level writes enabled)")
     for p in PLM_PL2_WE:
         v = bar.rd(p)
         print(f"  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={(v >> 6) & 1} (VBIOS app08 gate)")
