@@ -1829,12 +1829,13 @@ fn off_h(off: u32) -> String {
 fn cell_val(v: u32) -> String {
     if badf_bucket(v).is_some() {
         if COLOR_ON.load(std::sync::atomic::Ordering::Relaxed) {
-            red(&format!("{v:#010x}"))
+            // red digits, house prefix coloring kept
+            format!("[33m![31m{v:09x}[0m")
         } else {
             format!("!{v:09x}") // '!' + 9 hex digits = 10 chars = 0x + 8
         }
     } else {
-        format!("{v:#010x}")
+        hx32(v) // normal values keep the house yellow-0x + cyan-digits style
     }
 }
 
@@ -4179,7 +4180,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         ("ROP_GPC_ADA", AD10X_ROP_PER_GPC_BASE, 12u32),
     ] {
         for chunk in (0..count).step_by(8) {
-            print!("  {label:<10} [{chunk:>2}]");
+            print!("  {label:<10} {}", off_h(base + chunk * 4));
             for i in chunk..(chunk + 8).min(count) {
                 print!(" {}", cell_val(rd(base + i * 4)));
             }
@@ -4190,9 +4191,9 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     {
         // ClockManager +0x2f0 VF/Speedo trims: 10-bit words = signed 6-bit
         // temperature trim + 4-bit voltage trim (issue #147 UV relevance).
-        print!("  CLK_TRIMS   ");
+        print!("  CLK_TRIMS  ");
         for t in CLK_VF_SPEEDO_TRIMS {
-            print!(" {:#010x}", rd(t));
+            print!(" {}", cell_val(rd(t)));
         }
         println!(" (10-bit: s6 temp + s4 volt fields)");
         // VBIOS app08 override-pair regions: 0x6ae4 writes (Data, Control|=1)
@@ -4211,7 +4212,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     }
                     print!("  OVR_PAIRS  {base:#010x}");
                 }
-                print!(" d={d:#010x} c={c:#010x}");
+                print!(" d={} c={}", cell_val(d), cell_val(c));
                 printed += 1;
             }
             if printed > 0 {
@@ -4228,7 +4229,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         );
         for p in PLM_PL2_WE {
             let v = rd(p);
-            println!("  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={} (VBIOS app08 gate)", (v >> 6) & 1);
+            println!("  PLM_PL2_WE {} = {} bit6={} (VBIOS app08 gate)", off_h(p), hx32(v), (v >> 6) & 1);
         }
     }
     if fam.starts_with("blackwell") {
@@ -4293,7 +4294,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
         ] {
             for chunk in (0..count).step_by(8) {
-                print!("  {label:<10} [{chunk:>2}]");
+                print!("  {label:<10} {}", off_h(base - 0x7FF_000 + chunk * 4));
                 for i in chunk..(chunk + 8).min(count) {
                     print!(" {}", cell_val(t(base + i * 4)));
                 }
@@ -4308,14 +4309,8 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         for base in [0u32, 0x800_000, 0x7FF_000] {
             let v = if base == 0 { rd(off) } else { rd(off - base) };
             let cell = cell_val(v);
-            let cell = if badf_bucket(v).is_some() && !COLOR_ON.load(std::sync::atomic::Ordering::Relaxed) {
-                format!("{cell:>13}")
-            } else if badf_bucket(v).is_some() {
-                format!("{:>13}", cell)
-            } else {
-                format!("{cell:>13}")
-            };
-            print!(" {cell}");
+            let pad = 13usize.saturating_sub(10); // visible cell width is 10
+            print!(" {:>pad$}{cell}", "");
         }
         println!();
     }
