@@ -4230,12 +4230,15 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         println!("  CLK_TRIMS (10-bit words: bits[5:0] signed-6 temp, bits[9:6] signed-4 volt)");
         for t in CLK_VF_SPEEDO_TRIMS {
             let v = rd(t);
-            let (t6, v4) = trim_decode(v);
-            println!(
-                "    {} = {} temp={t6:+} volt={v4:+}",
-                off_h(t),
-                cell_val(v)
-            );
+            // badf words must not enter the signed decode - 0xbadf5040's low
+            // bits would masquerade as a plausible (0,+1) trim (TU106 round).
+            match badf_bucket(v) {
+                Some(b) => println!("    {} = {} [{b}]", off_h(t), hx32(v)),
+                None => {
+                    let (t6, v4) = trim_decode(v);
+                    println!("    {} = {} temp={t6:+} volt={v4:+}", off_h(t), hx32(v));
+                }
+            }
         }
         // VBIOS app08 override-pair regions: 0x6ae4 writes (Data, Control|=1)
         // pairs here at PL2. Word pairs, 4 per line, non-zero ones only.

@@ -750,6 +750,43 @@ per-GPC ROP 0x822880+4g（≠per-FBP 组掩码 0x820d70）；时钟 trims
 =2 ✓、GA106 0x02=1 ✓、**GA102 0x02 vs 3090 双 NVDEC 仍不合**——待其
 LITTER 宏表）；0x823808/0x823824 逐卡语义未明（AD103 新样本 0x00100380）。
 
+### 6h. 四 die 0.7.9 轮（2026-11-14，TU106/GB206/AD107/GA106，four-die-079/）
+
+四机回归 + 新面首采，全部只读。**GB20X_PES 0x822a78+4g 在 GB206 解码**
+（首批 GB20x PES 数据）：`08,08,08,0f×9`——补码裁剪语义（(~w)&clip）确认：
+GPC0-2 = 3 活 PES × 4 SM = 12 SM/GPC × 3 = **36 SM ✓**，GPC3-11 = 0x0f
+缺席全关。**FBP_LTC 0x822900 的 0xff 对逐位命中 #237 预测**（GB206 2 活
+FBP + 6 缺席=0xff）。
+
+**LTC_FBP absent=3 跨五 die 完美按位宽分布**：TU106[4..7]=3（4 FBP）/
+GB206[2..7]=3（2 FBP）/AD107[2..5]=3（2 FBP）/GA106[3..5]=3（3 FBP）/
+GA102 全 0（6 FBP）——缺席惯例定谳，可作为 die 的 FBP 数读出器。
+
+**PES_GPC 补码裁剪全族确认**：AD107 `4,4,4,7×5`（~4&7=3 → PES2 关 →
+2 PES × 4 SM = 8/GPC × 3 = **24 SM ✓**）；GA106 GPC3-6=7 缺席 ✓；
+GB206 搬家址同语义。**ROP_GPC_ADA 0x822880+4g** 在 GA106/GB206/AD107
+解码：缺席 GPC=3（GA106 [3..6]、GB206/AD107 [3..11]——缺席惯例延到数组
+边界外，越界不 badf）。
+
+**PLM 位义判别器首采**：`PLM_PL0_WE bit4`（=FUSECTRL_PLM bit4 投影）：
+TU106 解锁=1 / AD107 stock=1（其 FUSECTRL_PLM 亦 OPEN）/ GB206 stock=0
+（fb8f PL0 关）——bit4 即 PL0 写使能的实际状态位。**PLM_PL2_WE
+0x823b24 bit6**：GB206=**1**（PL2 写使能开着！）vs AD107 stock=0 / 
+TU106 badf——GB206 的 app08 门默认开，Ada/Turing 不可读，新判别器挂
+OQ#19 族。**CLK_TRIMS**：GB206/AD107/GA106 全 0（trim 未设）、TU106
+badf（PLM 挡）——TU106 轮暴露 badf 进解码的 bug（印出假 +0/+1），当日
+修（badf 行印桶标不解码），py 同步对齐。
+
+**AD107 SS0 跨引导漂移（OQ#12 数据点）**：同卡同驱动（610.74 LEGACY）
+两日 stock 读数 `0x05100071` → `0x05110071`，nibble4 0→r1——厂值字段
+也有 boot 间漂移，OQ#12 的"回锁值方差"再+1 例（此前只记录了解锁后回锁
+方差）。
+
+**GB206 其余**：CLK_TRIMS 全 0、OVR_PAIRS 首现部分可读（一对 d=0x0），
+TPC_RECFG GA100 布局 0x820788 在 GB206 尾部有活值（0x10301@6）——
+"GA100 布局猜错"的结论要再细分：0x822800 是 Ada 布局，但 0x820788 在
+GB206 非全 badf。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

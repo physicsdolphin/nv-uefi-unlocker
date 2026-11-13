@@ -1026,8 +1026,17 @@ def report(bar, tag="", devpath=None):
     print("  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks")
     # i237 disassembly round: clock trims, VBIOS override pairs, PLM bits.
     print("  --- i237 disassembly round (595.44.15-sourced; read-only) ---")
-    trims = " ".join(f"{bar.rd(t):#010x}" for t in CLK_VF_SPEEDO_TRIMS)
-    print(f"  CLK_TRIMS   {trims} (10-bit: s6 temp + s4 volt fields)")
+    print("  CLK_TRIMS (10-bit words: bits[5:0] signed-6 temp, bits[9:6] signed-4 volt)")
+    for t in CLK_VF_SPEEDO_TRIMS:
+        v = bar.rd(t)
+        b = badf_bucket(v)
+        if b:
+            print(f"    {t:#010x} = {v:#010x} [{b}]")
+            continue
+        t6 = (v & 0x3F) - 64 if v & 0x20 else (v & 0x3F)
+        hi = (v >> 6) & 0xF
+        v4 = hi - 16 if hi & 0x8 else hi
+        print(f"    {t:#010x} = {v:#010x} temp={t6:+} volt={v4:+}")
     for base, pairs in VBIOS_OVR_PAIR_REGIONS:
         printed = 0
         for chunk in range(pairs):
