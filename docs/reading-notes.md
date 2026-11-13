@@ -717,6 +717,39 @@ TPC 抽签各不同——3b/86=GPC0.TPC0（无缺陷位）、**5e=GPC4.TPC1
 共存 4 点实证。GA106 镜像 −0x800000 列的 DEBUG_FEAT=badf5720（0x56 码
 族）与 GA102 的 0xff000000 不同——该列逐 die 异质性再+1。
 
+### 6g. #237 拆解轮：AD103 六页捕获 + 595.44.15 绑定表（2026-11-13）
+
+来源：issue #237（JeusChrit）两附件（`docs/evidence/ad103-2704/`，GPL-2.0
+署名归档）——RTX 4080（AD103-300，2704）stock 引导的 6 页被动 BAR0 捕获 +
+150 条 OBJFUSE+0x118 查询描述符/64 对 VBIOS app08 override/50 条 RPR v2
+目标/FWSEC 五芯位图。**出处核验三层**：①内部一致（描述符 Saved word 列与
+其 dump 逐值互证：c1c=0xf80=七 GPC、c24=0x0e、d38=0x30=4 FBP）；②外部一致
+（与我们五 die 实测零冲突，且 0x82380c=0x00888888 恒同性=app08 写入、
+0x82382c 分族 8/a、0x820d80/84=3 **顺解 TU106 ROP_L2_FBP[4..7]=3 悬念**
+=缺席单元惯例）；③限定（dump 只覆盖页 0+3-5，**0x821000-0x822fff 未捕获**
+——ROP per-GPC/RECONFIG/override 对/trims 只有拆解出处；HAL 槽位主张无法
+本地复验，按社区 RE 分层收录）。
+
+**两悬案当场告破**：①stock `EN_SW_OVERRIDE=1` = **VBIOS app08 0x6ae4 例行
+写**（PL2，先验 0x823b24/28 bit6）——非异常非我方痕迹；②GB206 PES_GPC 全
+badf = **GB20x HAL 67-71 把 PES 搬到 0x822a78+4g**（0x820dbc 仅 GA100/
+Ampere/Ada），0x822a68=GB20x OFA。另：OBJSEC2+0x3a0 非启动门（0x56 查询
+错被吞成 0 输出）——#3 词典"安全 PLM"读码语义旁证；TU102/116 的 OBJBSP
+writer 0x215ca0 验 0x8200f8 **bit4=PL0 写使能**、app08 验 0x823b24/28
+**bit6=PL2 写使能**——PLM 位义首批一手语义。
+
+**探测面落地（ssdiag/py 0.7.9）**：GPC 数组全族 0..11（AD102 十二槽）；
+Ada RECONFIG 0x822800+4g（**我方旧表 0x820788 是 GA100 布局猜错**）；
+per-GPC ROP 0x822880+4g（≠per-FBP 组掩码 0x820d70）；时钟 trims
+0x8213a0-3ac（10 位=s6 温度+s4 电压，#147 UV 线相关）；override 对区
+0x822148-1fc/0x822300-444（非零对打印）；PLM 位注记；GB20x PES/OFA 搬家
+面。待实机：我们的 4060L/X99/3090 一轮即得 Ada/GB20x 侧首采。
+
+**遗留解析缺口**：PES 掩码=~低16位(STATUS)&((1<<LITTER_NUM_PES_PER_GPC)-1)
+补码裁剪语义未入解码（现印裸值）；NVDEC 五槽读法（AD103 0x0e=NVDEC0+4 活
+=2 ✓、GA106 0x02=1 ✓、**GA102 0x02 vs 3090 双 NVDEC 仍不合**——待其
+LITTER 宏表）；0x823808/0x823824 逐卡语义未明（AD103 新样本 0x00100380）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

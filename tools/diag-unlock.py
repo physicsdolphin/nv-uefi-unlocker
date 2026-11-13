@@ -324,6 +324,18 @@ GA100_PES_STATUS_BASE = 0x0082_0DBC
 GA100_ROP_L2_STATUS_BASE = 0x0082_0D70
 GA100_TPC_STATUS_BASE = 0x0082_0C38
 
+# Issue #237 round (595.44.15-sourced): AD102-class arrays run gpc=0..11;
+# Ada RECONFIG RAM + per-GPC ROP; clock trims; override pairs; PLM bits;
+# GB20x HAL 67-71 PES/OFA relocation.
+AD10X_ROP_PER_GPC_BASE = 0x0082_2880
+AD10X_TPC_RECONFIG_BASE = 0x0082_2800
+CLK_VF_SPEEDO_TRIMS = [0x0082_13A0, 0x0082_13A4, 0x0082_13A8, 0x0082_13AC]
+VBIOS_OVR_PAIR_REGIONS = [(0x0082_2148, 23), (0x0082_2300, 41)]
+PLM_PL0_WE = 0x0082_00F8  # bit4 = PL0 write enable
+PLM_PL2_WE = [0x0082_3B24, 0x0082_3B28]  # bit6 = PL2 write enable
+GB20X_PES_STATUS_BASE = 0x0082_2A78
+GB20X_OFA_DISABLE = 0x0082_2A68
+
 # Mirror probe: 16 representative words x {0x820xxx, -0x800000, -0x7FF000}.
 # mirror == primary -> bit-23 alias; mirror badf while primary is plain ->
 # 0x820xxx exclusive; different plain values in two columns -> two live banks.
@@ -932,11 +944,13 @@ def report(bar, tag="", devpath=None):
             tag = f" [{b}]" if b else ""
             print(f"  {label:<10} {name:<26} = {v:#010x}{note}{tag}")
     for label, base, count in [
-        ("PES_GPC", GA100_PES_STATUS_BASE, 16),
+        ("PES_GPC", GA100_PES_STATUS_BASE, 12),
         ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16),
         ("TPC_GPC", GA100_TPC_STATUS_BASE, 32),
-        ("TPC_DIS", GA100_TPC_DISABLE_BASE, 8),
-        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 8),
+        ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12),
+        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12),
+        ("TPC_RECFG_ADA", AD10X_TPC_RECONFIG_BASE, 12),
+        ("ROP_GPC_ADA", AD10X_ROP_PER_GPC_BASE, 12),
     ]:
         for chunk in range(0, count, 8):
             cells = []
@@ -974,11 +988,13 @@ def report(bar, tag="", devpath=None):
                 tag = f" [{b}]" if b else ""
                 print(f"  {label:<10} {name:<26} = {v:#010x}{note}{tag}")
         for label, base, count in [
-            ("PES_GPC", GA100_PES_STATUS_BASE, 16),
+            ("PES_GPC", GA100_PES_STATUS_BASE, 12),
             ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16),
             ("TPC_GPC", GA100_TPC_STATUS_BASE, 32),
-            ("TPC_DIS", GA100_TPC_DISABLE_BASE, 8),
-            ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 8),
+            ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12),
+            ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12),
+            ("TPC_RECFG_ADA", AD10X_TPC_RECONFIG_BASE, 12),
+            ("ROP_GPC_ADA", AD10X_ROP_PER_GPC_BASE, 12),
         ]:
             for chunk in range(0, count, 8):
                 cells = []
@@ -998,6 +1014,30 @@ def report(bar, tag="", devpath=None):
         print(f"  {name:<24} " + " ".join(f"{c:>13}" for c in cells))
     print("  note: mirror == primary means a bit-23 alias (both addresses valid); mirror badf while")
     print("  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks")
+    # i237 disassembly round: clock trims, VBIOS override pairs, PLM bits.
+    print("  --- i237 disassembly round (595.44.15-sourced; read-only) ---")
+    trims = " ".join(f"{bar.rd(t):#010x}" for t in CLK_VF_SPEEDO_TRIMS)
+    print(f"  CLK_TRIMS   {trims} (10-bit: s6 temp + s4 volt fields)")
+    for base, pairs in VBIOS_OVR_PAIR_REGIONS:
+        printed = 0
+        for chunk in range(pairs):
+            off = base + chunk * 8
+            d, c = bar.rd(off), bar.rd(off + 4)
+            if d == 0 and c == 0:
+                continue
+            if printed % 4 == 0:
+                if printed > 0:
+                    print()
+                print(f"  OVR_PAIRS  {base:#010x}", end="")
+            print(f" d={d:#010x} c={c:#010x}", end="")
+            printed += 1
+        if printed > 0:
+            print()
+    pl0we = bar.rd(PLM_PL0_WE)
+    print(f"  PLM_PL0_WE bit4={(pl0we >> 4) & 1} (FUSECTRL_PLM bit4; 1=host-level writes enabled)")
+    for p in PLM_PL2_WE:
+        v = bar.rd(p)
+        print(f"  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={(v >> 6) & 1} (VBIOS app08 gate)")
     # GR topology anchor, every family (open-questions #19): byte3 = die GPC
     # slots, byte0 = active GPC count - three-point calibrated (TU104 KO
     # 06030005, TU106 2070 08040003, TU106 1e93 08040006). On Ampere it is

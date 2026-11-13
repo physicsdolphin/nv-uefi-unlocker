@@ -1,4 +1,15 @@
-//! ssdiag v0.7.8 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.7.9 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.7.9 lands the issue #237 disassembly round (JeusChrit, 595.44.15 GSP +
+//! VBIOS Falcon): GPC-indexed arrays extended to 12 slots (AD102-class),
+//! per-GPC ROP mask 0x822880+4g and the Ada TPC RECONFIG RAM 0x822800+4g
+//! (our old 0x820788 was the GA100 layout), ClockManager VF/Speedo trims
+//! 0x8213a0-3ac (10-bit s6-temp+s4-volt words - the #147 UV-relevant knobs),
+//! the VBIOS app08 override-pair regions 0x822148-1fc/0x822300-444, the
+//! PLM write-enable bits (0x8200f8 bit4 = PL0 enable per the TU102/116
+//! OBJBSP writer; 0x823b24/28 bit6 = PL2, the app08 gate - which also
+//! settles stock EN_SW_OVERRIDE=1 as routine VBIOS behavior), and the GB20x
+//! HAL 67-71 PES/OFA relocation 0x822a78/0x822a68 (why 0x820dbc reads
+//! all-badf on GB206).
 //! v0.7.8 fixes two more inventory bugs, both field-caught on a ROG Strix
 //! G614JV (i7-13650HX + 2x32G DDR5 SODIMM): hybrid CPUs broke the
 //! logical/tpc core division (E-cores are single-threaded - a 6P+8E 14-core
@@ -3575,6 +3586,31 @@ const GA100_PES_STATUS_BASE: u32 = 0x0082_0DBC;
 const GA100_ROP_L2_STATUS_BASE: u32 = 0x0082_0D70;
 const GA100_TPC_STATUS_BASE: u32 = 0x0082_0C38;
 
+/// Issue #237 round (JeusChrit, 595.44.15 GSP + VBIOS disassembly, AD103
+/// 6-page capture; docs/evidence/ad103-2704/): GPC-indexed arrays run
+/// gpc = 0..11 on AD102-class dies (12 GPC slots) - all GPC arrays here now
+/// sweep 12. New faces, disassembly-sourced: per-GPC ROP mask (Graphics-
+/// Manager +0x138, query type 10), TPC RECONFIG RAM (RPR v2; note our old
+/// GA100-table guess 0x820788+4g was the GA100 layout - the Ada/595 layout
+/// is 0x822800+4g, per-FBP words already covered), the VF/Speedo trims
+/// (ClockManager +0x2f0, 10-bit words = signed 6-bit + 4-bit fields - the
+/// UV-relevant knobs, issue #147), the VBIOS app08 override-pair region
+/// (0x6ae4 writes 64 (Data, Control|=1) pairs at PL2 after checking
+/// 0x823b24/28 bit6 - which also settles the stock EN_SW_OVERRIDE=1
+/// mystery: app08 writes 0x820040=1 itself on every boot), and the PLM
+/// write-enable bits (0x8200f8 bit4 = PL0 write enable, checked by the
+/// TU102/TU116 OBJBSP writer 0x215ca0; 0x823b24/28 bit6 = PL2).
+const AD10X_ROP_PER_GPC_BASE: u32 = 0x0082_2880;
+const AD10X_TPC_RECONFIG_BASE: u32 = 0x0082_2800;
+const CLK_VF_SPEEDO_TRIMS: [u32; 4] = [0x0082_13A0, 0x0082_13A4, 0x0082_13A8, 0x0082_13AC];
+const VBIOS_OVR_PAIR_REGIONS: [(u32, u32); 2] = [(0x0082_2148, 23), (0x0082_2300, 41)];
+const PLM_PL0_WE: u32 = 0x0082_00F8; // bit4 = PL0 write enable
+const PLM_PL2_WE: [u32; 2] = [0x0082_3B24, 0x0082_3B28]; // bit6 = PL2 write enable
+/// GB20x PES/OFA moved house (HAL 67-71): 0x820dbc is GA100/Ampere/Ada
+/// only - which is exactly why our GB206 sweeps read all-badf there.
+const GB20X_PES_STATUS_BASE: u32 = 0x0082_2A78;
+const GB20X_OFA_DISABLE: u32 = 0x0082_2A68;
+
 /// Turing mirror probe (open-questions #13 Turing arm + reading-notes §10).
 /// TU104 field data (#187) put the option-status bank at 0x021xxx
 /// (-0x7FF000 from the GA10x/GA100 layout) and derived the controller words
@@ -4107,11 +4143,17 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     // STATUS_OPT arrays, 8 dwords per line, badf-bucketed inline (GA100_SM
     // bank idiom). The whole block is the per-die existence answer.
     for (label, base, count) in [
-        ("PES_GPC", GA100_PES_STATUS_BASE, 16u32),
+        ("PES_GPC", GA100_PES_STATUS_BASE, 12u32),
         ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16u32),
         ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
-        ("TPC_DIS", GA100_TPC_DISABLE_BASE, 8u32),
-        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 8u32),
+        ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12u32),
+        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12u32),
+        // #237: the Ada/595 TPC RECONFIG RAM base (0x822800+4g) - our old
+        // table carried the GA100-layout guess at 0x820788.
+        ("TPC_RECFG_ADA", AD10X_TPC_RECONFIG_BASE, 12u32),
+        // #237: per-GPC ROP mask - a different face from the per-FBP group
+        // mask (0x820d70+4f, ROP_L2_FBP above).
+        ("ROP_GPC_ADA", AD10X_ROP_PER_GPC_BASE, 12u32),
     ] {
         for chunk in (0..count).step_by(8) {
             print!("  {label:<10} [{chunk:>2}]");
@@ -4122,6 +4164,65 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             }
             println!();
         }
+    }
+    println!("  --- i237 disassembly round (595.44.15-sourced; read-only) ---");
+    {
+        // ClockManager +0x2f0 VF/Speedo trims: 10-bit words = signed 6-bit
+        // temperature trim + 4-bit voltage trim (issue #147 UV relevance).
+        print!("  CLK_TRIMS   ");
+        for t in CLK_VF_SPEEDO_TRIMS {
+            print!(" {:#010x}", rd(t));
+        }
+        println!(" (10-bit: s6 temp + s4 volt fields)");
+        // VBIOS app08 override-pair regions: 0x6ae4 writes (Data, Control|=1)
+        // pairs here at PL2. Word pairs, 4 per line, non-zero ones only.
+        for (base, pairs) in VBIOS_OVR_PAIR_REGIONS {
+            let mut printed = 0;
+            for chunk in 0..pairs {
+                let off = base + chunk * 8;
+                let (d, c) = (rd(off), rd(off + 4));
+                if d == 0 && c == 0 {
+                    continue;
+                }
+                if printed % 4 == 0 {
+                    if printed > 0 {
+                        println!();
+                    }
+                    print!("  OVR_PAIRS  {base:#010x}");
+                }
+                print!(" d={d:#010x} c={c:#010x}");
+                printed += 1;
+            }
+            if printed > 0 {
+                println!();
+            }
+        }
+        // PLM write-enable bits (disassembly-proven semantics): FUSECTRL_PLM
+        // bit4 = PL0 write enable (checked by the TU102/TU116 OBJBSP writer),
+        // 0x823b24/28 bit6 = PL2 (checked by VBIOS app08 before its 64 pairs).
+        let pl0we = rd(PLM_PL0_WE);
+        println!(
+            "  PLM_PL0_WE bit4={} (FUSECTRL_PLM bit4; 1=host-level writes enabled)",
+            (pl0we >> 4) & 1
+        );
+        for p in PLM_PL2_WE {
+            let v = rd(p);
+            println!("  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={} (VBIOS app08 gate)", (v >> 6) & 1);
+        }
+    }
+    if fam.starts_with("blackwell") {
+        // GB20x HAL 67-71 PES/OFA relocation: 0x820dbc is GA100/Ampere/Ada.
+        println!("  GB20X_PES   (HAL 67-71 relocated face)");
+        print!("   PES_STATUS ");
+        for gpc in 0..12u32 {
+            let v = rd(GB20X_PES_STATUS_BASE + gpc * 4);
+            let b = badf_bucket(v).map(|b| format!("({b})")).unwrap_or_default();
+            print!(" {}{}", hx32(v), b);
+        }
+        println!();
+        let ofa = rd(GB20X_OFA_DISABLE);
+        let b = badf_bucket(ofa).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
+        println!("   OFA_DISABLE {}{b}", hx32(ofa));
     }
     println!("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,");
     println!("  plain value = read it with GA100 semantics, ffffffff/badf1100 = not decoded here (AD10x fuse-PLM relocation precedent)");
@@ -4168,7 +4269,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             }
         }
         for (label, base, count) in [
-            ("PES_GPC", GA100_PES_STATUS_BASE, 16u32),
+            ("PES_GPC", GA100_PES_STATUS_BASE, 12u32),
             ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16u32),
             ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
         ] {
