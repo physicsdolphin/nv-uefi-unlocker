@@ -957,7 +957,7 @@ def report(bar, tag="", devpath=None):
             for i in range(chunk, min(chunk + 8, count)):
                 v = bar.rd(base + 4 * i)
                 b = badf_bucket(v)
-                cells.append(f"{v:#010x}" + (f" [{b}]" if b else ""))
+                cells.append(f"{v:#010x}")
             print(f"  {label:<10} [{chunk:>2}] " + " ".join(cells))
     print("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = PL0-blocked (exists-behind-PLM OR")
     print("  cross-block absence - the filter precedes decode); plain value = GA100 semantics;"
@@ -1001,7 +1001,7 @@ def report(bar, tag="", devpath=None):
                 for i in range(chunk, min(chunk + 8, count)):
                     v = bar.rd(base - 0x7FF_000 + 4 * i)
                     b = badf_bucket(v)
-                    cells.append(f"{v:#010x}" + (f" [{b}]" if b else ""))
+                    cells.append(f"{v:#010x}")
                 print(f"  {label:<10} [{chunk:>2}] " + " ".join(cells))
     print("  --- turing mirror probe (0x820xxx vs -0x800000 vs -0x7FF000; open-questions #13) ---")
     print("  {:<24} {:>13} {:>13} {:>13}".format("word", "0x820xxx", "-0x800000", "-0x7FF000"))
@@ -1010,7 +1010,7 @@ def report(bar, tag="", devpath=None):
         for base in (0, 0x800_000, 0x7FF_000):
             v = bar.rd(off - base)
             b = badf_bucket(v)
-            cells.append(f"{v:#010x}" + (f" [{b}]" if b else ""))
+            cells.append(f"{v:#010x}")
         print(f"  {name:<24} " + " ".join(f"{c:>13}" for c in cells))
     print("  note: mirror == primary means a bit-23 alias (both addresses valid); mirror badf while")
     print("  primary is plain means 0x820xxx exclusive; different plain values in two columns = two live banks")

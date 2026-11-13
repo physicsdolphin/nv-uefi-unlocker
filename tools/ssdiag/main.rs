@@ -4013,8 +4013,8 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         print!("  TPC_CTRL (0x820838+4g, 12 GPCs):");
         for gpc in 0..12u32 {
             let v = rd(TPC_CTRL_BASE + gpc * 4);
-            let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-            print!(" {}{}", hx32(v), b);
+            let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
+            print!(" {cell}");
         }
         println!();
         for (name, off) in BLACKWELL_ROWS {
@@ -4066,20 +4066,21 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         };
         println!("  {name:<18} = {}{note}", hx32(v));
     }
-    // GA100 PR#55 SM banks: 8 dwords per row, badf-bucketed inline. On
-    // consumer dies the whole row is the per-die existence answer.
+    // GA100 PR#55 SM banks: 8 dwords per row, badf values colored red (no
+    // per-cell bucket text - columns stay aligned). On consumer dies the
+    // whole row is the per-die existence answer.
     print!("{: >18}", "  GA100_SM_OVR");
     for gpc in 0..8u32 {
         let v = rd(GA100_SM_OVR_BASE + gpc * 4);
-        let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-        print!(" {}{}", hx32(v), b);
+        let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
+        print!(" {cell}");
     }
     println!();
     print!("{: >18}", "  GA100_SM_STAT");
     for gpc in 0..8u32 {
         let v = rd(GA100_SM_STATUS_BASE + gpc * 4);
-        let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-        print!(" {}{}", hx32(v), b);
+        let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
+        print!(" {cell}");
     }
     println!();
     println!("--- ampere/ada FEAT sweep (M1 cluster) ---");
@@ -4159,8 +4160,10 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             print!("  {label:<10} [{chunk:>2}]");
             for i in chunk..(chunk + 8).min(count) {
                 let v = rd(base + i * 4);
-                let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-                print!(" {}{}", hx32(v), b);
+                // Multi-column rows: no per-cell bucket text (it wrecks the
+                // columns when a whole row is badf) - color the value itself.
+                let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
+                print!(" {cell}");
             }
             println!();
         }
@@ -4216,8 +4219,8 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         print!("   PES_STATUS ");
         for gpc in 0..12u32 {
             let v = rd(GB20X_PES_STATUS_BASE + gpc * 4);
-            let b = badf_bucket(v).map(|b| format!("({b})")).unwrap_or_default();
-            print!(" {}{}", hx32(v), b);
+            let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
+            print!(" {cell}");
         }
         println!();
         let ofa = rd(GB20X_OFA_DISABLE);
@@ -4277,8 +4280,8 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                 print!("  {label:<10} [{chunk:>2}]");
                 for i in chunk..(chunk + 8).min(count) {
                     let v = t(base + i * 4);
-                    let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-                    print!(" {}{}", hx32(v), b);
+                    let cell = if badf_bucket(v).is_some() { red(&hx32(v)) } else { hx32(v) };
+                    print!(" {cell}");
                 }
                 println!();
             }
@@ -4290,8 +4293,9 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         print!("  {name:<24}");
         for base in [0u32, 0x800_000, 0x7FF_000] {
             let v = if base == 0 { rd(off) } else { rd(off - base) };
-            let b = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-            print!(" {:>10}{}", hx32(v), b);
+            let cell = hx32(v);
+            let cell = if badf_bucket(v).is_some() { format!("{:>13}", red(&cell)) } else { format!("{cell:>13}") };
+            print!(" {cell}");
         }
         println!();
     }
