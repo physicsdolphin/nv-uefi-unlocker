@@ -3975,8 +3975,8 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     for (name, off) in CORE_ROWS {
         let v = rd(off);
         match badf_bucket(v) {
-            Some(b) => println!("{name:<22} {}= {} [{}]", off_h(off), hx32(v), red(b)),
-            None => println!("{name:<22} {}= {}", off_h(off), hx32(v)),
+            Some(b) => println!("  {name:<22} {}= {} [{}]", off_h(off), hx32(v), red(b)),
+            None => println!("  {name:<22} {}= {}", off_h(off), hx32(v)),
         }
     }
     println!(
@@ -4121,13 +4121,10 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     for (i, off) in PLM_SURVEY.iter().enumerate() {
         let v = rd(*off);
         let off_s = format!("{}{}", paint("96", "0x"), paint("93", &format!("{off:08x}")));
-        let val_s = cell_val(v);
-        let note = if v == 0xFFFF_FFFF {
-            format!(" [{}]", green("OPEN"))
-        } else {
-            String::new()
-        };
-        print!("  {off_s}={val_s}{note}");
+        // all-ones = OPEN marker on the value itself (green), so a two-column
+        // row keeps its cells side by side without a text tag breaking the gap
+        let val_s = if v == 0xFFFF_FFFF { green(&format!("{v:#010x}")) } else { cell_val(v) };
+        print!("  {off_s}={val_s}");
         if i % 2 == 1 {
             println!();
         }
@@ -4138,7 +4135,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     for (name, off) in PRIV_ROWS {
         let v = rd(off);
         let note = badf_bucket(v).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
-        println!("{name:<22} {}= {}{note}", off_h(off), hx32(v));
+        println!("  {name:<22} {}= {}{note}", off_h(off), hx32(v));
     }
     println!("--- ga100 vfi dictionary (kate-land/ga100vfi; read-only, cross-die probe) ---");
     for (label, regs) in [
