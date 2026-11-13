@@ -23,7 +23,7 @@ pub fn print(version: &str) {
                 info!("PROMPT: PRESS SPACE or ENTER to CONTINUE; other key / 30s no-key = ABORT (unlocks NOTHING)");
             }
             info!(
-                "PROMPT: armed \\i_know_what_i_am_doing.txt = 5s auto-run, any key aborts; multi-GPU: all supported cards in order, \\tx-select-bdf.txt (bb:dd.f) pins one; failure = no retry (next card still runs)"
+                "PROMPT: armed \\i_know_what_i_am_doing.txt = 5s auto-run, any key aborts; multi-GPU: all supported cards in order, \\tx-select-bdf.txt (bb:dd.f) pins one; failure = emergency FLR (next card still runs), \\tx-stop-on-failure.txt = halt instead (no FLR, no chain-load)"
             );
         } else {
             info!(" transaction: claim->gfw->fwsec->booter->selectors->flr");
@@ -39,7 +39,8 @@ pub fn print(version: &str) {
             info!(" armed: \\i_know_what_i_am_doing.txt = 5s auto-run, any key aborts");
             info!(" multi-GPU: no marker = every supported card in order;");
             info!("            \\tx-select-bdf.txt (bb:dd.f) pins exactly one");
-            info!(" failure = no retry (per card; the next card still runs)");
+            info!(" failure = emergency FLR (per card; the next card still runs);");
+            info!("            \\tx-stop-on-failure.txt = halt instead: no FLR, no handoff, no chain-load");
         }
     }
     #[cfg(not(feature = "tx"))]
