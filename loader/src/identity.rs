@@ -41,6 +41,21 @@ pub fn measure(pci: &PciIo) -> Option<[u8; 32]> {
     Some(digest)
 }
 
+/// Enrollment surface for the SAMPLE phase: measure ONLY when
+/// `\tx-prom-sha256.txt` exists. An unconditional measurement would be two
+/// full 1 MiB PROM traversals per card per DEFAULT boot - the speed track
+/// already measured this axis (the targeted-PROM-read attempt was reverted
+/// on exactly this ground, >128 KiB walks net-negative on TU106, issue #38),
+/// so default boots must pay zero. Enrollment is then simply: put a
+/// placeholder value in the file, boot once (read-only build or
+/// tx-select-bdf-pinned card), copy the logged IDENTITY: value back.
+pub fn measure_if_enrolled(pci: &PciIo) -> bool {
+    if crate::chainload::boot_volume_read(uefi::cstr16!(r"\tx-prom-sha256.txt")).is_none() {
+        return false;
+    }
+    measure(pci).is_some()
+}
+
 #[cfg(feature = "tx")]
 pub struct VerifiedIdentity<'a> {
     _pci: &'a PciIo,

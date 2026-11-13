@@ -1010,11 +1010,24 @@ pub fn validate_asset_sizes(assets: &TxAssets) -> Result<(), TxError> {
 /// going through `authorize()` first and handling its `Refused` case, so
 /// the gate - when an operator opts into it - cannot be bypassed by a
 /// missed call site.
+///
+/// `bridge_slot` is the caller-owned BridgeMaster guard (None = never armed
+/// yet, including when `\tx-no-bridge-master.txt` skips the enable). This
+/// function arms it mid-transaction and releases it ONLY on the clean
+/// success tail; on an error return the guard comes back armed and the
+/// caller must release it AFTER its `emergency_flr` (post-reset nothing can
+/// be in flight through the bridges) - releasing earlier would clear
+/// bus-master under possibly-live DMA (booter 0x89 family), never releasing
+/// would carry our bus-master bits across the handoff into Windows (dirty
+/// BME shape, known-pit #3/#9). Skip-class errors (EALREADY/EWarm/EBusy/
+/// EClaimUnreadable) all return before the arm point, so their slot stays
+/// None.
 pub fn run_transaction(
     gpu: &TxGpu,
     assets: &TxAssets,
     pci_handle: uefi::Handle,
     _identity: Option<crate::identity::VerifiedIdentity<'_>>,
+    bridge_slot: &mut Option<crate::pci::BridgeMaster>,
 ) -> Result<(), TxError> {
     info!("TX: BEGIN (phases: detach claim pre-flr scrub gfw layout fwsec booter verify selectors restore flr)");
 
@@ -1275,20 +1288,18 @@ pub fn run_transaction(
     // T3): on boards whose bridges already carry BME the enable is a no-op
     // anyway - the marker exists to rule the write itself out on boards where
     // the log above shows it actually set a bit.
-    // The guard is hoisted out of the branch so it is still in scope at the
-    // success tail below - bound inside the else block it would drop at the
-    // closing brace and clear BME again before the booter fires (booter 0x89
-    // family, PR #87). Release is now explicit (see BridgeMaster's doc
-    // comment): this binding is never implicitly cleared any more, success
-    // or failure; only the explicit `release()` call at the success tail
-    // clears it.
+    // The guard lives in the CALLER's slot (see run_transaction's doc
+    // comment): armed here, released on the clean success tail below, and on
+    // any error return handed back to the caller - which releases it only
+    // after its emergency FLR. Release is explicit (see BridgeMaster's doc
+    // comment): nothing implicitly clears it on the way out any more, so
+    // both exit paths restore instead of one abandoning the write.
     crate::pci::log_dma_path("before-bridge-bme", gpu.pci);
-    let mut bridge_master;
     if probe_file("\\tx-no-bridge-master.txt") {
         info!("TX: \\tx-no-bridge-master.txt present - BridgeMaster::enable skipped (guarded-overlay parity)");
-        bridge_master = None;
+        *bridge_slot = None;
     } else {
-        bridge_master = Some(crate::pci::BridgeMaster::enable(gpu.pci));
+        *bridge_slot = Some(crate::pci::BridgeMaster::enable(gpu.pci));
     }
     crate::pci::log_dma_path("after-bridge-bme", gpu.pci);
 
@@ -1796,11 +1807,12 @@ pub fn run_transaction(
     let mut radix = radix;
     let _ = radix.dma.release(gpu.pci);
     // Clear bridge bus-master only here, on the clean success tail (see
-    // BridgeMaster's doc comment). Every `?` between its construction and
-    // this point returns Err without reaching this line, so a failed
-    // transaction leaves bridge BME exactly as it was.
-    if let Some(bm) = &mut bridge_master {
+    // BridgeMaster's doc comment). Every `?` between the arm point and
+    // this line returns Err without reaching it - the guard goes back to the
+    // caller still armed, and the caller releases it after its emergency FLR.
+    if let Some(bm) = bridge_slot.as_mut() {
         bm.release();
+        info!("TX: bridge BME restored (clean success tail)");
     }
     info!("FINAL: transaction complete, all DMA released, bridge BME restored");
     Ok(())

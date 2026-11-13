@@ -156,13 +156,15 @@ pub fn run(gpu: &FoundGpu) {
         }
     };
 
-    // Opt-in identity enrollment surface: logs the SHA-256 of the fixed
-    // 1 MiB PROM window so an operator can pin it into \tx-prom-sha256.txt
-    // for identity::authorize's (opt-in) tx-build gate. Never enrolls or
-    // authorizes anything by itself, and is a no-op log line if BAR0 memory
-    // decode happens to be off here.
-    if crate::identity::measure(&pci).is_none() {
-        info!("IDENTITY: PROM measurement unavailable - no reference may be enrolled");
+    // Opt-in identity enrollment surface: when \tx-prom-sha256.txt exists,
+    // logs the SHA-256 of the fixed 1 MiB PROM window so an operator can
+    // pin it for identity::authorize's (opt-in) tx-build gate. Gated on the
+    // file's presence: an unconditional measurement would cost two full
+    // 1 MiB PROM traversals per card on EVERY default boot (issue #38 speed
+    // track). Never enrolls or authorizes anything by itself, and is a no-op
+    // log line if BAR0 memory decode happens to be off here.
+    if !crate::identity::measure_if_enrolled(&pci) {
+        info!("IDENTITY: PROM not measured (\\tx-prom-sha256.txt absent, or the window was unreadable) - default boots pay zero PROM-read cost");
     }
 
     for Reg(name, off) in TABLE {

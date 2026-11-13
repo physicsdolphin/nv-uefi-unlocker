@@ -850,19 +850,23 @@ fn parse_bdf(raw: &[u8]) -> Option<(usize, usize, usize, usize)> {
 /// Read-only M1 SAMPLE-phase target selection (bug report: SAMPLE always ran
 /// `gpus.first()`, ignoring `tx-select-bdf.txt`, so on a multi-GPU box the
 /// cold-state register sweep could pin a different card than the TX phase).
-/// Mirrors `select_tx_targets`'s marker semantics (absent = every supported
-/// card, parsed+matched = only that one, parsed+unmatched/unparsable = none)
-/// so SAMPLE and TX always agree on the same pinned card.
+/// Marker semantics: absent = the FIRST card only - today's field-proven
+/// default, cost unchanged on machines without the marker (a full sweep per
+/// card on default multi-GPU boots would be a silent cost regression);
+/// parsed+matched = only that one card (the actual bug being fixed: SAMPLE
+/// and TX then agree on the same pinned card); parsed+unmatched/unparsable
+/// = none (the operator explicitly asked to pin a card and it did not match
+/// - refusing beats silently sweeping everything).
 ///
 /// Available in every build, not just `tx` ones - SAMPLE has no feature gate.
 /// That means it cannot use `tx::read_asset`'s three-state read (that module
 /// is `tx`-gated); it uses `chainload::boot_volume_read` instead, which only
 /// distinguishes present/absent, not absent/corrupt. For this read-only phase
 /// that is an accepted, lower-stakes tradeoff: the worst a corrupt marker can
-/// do here is widen a register dump to every card, not touch anything.
+/// do here is skip or retarget a register dump, not touch anything.
 pub fn select_sample_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
     match crate::chainload::boot_volume_read(cstr16!(r"\tx-select-bdf.txt")) {
-        None => all.to_vec(),
+        None => all.first().into_iter().cloned().collect(),
         Some(raw) => match parse_bdf(&raw) {
             Some(bdf) => all
                 .iter()
@@ -1210,16 +1214,22 @@ pub fn diag_bridge_routing(tag: &str) {
 /// only where the bit is clear, and records the bridges whose readback shows it
 /// set.
 ///
-/// Release is EXPLICIT (`release`), not an implicit `Drop`. `run_transaction`
-/// binds the guard at function scope specifically so it survives until the
-/// booter has fired (PR #87 / booter 0x89 family) - but that same function
-/// scope means an implicit `Drop` would also fire on every *failure* return,
-/// including ones that happen while SEC2 may still have DMA in flight through
-/// these exact bridges. Clearing bus-master under a live transfer is itself an
-/// uncontrolled write to a card whose state is no longer trusted. `release()`
-/// is called only from `run_transaction`'s clean success tail; every early
-/// failure return leaves the guard un-released (bridges keep whatever
-/// bus-master state they had going in - never worse than doing nothing).
+/// Release is EXPLICIT (`release`), not an implicit `Drop`, and it is an
+/// ORDERING guarantee rather than an abandonment. The guard lives in the
+/// caller's slot (`run_transaction`'s `bridge_slot` parameter): armed
+/// mid-transaction (before the booter fires - PR #87 / booter 0x89 family),
+/// released on the clean success tail, and on a failure return handed back
+/// still armed to `tx_one_card`, which releases it only AFTER its
+/// `emergency_flr`. That ordering is the whole point: an implicit `Drop`
+/// would fire at the failure-return site itself, clearing bus-master while
+/// SEC2 may still have DMA in flight through these exact bridges (clearing
+/// under a live transfer is itself an uncontrolled write to a card whose
+/// state is no longer trusted), while never releasing at all would carry our
+/// bus-master bits across the handoff into Windows (dirty-BME shape,
+/// known-pit #3/#9). Post-FLR the GPU function is reset, nothing can be in
+/// flight, and clearing is exactly as safe as on the success tail. The one
+/// path that never releases is the opt-in `\tx-stop-on-failure.txt` STOP:
+/// the machine halts for a full power cycle with the bridges untouched.
 #[cfg(feature = "tx")]
 pub struct BridgeMaster {
     /// (bridge handle, location for logs) of every bridge this guard enabled.
@@ -1276,8 +1286,10 @@ impl BridgeMaster {
     }
 
     /// Clear bit 2 again on exactly the bridges `enable` set it on. Call
-    /// ONLY from a clean success path (see the struct doc comment) - a
-    /// failed transaction must leave this un-called. Idempotent (a second
+    /// ONLY where the GPU cannot have DMA in flight through those bridges:
+    /// the clean success tail, or AFTER a completed emergency FLR on the
+    /// failure path (see the struct doc comment). Never from the failure
+    /// site itself, and never on the opt-in STOP path. Idempotent (a second
     /// call finds `enabled` already drained and does nothing).
     pub fn release(&mut self) {
         for (handle, loc) in self.enabled.drain(..) {

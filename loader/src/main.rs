@@ -26,6 +26,8 @@ mod usbreset;
 #[cfg(feature = "tx")]
 mod tx;
 #[cfg(feature = "tx")]
+mod tx_policy;
+#[cfg(feature = "tx")]
 mod gop_native;
 #[cfg(feature = "tx")]
 mod gop_order;
@@ -585,7 +587,7 @@ so no transaction was attempted and nothing was written"
             // the only safe behavior, never feed it across die lines.
             if family != "tu10x" {
                 info!("TX: \\v67-direct-ss.bin is TU10x-only (family {family}) - refusing to mix die-keyed material, remove the marker");
-                return false;
+                return CardOutcome::NotAttempted;
             }
             Some(v)
         }
@@ -706,44 +708,55 @@ so no transaction was attempted and nothing was written"
         // a deliberate tradeoff against the default's guaranteed-boot
         // behavior, which is why it is opt-in rather than a silent flip.
         Err(e) => {
-            if tx::probe_file("\\tx-stop-on-failure.txt") {
-                info!("TX: transaction failed: {e:?} - opt-in STOP (\\tx-stop-on-failure.txt present): no FLR, no handoff, no next card, no chain-load this session");
-                // The claim muted the console mirror; the failure path's
-                // re-enable lives in handoff_out - run it here too so the
-                // frozen mid-transaction state is at least logged and visible
-                // on whatever console surface still exists. The GOP itself is
-                // NOT reconnected: that would be acting again on a card whose
-                // state is no longer trusted - the screen may stay dark and
-                // loader.log is the sole record.
-                tx::handoff_out(&pci);
-                // Deliberately NO bridge BME release here either: clearing
-                // bus-master under possibly-live DMA is the same uncontrolled
-                // write the FLR would be. The machine is about to halt and be
-                // power-cycled, so nothing downstream observes the bridges.
-                CardOutcome::HardStop
-            } else {
-                info!("TX: transaction failed: {e:?} - NOT retrying this session");
-                // Field report (issue #74): on a TB4/USB4 eGPU the unwind FLR can
-                // leave the function off the bus afterwards - Windows then shows
-                // CM_PROB_PHANTOM, fans stop, and the only recovery measured on
-                // that seat is an AC cycle of the enclosure. Say so, or the first
-                // person to see it concludes the card is dead.
-                info!("TX: recovery note: if this card sits in an eGPU enclosure and disappears from the bus after this failure, power-cycle the enclosure (PSU off ~30 s); an internal card needs a normal power cycle");
-                // Failure unwind: FLR wipes our half-states (engine resets, BCR,
-                // DMA queues) so the Windows driver gets a cold-boot card.
-                // Bridge BME is released only AFTER the FLR: post-reset nothing
-                // can be in flight through the bridges, so clearing is exactly
-                // as safe as on the success tail - clearing earlier would be an
-                // uncontrolled write under possibly-live DMA (booter 0x89
-                // family), and never clearing would carry our bus-master bits
-                // into Windows (dirty-BME handoff shape, known-pit #3/#9).
-                tx::emergency_flr(g.handle);
-                if let Some(bm) = bridge_master.as_mut() {
-                    bm.release();
-                    info!("TX: bridge BME restored after the failure FLR");
+            // The failure policy lives in tx_policy (pure, sim-tested); this
+            // arm is its EFI-side execution.
+            match tx_policy::hard_failure_action(tx::probe_file("\\tx-stop-on-failure.txt")) {
+                tx_policy::HardFailureAction::Stop => {
+                    info!("TX: transaction failed: {e:?} - opt-in STOP (\\tx-stop-on-failure.txt present): no FLR, no handoff, no next card, no chain-load this session");
+                    // The claim muted the console mirror; the failure path's
+                    // re-enable lives in handoff_out - run it here too so the
+                    // frozen mid-transaction state is at least logged and
+                    // visible on whatever console surface still exists. The
+                    // GOP itself is NOT reconnected: that would be acting
+                    // again on a card whose state is no longer trusted - the
+                    // screen may stay dark and loader.log is the sole record.
+                    tx::handoff_out(&pci);
+                    // Bridge release = tx_policy::BridgeReleaseOnFailure::
+                    // Never on this path: clearing bus-master under
+                    // possibly-live DMA is the same uncontrolled write the
+                    // FLR would be, and the machine is about to halt for a
+                    // power cycle, so nothing downstream observes the bridges.
+                    CardOutcome::HardStop
                 }
-                tx::handoff_out(&pci);
-                CardOutcome::Attempted
+                tx_policy::HardFailureAction::FlrAndContinue => {
+                    info!("TX: transaction failed: {e:?} - NOT retrying this session");
+                    // Field report (issue #74): on a TB4/USB4 eGPU the unwind FLR can
+                    // leave the function off the bus afterwards - Windows then shows
+                    // CM_PROB_PHANTOM, fans stop, and the only recovery measured on
+                    // that seat is an AC cycle of the enclosure. Say so, or the first
+                    // person to see it concludes the card is dead.
+                    info!("TX: recovery note: if this card sits in an eGPU enclosure and disappears from the bus after this failure, power-cycle the enclosure (PSU off ~30 s); an internal card needs a normal power cycle");
+                    // Failure unwind: FLR wipes our half-states (engine resets,
+                    // BCR, DMA queues) so the Windows driver gets a cold-boot
+                    // card. Bridge release = tx_policy::AfterFlr on this path:
+                    // only AFTER the FLR - post-reset nothing can be in flight
+                    // through the bridges, so clearing is exactly as safe as on
+                    // the success tail; clearing earlier would be an
+                    // uncontrolled write under possibly-live DMA (booter 0x89
+                    // family), and never clearing would carry our bus-master
+                    // bits into Windows (dirty-BME handoff shape, #3/#9).
+                    tx::emergency_flr(g.handle);
+                    if let tx_policy::BridgeReleaseOnFailure::AfterFlr =
+                        tx_policy::bridge_release_on_failure(tx_policy::HardFailureAction::FlrAndContinue)
+                    {
+                        if let Some(bm) = bridge_master.as_mut() {
+                            bm.release();
+                            info!("TX: bridge BME restored after the failure FLR");
+                        }
+                    }
+                    tx::handoff_out(&pci);
+                    CardOutcome::Attempted
+                }
             }
         }
     }
