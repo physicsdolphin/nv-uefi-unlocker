@@ -4244,7 +4244,6 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         // pairs here at PL2. Word pairs, 4 per line, non-zero ones only.
         for (base, pairs) in VBIOS_OVR_PAIR_REGIONS {
             let mut printed = 0;
-            let mut line_off = 0;
             for chunk in 0..pairs {
                 let off = base + chunk * 8;
                 let (d, c) = (rd(off), rd(off + 4));
@@ -4258,8 +4257,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     // row header = this line's first pair address (the pairs
                     // step +8 through the region; the region base repeated on
                     // every line read as a re-read of the same address)
-                    line_off = off;
-                    print!("  OVR_PAIRS  {}", off_h(line_off));
+                    print!("  OVR_PAIRS  {}", off_h(off));
                 }
                 print!(" d={} c={}", cell_val(d), cell_val(c));
                 printed += 1;
