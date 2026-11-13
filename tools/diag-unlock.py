@@ -913,6 +913,16 @@ def report(bar, tag="", devpath=None):
         print("  note: on Blackwell selector 3 measures ~HALF rate, not the Ada 1/8 - trust the raw word")
         print("  note: FUSE_EN_SW_OVERRIDE=0 gates CTRL_OPT floorsweep only; FUSE_FEAT_OVR_DIS=0 leaves the"
               " override path open; FUSE_SS_PLM is NOT the effective gate")
+        # GB20x HAL 67-71 relocated faces (0x820dbc/0x820e34 are GA100-era):
+        # PES/PPC 0x822a78+4g, OFA 0x822a68, per-FBP LTC 0x822900+4f (#237).
+        print("  GB20X faces (HAL 67-71):")
+        print("   PES_STATUS " + " ".join(
+            f"{bar.rd(GB20X_PES_STATUS_BASE + 4 * g):#010x}" for g in range(12)))
+        v = bar.rd(GB20X_OFA_DISABLE)
+        b = badf_bucket(v)
+        print(f"   OFA_DISABLE {v:#010x}" + (f" [{b}]" if b else ""))
+        print("   FBP_LTC    " + " ".join(
+            f"{bar.rd(0x0082_2900 + 4 * f):#010x}" for f in range(8)))
     if fam in ("ampere", "ada"):
         rrow(bar, ADA_FUSE_ROWS)
         dump_tpc(bar)

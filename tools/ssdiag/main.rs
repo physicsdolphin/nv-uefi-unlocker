@@ -10,6 +10,10 @@
 //! settles stock EN_SW_OVERRIDE=1 as routine VBIOS behavior), and the GB20x
 //! HAL 67-71 PES/OFA relocation 0x822a78/0x822a68 (why 0x820dbc reads
 //! all-badf on GB206).
+//! Same-version UI/inventory round (2026-11-13): all-ones cells render
+//! green everywhere so the PLM survey's OPEN marker needs no text tag and
+//! two-column rows keep their alignment, and --inventory now runs with no
+//! NVIDIA GPU present - it then prints the system facts alone.
 //! v0.7.8 fixes two more inventory bugs, both field-caught on a ROG Strix
 //! G614JV (i7-13650HX + 2x32G DDR5 SODIMM): hybrid CPUs broke the
 //! logical/tpc core division (E-cores are single-threaded - a 6P+8E 14-core
@@ -1509,7 +1513,7 @@ struct InventorySummary {
 
 /// Print the inventory block (stable `KEY:` line prefixes - the block is
 /// what tools/collect_compat.py ingests) and return the advisory inputs.
-fn inventory_header(gpus: &[Gpu]) -> InventorySummary {
+fn inventory_header(gpus: &[Gpu], skipped: &[String]) -> InventorySummary {
     println!(
         "===== ssdiag inventory v{} (read-only; no admin, no driver) =====",
         env!("CARGO_PKG_VERSION")
@@ -1605,6 +1609,19 @@ fn inventory_header(gpus: &[Gpu]) -> InventorySummary {
 
     // nvapi VBIOS strings keyed by PCI bus number (handles are opaque)
     let nvapi_cards = nvapi_wake::vbios_by_bus().ok();
+
+    // No NVIDIA card is not a reason to withhold the system block: the issue
+    // templates also ask for hardware from machines where the card is absent
+    // or disabled (GPU removed for RMA, hybrid/headless box, VM).
+    if gpus.is_empty() {
+        println!(
+            "GPU:     none - no NVIDIA display adapter with a memory range ({} skipped VEN_10DE devnode(s))",
+            skipped.len()
+        );
+        for line in skipped {
+            println!("GPU SKIPPED: {line}");
+        }
+    }
 
     for (i, g) in gpus.iter().enumerate() {
         let n = i + 1;
@@ -1817,8 +1834,22 @@ fn paint(code: &str, s: &str) -> String {
 /// Multi-column cell value: badf reads colored red when ANSI is on, and
 /// '!' replaces the '0x' prefix when it is not - a redirected/piped run or
 /// a console without VT still shows the bucket at a glance, and the cell
-/// stays exactly 10 characters either way. 0xffffffff (NO_DECODE) keeps the
-/// plain form.
+/// stays exactly 10 characters either way. All-ones (0xffffffff) is the
+/// wide-open marker (OPEN on a PLM, unmapped bank elsewhere) and goes green
+/// over the whole cell.
+
+
+/// ClockManager trim word decode (#237-verified against AD103 captures):
+/// 10-bit fields split at bit 6 - bits[5:0] signed 6-bit two's complement,
+/// bits[9:6] signed 4-bit. 0x0040 -> (0,+1), 0x003f -> (-1,0),
+/// 0x003d -> (-3,0), 0x007e -> (-2,+1).
+fn trim_decode(v: u32) -> (i32, i32) {
+    let low6 = (v & 0x3f) as u32;
+    let temp = if low6 & 0x20 != 0 { (low6 | 0xffff_ffc0) as i32 } else { low6 as i32 };
+    let hi4 = (v >> 6) & 0xf;
+    let volt = if hi4 & 0x8 != 0 { (hi4 | 0xffff_fff0) as i32 } else { hi4 as i32 };
+    (temp, volt)
+}
 
 /// Offset column for `name = value` rows, house style: yellow 0x + cyan
 /// digits (same as the PLM survey gutter). Always 10 visible chars.
@@ -1827,7 +1858,12 @@ fn off_h(off: u32) -> String {
 }
 
 fn cell_val(v: u32) -> String {
-    if badf_bucket(v).is_some() {
+    if v == 0xFFFF_FFFF {
+        // all-ones = OPEN marker on the value itself (green), so a
+        // multi-column row keeps its cells side by side without a text tag
+        // breaking the gap
+        green(&format!("{v:#010x}"))
+    } else if badf_bucket(v).is_some() {
         if COLOR_ON.load(std::sync::atomic::Ordering::Relaxed) {
             // bright red over the whole 10-char cell (0x + digits)
             format!("[91m0x{v:08x}[0m")
@@ -3608,7 +3644,10 @@ const GA100_STATUS_OPT_ROWS: [(&str, u32); 20] = [
 /// mask words). TPC words 0..7 sit on dump_tpc's STATUS base - that section
 /// only runs for ampere/ada, this one covers every die, which is the point.
 const GA100_PES_STATUS_BASE: u32 = 0x0082_0DBC;
-const GA100_ROP_L2_STATUS_BASE: u32 = 0x0082_0D70;
+/// Per-FBP LTC (L2 partition) mask, 2-bit per FBP: G(fbp) = (~word) &
+/// ((1<<N)-1), N = LTCs/FBP from PTOP 0x22450 low 5 bits (#237: MemorySystem
+/// +0x930 0x4a94d4; the label "ROP_L2" was a misnomer - no ROP here).
+const GA100_LTC_FBP_STATUS_BASE: u32 = 0x0082_0D70;
 const GA100_TPC_STATUS_BASE: u32 = 0x0082_0C38;
 
 /// Issue #237 round (JeusChrit, 595.44.15 GSP + VBIOS disassembly, AD103
@@ -3627,7 +3666,9 @@ const GA100_TPC_STATUS_BASE: u32 = 0x0082_0C38;
 /// TU102/TU116 OBJBSP writer 0x215ca0; 0x823b24/28 bit6 = PL2).
 const AD10X_ROP_PER_GPC_BASE: u32 = 0x0082_2880;
 const AD10X_TPC_RECONFIG_BASE: u32 = 0x0082_2800;
-const CLK_VF_SPEEDO_TRIMS: [u32; 4] = [0x0082_13A0, 0x0082_13A4, 0x0082_13A8, 0x0082_13AC];
+const CLK_VF_SPEEDO_TRIMS: [u32; 7] = [
+    0x0082_13A0, 0x0082_13A4, 0x0082_13A8, 0x0082_13AC, 0x0082_13B0, 0x0082_13B4, 0x0082_13B8,
+];
 const VBIOS_OVR_PAIR_REGIONS: [(u32, u32); 2] = [(0x0082_2148, 23), (0x0082_2300, 41)];
 const PLM_PL0_WE: u32 = 0x0082_00F8; // bit4 = PL0 write enable
 const PLM_PL2_WE: [u32; 2] = [0x0082_3B24, 0x0082_3B28]; // bit6 = PL2 write enable
@@ -3992,10 +4033,11 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         "64MiB", "128MiB", "256MiB", "512MiB", "1GiB", "2GiB", "4GiB", "8GiB", "16GiB", "32GiB",
         "64GiB",
     ];
+    let ltc_per_fbp = rd(0x0002_2450) & 0x1f; // PTOP: N = LTCs per FBP (#237)
     let bar1_idx = ((s0 >> 14) & 0x3) + ((s1 >> 20) & 0x7);
     let bar0_idx = (s1 >> 17) & 0x7;
     println!(
-        "  PSTRAPS: BAR1 index {bar1_idx} = {}   BAR0 = {}MiB   BAR3 = {}xBAR0   override_en = {}",
+        "  PSTRAPS: BAR1 index {bar1_idx} = {}   BAR0 = {}MiB   BAR3 = {}xBAR0   override_en = {}   LTC/FBP(PTOP 0x22450) = {ltc_per_fbp}",
         BAR1_SIZES.get(bar1_idx as usize).copied().unwrap_or("reserved(>10)"),
         16 << bar0_idx,
         if s1 & 0x0080_0000 != 0 { 1 } else { 2 },
@@ -4092,12 +4134,12 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     // GA100 PR#55 SM banks: 8 dwords per row, badf values colored red (no
     // per-cell bucket text - columns stay aligned). On consumer dies the
     // whole row is the per-die existence answer.
-    print!("{: >18}", "  GA100_SM_OVR");
+    println!("  GA100_SM_OVR {}", off_h(GA100_SM_OVR_BASE));
     for gpc in 0..8u32 {
         print!(" {}", cell_val(rd(GA100_SM_OVR_BASE + gpc * 4)));
     }
     println!();
-    print!("{: >18}", "  GA100_SM_STAT");
+    println!("  GA100_SM_STAT {}", off_h(GA100_SM_STATUS_BASE));
     for gpc in 0..8u32 {
         print!(" {}", cell_val(rd(GA100_SM_STATUS_BASE + gpc * 4)));
     }
@@ -4115,16 +4157,13 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     println!();
     println!("--- PLM survey (cmp170hx 26-register union) ---");
     // Two-column layout: same multi-column rule as the arrays - no bucket
-    // text per cell; badf values marked red (ANSI on) / '!' prefix (plain,
-    // width-stable so the columns stay aligned either way). OPEN keeps its
-    // tag - it is rare and single-word.
+    // text per cell; badf values marked red (ANSI on) / plain (no marker
+    // needed, the badf value itself is), all-ones green (OPEN), so the
+    // columns stay aligned either way.
     for (i, off) in PLM_SURVEY.iter().enumerate() {
         let v = rd(*off);
-        let off_s = format!("{}{}", paint("96", "0x"), paint("93", &format!("{off:08x}")));
-        // all-ones = OPEN marker on the value itself (green), so a two-column
-        // row keeps its cells side by side without a text tag breaking the gap
-        let val_s = if v == 0xFFFF_FFFF { green(&format!("{v:#010x}")) } else { cell_val(v) };
-        print!("  {off_s}={val_s}");
+        let off_s = off_h(*off);
+        print!("  {off_s}={}", cell_val(v));
         if i % 2 == 1 {
             println!();
         }
@@ -4165,7 +4204,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     // bank idiom). The whole block is the per-die existence answer.
     for (label, base, count) in [
         ("PES_GPC", GA100_PES_STATUS_BASE, 12u32),
-        ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16u32),
+        ("LTC_FBP", GA100_LTC_FBP_STATUS_BASE, 16u32),
         ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
         ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12u32),
         ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12u32),
@@ -4188,9 +4227,15 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     {
         // ClockManager +0x2f0 VF/Speedo trims: 10-bit words = signed 6-bit
         // temperature trim + 4-bit voltage trim (issue #147 UV relevance).
-        println!("  CLK_TRIMS   (10-bit words: s6 temp + s4 volt fields)");
+        println!("  CLK_TRIMS (10-bit words: bits[5:0] signed-6 temp, bits[9:6] signed-4 volt)");
         for t in CLK_VF_SPEEDO_TRIMS {
-            println!("    {} = {}", off_h(t), cell_val(rd(t)));
+            let v = rd(t);
+            let (t6, v4) = trim_decode(v);
+            println!(
+                "    {} = {} temp={t6:+} volt={v4:+}",
+                off_h(t),
+                cell_val(v)
+            );
         }
         // VBIOS app08 override-pair regions: 0x6ae4 writes (Data, Control|=1)
         // pairs here at PL2. Word pairs, 4 per line, non-zero ones only.
@@ -4241,6 +4286,13 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         let ofa = rd(GB20X_OFA_DISABLE);
         let b = badf_bucket(ofa).map(|b| format!(" [{}]", red(b))).unwrap_or_default();
         println!("   OFA_DISABLE {}{b}", hx32(ofa));
+        // #237: per-FBP sub-unit/LTC disable on HAL 67-71 (MemorySystem +0x940
+        // 0x4ac6ec; absent FBP4..5 on 4-FBP parts read the 0xff,0xff pair).
+        print!("   FBP_LTC    ");
+        for fbp in 0..8u32 {
+            print!(" {}", cell_val(rd(0x0082_2900 + fbp * 4)));
+        }
+        println!();
     }
     println!("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,");
     println!("  plain value = read it with GA100 semantics, ffffffff/badf1100 = not decoded here (AD10x fuse-PLM relocation precedent)");
@@ -4288,7 +4340,7 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         }
         for (label, base, count) in [
             ("PES_GPC", GA100_PES_STATUS_BASE, 12u32),
-            ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16u32),
+            ("LTC_FBP", GA100_LTC_FBP_STATUS_BASE, 16u32),
             ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
         ] {
             for chunk in (0..count).step_by(8) {
@@ -4408,7 +4460,8 @@ OPTIONS:
                    and partitions, other PCI devices, per-GPU driver /
                    VBIOS / family verdict + advisories) and exit - the
                    block the issue templates ask for; no admin, no driver,
-                   no writes
+                   no writes. Works without an NVIDIA GPU too: the block
+                   then carries the system facts alone (GPU: none)
   --help           this text
 
 WHAT IT DOES:
@@ -4491,14 +4544,14 @@ SSDIAG_COLOR=force pins on.",
     // (fast since 0.6.1) and both the inventory header and --inventory need
     // it first; an unelevated full run now prints its inventory block before
     // reporting "admin required".
-    let (mut gpus, skipped) = match discover_gpus() {
+    let (mut gpus, mut skipped) = match discover_gpus() {
         Ok(g) => g,
         Err(e) => {
             eprintln!("{e}");
             return 2;
         }
     };
-    if gpus.is_empty() {
+    if gpus.is_empty() && !inv_only {
         eprintln!("no NVIDIA display adapter memory ranges found");
         eprintln!(
             "display-class devnodes carrying VEN_10DE: {}",
@@ -4515,14 +4568,33 @@ SSDIAG_COLOR=force pins on.",
         }
     }
     if let Some(sel) = &select {
-        gpus.retain(|g| g.id.to_uppercase().contains(&sel.to_uppercase()));
-        if gpus.is_empty() {
-            eprintln!("--select {sel:?}: no NVIDIA function matches");
-            return 2;
+        if !gpus.is_empty() {
+            let mut dropped: Vec<String> = Vec::new();
+            gpus.retain(|g| {
+                let keep = g.id.to_uppercase().contains(&sel.to_uppercase());
+                if !keep {
+                    dropped.push(g.id.clone());
+                }
+                keep
+            });
+            if gpus.is_empty() {
+                if !inv_only {
+                    eprintln!("--select {sel:?}: no NVIDIA function matches");
+                    return 2;
+                }
+                // the system block is still worth printing (same shape as a
+                // machine without a card)
+                eprintln!("--select {sel:?}: no NVIDIA function matches - inventory continues");
+                skipped.extend(
+                    dropped
+                        .drain(..)
+                        .map(|id| format!("{id}: filtered out by --select")),
+                );
+            }
         }
     }
 
-    let inv = inventory_header(&gpus);
+    let inv = inventory_header(&gpus, &skipped);
     stage("inventory");
     if inv_only {
         preflight();
@@ -4919,6 +4991,18 @@ mod tests {
     }
 
     #[test]
+    fn trim_decode_matches_ad103_capture() {
+        // #237 comment values (AD103 passive capture 0x8213a0..b8): every
+        // word unpacks to a small signed trim, not arbitrary large ints.
+        assert_eq!(trim_decode(0x0040), (0, 1));
+        assert_eq!(trim_decode(0x003f), (-1, 0));
+        assert_eq!(trim_decode(0x003d), (-3, 0));
+        assert_eq!(trim_decode(0x007e), (-2, 1));
+        assert_eq!(trim_decode(0x0000), (0, 0));
+        assert_eq!(trim_decode(0x003e), (-2, 0));
+    }
+
+    #[test]
     fn cell_val_width_stable_across_buckets() {
         // Multi-column contract (final, 2026-11-13): badf keeps the plain
         // 0xbadf5040 text in colorless mode (identical width to a normal
@@ -4927,7 +5011,7 @@ mod tests {
         let plain_len = format!("{:#010x}", 0x1234_5678u32).len();
         assert_eq!(cell_val(0x1234_5678).len(), plain_len);
         assert_eq!(cell_val(0xBADF_5040).len(), plain_len, "colorless badf keeps the plain form");
-        assert_eq!(cell_val(0xFFFF_FFFF), format!("{:#010x}", 0xFFFF_FFFFu32)); // NO_DECODE stays plain
+        assert_eq!(cell_val(0xFFFF_FFFF), format!("{:#010x}", 0xFFFF_FFFFu32)); // all-ones: green when ANSI, plain text when not
     }
 
     #[test]
