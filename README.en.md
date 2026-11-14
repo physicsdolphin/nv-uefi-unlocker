@@ -32,7 +32,7 @@ Unlock your NVIDIA GPU’s Tensor compute performance. Boot from a USB stick, un
 | Series | Support |
 | --- | --- |
 | GTX 16 · Turing | Theoretically compatible; field tests welcome |
-| RTX 20 · Turing | Fully compatible; some models have known issues listed in the full matrix |
+| RTX 20 · Turing | Fully compatible, laptops and desktops |
 | RTX 30 · Ampere GA10x | Fully compatible, laptops and desktops |
 | RTX 40 · Ada | Fully compatible, laptops and desktops |
 | Pascal and older / GA100 / RTX 50 | Unsupported |
