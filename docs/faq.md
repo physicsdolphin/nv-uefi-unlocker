@@ -690,17 +690,17 @@ ssdiag --reapply
 
 **运行 ssdiag（或任何直读 PCI config 的工具）瞬间整机蓝屏**：蓝屏码 `0x1EA SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION`（[#244](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/244) 首个在役样本）。机理（[微软文档](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x1ea--secure-pci-config-space-access-violation)明文）：VBS 的 "secure PCI" 层禁止 VTL0 直接映射 MCFG/ECAM 区间读 config space，强制在 hypervisor/VTL1 的 EPT 层——**映射能成功、首次读取即整机蓝屏**（不是可恢复的 `MAP_PHYS error 5`）；WinDbg 四参数 = 故障指令 opcode（#244 实例 `0x8b`=MOV r32,r/m32）/ 设备 RID / config 偏移 / 故障 RIP。
 
-分两层看，**别把内核隔离（HVCI）当凶手**：HVCI/VBS 运行本身不触发 0x1EA——#188（VBS+HVCI on，SB off）/#204（HVCI ON，SB off）跑通**全量 probe**（pmxdrv 载入 + ECAM 读；#218 的 SB+HVCI+阻止列表全开只跑过 `--inventory` 免驱动层，不作全量证据）；触发层是 **System Guard Secure Launch / SMM 固件度量** 这一级（#244 机器 `SecurityServicesRunning=[2,3,4,5]`，判别位=[3]/[4]），保护范围也不止 MCFG——同族生态先例有 Speccy、NI-VISA（nipcibrd.sys，Surface 5）、AMD Ryzen Master；我方自有观察：**2024+ 部分华硕 OEM 镜像（天选6 实测）上 Intel FPTW64 读 SPI-flash MMIO 同样直接蓝屏**（该例 bugcheck 码未验证）。
+分两层看，**别把内核隔离（HVCI）当凶手**：HVCI/VBS 运行本身不触发 0x1EA——#188（VBS+HVCI on，SB off）/#204（HVCI ON，SB off）跑通**全量 probe**（#218 只跑过 `--inventory` 免驱动层，不作全量证据）。触发对按文档是 **SDEV（Secure Devices）ACPI 表在场 + VBS running**：自 Windows 10 2004（19041.423）起，[MS 排障页](https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/stop-error-lenovo-thinkpad-kb4568831-uefi)明文封堵非受支持的 config space 访问，**"解析 MCFG 表并映射到虚拟内存"被点名**；[ESS 文档](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/windows-hello-enhanced-sign-in-security)给出执行方——**SDEV 表由 Secure Kernel 解析并强制**，不支持方式的读写"result in bug checks"；[CHIPSEC 文档](https://chipsec.github.io/installation/InstallWindows.html)同一条件公式。公开案例都是普通装机、非 OEM 镜像专属：Framework+Speccy、LG Gram+Speccy（cpuz149_x64.sys）、AMD Ryzen Master、Vanguard vgk；我方自有观察：**2024+ 部分华硕 OEM 镜像（天选6 实测）上 Intel FPTW64 读 SPI-flash MMIO 同样直接蓝屏**（SDEV 限制是否覆盖 MCFG 以外的 MMIO，公开文档未写明）。
 
-**推测（待样本判别，勿当定谳）**：这层的开启旋钮是 `DeviceGuard\Scenarios\SystemGuard`（GPO「Secure Launch Configuration」/ 安全中心「内核隔离→固件保护」同源，见 [System Guard 文档](https://learn.microsoft.com/en-us/windows/security/hardware-security/system-guard-secure-launch-and-smm-protection)）；Windows 从不自动启用它（2026-10 的 HVCI 扩张波不含这层）——2024+ 部分 OEM 在出厂镜像 image time provision 它，所以**重装干净最新 Win11 后机制消失**。OEM 具体写了哪个键、0x1EA 使能位是否恰为 SystemGuard 键，公开文档未写明，现有证据只有 #244 的相关性。
+**为什么重装后消失（更正：SDEV 表在固件里，重装系统不动它）**——消失必然出自 VBS 侧或固件选项侧，按可查性排序：① 重装后 VBS 实际没跑（看 `VirtualizationBasedSecurityStatus==2`，不是看设置里开关）；② BIOS 的 ESS 类选项被重置/刷 BIOS 改动——**"Enhanced Windows Biometric Security"（Lenovo，Security > Virtualization）/"Enhanced Sign-in Security"/"Enhanced Hello" 类选项**，关掉即撤 SDEV 限制（排障页明示 workaround）；③ OS 侧未公开前置（ESS provisioning/生物识别 trustlet 等——纯假设）；④ OEM 镜像与重装 build 不同。此前"OEM 镜像 provision SystemGuard 注册表键"的推测**作废**（无公开文档支持该键与 secure PCI 的关联；#244 的 `SecurityServicesRunning=[2,3,4,5]` 按 secured 风格机器四件套共现处理）。
 
-ssdiag 0.8.0 起：检测到「Secure Launch provisioned + VBS RUNNING」就在部署前拒绝并给出确认命令（无覆盖旗标，因为代价是整机蓝屏不是拒绝读）；`--inventory` 不受影响。判别采集配方（一个天选6 样本即可把 OEM provision 位钉死）：
+ssdiag 0.8.1 起：`GetSystemFirmwareTable('ACPI','SDEV')` 在场 + VBS 回写 `==2` → 部署前拒绝（无覆盖旗标，因为代价是整机蓝屏不是拒绝读）；SystemGuard 键保留为保守二级信号；`--inventory` 不受影响。判别采集配方（一个天选6 双态样本即可钉死）：
 
 ```powershell
 Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard |
   Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning
-# msinfo32 系统摘要 -> "基于虚拟化的安全性" 与 "...服务正在运行"
-# 键枚举：HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios 下有哪个子键、Enabled 值
+# SDEV 表：ssdiag 平台门 "SDEV table (ACPI)" 行（只读固件表查询，不会触发蓝屏）；
+# BIOS 里对照 Enhanced Windows Biometric Security / Enhanced Sign-in Security / Enhanced Hello 类选项状态
 # 蓝屏样本：minidump 的 Arg1（opcode）/ Arg2（RID）/ Arg3（偏移）
 ```
 

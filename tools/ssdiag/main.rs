@@ -1,4 +1,15 @@
-//! ssdiag v0.8.0 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.1 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.1 re-grounds the tier-2 gate in the DOCUMENTED trigger (correction
+//! round, 2026-11-15): "secure PCI" keys on an SDEV (Secure Devices) ACPI
+//! table + VBS running - since Windows 10 2004 (19041.423) unsupported
+//! config-space access is blocked (MCFG parsing + mapping named explicitly)
+//! and a blocked access bugchecks; the secure kernel parses SDEV (MS
+//! KB4568831 ThinkPad troubleshoot page, ESS doc, CHIPSEC install doc). The
+//! previous SystemGuard-registry heuristic has no documented tie to secure
+//! PCI and is demoted to a conservative secondary signal; the SDEV check is
+//! a GetSystemFirmwareTable('ACPI','SDEV') presence probe. The documented
+//! off-switch is firmware (Enhanced Windows Biometric Security / ESS), not a
+//! Windows reinstall - the refusal text now says so.
 //! v0.8.0 refuses the ECAM probes on the "secure PCI" tier (issue #244): when
 //! System Guard Secure Launch is provisioned (DeviceGuard\Scenarios\SystemGuard
 //! or the SecureLaunch alias) and VBS is running, a raw config-space read does
@@ -429,9 +440,10 @@ fn map_denied_guidance() {
             "  1. HVCI (memory integrity) is RUNNING on this kernel - code-integrity
      gates are up, but on its own HVCI does not refuse these maps (field:
      #188/#204/#218 all ran with HVCI on), so treat this as background and
-     keep reading. The separate tier to know about: with System Guard Secure
-     Launch provisioned the same read is a whole-machine bugcheck 0x1EA -
-     this tool refuses that case before deploying anything (issue #244)."
+     keep reading. The separate tier to know about: with the SDEV table
+     present and VBS running, the same read is a whole-machine bugcheck
+     0x1EA - this tool refuses that case before deploying anything
+     (issue #244)."
         ),
         Some(false) => println!("  1. HVCI is not running - mapping itself is not policy-blocked;"),
         None => println!("  1. HVCI runtime state could not be queried (treat as unknown);"),
@@ -606,19 +618,49 @@ fn vbs_status() -> Option<u32> {
     hklm_dword(DEVICEGUARD_KEY, "VirtualizationBasedSecurityStatus")
 }
 
-/// Tier-2 armed: the stack that turns a raw ECAM read into a whole-machine
-/// bugcheck 0x1EA (issue #244) is provisioned AND VBS is actually running -
-/// without the hypervisor there is no enforcement, so a provisioned key on a
-/// VBS-off machine is inert. Detection is registry-key based; the
-/// authoritative tier markers are SecurityServicesRunning 3 (Secure Launch)
-/// / 4 (SMM firmware measurement), readable only via WMI - a machine where
-/// the tier runs without either key would be missed here (accepted, and a
-/// datapoint we ask about in the refusal text and docs).
-fn secure_pci_armed() -> bool {
-    securelaunch_provisioned() == Some(true) && vbs_status() == Some(2)
+/// SDEV (Secure Devices) ACPI table present? This is the documented trigger
+/// half of the "secure PCI" tier: with the table present and VBS running,
+/// Windows restricts unsupported PCI config-space access - parsing the MCFG
+/// table and mapping config space to virtual memory is named explicitly -
+/// and a blocked access is a whole-machine bugcheck (MS troubleshoot page
+/// for the KB4568831 ThinkPad stop errors; the ESS doc says the secure
+/// kernel parses SDEV; CHIPSEC ships a PCI filter driver for the same
+/// condition). Read via GetSystemFirmwareTable - unelevated, read-only, and
+/// the query itself cannot trigger the bugcheck.
+fn sdev_present() -> Option<bool> {
+    let need = unsafe {
+        win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, core::ptr::null_mut(), 0)
+    };
+    if need == 0 {
+        return Some(false); // not enumerated on this system
+    }
+    let mut buf = vec![0u8; need as usize];
+    let got = unsafe {
+        win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, buf.as_mut_ptr(), need)
+    };
+    if got < 4 {
+        return None; // query failed or table shorter than a header - unknown
+    }
+    if &buf[0..4] == b"SDEV" {
+        Some(true)
+    } else {
+        None // fetched something unexpected - treat as unknown, never as a verdict
+    }
 }
 
-const SECURE_PCI_REFUSAL: &str = "REFUSED: System Guard Secure Launch is provisioned and VBS is RUNNING on this\nmachine - the Windows \"secure PCI\" tier is armed (issue #244). In this tier\nthe hypervisor blocks VTL0 from reading the directly-mapped MCFG/ECAM range,\nand the access does not come back as a denied map (win32 5): it is a\nwhole-machine bugcheck 0x1EA (SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION).\nThis refusal has no override flag on purpose.\n  - `ssdiag --inventory` still works (PnP only: no driver, no config-space read);\n  - the SS/PLM readback belongs on the EFI side (the read-only sampler);\n  - to confirm the tier for a report, run:\n      Get-CimInstance -Namespace root\\Microsoft\\Windows\\DeviceGuard -ClassName Win32_DeviceGuard | Select-Object SecurityServicesRunning\n    a 3 (System Guard Secure Launch) or 4 (SMM firmware measurement) in the\n    list is the marker; if the list has neither while the registry key is\n    set, this refusal was overcautious - please report that datapoint;\n  - the provisioning key is DeviceGuard\\Scenarios\\SystemGuard (image-time\n    OEM provisioning on some 2024+ machines; a clean Windows reinstall\n    leaves it out - which is why the tier \"disappears\" after a reinstall).\n";
+/// Tier-2 armed. The DOCUMENTED trigger (issue #244 correction round): an
+/// SDEV ACPI table plus VBS actually running - without the hypervisor there
+/// is no enforcement, so either half missing means inert. The
+/// SystemGuard/SecureLaunch registry keys stay as a conservative secondary
+/// signal: no public document ties them to secure PCI (they co-occur on
+/// secured-stack machines), so refusing on them alone is overcautious but
+/// never unsafe.
+fn secure_pci_armed() -> bool {
+    let vbs = vbs_status() == Some(2);
+    (sdev_present() == Some(true) && vbs) || (securelaunch_provisioned() == Some(true) && vbs)
+}
+
+const SECURE_PCI_REFUSAL: &str = "REFUSED: the Windows \"secure PCI\" tier is armed on this machine - the documented\ntrigger pair is present: an SDEV (Secure Devices) ACPI table plus VBS RUNNING\n(issue #244). In this tier the secure kernel blocks unsupported PCI config-space\naccess - parsing the MCFG table and mapping config space to virtual memory is\nnamed explicitly in the docs - and the access does not come back as a denied\nmap (win32 5): it is a whole-machine bugcheck 0x1EA\n(SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION).\nThis refusal has no override flag on purpose.\n  - `ssdiag --inventory` still works (PnP only: no driver, no config-space read);\n  - the SS/PLM readback belongs on the EFI side (the read-only sampler);\n  - the documented off-switch is FIRMWARE: the UEFI option that publishes the\n    SDEV table (Enhanced Windows Biometric Security / Enhanced Sign-in\n    Security; on the Lenovo page it sits under Security > Virtualization).\n    Disabling it removes the SDEV+VBS restrictions; a Windows reinstall does\n    NOT - the table lives in firmware, so if the tier \"disappeared\" after a\n    reinstall, VBS is most likely no longer running (check\n    VirtualizationBasedSecurityStatus == 2, not the Settings toggle).\n";
 
 /// The platform gates that decide whether the pinned pmxdrv can load at all,
 /// plus what installing it looks like from the outside. All values are
@@ -670,19 +712,27 @@ fn preflight() {
             None => green("not provisioned"),
         }
     );
+    println!(
+        "PLATFORM: SDEV table (ACPI)             = {}",
+        match sdev_present() {
+            Some(true) => red("PRESENT - the documented secure-PCI trigger half"),
+            Some(false) => green("absent"),
+            None => yellow("query failed"),
+        }
+    );
     if secure_pci_armed() {
         println!(
             "{}",
-            yellow(
-                "PLATFORM: Secure Launch provisioned + VBS RUNNING - the \"secure PCI\" tier is armed."
-            )
+            yellow("PLATFORM: the \"secure PCI\" tier is armed (SDEV table + VBS RUNNING, per the docs).")
         );
         println!("  In this tier a raw config-space read is NOT a denied map (win32 5): the");
-        println!("  hypervisor enforces it behind the map, and the access is a whole-machine");
-        println!("  bugcheck 0x1EA (SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION, issue #244).");
+        println!("  secure kernel blocks unsupported access (MCFG mapping named explicitly),");
+        println!("  and the result is a whole-machine bugcheck 0x1EA");
+        println!("  (SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION, issue #244).");
         println!("  The probe refuses before deploying anything; --inventory and the EFI-side");
-        println!("  read-only sampler are the driver-free paths. The tier confirmation");
-        println!("  command is printed by the refusal.");
+        println!("  read-only sampler are the driver-free paths. The documented off-switch is");
+        println!("  firmware (Enhanced Windows Biometric Security / Enhanced Sign-in");
+        println!("  Security) - a Windows reinstall does not remove the SDEV table.");
     }
     if secure_boot == Some(1) {
         println!(
@@ -3020,6 +3070,7 @@ fn cm_string(devinst: u32, prop: u32) -> Option<String> {
 
 const ACPI_PROVIDER: u32 = 0x4143_5049; // 'ACPI'
 const MCFG_TABLE: u32 = 0x4746_434D; // 'MCFG'
+const SDEV_TABLE: u32 = 0x5645_4453; // 'SDEV'
 
 /// Parse the device ID (DID) hex out of a PCI DeviceID string
 /// ("PCI\VEN_10DE&DEV_2504&..." -> 0x2504).

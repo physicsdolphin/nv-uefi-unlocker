@@ -2,6 +2,7 @@
 
 > 2026-11-02。ssdiag 0.6.3+ 的平台门与 denied-map 前置分类清单经过两例实机闭环（#118 卡巴斯基/B650M、B 站 5060/Win10），本文是该机制的权威说明。
 > 2026-11-15 增补（#244 轮）：HVCI 措辞勘误（§2）+ tier-2「secure PCI」0x1EA 整机蓝屏分层（§2a）+ 平台门两新行（§3）+ **§3 Secure Boot 行勘误**（旧行"ON=无法加载+工具先行拒绝"两处皆错，见该行）。
+> 2026-11-15 第二轮查证更正：tier-2 的**文档化触发 = SDEV ACPI 表 + VBS running**（§2a 重写）；此前"SystemGuard 键 = 使能旋钮"无公开文档支持，**降级为保守二级信号**；ssdiag 0.8.1 同步改判据。
 
 ## 1. 两个实机案例（同签名、同根因、不同杀软形态）
 
@@ -28,17 +29,19 @@
 
 ## 2a. tier-2：VTL1 保护 MMIO（"secure PCI"）——0x1EA 整机蓝屏
 
-形态：**不做 MAP（映射能成功），首次 ECAM 读直接整机蓝屏** `0x1EA SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION`——[微软文档](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x1ea--secure-pci-config-space-access-violation)（2022-08 起）明文：secure PCI 启用时禁止 VTL0 直接映射 PCI MCFG 区间；强制点在 hypervisor/VTL1 的 EPT 层，比 error 5 严重一级（无恢复机会）。四参数：Arg1=故障指令 opcode（#244 实例 `0x8b`=MOV r32,r/m32）、Arg2=设备 RID、Arg3=config 偏移、Arg4=故障 RIP。首个在役样本 [#244](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/244)：ssdiag 0.6.8 POWER PMCSR 路径，pmxdrv 把 MCFG 映进用户态，用户态 `mov eax,[rax]` 触发（RID 0x5200=52:00.0、偏移 0）。
+形态：**不做 MAP（映射能成功），首次 ECAM 读直接整机蓝屏** `0x1EA SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION`——[微软文档](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x1ea--secure-pci-config-space-access-violation)（2022-08 起）明文：secure PCI 启用时禁止 VTL0 直接映射 PCI MCFG 区间；强制点在 hypervisor/VTL1 层，比 error 5 严重一级（无恢复机会）。四参数：Arg1=故障指令 opcode（#244 实例 `0x8b`=MOV r32,r/m32）、Arg2=设备 RID、Arg3=config 偏移、Arg4=故障 RIP。首个在役样本 [#244](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/244)：ssdiag 0.6.8 POWER PMCSR 路径，pmxdrv 把 MCFG 映进用户态，用户态 `mov eax,[rax]` 触发（RID 0x5200=52:00.0、偏移 0）。
+
+**文档化触发条件（2026-11-15 第二轮查证更正，此前 SystemGuard 键说作废）**：[MS KB4568831 ThinkPad 排障页](https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/stop-error-lenovo-thinkpad-kb4568831-uefi)明文——**自 Windows 10 2004（19041.423，2020-07-31）起，SDEV（Secure Devices）ACPI 表存在且 VBS running 时**，非受支持的 config space 访问被封堵并产生 Stop error，**"parsing MCFG table and mapping configuration space to virtual memory"被点名**；[ESS 文档](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/windows-hello-enhanced-sign-in-security)给出执行方：**SDEV 表由 Secure Kernel（VTL1）解析并强制**，不支持方式的读写"result in bug checks"；[CHIPSEC Windows 安装文档](https://chipsec.github.io/installation/InstallWindows.html)同一条件公式（并因此随附 PCI filter driver 走受支持路径）。两条文档合读还推出强制形态：**MCFG 映射路径被整体封**——SDEV 列的是安全设备（ESS 摄像头等），而 #244 读的是 GPU config，照样炸。SystemGuard/Secure Launch 与此**无公开文档关联**（[System Guard 文档](https://learn.microsoft.com/en-us/windows/security/hardware-security/system-guard-secure-launch-and-smm-protection)只讲 Secure Launch 配置/验证，不提 PCI config space）；#244 的 [2,3,4,5] 更像 secured 风格机器四件套**共现**（推断，非文档结论），[3]/[4] 降为背景判别位。
 
 分层判据（**HVCI ≠ tier-2**）：
 
-- HVCI/VBS 运行**本身不触发** 0x1EA——在役反证 #188/#204/#218（见 §2 勘误）；
-- #244 机器 `Win32_DeviceGuard.SecurityServicesRunning=[2,3,4,5]`（HVCI + **System Guard Secure Launch**（DRTM）+ **SMM Firmware Measurement** + VBS Enclaves）→ 判别位 = **[3]/[4]**（WMI 或 msinfo32「基于虚拟化的安全性服务正在运行」）；
-- 保护范围不止 MCFG：同族生态先例 = Speccy（Framework 社区）、NI-VISA nipcibrd.sys（Surface 5）、AMD Ryzen Master driver；我方自有观察：**2024+ 部分华硕 OEM 镜像（天选6 实测）上 Intel FPTW64 读 SPI-flash MMIO 同样直接蓝屏**（该例 bugcheck 码未验证，公开检索无独立报告）。
+- HVCI/VBS 运行**本身不触发** 0x1EA——在役反证 #188/#204（全量 probe，均 SB off；#218 只跑过 `--inventory` 免驱动层，不作全量证据，见 §2 勘误）；
+- 触发对 = **SDEV 表在场 + VBS running**；公开案例都是普通装机、非 OEM 镜像专属：Framework+Speccy、LG Gram+Speccy（cpuz149_x64.sys，CCleaner 论坛）、AMD Ryzen Master driver、Vanguard vgk——0x1EA 发生 ⇒ 按排障页条件反推，这些机器固件必带 SDEV；
+- 我方自有观察：**2024+ 部分华硕 OEM 镜像（天选6 实测）上 Intel FPTW64 读 SPI-flash MMIO 同样直接蓝屏**——SDEV 限制是否覆盖 MCFG 之外的 MMIO（SPI 区），公开文档未写明（该例 bugcheck 码未验证）。
 
-ssdiag 0.8.0 起的行为：`DeviceGuard\Scenarios\SystemGuard`（或 `SecureLaunch` 别名）`Enabled=1` **且** `DeviceGuard\VirtualizationBasedSecurityStatus==2`（内核开机回写）→ 部署前拒绝（含借用路径，无覆盖旗标——借用路径同走一条 ECAM 读）；`--inventory` 与 `--dry-run` 不受影响（不碰驱动）。检测是**注册表启发**：WMI [3]/[4] 才是权威运行态——若机器 tier-2 在跑而两个键都不在，属漏检样本，请按拒绝文案里的命令确认后反馈。
+ssdiag 0.8.1 起的行为：`GetSystemFirmwareTable('ACPI','SDEV')` 在场 **且** `DeviceGuard\VirtualizationBasedSecurityStatus==2`（内核开机回写）→ 部署前拒绝（含借用路径，无覆盖旗标——借用路径同走一条 ECAM 读）；SystemGuard/SecureLaunch 注册表键**保留为保守二级信号**（无文档关联，但同栈机器常齐——误拒无害、漏拒危险）；`--inventory` 与 `--dry-run` 不受影响（不碰驱动）。SDEV 探测是只读固件表查询，本身不会触发蓝屏。
 
-使能旋钮（公开，见 [System Guard 文档](https://learn.microsoft.com/en-us/windows/security/hardware-security/system-guard-secure-launch-and-smm-protection)）：`Scenarios\SystemGuard\Enabled=1` / GPO「Device Guard → 打开 VBS → Secure Launch Configuration」/ MDM `ConfigureSystemGuardLaunch` / 安全中心「内核隔离 → 固件保护」。Windows 侧**从不自动启用**这层（2026-10 微软公告的 HVCI 扩张波不含它）；2024+ 部分 OEM 在出厂镜像 image time provision（天选6 实测带、重装干净最新 Win11 后消失）。**推测待判**：OEM 具体写了哪个键、0x1EA 使能位是否恰为 SystemGuard 键，公开文档未写明——现有证据只有 #244 的 [2,3,4,5] 相关性，待一个天选6 在役样本采集钉死（配方见 FAQ 蓝屏节）。
+**为什么"重装后消失"（更正：SDEV 在固件里，重装不动它）**：消失必然出自 VBS 侧或固件选项侧，按可查性排序：① 重装后 VBS 实际没跑（看 `VirtualizationBasedSecurityStatus==2`，不是看设置里开关）；② BIOS ESS 类选项被重置/刷 BIOS 改动（关闭该选项即撤 SDEV 限制，排障页明示 workaround）；③ OS 侧未公开前置（ESS provisioning/生物识别 trustlet 等——纯假设）；④ OEM 镜像与重装 build 不同。待天选6 双态采样判别（配方见 FAQ 蓝屏节）。
 
 ## 3. 平台门行语义
 
@@ -48,7 +51,8 @@ ssdiag 0.8.0 起的行为：`DeviceGuard\Scenarios\SystemGuard`（或 `SecureLau
 | `core isolation (HVCI)` | registry `HVCI\Scenario\Enabled` | **配置态**——Win11 默认启用的机器常缺省（打印 unknown） |
 | `HVCI runtime (CodeIntegrity)` | `NtQuerySystemInformation(103)` 0x10 位 | **运行态权威**；RUNNING=代码完整性门已升——HVCI 本身不拒 probe（在役反证见 §2 勘误），硬门看下两行 / CLEAR=无此层 / unknown=查询被拒（非判决） |
 | `VBS status (kernel readback)` | registry `DeviceGuard\VirtualizationBasedSecurityStatus` | 内核开机回写（2=RUNNING）；=0 时 tier-2 无强制面 |
-| `Secure Launch (SystemGuard)` | registry `Scenarios\SystemGuard`（±`SecureLaunch` 别名）`Enabled` | **配置态启发**；与 VBS RUNNING 同时在场 = tier-2 armed，probe 部署前拒绝（0x1EA，#244） |
+| `Secure Launch (SystemGuard)` | registry `Scenarios\SystemGuard`（±`SecureLaunch` 别名）`Enabled` | **配置态二级信号（保守保留）**——与 secure PCI 无公开文档关联，同栈机器常齐；与 VBS RUNNING 同时在场也判 armed（误拒无害、漏拒危险） |
+| `SDEV table (ACPI)` | `GetSystemFirmwareTable('ACPI','SDEV')` | **文档化触发的固件半**（secure kernel 解析强制，0x1EA）；与 VBS RUNNING 同时在场 = tier-2 armed，probe 部署前拒绝（#244）；关闭 = BIOS ESS 类选项 |
 | `Secure Boot` | registry `SecureBoot\State` | **配置态软门**（0.7.1 起措辞，2026-11-08 依在役数据软化）——ON 时 pinned pmxdrv **可能**拒载（#40 分析背景：Intel/COMODO 交叉签名、无 Microsoft 根、叶证书晚于 2015-07-29 切线，不符 DSE 豁免），但 SB-ON 全量 probe 载入运行已有在役实证（bailu974 记录：`28a0`/MEOW R15，警告照打、驱动实载、完整 MMIO 读数 + `VERDICT UNLOCKED`；机理未知，拒载仍是默认预期）——工具**只打黄字 "may not load, just try"，从不先行拒绝**；真拒载时查 CodeIntegrity 3077/3089，免驱动路径 = EFI 只读采样；0.8.0 起唯一的部署前硬拒是 tier-2（上行） |
 
 ## 4. 解锁判读的旁证增量（B 站例首证）
@@ -59,4 +63,4 @@ ssdiag 0.8.0 起的行为：`DeviceGuard\Scenarios\SystemGuard`（或 `SecureLau
 
 - `nvapi.dll not loadable` 在 0.6.4 前是 x64 加载名 bug（裸名只在 SysWOW64），GC6 wake 从不生效——0.6.4 起 `nvapi64.dll` 优先，parked 态卡才能真正拉出 D3 诊断；
 - 非 0.6.4 用户遇到 MAP error 5 时，升级本身可能就是修复（0.4.8 发现层的 17 MiB 合并候选是另一类假阳性，#118）。
-- 0.8.0 的 tier-2 检测 = 注册表键启发（配置态）+ VBS 内核回读（运行态）；WMI `SecurityServicesRunning` [3]/[4] 是权威运行态但需 COM，未进工具——「tier 在跑、键不在」的漏检形态待样本（拒绝文案带确认命令）。
+- 0.8.1 的 tier-2 判据 = **SDEV 表**（文档化触发的固件半，`GetSystemFirmwareTable` 只读探测）+ SystemGuard/SecureLaunch 键（保守二级），两者都要求 VBS 回写 `==2`；WMI `SecurityServicesRunning` [3]/[4] 降为背景判别位。「tier 在跑但两项检测都阴性」的漏检形态待样本（拒绝文案带确认命令）。
