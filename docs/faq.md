@@ -115,6 +115,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 
 - `bcdedit /create /application osloader` 造出的 Windows Boot Loader 条目 `device` 落在盘符上、重启即失效，固件不枚举；`bootsector` 类型则 `device` 字段静默为空——**两条路都进不了 `{fwbootmgr}`**，别在这上面花时间（[Discussion #104](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/104) 双 4080 SUPER 实测记录）。
 - 可行形态（#104 实证）：数据卷缩出 ~2 GB FAT32 分区，按 U 盘同款布局放置 EFI+资产，BIOS 启动菜单里将其（显示为 `UEFI OS`）手动调前或 F12 一次性选择；可随时从 BIOS 菜单改回 Windows Boot Manager，不刷任何东西。
+- 系统 ESP 内嵌变体（[D#249](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/249) 实测，GA102/300 MB ESP）：`mountvol S: /S` 挂 ESP → 资产平铺 `S:\` 根、loader 放 `\EFI\NVUNLOCK\BOOTX64.EFI` → 写 `S:\chain-target.txt` 为 `\EFI\Microsoft\Boot\bootmgfw.efi` → `bcdedit /copy {bootmgr}` 造独立项、`device partition=S:`（落为 bootmgr 同卷的 `\Device\HarddiskVolume1`）、`path` 指 loader、`/addfirst` 置顶；原 `\EFI\Boot\bootx64.efi` 不动。**容量**：ga102 整包约 162 MB，300 MB ESP 装完余 103 MB（#29 的 100 MB ESP 装不下 80.7 MiB 载荷）。**两个运维坑**：固件/Windows 更新重排 BootOrder 会静默失效，重跑 `displayorder` 即恢复；不放 `i_know_what_i_am_doing.txt` 时无人确认就是 30 秒零写 ABORT、进系统读回 `NOT_UNLOCKED`，别误判成"装了没用"。
 - 为什么不提供自动化脚本：多数用户的认知是"引导分区炸了=工具的锅"；缩容场景千差万别（双系统/跨盘引导/btrfs、zfs 等不支持在线缩容的文件系统），工具面强行覆盖全部存储拓扑有真实的数据安全风险。**策略：教程可查（如上）、自动化不做、允许下游 fork 提供自动化脚本并互链。**
 
 异机制盘先显式指定 `-Family`（或用 `-Family all`）；**目标机同机有多个代际时必须把代际逗号并列**（如 `-Family 30,40`）或直接 `-Family all`，单代盘会让其余代的卡在启动时被跳过（`loader.log` 有专门一行点名缺哪一族并给重建命令）。Turing 检查不适用时可用 `-SkipGspCheck` / `--skip-gsp-check` 跳过制盘机检查，但目标机仍须满足 GSP 前置。离线 Turing 引导归档 `gsp_rm_boot_dbg.bin` 用 `-ProvenBlob` / `--proven-blob` 指定；长度和 hash 校验仍有效。下载或校验失败时不要换版本或绕过检查。Windows PowerShell TLS 下载失败时可用 WSL / Git Bash 运行 bash maker。
@@ -727,7 +728,7 @@ SS/PLM 读回请走 EFI 侧只读采样（#244 报告者即此安排：Windows �
 | 选择器仍有效但性能低 | 频率、功耗墙与工作负载 |
 | 卡在设备管理器报 Code 12（`CM_PROB_NORMAL_CONFLICT`），loader/`HANDOFF-OUT` 全绿 | 开机时刻的资源仲裁 artifact（[#165](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/165) 十二轮定谳：条件=多卡在场+第一枚举位卡被解锁；A4G/devnode 残留/卡身份/足印改变均已排除）。**自救：设备管理器把冲突卡禁用→启用**——仲裁重触发即愈，且 PnP 重载不走 FLR，解锁态原样保留（[#196](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/196) 同操作的第二用途）；或预防性地解锁第二枚举位卡（多卡时） |
 
-ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊卡。内嵌的 `pmxdrv.sys` 经校验，以自有 `SSDIAG_PMXDRV` 服务临时加载，退出时清理；若 nvoc 等已有可用设备则借用。部署驱动通常需要管理员。其安全模型与权衡单独成节：[pmxdrv.sys 的安全模型与权衡](#pmxdrv)。更多寄存器范围及驱动说明见 [ssdiag 文档](../tools/ssdiag/README.md)。
+ssdiag 从 OS 发现 BAR0，不接受手填物理地址；会按需唤醒停泊卡。内嵌的 `pmxdrv.sys` 经校验，以自有 `SSDIAG_PMXDRV` 服务临时加载，退出时清理；若 nvoc 等已有可用设备则借用。部署驱动通常需要管理员。**若直跑报 `OpenSCManager win32 5`**（本机安全策略拒绝服务管理器，[D#248](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/248) 实证）：先确认已提权；仍失败就手动把随包 `pmxdrv.sys` 装成服务并启动，再跑 ssdiag 走借用路径（读回正常、不受该策略影响）。其安全模型与权衡单独成节：[pmxdrv.sys 的安全模型与权衡](#pmxdrv)。更多寄存器范围及驱动说明见 [ssdiag 文档](../tools/ssdiag/README.md)。
 
 <a id="vgpu-vf-guest"></a>
 
