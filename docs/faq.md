@@ -688,6 +688,24 @@ ssdiag --reapply
 
 若遇到 `MAP_PHYS win32 error 5`（映射被拒）：0.6.3+ 会输出一次前置分类清单（HVCI 运行态 / 内核态杀软过滤驱动 / 驱动加载被拒）。**杀软的「暂停保护」或退出用户态进程不会卸载其内核钩子**——已两例实机闭环（Kaspersky，卸载后痊愈），详见 [平台门与 MAP 被拒排查](ssdiag-platform-gates.md)。
 
+**运行 ssdiag（或任何直读 PCI config 的工具）瞬间整机蓝屏**：蓝屏码 `0x1EA SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION`（[#244](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/244) 首个在役样本）。机理（[微软文档](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x1ea--secure-pci-config-space-access-violation)明文）：VBS 的 "secure PCI" 层禁止 VTL0 直接映射 MCFG/ECAM 区间读 config space，强制在 hypervisor/VTL1 的 EPT 层——**映射能成功、首次读取即整机蓝屏**（不是可恢复的 `MAP_PHYS error 5`）；WinDbg 四参数 = 故障指令 opcode（#244 实例 `0x8b`=MOV r32,r/m32）/ 设备 RID / config 偏移 / 故障 RIP。
+
+分两层看，**别把内核隔离（HVCI）当凶手**：HVCI/VBS 运行本身不触发 0x1EA——#188（VBS+HVCI on）/#204（HVCI ON）/#218（全开）都跑通过系统内 probe；触发层是 **System Guard Secure Launch / SMM 固件度量** 这一级（#244 机器 `SecurityServicesRunning=[2,3,4,5]`，判别位=[3]/[4]），保护范围也不止 MCFG——同族生态先例有 Speccy、NI-VISA（nipcibrd.sys，Surface 5）、AMD Ryzen Master；我方自有观察：**2024+ 部分华硕 OEM 镜像（天选6 实测）上 Intel FPTW64 读 SPI-flash MMIO 同样直接蓝屏**（该例 bugcheck 码未验证）。
+
+**推测（待样本判别，勿当定谳）**：这层的开启旋钮是 `DeviceGuard\Scenarios\SystemGuard`（GPO「Secure Launch Configuration」/ 安全中心「内核隔离→固件保护」同源，见 [System Guard 文档](https://learn.microsoft.com/en-us/windows/security/hardware-security/system-guard-secure-launch-and-smm-protection)）；Windows 从不自动启用它（2026-10 的 HVCI 扩张波不含这层）——2024+ 部分 OEM 在出厂镜像 image time provision 它，所以**重装干净最新 Win11 后机制消失**。OEM 具体写了哪个键、0x1EA 使能位是否恰为 SystemGuard 键，公开文档未写明，现有证据只有 #244 的相关性。
+
+ssdiag 0.8.0 起：检测到「Secure Launch provisioned + VBS RUNNING」就在部署前拒绝并给出确认命令（无覆盖旗标，因为代价是整机蓝屏不是拒绝读）；`--inventory` 不受影响。判别采集配方（一个天选6 样本即可把 OEM provision 位钉死）：
+
+```powershell
+Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard |
+  Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning
+# msinfo32 系统摘要 -> "基于虚拟化的安全性" 与 "...服务正在运行"
+# 键枚举：HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios 下有哪个子键、Enabled 值
+# 蓝屏样本：minidump 的 Arg1（opcode）/ Arg2（RID）/ Arg3（偏移）
+```
+
+SS/PLM 读回请走 EFI 侧只读采样（#244 报告者即此安排：Windows 侧 PnP/CUDA，读回留在 UEFI）。详见 [平台门与 MAP 被拒排查](ssdiag-platform-gates.md) §2a。
+
 | 读回结果 | 判断与下一步 |
 | --- | --- |
 | SS0=`0x88888888`，SS1 低四位=`0x8` | 覆盖值有效；再用匹配负载验证性能 |

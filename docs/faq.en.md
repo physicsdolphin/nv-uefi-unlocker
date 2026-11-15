@@ -689,6 +689,24 @@ ssdiag --reapply
 
 If you hit `MAP_PHYS win32 error 5` (mapping denied): 0.6.3+ prints a one-shot precondition breakdown (HVCI runtime / kernel-mode AV filter driver / driver refused load). **Pausing protection or exiting user-mode AV processes does NOT unload the kernel hooks** - two field closures (Kaspersky, cured after uninstall); see [platform gates and denied-map triage](ssdiag-platform-gates.md).
 
+**Running ssdiag (or any tool that reads PCI config directly) instantly bluescreens the whole machine**: the bug check is `0x1EA SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION` ([#244](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/244) is the first in-the-wild sample). Mechanism ([Microsoft's page](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x1ea--secure-pci-config-space-access-violation) is explicit): when VBS "secure PCI" is on, VTL0 is barred from directly mapping the MCFG/ECAM range to read config space, and the enforcement sits in the hypervisor/VTL1 EPT - **the map itself succeeds and the first read bluescreens the machine** (not a recoverable `MAP_PHYS error 5`); the four WinDbg arguments are the faulting instruction's opcode (`0x8b` = MOV r32,r/m32 in #244) / device RID / config offset / faulting RIP.
+
+Two tiers - **do not blame memory integrity (HVCI)**: HVCI/VBS running on its own does not trigger 0x1EA - #188 (VBS+HVCI on), #204 (HVCI ON) and #218 (SB+HVCI+blocklist all on) all ran the in-OS probe fine; the trigger tier is **System Guard Secure Launch / SMM firmware measurement** (#244's machine had `SecurityServicesRunning=[2,3,4,5]`, discriminants = [3]/[4]), and the protected set is bigger than MCFG - ecosystem siblings include Speccy, NI-VISA (nipcibrd.sys on a Surface 5) and the AMD Ryzen Master driver; our own observation: on some 2024+ ASUS OEM images (TUF Gaming 天选6, field-tested) Intel's FPTW64 bluescreens the same way just reading SPI-flash MMIO (that instance's bug check code unverified).
+
+**Speculation (pending a discriminating sample, not a verdict)**: the enabling knob is `DeviceGuard\Scenarios\SystemGuard` (same source as the GPO "Secure Launch Configuration" and Windows Security "Core isolation > Firmware protection", see the [System Guard doc](https://learn.microsoft.com/en-us/windows/security/hardware-security/system-guard-secure-launch-and-smm-protection)); Windows never auto-enables this tier (the October 2026 HVCI expansion wave does not include it) - some 2024+ OEMs provision it in the factory image, which is why **a clean reinstall of the latest Windows 11 makes it disappear**. Which exact key an OEM writes, and whether the 0x1EA enforcement is keyed to SystemGuard at all, is not publicly documented - the only evidence so far is #244's correlation.
+
+Since ssdiag 0.8.0: on "Secure Launch provisioned + VBS RUNNING" the probe refuses before deploying anything and prints a confirmation command (no override flag, because the cost is a machine-wide bugcheck, not a denied read); `--inventory` is unaffected. Collection recipe (one 天选6-class sample pins the OEM provision bits):
+
+```powershell
+Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard |
+  Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning
+# msinfo32 System Summary -> "Virtualization-based security" and "...Services Running"
+# key walk: which subkeys exist under HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios, and their Enabled values
+# crash sample: the minidump's Arg1 (opcode) / Arg2 (RID) / Arg3 (offset)
+```
+
+For SS/PLM read-back use the EFI-side read-only sampler (#244's reporter arranged exactly that: PnP/CUDA on the Windows side, read-back in UEFI). See [platform gates and denied-map triage](ssdiag-platform-gates.md) §2a.
+
 | Read-back | Verdict / action |
 | --- | --- |
 | SS0=`0x88888888`, SS1 low nibble=`0x8` | Overrides effective; verify performance with a matched workload |

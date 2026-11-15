@@ -1,4 +1,13 @@
-//! ssdiag v0.7.9 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.0 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.0 refuses the ECAM probes on the "secure PCI" tier (issue #244): when
+//! System Guard Secure Launch is provisioned (DeviceGuard\Scenarios\SystemGuard
+//! or the SecureLaunch alias) and VBS is running, a raw config-space read does
+//! not come back as a denied map (win32 5) - the hypervisor enforces it behind
+//! the map and the access is a whole-machine bugcheck 0x1EA
+//! (SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION). The platform gates gain a VBS
+//! status readback and a Secure Launch line, and the HVCI wording is corrected
+//! against field data: HVCI-on hosts run the probe fine (#188/#204/#218) - it
+//! is the Secure Launch tier that bluescreens.
 //! v0.7.9 lands the issue #237 disassembly round (JeusChrit, 595.44.15 GSP +
 //! VBIOS Falcon): GPC-indexed arrays extended to 12 slots (AD102-class),
 //! per-GPC ROP mask 0x822880+4g and the Ada TPC RECONFIG RAM 0x822800+4g
@@ -349,11 +358,14 @@ mod reg {
 // the authoritative *runtime* HVCI state. The registry value under
 // HVCI\Scenario reads back as the CONFIGURED policy (often absent on
 // machines where Windows 11 enabled memory integrity by default, which
-// `gate_word` prints as "unknown"); the CodeIntegrity options are what
-// the kernel actually enforces for MmMapIoSpace on caller-chosen
-// physical ranges. HVCI running = bit 0x10 (KMCI strict mode); bit 0x2
-// = test signing. Issue #118: this is the gate whose presence explains
-// a MAP_PHYS `win32 error 5` on an otherwise healthy, elevated run.
+// `gate_word` prints as "unknown"). HVCI running = bit 0x10 (KMCI strict
+// mode); bit 0x2 = test signing. Issue #118 originally pinned this bit as
+// the gate behind a MAP_PHYS `win32 error 5` on an otherwise healthy,
+// elevated run; field data has since corrected that - HVCI-on hosts run the
+// probe fine (#188/#204/#218), and the #118/B-station refusals were AV
+// kernel filters. The hard ECAM gate sits one tier up: with System Guard
+// Secure Launch provisioned, the same read is a whole-machine bugcheck
+// 0x1EA, refused before any deployment (issue #244, v0.8.0).
 #[link(name = "ntdll")]
 extern "system" {
     fn NtQuerySystemInformation(
@@ -414,9 +426,12 @@ fn map_denied_guidance() {
     let hvci = hvci_runtime();
     match hvci {
         Some(true) => println!(
-            "  1. HVCI (memory integrity) is RUNNING on this kernel - MmMapIoSpace on
-     caller-chosen physical ranges is refused by design. Disable Core
-     isolation (Windows Security > Device security) to use ssdiag here."
+            "  1. HVCI (memory integrity) is RUNNING on this kernel - code-integrity
+     gates are up, but on its own HVCI does not refuse these maps (field:
+     #188/#204/#218 all ran with HVCI on), so treat this as background and
+     keep reading. The separate tier to know about: with System Guard Secure
+     Launch provisioned the same read is a whole-machine bugcheck 0x1EA -
+     this tool refuses that case before deploying anything (issue #244)."
         ),
         Some(false) => println!("  1. HVCI is not running - mapping itself is not policy-blocked;"),
         None => println!("  1. HVCI runtime state could not be queried (treat as unknown);"),
@@ -540,6 +555,20 @@ const HVCI_SCENARIO: &str =
     "SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity";
 /// `UEFISecureBootEnabled`: 1 = Secure Boot on, 0 = off; readable unelevated.
 const SECUREBOOT_STATE: &str = r"SYSTEM\CurrentControlSet\Control\SecureBoot\State";
+/// System Guard Secure Launch (DRTM) provisioning knob - the documented
+/// registry path (learn.microsoft.com System Guard Secure Launch and SMM
+/// protection); GPO/MDM/Windows Security "Firmware protection" and OEM
+/// image-time provisioning land here.
+const SYSTEMGUARD_SCENARIO: &str =
+    r"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\SystemGuard";
+/// Alias key some GPO/MDM guides report; read defensively - whichever
+/// exists counts as provisioned.
+const SECURELAUNCH_SCENARIO: &str =
+    r"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\SecureLaunch";
+/// `VirtualizationBasedSecurityStatus` under the DeviceGuard key:
+/// kernel-written at boot - 2 = configured AND running, 1 = configured but
+/// not running, 0 = off. The WMI Win32_DeviceGuard field mirrors it.
+const DEVICEGUARD_KEY: &str = r"SYSTEM\CurrentControlSet\Control\DeviceGuard";
 
 fn gate_word(v: Option<u32>) -> &'static str {
     match v {
@@ -558,6 +587,38 @@ fn gate_word_c(v: Option<u32>) -> String {
         None => yellow(gate_word(v)),
     }
 }
+
+/// Some(true) = a Secure Launch / System Guard scenario key is set to 1
+/// (tier-2 provisioned); Some(false) = a key exists and reads 0; None = no
+/// key at all (the common case on machines without OEM/GPO provisioning).
+fn securelaunch_provisioned() -> Option<bool> {
+    let a = hklm_dword(SYSTEMGUARD_SCENARIO, "Enabled");
+    let b = hklm_dword(SECURELAUNCH_SCENARIO, "Enabled");
+    match (a, b) {
+        (None, None) => None,
+        (Some(1), _) | (_, Some(1)) => Some(true),
+        _ => Some(false),
+    }
+}
+
+/// VBS runtime readback (kernel-written at boot; WMI mirrors it): 2 = running.
+fn vbs_status() -> Option<u32> {
+    hklm_dword(DEVICEGUARD_KEY, "VirtualizationBasedSecurityStatus")
+}
+
+/// Tier-2 armed: the stack that turns a raw ECAM read into a whole-machine
+/// bugcheck 0x1EA (issue #244) is provisioned AND VBS is actually running -
+/// without the hypervisor there is no enforcement, so a provisioned key on a
+/// VBS-off machine is inert. Detection is registry-key based; the
+/// authoritative tier markers are SecurityServicesRunning 3 (Secure Launch)
+/// / 4 (SMM firmware measurement), readable only via WMI - a machine where
+/// the tier runs without either key would be missed here (accepted, and a
+/// datapoint we ask about in the refusal text and docs).
+fn secure_pci_armed() -> bool {
+    securelaunch_provisioned() == Some(true) && vbs_status() == Some(2)
+}
+
+const SECURE_PCI_REFUSAL: &str = "REFUSED: System Guard Secure Launch is provisioned and VBS is RUNNING on this\nmachine - the Windows \"secure PCI\" tier is armed (issue #244). In this tier\nthe hypervisor blocks VTL0 from reading the directly-mapped MCFG/ECAM range,\nand the access does not come back as a denied map (win32 5): it is a\nwhole-machine bugcheck 0x1EA (SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION).\nThis refusal has no override flag on purpose.\n  - `ssdiag --inventory` still works (PnP only: no driver, no config-space read);\n  - the SS/PLM readback belongs on the EFI side (the read-only sampler);\n  - to confirm the tier for a report, run:\n      Get-CimInstance -Namespace root\\Microsoft\\Windows\\DeviceGuard -ClassName Win32_DeviceGuard | Select-Object SecurityServicesRunning\n    a 3 (System Guard Secure Launch) or 4 (SMM firmware measurement) in the\n    list is the marker; if the list has neither while the registry key is\n    set, this refusal was overcautious - please report that datapoint;\n  - the provisioning key is DeviceGuard\\Scenarios\\SystemGuard (image-time\n    OEM provisioning on some 2024+ machines; a clean Windows reinstall\n    leaves it out - which is why the tier \"disappears\" after a reinstall).\n";
 
 /// The platform gates that decide whether the pinned pmxdrv can load at all,
 /// plus what installing it looks like from the outside. All values are
@@ -579,18 +640,50 @@ fn preflight() {
     let blocklist = hklm_dword(CI_CONFIG, "VulnerableDriverBlocklistEnable");
     let hvci = hklm_dword(HVCI_SCENARIO, "Enabled");
     let secure_boot = hklm_dword(SECUREBOOT_STATE, "UEFISecureBootEnabled");
+    let vbs = vbs_status();
+    let securelaunch = securelaunch_provisioned();
     println!("PLATFORM: vulnerable-driver blocklist = {}", gate_word_c(blocklist));
     println!("PLATFORM: core isolation (HVCI)       = {}", gate_word_c(hvci));
     match hvci_runtime() {
         Some(true) => println!(
-            "PLATFORM: HVCI runtime (CodeIntegrity) = {} - MmMapIoSpace on arbitrary{} physical ranges is refused by the kernel",
-            red("RUNNING"),
-            ""
+            "PLATFORM: HVCI runtime (CodeIntegrity) = {} - code-integrity gates are up;\n     on its own this does NOT refuse the probe (field: #188/#204/#218 all ran\n     with HVCI on) - the hard ECAM gate is the Secure Launch tier below",
+            red("RUNNING")
         ),
         Some(false) => println!("PLATFORM: HVCI runtime (CodeIntegrity) = {}", green("clear")),
         None => println!("PLATFORM: HVCI runtime (CodeIntegrity) = {}", yellow("unknown (query refused)")),
     }
     println!("PLATFORM: Secure Boot                 = {}", gate_word_c(secure_boot));
+    println!(
+        "PLATFORM: VBS status (kernel readback)  = {}",
+        match vbs {
+            Some(2) => red("RUNNING"),
+            Some(1) => yellow("configured, not running"),
+            Some(0) => green("off"),
+            _ => yellow("unknown"),
+        }
+    );
+    println!(
+        "PLATFORM: Secure Launch (SystemGuard)   = {}",
+        match securelaunch {
+            Some(true) => red("PROVISIONED"),
+            Some(false) => green("explicitly disabled"),
+            None => green("not provisioned"),
+        }
+    );
+    if secure_pci_armed() {
+        println!(
+            "{}",
+            yellow(
+                "PLATFORM: Secure Launch provisioned + VBS RUNNING - the \"secure PCI\" tier is armed."
+            )
+        );
+        println!("  In this tier a raw config-space read is NOT a denied map (win32 5): the");
+        println!("  hypervisor enforces it behind the map, and the access is a whole-machine");
+        println!("  bugcheck 0x1EA (SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION, issue #244).");
+        println!("  The probe refuses before deploying anything; --inventory and the EFI-side");
+        println!("  read-only sampler are the driver-free paths. The tier confirmation");
+        println!("  command is printed by the refusal.");
+    }
     if secure_boot == Some(1) {
         println!(
             "{}",
@@ -2395,6 +2488,12 @@ fn cleanup_driver() {
 }
 
 fn ensure_driver() -> Result<PmxDrv, String> {
+    // Tier-2 refusal sits before the borrow path too: an already-running
+    // PMXDRV-class driver would take the same ECAM read into the same
+    // bugcheck, so borrowing is no safer than deploying here.
+    if secure_pci_armed() {
+        return Err(SECURE_PCI_REFUSAL.to_string());
+    }
     if let Some(d) = PmxDrv::try_open() {
         println!("PMXDRV device already running - borrowing it (no service changes)");
         DRIVER_TOUCHED.store(true, std::sync::atomic::Ordering::Relaxed);
