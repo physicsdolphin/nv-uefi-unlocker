@@ -460,7 +460,7 @@ Turing 的交棒自 2026-11-08 起默认**门开**（与 Ampere/Ada 一致；TU1
 - **自签不解决 `ssdiag`**。`pmxdrv.sys` 是 Intel/COMODO 2018 交叉签名、没有微软根，`tools/ssdiag/README.md` 的原话是 load is **expected** to be refused；它列的三个豁免（≤1607 升级来的系统 / Secure Boot 关闭 / 签名证书早于 2015-07-29）在这张 2018-10-24 签发的叶证书上都不成立。所以 SB 常开时，系统内读回走 `loader.log` 的 `HANDOFF-OUT`。Linux 侧 `tools/diag-unlock.py` 是零驱动路径，但**没有人在 Secure Boot 开启状态下验证过它**。要 `ssdiag --reapply` 修回锁，仍需临时关一次 SB。
 
   **一个反例数据点（2026-11-09，[bailu974 的记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)）**：一台 Insyde 笔记本（COLORFIRE MEOW R15 24）在 Secure Boot 开启下，`ssdiag` 打印了这条预置警告，**但驱动实际加载成功**——末尾有 `driver service removed`，且 `0x823xxx` 的 MMIO 读数完整（读不出这些值就说明驱动没在）。机理未知（该机的 DSE/漏洞驱动 blocklist 状态未采集），**默认预期仍是"被拒"**，但请把这条警告当作提示而非判词：看末尾的 `driver service removed` 与寄存器读数是否完整再下结论，回报时请附上你的结果是"加载成功"还是"被拒"——这能把上表往任一方向推。
-- **反作弊不保证**。自签不改 Secure Boot 的状态位；据维护者陈述 Vanguard（LoL）看的就是这个状态位，而**反作弊本身没有任何一方实测过**（本条目所依据的报告者也明确写了未测）。ACE 系校验 TPM/PCR[7] 链式记录，自签链的度量与原厂引导不同，不保证通过（机制与「刷进固件」的对比见下文[两条路的度量代价](#secureboot-vs-ffs)）。
+- **反作弊此前不保证，现有首个 Vanguard 实测通过**。自签不改 Secure Boot 的状态位；据维护者陈述 Vanguard（LoL）看的就是这个状态位。**2026-11-14 首个实测**：MOK+shim 路线下 Riot Vanguard 内核驱动干净加载、零 VAN9001/VAN9003（[D#243](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/243)，N=1 单机单游戏）——ACE 系仍未测，别把单点外推成保证。ACE 系校验 TPM/PCR[7] 链式记录，自签链的度量与原厂引导不同，不保证通过（机制与「刷进固件」的对比见下文[两条路的度量代价](#secureboot-vs-ffs)）。
 - **换版本必须重签**：签名后改一个字节即失效；`*.bin` 资产不参与 PE 校验，不需要签。
 
 ### 动手之前：BitLocker
@@ -634,7 +634,7 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 | 路线 A（db 自签） | 二手反馈，无日志、无主板型号 | 未复现、未执行 |
 | Secure Boot 开启 + `ssdiag` | `tools/ssdiag/README.md`：expected to be refused；#210 据此选择不加载 | 未实测（#210 明确标 not verified） |
 | Secure Boot 开启 + `diag-unlock.py` | 无 | 未验证 |
-| 反作弊（Vanguard / ACE） | 维护者陈述 | 未测量 |
+| 反作弊（Vanguard / ACE） | Vanguard 侧已有单个实测：MOK+shim 路线下 `vgk.sys`/`vgc` 干净加载、零 VAN 错误（[D#243](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/243)，2026-11-14）；ACE 系仍无实测 | 单点实测，N=1 |
 | 固件内置 FFS 路线 | `docs/dxe-driver-ffs-feasibility.md`（设计、风险、PCR[1]/BitLocker 影响） | 未实机验证 |
 | 路线 C（按文件信任） | [bailu974 记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)：Insyde 文件信任 + Enforce，全链跑通 | 一台机；本项目未复现 |
 | `ssdiag` 在 SB 开启下加载成功 | 同上记录：预置警告打印但驱动加载、MMIO 读数完整 | 一台机反例；机理未知，默认预期仍是被拒 |
