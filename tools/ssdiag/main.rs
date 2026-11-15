@@ -1,4 +1,14 @@
-//! ssdiag v0.8.1 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.2 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.2 makes the tier-2 gate genuinely fail-closed (field-closed on the
+//! #244 T14s): the DeviceGuard registry VirtualizationBasedSecurityStatus is
+//! ABSENT on some VBS-running machines (reporter's machine: WMI says 2, the
+//! value is not in the registry), so requiring registry Some(2) - as 0.8.0
+//! and 0.8.1 both did - silently disarms the gate exactly where the tier is
+//! live. The unknown state is now explicit: SDEV table present + VBS state
+//! unreadable -> refuse (the cost of a miss is a whole-machine bugcheck; the
+//! cost of this refusal is reading the printed WMI command). VBS definitively
+//! off / configured-not-running still passes. Mock-able branches: SDEV
+//! present, registry absent, VBS=2.
 //! v0.8.1 re-grounds the tier-2 gate in the DOCUMENTED trigger (correction
 //! round, 2026-11-15): "secure PCI" keys on an SDEV (Secure Devices) ACPI
 //! table + VBS running - since Windows 10 2004 (19041.423) unsupported
@@ -613,7 +623,10 @@ fn securelaunch_provisioned() -> Option<bool> {
     }
 }
 
-/// VBS runtime readback (kernel-written at boot; WMI mirrors it): 2 = running.
+/// VBS runtime readback: 2 = running, 1 = configured not running, 0 = off.
+/// "Kernel-written at boot" was the 0.8.0 assumption - field-corrected on
+/// the #244 T14s (build 26300): the value is ABSENT there while WMI
+/// Win32_DeviceGuard still reports 2, so None means UNVERIFIED, not off.
 fn vbs_status() -> Option<u32> {
     hklm_dword(DEVICEGUARD_KEY, "VirtualizationBasedSecurityStatus")
 }
@@ -649,18 +662,25 @@ fn sdev_present() -> Option<bool> {
 }
 
 /// Tier-2 armed. The DOCUMENTED trigger (issue #244 correction round): an
-/// SDEV ACPI table plus VBS actually running - without the hypervisor there
-/// is no enforcement, so either half missing means inert. The
-/// SystemGuard/SecureLaunch registry keys stay as a conservative secondary
-/// signal: no public document ties them to secure PCI (they co-occur on
-/// secured-stack machines), so refusing on them alone is overcautious but
-/// never unsafe.
+/// SDEV ACPI table plus VBS actually running. The registry VBS read-back is
+/// not trustworthy as a NEGATIVE signal (absent on VBS-running machines -
+/// the #244 T14s), so the unknown state fails CLOSED on the documented
+/// trigger half: SDEV present + unreadable VBS state -> refuse. Only a
+/// definitive "VBS not running" (0, or 1 = configured-not-running) clears
+/// the gate, since without the hypervisor there is no enforcement face.
+/// The SystemGuard/SecureLaunch keys stay as a conservative secondary
+/// signal, but only on a POSITIVE VBS=2 read - on an SDEV-less machine the
+/// documented condition cannot be met, so unknown VBS there must not refuse
+/// (that would misfire on ordinary machines).
 fn secure_pci_armed() -> bool {
-    let vbs = vbs_status() == Some(2);
-    (sdev_present() == Some(true) && vbs) || (securelaunch_provisioned() == Some(true) && vbs)
+    match vbs_status() {
+        Some(2) => sdev_present() == Some(true) || securelaunch_provisioned() == Some(true),
+        None => sdev_present() == Some(true), // fail-closed: unverifiable + trigger half present
+        _ => false,                           // 0 = off, 1 = configured-not-running: no enforcement
+    }
 }
 
-const SECURE_PCI_REFUSAL: &str = "REFUSED: the Windows \"secure PCI\" tier is armed on this machine - the documented\ntrigger pair is present: an SDEV (Secure Devices) ACPI table plus VBS RUNNING\n(issue #244). In this tier the secure kernel blocks unsupported PCI config-space\naccess - parsing the MCFG table and mapping config space to virtual memory is\nnamed explicitly in the docs - and the access does not come back as a denied\nmap (win32 5): it is a whole-machine bugcheck 0x1EA\n(SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION).\nThis refusal has no override flag on purpose.\n  - `ssdiag --inventory` still works (PnP only: no driver, no config-space read);\n  - the SS/PLM readback belongs on the EFI side (the read-only sampler);\n  - the documented off-switch is FIRMWARE: the UEFI option that publishes the\n    SDEV table (Enhanced Windows Biometric Security / Enhanced Sign-in\n    Security; on the Lenovo page it sits under Security > Virtualization).\n    Disabling it removes the SDEV+VBS restrictions; a Windows reinstall does\n    NOT - the table lives in firmware, so if the tier \"disappeared\" after a\n    reinstall, VBS is most likely no longer running (check\n    VirtualizationBasedSecurityStatus == 2, not the Settings toggle).\n";
+const SECURE_PCI_REFUSAL: &str = "REFUSED: the Windows \"secure PCI\" tier is armed on this machine - the documented\ntrigger pair is present: an SDEV (Secure Devices) ACPI table plus VBS RUNNING\n(or, if the registry VBS status is absent, plus VBS state UNVERIFIED - refused\nfail-closed, since the value is absent on some VBS-running machines, issue #244).\nIn this tier the secure kernel blocks unsupported PCI config-space access -\nparsing the MCFG table and mapping config space to virtual memory is named\nexplicitly in the docs - and the access does not come back as a denied map\n(win32 5): it is a whole-machine bugcheck 0x1EA\n(SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION).\nThis refusal has no override flag on purpose.\n  - `ssdiag --inventory` still works (PnP only: no driver, no config-space read);\n  - the SS/PLM readback belongs on the EFI side (the read-only sampler);\n  - to confirm the runtime VBS state independently, run:\n      Get-CimInstance -Namespace root\\Microsoft\\Windows\\DeviceGuard -ClassName Win32_DeviceGuard | Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning\n    (2 = running; the registry read-back above is NOT the authority - it is\n    absent on some running machines). Only a definitive \"VBS not running\"\n    clears this gate;\n  - the documented off-switch is FIRMWARE: the UEFI option that publishes the\n    SDEV table (Enhanced Windows Biometric Security / Enhanced Sign-in\n    Security; on the Lenovo page it sits under Security > Virtualization).\n    Disabling it removes the SDEV+VBS restrictions; a Windows reinstall does\n    NOT - the table lives in firmware, so if the tier \"disappeared\" after a\n    reinstall, VBS is most likely no longer running.\n";
 
 /// The platform gates that decide whether the pinned pmxdrv can load at all,
 /// plus what installing it looks like from the outside. All values are
@@ -701,7 +721,7 @@ fn preflight() {
             Some(2) => red("RUNNING"),
             Some(1) => yellow("configured, not running"),
             Some(0) => green("off"),
-            _ => yellow("unknown"),
+            _ => yellow("unverified (registry value absent - WMI may still say 2; fail-closed below)"),
         }
     );
     println!(
@@ -733,6 +753,16 @@ fn preflight() {
         println!("  read-only sampler are the driver-free paths. The documented off-switch is");
         println!("  firmware (Enhanced Windows Biometric Security / Enhanced Sign-in");
         println!("  Security) - a Windows reinstall does not remove the SDEV table.");
+    } else if vbs.is_none() && sdev_present() == Some(true) {
+        println!(
+            "{}",
+            yellow("PLATFORM: SDEV table PRESENT + VBS state unverifiable - refusing fail-closed.")
+        );
+        println!("  The registry VBS status is absent on some VBS-RUNNING machines (#244), so");
+        println!("  \"absent\" cannot be read as \"off\": with the SDEV table live, a raw");
+        println!("  config-space read is a whole-machine bugcheck 0x1EA. Confirm the runtime");
+        println!("  state with the WMI command printed by the refusal; only a definitive");
+        println!("  \"VBS off / not running\" re-enables the probe here.");
     }
     if secure_boot == Some(1) {
         println!(
