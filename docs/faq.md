@@ -340,6 +340,8 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 
 机器：ASUS ROG Strix G16 G614JV（RTX 4060 Laptop `10de:28e0`，混合输出/Optimus——机制表第 1 行“真掉电”的标准宿主形态）。操作只有一项：在该机隐藏 BIOS 菜单里把 **ACPI D3 support 全局关闭**。结果：**解锁 100% 保留**——#224 的欺诈器、D#229 的 CUDA 保活、独显直连切换等系统侧补偿一概不再需要。
 
+**系统内金丝雀读数（同日补录）**：进系统 `ssdiag`（0.6.7+ 判定行）读回 `VERDICT [ada]: UNLOCKED (override values live)`、`CANARY: cleared + SS live - a reset happened but the AON island survived it (FLR/SBR class, not a rail-off)`。这把结论在**第二条独立证据轴**上又钉了一遍：金丝雀清零=本引导确实发生过一次 FLR/SBR 级复位，SS 活着=**撤电没有发生**——与第 1 行 rail 断的形态（金丝雀和 FEAT 一起没）正相反。这也是判读四格里“清零 + FEAT 完好”格的**首个实例记录**（#37 Victus 占“两者一起没”、#109 B650 占“完好+完好”、TU106 桌面对照占“完好+被抹”写入型）。关掉 ACPI D3 的效果由此在两条轴上同时可见：状态轴（解锁保留）与复位轴（只剩 FLR/SBR 级复位，AON 岛按设计存活——它只在撤电时复位，其余复位源够不着它）。
+
 价值在方向上：此前“混合模式进系统丢解锁 = ACPI D3 断电”是从 `POWER:`/`_PR3` 采样与 [#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)/[#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)/[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224) 现场归纳出的**判读**；这是第一次从**固件侧旋钮**反向验证——把固件给平台的 D3 电源路径本身关掉，丢失随之消失。第 1 行的处理顺序由此多出最优先的一档：固件有 ACPI D3 开关（含隐藏项）就先关它，比一切系统侧手段都更根本；零独显直出、欺诈器用不上的机器也多了一条路。
 
 固件里找不到这个开关的话：[gsetupmod](https://github.com/MikeWuPing/gsetupmod)（第三方 UEFI 设置浏览器，解析固件 HII/IFR、把 `SUPPRESS_IF` 隐藏项以可编辑形式显示、经 UEFI 变量写回）——**与本项目无关**，开发者在 G614JV 上实测：在其中关闭 ACPI D3 与解锁隐藏 BIOS 菜单效果一致。约束如实：镜像未签名（需 Secure Boot 关闭）；个人使用免费、商用需联系作者；改的是固件 setup 变量——一次只改一项并记录改了什么。
