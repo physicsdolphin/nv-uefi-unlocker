@@ -371,6 +371,14 @@ bash release/make-usbroot.sh --family 40 \
 - [faucon](https://github.com/vbe0201/faucon)——fuc5 反汇编备选（实测解不了
   量产 booter）
 
+**平台侧伴侣工具（与本项目无关）**
+
+- [gsetupmod](https://github.com/MikeWuPing/gsetupmod)（MikeWuPing，个人使用免费/
+  商用联系作者）——UEFI 设置浏览器：解析固件 HII/IFR，把 `SUPPRESS_IF` 隐藏项以
+  可编辑形式显示并经 UEFI 变量写回；本项目在丢锁对策（固件 ACPI D3 开关，含隐藏项）
+  中引用其定位开关，G614JV 实测与解锁隐藏 BIOS 菜单等效（需 Secure Boot 关闭）。
+  见 [FAQ 丢锁一节实例记录](docs/faq.md#relock-acpid3)
+
 许可：**GPL-2.0-only**（`LICENSE`）。NVIDIA 固件与 VBIOS 版权归 NVIDIA，按其
 原许可条款从钉版公开包本地再生，不在本仓库分发。
 

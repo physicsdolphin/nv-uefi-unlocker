@@ -384,6 +384,17 @@ into a local, untracked `reference/` directory, grouped by role:
 - [faucon](https://github.com/vbe0201/faucon) — alternative fuc5
   disassembler (could not decode the production booter in practice)
 
+**Platform-side companion tool (unrelated to this project)**
+
+- [gsetupmod](https://github.com/MikeWuPing/gsetupmod) (MikeWuPing; free for
+  personal use, commercial use needs the author) — UEFI setup browser: parses
+  the firmware HII/IFR data, shows `SUPPRESS_IF`-hidden options as editable
+  and writes back via UEFI variables; referenced by this project's relock
+  remedy (locating the firmware ACPI D3 switch, hidden options included) —
+  measured on a G614JV as equivalent to unlocking the hidden BIOS menu
+  (requires Secure Boot off). See the [field record in the FAQ relock
+  section](docs/faq.en.md#relock-acpid3)
+
 License: **GPL-2.0-only** (`LICENSE`). NVIDIA firmware and VBIOS remain
 NVIDIA property; regenerate them locally from pinned public packages
 under their own license terms — they are not distributed in this
