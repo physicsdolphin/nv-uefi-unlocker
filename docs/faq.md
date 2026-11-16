@@ -301,7 +301,7 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 
 自己看的话：卷根放 `	x-acpi-dump.txt` 把平台 AML 带回来（标记表 `tx-acpi-dump`），再查父根口的 `_PR3` 是否存在、`_ON` / `_OFF` 是否幂等、PERST# 挂在哪个 GPIO。一半的争论到这一步就有答案了。AML 说的是"平台**有权**怎么做"，`ssdiag` 0.6.8 起的 `POWER:` 两行说的是"**此刻**做到了哪一步"：卡与上游根口各自的 `PMCSR`/D 态，根口读 `D3` 就是 `_OFF` 已经跑过。注意它只是快照——`D0` 不证明这一引导没进过 `D3`，那是金丝雀回答的。
 
-尚未切开：**GC6 与 GCOFF 是两个不同目标**（前者保自刷新，后者是完整断电），`_PR3` 路径与 GC6 唤醒路径目前被混着说，需要一次专门的对照。
+尚未切开：**GC6 与 GCOFF 是两个不同目标**（前者保自刷新，后者是完整断电），`_PR3` 路径与 GC6 唤醒路径目前被混着说，需要一次专门的对照。（2026-11-16 起有一条相邻实证：固件关 ACPI D3 后 GCOFF 不再发生，机理定位见[实例记录](#relock-acpid3)；两目标的专用对照仍未做。）
 
 ### 为什么重算不会把卡弄坏
 
@@ -343,6 +343,12 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 价值在方向上：此前“混合模式进系统丢解锁 = ACPI D3 断电”是从 `POWER:`/`_PR3` 采样与 [#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)/[#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)/[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224) 现场归纳出的**判读**；这是第一次从**固件侧旋钮**反向验证——把固件给平台的 D3 电源路径本身关掉，丢失随之消失。第 1 行的处理顺序由此多出最优先的一档：固件有 ACPI D3 开关（含隐藏项）就先关它，比一切系统侧手段都更根本；零独显直出、欺诈器用不上的机器也多了一条路。
 
 固件里找不到这个开关的话：[gsetupmod](https://github.com/MikeWuPing/gsetupmod)（第三方 UEFI 设置浏览器，解析固件 HII/IFR、把 `SUPPRESS_IF` 隐藏项以可编辑形式显示、经 UEFI 变量写回）——**与本项目无关**，开发者在 G614JV 上实测：在其中关闭 ACPI D3 与解锁隐藏 BIOS 菜单效果一致。约束如实：镜像未签名（需 Secure Boot 关闭）；个人使用免费、商用需联系作者；改的是固件 setup 变量——一次只改一项并记录改了什么。
+
+**机理补注（2026-11-16，对照 `reference/open-gpu-kernel-modules` 615.78.08 源码定位）**：
+
+- **深层状态的准入是固件+GSP 协商出来的，不是驱动硬编码**：RTD3 族的 GC6/GC8/GCOFF 能力位由 GSP 固件经 POWER_FEATURES 键值上报（`kernel_gsp.c`：`POWER_FEATURES_IS_{GC6,GC8,GCOFF}_RTD3_ALLOWED` → `bIsGcOffRtd3Allowed` 等），RM 落成 `PDB_PROP_GPU_RTD3_GCOFF_SUPPORTED`，`dynamic-power.c` 的 `RmCheckRtd3GcxSupport()` 只认这些属性。而 GCOFF 的动作本身就是"整颗芯片撤电"——根口 PME_Turn_Off → L2/3 → PERST#（驱动源码里连 `DEFAULT_GCOFF_PEXRST_DELAY` 都为它而设）→ 撤电，这条物理链只有平台固件走得通（见上文"平台上到底是谁在断电"），驱动还会专门评估上游根口的 D3cold `_DSM`（`nv_acpi_d3cold_dsm_for_upstream_port()`）。固件关掉 ACPI D3 后，平台断电资源（`_PR3`）从枚举里消失，GCOFF 失去准入——"关 ACPI D3 后 GCOFF 不再发生"的观察与此吻合。（`IS_GCOFF_RTD3_ALLOWED` 如何感知平台 `_PR3` 这一跳未在源码内钉死，此处按实测事实+上述定位如实记录。）
+- **NVPCF 是这条断电-唤醒循环的加速器**：`\_SB.NPCF` 是 Dynamic Boost 的平台 ACPI 设备，Linux 驱动注册 `NPCF` 通知回调并直接调 `\_SB.NPCF._DSM`（`nv-acpi.c`）。上游报告其通知会把已进 D3cold 的 GPU 周期性唤醒（open-gpu-kernel-modules [#1300](https://github.com/NVIDIA/open-gpu-kernel-modules/issues/1300)；[#1299](https://github.com/NVIDIA/open-gpu-kernel-modules/pull/1299) 尝试把通知推迟到运行时恢复再处理）——NVPCF 机器上这条循环本就更频繁，混合本"几分钟内掉锁"的节奏与此一致；固件关掉 ACPI D3 后 GPU 不再进 D3cold，NVPCF 通知也就没有可唤醒的对象。
+- **两层关法不同**：固件层（BIOS 选项，本条记录）最干净——驱动在能力协商阶段就看不到断电路径，整族需要平台断电的深层状态一并失去准入；运行时内核层禁（`pci_d3cold_disable()` / `d3cold_allowed=0`）只拦 D3hot→D3cold 的最后一步、设备停在 D3hot，驱动若未感知仍会按断电流程走（上游 [#1228](https://github.com/NVIDIA/open-gpu-kernel-modules/pull/1228) 描述的 eGPU 形态故障：GPU 侧走完断电流程、板电未断、GSP 报错掉总线）。
 
 <a id="relock-148"></a>
 
