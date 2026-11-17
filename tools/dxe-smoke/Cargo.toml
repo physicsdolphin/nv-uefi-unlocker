@@ -1,0 +1,14 @@
+[package]
+name = "dxe-smoke"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+loader = { path = "../../loader" }
+uefi = { version = "0.41", features = ["global_allocator", "alloc", "panic_handler"] }
+
+[profile.release]
+lto = true

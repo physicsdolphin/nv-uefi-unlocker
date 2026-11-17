@@ -1,0 +1,8 @@
+PE:   machine=0x8664 subsystem=0x000a reloc rva=0x55000 size=0x408
+PE:   subsystem patched -> 0x000b (EFI_BOOT_SERVICE_DRIVER)
+WROTE release/dxe-smoke/NvUnlockDxe-tx.efi (336384 bytes)
+WROTE release/dxe-smoke/NvUnlockDxe-tx.ffs (336448 bytes)
+SHA256 release/dxe-smoke/NvUnlockDxe-tx.efi = 5c196b98481739d8dc1f25000a7c2bafc9947cd07636b2fa02b899f4929c831a
+SHA256 release/dxe-smoke/NvUnlockDxe-tx.ffs = 798b760b183863b35b78603e46fcb74e175d2736d1519b0d2d3abeb0cbba3bb7
+NOTE: erase polarity of the built State byte = 0xf8 - must match the target FV (audit N10); UEFITool normalizes on insert.
+NOTE: the FFS carries no NVIDIA assets - markers/assets stay on the volume.

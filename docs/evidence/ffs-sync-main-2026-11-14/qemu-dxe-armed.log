@@ -1,0 +1,37 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:03.0-1" from PciRoot(0x0)/Pci(0x3,0x0)/USB(0x0,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:03.0-1" from PciRoot(0x0)/Pci(0x3,0x0)/USB(0x0,0x0)
+SMOKE mode=armed
+SMOKE process_fv=SUCCESS
+SMOKE PASS: RAM FV accepted
+SMOKE dispatch=SUCCESS
+SMOKE PASS: FFS dispatched by DxeCore
+SMOKE PASS: FV entry deferred despite BDS_ARCH presence
+[    120ms] INFO : loader::logging: log file \loader.log opened on boot volume
+[    175ms] INFO : loader::logging: nv-uefi-unlocker v2.1.12-rc3 (tx builds carry the gated transaction; readonly = console output only)
+[    200ms] INFO : loader::dxe: FORM: firmware-resident DXE driver, build id 'nv-uefi-unlocker DXE driver form 1', tx=false, notification=true
+[    211ms] INFO : loader::dxe: ARM: NVUX2 volume fafd1abe3f0000000000000001000000 + pinned manifest/control snapshot
+[    221ms] INFO : loader::dxe: FAILSAFE: attempt 1/2, retained until explicit app reauthorization; firmware return is not OS health
+[    229ms] INFO : loader::dxe: WATCHDOG: explicitly armed for 300s; retained on return, boot manager/OS owns subsequent policy
+[    237ms] INFO : loader::dxe: CONFIRM: pinned unattended policy - no keyboard window
+[    244ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[    252ms] INFO : loader::pci: ENUMERATE: 7 PciIo handles
+[    254ms] INFO : loader::pci: PCI 0000:00:00.0 8086:29c0 class 000600
+[    256ms] INFO : loader::pci: PCI 0000:00:01.0 1234:1111 class 000300
+[    257ms] INFO : loader::pci: PCI 0000:00:02.0 8086:10d3 class 000200
+[    258ms] INFO : loader::pci: PCI 0000:00:03.0 1b36:000d class 000c03
+[    259ms] INFO : loader::pci: PCI 0000:00:1f.0 8086:2918 class 000601
+[    261ms] INFO : loader::pci: PCI 0000:00:1f.2 8086:2922 class 000106
+[    262ms] INFO : loader::pci: PCI 0000:00:1f.3 8086:2930 class 000c05
+[    272ms] INFO : loader::gop: PHASE: GOP-PROBE (read-only)
+[    281ms] INFO : loader::gop: GOP-PROBE: 2 GOP handles
+[    283ms] INFO : loader::gop: GOP handle Handle(0x1e662a98): 1280x800 Bgr
+[    288ms] INFO : loader::gop: GOP handle Handle(0x1e7a7418): 1280x800 Bgr
+[    293ms] INFO : loader::runner: SAMPLE: no NVIDIA GPU selected or present, skipped (negative control path)
+[    297ms] INFO : loader::chainload: CHAIN-PRE: no \tx-preload.txt - preload is opt-in since #198, legacy chain path
+[    309ms] INFO : loader::dxe: FINAL: driver phases returned; OS health unconfirmed, attempt count retained
+SMOKE count=1
+SMOKE PASS: attempt budget persisted
+SMOKE PASS: boot latch established or invalid authority refused
+SMOKE PASS: repeated ReadyToBoot did not rerun
+SMOKE PASS: second image instance did not rerun
+SMOKE COMPLETE mode=armed

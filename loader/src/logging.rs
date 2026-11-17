@@ -10,7 +10,6 @@
 use alloc::format;
 use core::cell::UnsafeCell;
 use log::{Level, Log};
-use uefi::boot;
 use uefi::proto::media::file::{File, FileAttribute, FileHandle, FileMode, RegularFile};
 use uefi::{cstr16, system, CStr16, CString16};
 
@@ -118,6 +117,9 @@ const FLUSH_MARKERS: &[&str] = &[
     // "layout" commit every segment boundary and the FWSEC-section step
     // lines (all "FWSEC:"-prefixed) so the ignition stretch is line-resolved.
     "TX:", "layout",
+    // DXE-form evidence anchors (PR #100 audit F3/N4): provenance, arming
+    // and guard-override visibility survive a hang with the run.
+    "FORM", "ARM:", "FAILSAFE", "OVERRIDES",
 ];
 
 /// Ultrafast speed profile (`\tx-ultrafast.txt`): marker flushes are the
@@ -148,6 +150,7 @@ const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "RESULT", "FINAL", "TX:", "CHAIN", "QUIET", // verdicts
     "INPUT-SETTLE", // phantom-key suppression notice (stuck-key class)
     "KEYS:", // \tx-ignore-key.txt load result (phantom-key ignore list)
+    "FORM", "ARM:", "FAILSAFE", "OVERRIDES", // DXE-form provenance (audit F3/N4)
 ];
 
 /// Pure matcher for [`CONSOLE_QUIET_MARKERS`]; the sim mirror
@@ -272,7 +275,13 @@ impl Log for DualLogger {
         let quiet = unsafe { *self.quiet.get() };
         let console_enabled = unsafe { *self.console_enabled.get() };
         let console_off = unsafe { *self.console_off.get() };
-        if console_enabled && !console_off && (!quiet || console_visible(&line)) {
+        // The DXE driver form can run with no console in the system table
+        // (headless firmware); a null stdout pointer must never be deref'd.
+        if console_enabled
+            && !console_off
+            && crate::keywait::stdout_available()
+            && (!quiet || console_visible(&line))
+        {
             if let Ok(s) = CString16::try_from(line.as_str()) {
                 system::with_stdout(|out| {
                     let _ = out.output_string_lossy(&s);
@@ -421,7 +430,7 @@ pub fn console_muted() -> bool {
 /// `FileMode::ReadWrite` on an existing file does not truncate (only
 /// CreateReadWrite does), and `END_OF_FILE` seeks to the current end.
 fn reopen_log() -> Option<RegularFile> {
-    let mut fs = boot::get_image_file_system(boot::image_handle()).ok()?;
+    let mut fs = crate::volumes::marker_fs().ok()?;
     let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
     let handle: FileHandle = root
         .open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty())
@@ -432,16 +441,13 @@ fn reopen_log() -> Option<RegularFile> {
 }
 
 fn open_fresh_log() -> Option<RegularFile> {
-    let mut fs = boot::get_image_file_system(boot::image_handle()).ok()?;
+    let mut fs = crate::volumes::marker_fs().ok()?;
     let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
 
-    // Remove a stale log from a previous boot so each run starts clean.
-    if let Ok(handle) = root.open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
-        // A regular file handle only; directories cannot be deleted blindly.
-        if let Some(reg) = handle.into_regular_file() {
-            let _ = reg.delete();
-        }
-    }
+    // Rotate (audit F3): archive the previous log instead of destroying it.
+    // Best-effort - a failed rotation must not stop the new run. Replaces
+    // main's plain stale-log delete; the fresh log still starts empty.
+    rotate_previous_log(&mut root);
 
     let handle: FileHandle = root
         .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
@@ -470,7 +476,7 @@ fn open_fresh_log() -> Option<RegularFile> {
         // flush-only path for the whole run (v2.1.9 semantics, which this
         // firmware demonstrably logs fine on).
         set_log_commit(0);
-        let mut fs = boot::get_image_file_system(boot::image_handle()).ok()?;
+        let mut fs = crate::volumes::marker_fs().ok()?;
         let mut root: uefi::proto::media::file::Directory = fs.open_volume().ok()?;
         let handle: FileHandle = root
             .open(LOG_PATH, FileMode::CreateReadWrite, FileAttribute::empty())
@@ -478,4 +484,71 @@ fn open_fresh_log() -> Option<RegularFile> {
         return handle.into_regular_file();
     }
     Some(file)
+}
+
+/// Log history (audit F3 + 2026-11-01 log-persistence round): each armed
+/// boot shifts a three-generation chain instead of destroying the previous
+/// record — `\loader.log` → `\loader-prev.log` → `\loader-prev2.log` →
+/// `\loader-prev3.log` (oldest dropped). EFI has no rename, so every shift
+/// is a bounded copy: 1 MiB per generation caps the worst case at ~3 MiB of
+/// volume I/O per boot.
+const LOG_HISTORY: usize = 3;
+const PREV_LOG_PATHS: [&CStr16; LOG_HISTORY] = [
+    cstr16!(r"\loader-prev.log"),
+    cstr16!(r"\loader-prev2.log"),
+    cstr16!(r"\loader-prev3.log"),
+];
+const PREV_LOG_CAP: usize = 1024 * 1024;
+
+/// Shift the generation chain oldest-first (each copy's source still
+/// exists), then delete the original so the fresh log starts empty.
+fn rotate_previous_log(root: &mut uefi::proto::media::file::Directory) {
+    for gen in (1..LOG_HISTORY).rev() {
+        copy_capped(root, PREV_LOG_PATHS[gen - 1], PREV_LOG_PATHS[gen]);
+    }
+    copy_capped(root, LOG_PATH, PREV_LOG_PATHS[0]);
+    if let Ok(h) = root.open(LOG_PATH, FileMode::ReadWrite, FileAttribute::empty()) {
+        if let Some(reg) = h.into_regular_file() {
+            let _ = reg.delete();
+        }
+    }
+}
+
+/// Bounded copy of one log generation: delete the destination (EFI open
+/// never truncates), copy up to `PREV_LOG_CAP`, flush via drop-close.
+/// Missing sources are the normal early-boot case and stay silent.
+fn copy_capped(root: &mut uefi::proto::media::file::Directory, src: &CStr16, dst: &CStr16) {
+    let Ok(handle) = root.open(src, FileMode::Read, FileAttribute::empty()) else {
+        return;
+    };
+    let Some(mut old) = handle.into_regular_file() else { return };
+
+    if let Ok(h) = root.open(dst, FileMode::ReadWrite, FileAttribute::empty()) {
+        if let Some(reg) = h.into_regular_file() {
+            let _ = reg.delete();
+        }
+    }
+    let Ok(new_handle) = root.open(dst, FileMode::CreateReadWrite, FileAttribute::empty()) else {
+        return;
+    };
+    let Some(mut new) = new_handle.into_regular_file() else { return };
+
+    let mut chunk = [0u8; 4096];
+    let mut copied = 0usize;
+    while copied < PREV_LOG_CAP {
+        let want = chunk.len().min(PREV_LOG_CAP - copied);
+        match old.read(&mut chunk[..want]) {
+            Ok(0) => break,
+            Ok(n) => {
+                if new.write(&chunk[..n]).is_err() {
+                    break;
+                }
+                copied += n;
+            }
+            Err(_) => break,
+        }
+    }
+    // Drops close (and flush) both files.
+    drop(new);
+    drop(old);
 }
