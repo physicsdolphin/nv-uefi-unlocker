@@ -557,9 +557,9 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
 
 5. **验证**：`mokutil --sb-state` 应为 `SecureBoot enabled`；固件真正放行的证据是盘上出现新的 `loader.log` 且含 TX banner。
 
-### 路线 B：MOK + shim（两台机报告，其中一台为台式机全流程）
+### 路线 B：MOK + shim（三台机报告，两台为台式机全流程）
 
-固件只校验微软签名的 shim；你的密钥通过 MOK 在 shim 之后生效，主板密钥库不动。依据是两份现场报告：[#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162)（2026-11 上旬，Secure Boot 开启、v2.1.10、RTX 30 笔记本、`ga102`，PK/KEK/db 未动）与 [#210](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/210)（2026-11-08，RTX 3080 20GB + ASUS ROG Z790，官方 v2.1.10 原包 + 自加 `.sbat` + 自签 MOK，全链绿并交棒，系统内 `Confirm-SecureBootUEFI=True`、`MokListRT` 含证书、PK/KEK/db 不变）；#162 的脚本仓 [J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp) 可作参考实现，未 vendor 进本仓库。#210 相对 #162 的增量是**可复算的补节参数**（第 3 步）与"倒计时必须按键"这一步（第 7 步），两者都只来自 #210。
+固件只校验微软签名的 shim；你的密钥通过 MOK 在 shim 之后生效，主板密钥库不动。依据是三份现场报告：[#162](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/162)（2026-11 上旬，Secure Boot 开启、v2.1.10、RTX 30 笔记本、`ga102`，PK/KEK/db 未动）与 [#210](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/210)（2026-11-08，RTX 3080 20GB + ASUS ROG Z790，官方 v2.1.10 原包 + 自加 `.sbat` + 自签 MOK，全链绿并交棒，系统内 `Confirm-SecureBootUEFI=True`、`MokListRT` 含证书、PK/KEK/db 不变），以及 [#241 追补](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/241#issuecomment-6894516749)（2026-11-15，RTX 3090 桌面机，走下面的**哈希登记变体**并在活性 BitLocker 下三次受保护引导）；#162 的脚本仓 [J0s3f/nv-unlock-secureboot-esp](https://github.com/J0s3f/nv-unlock-secureboot-esp) 可作参考实现，未 vendor 进本仓库。#210 相对 #162 的增量是**可复算的补节参数**（第 3 步）与"倒计时必须按键"这一步（第 7 步），两者都只来自 #210；#241 追补的增量是**哈希登记变体 + 活性 BitLocker/TPM 度量侧经验**（见第 7 步之后）。
 
 1. 用第 0 步生成 `MOK.key` / `MOK.crt` / `MOK.der`。
 
@@ -604,6 +604,8 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
 
 7. **首次引导**：shim 报 `Verification failed: (0x1A)` 属于预期（此时 MOK 还没登记），随后出现 `Press any key to perform MOK management` 的 **10 秒倒计时——必须在这个窗口里按键**。不按的话 shim 会静默继续往下走，loader 根本不会被执行，看起来就像"什么都没发生"（#210 实测）。进入 MokManager 后：Enroll key from disk → `MOK.der` → 设一次性密码 → 重启确认 Enroll。之后每次引导：shim（微软签）→ 用 MOK 验你的签名 → 启动 loader → 解锁 → 链回 `bootmgfw`，Secure Boot 全程开启。
 
+**哈希登记变体（不留任何私钥；[#241 追补](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/241#issuecomment-6894516749)实测，RTX 3090 桌面机）**：不生成密钥对，MokManager 直接登记 loader 镜像本身的哈希——菜单路径是 **`Enroll hash from disk`**（不是 `Enroll key from disk`，后者要 DER 证书；选错会报 `Unsupported Format`）；该记录的 TX 镜像走的是另一条等价路：Windows 侧工具预置 `MokNew`/`MokAuth` 请求，下次 shim 引导时 MokManager 的 `Enroll MOK` 里出现待确认哈希。四个实测教训（全部来自该记录）：① MOK 登记的是 **PE/Authenticode 镜像哈希**，`Get-FileHash` 算的是整文件哈希，两者不同（PE 校验和等字段不参与镜像哈希）——**别拿文件哈希当 MOK 哈希登记**；且 EFI 里嵌了构建时间，同源码重建哈希也变，**旧登记不会授权新字节**，每次重建都要重新登记。② 首次引导未登记镜像时同样报 `0x1A`，同样要在倒计时窗口按键。③ 该机同时把**活性 BitLocker 全程保护**（XTS-AES-128、PCR 0/2/4/11 profile）走通：三次受保护引导、两次零 recovery、提升权限复查 SB/保护/PK-KEK-db-dbx 全部原样；首次设置期曾有一次明确授权的保护挂起（RebootCount=3，事后恢复并另测受保护确认航）——挂起不属常规操作，别自动延续。④ **TPM 度量侧**：同机 TCG2 日志显示 Chain-only 与 TX-skip 的差异落 PCR 4、真实 TX 与 skip（同一文件）的差异落 PCR 2/7——**不同模式=不同的度量引导序列**，skip 也可能触发 BitLocker recovery（**recovery ≠ TX 失败**），要固定一种模式用；换 shim/MokManager 版本也会改变度量，需重新接纳两条引导路径。该记录还有一份配套的机器绑定硬化构建（GPU/ROM/资产/ESP 四重钉死 + marker 从签名镜像合成不从 U 盘读），见 [community-reports](community-reports.md) 的 #241 行。
+
 内置 ESP 变体（**本项目不推荐；现有两份现场记录，都属于用户自担风险的偏离**）：把四个文件放进内置 ESP，免掉每次插 U 盘。变体 1（#162 报告者）：文件放 `\EFI\BOOT\`、排在 BootOrder 首位——loader 在 CHAIN-BOOT 里会跳过自己的 `Boot####` 与同一 ESP 上的 Windows 项，不循环。变体 2（[bailu974 的记录](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)，2026-11-09）：那块 Insyde 固件**拒绝新建 `BootXXXX`**（`SetFirmwareEnvironmentVariableEx` 回 `err=87`，但改写已有项放行），于是改写 `Boot0000`（Windows Boot Manager 项）指向 `\EFI\nvunlock\BOOTX64.EFI`，并把原始项备份到 `Boot2001` 兜底；资产摊在 ESP 根（loader 只从自己所在卷的根读资产，不看子目录，84 MB 需 ESP 有余量）。共同代价：README 的明确建议是「[不要复制到系统 ESP](../README.md)」，改 `Boot0000`/改 ESP 都可能让机器起不来——动手前先备份、确认能进 BIOS 恢复；两份记录的作者都自报了备份与回滚脚本。
 
 ### 路线 C：固件自带的按文件信任（一台机记录，本项目未复现）
@@ -641,7 +643,7 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 | 生效时窗 | 用户手动从 U 盘进 → 跑事务 | `ReadyToBoot` 回调，与 U 盘同窗口（`bootmgfw` 之前），每次引导自动重放 |
 | TPM / BitLocker | `db` 改动影响 PCR[7]（若 profile 含 [7]）；自签链改变被加载镜像的度量 | 改固件 → **PCR[1] 变**；BitLocker profile 含 [1] 时无法解封，会要求恢复密钥；刷前必须先挂起 |
 | 不刷写的验证捷径 | — | UEFI Shell 里 `load fs0:\NvUnlockDxe.efi`，可先验形态再决定是否刷写 |
-| 证据 | 路线 B 两台机（含一台台式机全流程，`.sbat` 参数与倒计时按键均已实做）；路线 A 二手 | 仅[可行性文档](dxe-driver-ffs-feasibility.md)，**未实机验证** |
+| 证据 | 路线 B 三台机（含两台台式机全流程，`.sbat` 参数与倒计时按键均已实做；#241 追补为哈希登记变体+活性 BitLocker）；路线 A 二手 | 仅[可行性文档](dxe-driver-ffs-feasibility.md)，**未实机验证** |
 
 一句话：**两条路都改变了某个度量**——自签动的是引导链（PCR[4]/[7] 侧），FFS 动的是固件（PCR[1] 侧）。对「只查 SB 状态位」的客户端，两条都可能有效；对「要求出厂引导链或出厂固件度量」的客户端，两条都不保证。反作弊的判定规则是厂商侧策略，会随时调整，本文不做任何「能过/不能过」的承诺。
 
@@ -649,7 +651,7 @@ ACE 系（腾讯）用的是内核驱动 + 服务端策略，它可能同时看�
 
 | 项目 | 证据 | 状态 |
 | --- | --- | --- |
-| 路线 B（MOK + shim） | #162 笔记本报告（解锁存活到 Windows）；**#210 台式机全流程**：SB 开启、v2.1.10 + `.sbat` + 自签 MOK，全链绿 + `Confirm-SecureBootUEFI=True` + `MokListRT` 含证书 + PK/KEK/db 不变 | 两台机；第 3/4/7 步按 #210 实做参数写死，本项目未在自有硬件上复跑 |
+| 路线 B（MOK + shim） | #162 笔记本报告（解锁存活到 Windows）；**#210 台式机全流程**：SB 开启、v2.1.10 + `.sbat` + 自签 MOK，全链绿 + `Confirm-SecureBootUEFI=True` + `MokListRT` 含证书 + PK/KEK/db 不变；**#241 追补台式机全流程（哈希登记变体，无私钥）**：SB 开启 + 活性 BitLocker（PCR 0/2/4/11）、shim 15.8 钉 hash、三次受保护引导（两次零 recovery）、提升权限复查全绿、TCG2 度量分析（TX vs skip 差 PCR 2/7，Chain-only vs skip 差 PCR 4） | 三台机（两台台式机全流程）；第 3/4/7 步按 #210 实做参数写死，本项目未在自有硬件上复跑 |
 | 发布件缺 `.sbat` | 本项目核对 v2.1.10 产物节表；#210 真机确认缺节时 shim 只回 `0x1A` | 已验证（产物层 + 一台真机） |
 | 第 0 步的 `openssl` 命令 | 本项目执行（OpenSSL 4.0.3） | 已验证 |
 | 路线 A（db 自签） | 二手反馈，无日志、无主板型号 | 未复现、未执行 |
