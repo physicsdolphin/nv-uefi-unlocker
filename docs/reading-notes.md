@@ -787,6 +787,18 @@ TPC_RECFG GA100 布局 0x820788 在 GB206 尾部有活值（0x10301@6）——
 "GA100 布局猜错"的结论要再细分：0x822800 是 Ada 布局，但 0x820788 在
 GB206 非全 badf。
 
+### 6i. #237 三轮：L2 切片位置修正——平面 BAR0 可达（2026-11-17）
+
+JeusChrit 追溯了 MemorySystem+0x87a0 记录区的构造器：所谓"per-LTC 映射孔径
++0x2c"实为**平面 BAR0 地址**——记录 K 的读 thunk 就是根 BAR0 映射加
+`NV_LTC_PRI_BASE 0x00140000 + 0x2000*K + 0x2c`（stride=NV_LTC_PRI_STRIDE
+0x2000；广播字 `0x0017e02c` = NV_PLTCG_LTCS）。即 4090 的 3/4 LTS L2 切片
+切口可直接只读探得：**切片掩码 = (~(val>>10)) & 0xf**（4 切片/LTC）。同寄
+存器另有 readers 读 bits 9:8 与 bits 15:10&0x3f；app01/07/08 与 595/610
+GSP 全扫描**零写者**（boot-static；app08 只写 0x1417e000/0x1417e27c 的
+广播对）。ssdiag/py 0.7.9 已加 `LTS_L2SLICE` 面（12 LTC 槽逐槽解码
+active slices N/4 + 广播行）。此前"映射孔径路径不可达"的口头结论作废。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

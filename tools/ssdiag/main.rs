@@ -3857,6 +3857,18 @@ const PLM_PL2_WE: [u32; 2] = [0x0082_3B24, 0x0082_3B28]; // bit6 = PL2 write ena
 const GB20X_PES_STATUS_BASE: u32 = 0x0082_2A78;
 const GB20X_OFA_DISABLE: u32 = 0x0082_2A68;
 
+/// #237 round 3 (2026-11-16): the 4090 L2-slice cut is FLAT BAR0 after all
+/// - the "mapped aperture +0x2c" record path resolves to NV_LTC_PRI_BASE
+/// 0x00140000 + 0x2000*K, so the per-LTC 4-bit LTS (L2 slice) mask is
+/// (~(val >> 10)) & 0xf at 0x0014002c + 0x2000*K (K = LTC index, 0..11 on
+/// AD102 / 0..7 on AD103), broadcast word at 0x0017e02c (NV_PLTCG_LTCS).
+/// Other HAL readers on the same register: bits 9:8, complemented bits
+/// 15:10 & 0x3f. No writers found in app01/07/08 or GSP - boot-static.
+const LTS_LTC0_SLICE: u32 = 0x0014_002C;
+const LTS_LTC_STRIDE: u32 = 0x2000;
+const LTS_LTC_SLOTS: u32 = 12;
+const LTS_BROADCAST: u32 = 0x0017_E02C;
+
 /// Turing mirror probe (open-questions #13 Turing arm + reading-notes §10).
 /// TU104 field data (#187) put the option-status bank at 0x021xxx
 /// (-0x7FF000 from the GA10x/GA100 layout) and derived the controller words
@@ -4479,6 +4491,41 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             print!(" {}", cell_val(rd(0x0082_2900 + fbp * 4)));
         }
         println!();
+    }
+    // #237 round 3: per-LTC LTS (L2 slice) masks - flat BAR0, every family.
+    println!("  LTS_L2SLICE (per-LTC 4-bit slice mask = (~val>>10)&0xf; flat 0x14002c + 0x2000*K)");
+    for k in 0..LTS_LTC_SLOTS {
+        let a = LTS_LTC0_SLICE + k * LTS_LTC_STRIDE;
+        let v = rd(a);
+        match badf_bucket(v) {
+            Some(b) => println!("    LTC[{k:>2}] {} = {} [{b}]", off_h(a), hx32(v)),
+            None => {
+                let active = (!(v >> 10)) & 0xf;
+                println!(
+                    "    LTC[{k:>2}] {} = {} slices={:04b} ({}/4)",
+                    off_h(a),
+                    hx32(v),
+                    active,
+                    active.count_ones()
+                );
+            }
+        }
+    }
+    {
+        let v = rd(LTS_BROADCAST);
+        match badf_bucket(v) {
+            Some(b) => println!("    BCAST     {} = {} [{b}]", off_h(LTS_BROADCAST), hx32(v)),
+            None => {
+                let active = (!(v >> 10)) & 0xf;
+                println!(
+                    "    BCAST     {} = {} slices={:04b} ({}/4)",
+                    off_h(LTS_BROADCAST),
+                    hx32(v),
+                    active,
+                    active.count_ones()
+                );
+            }
+        }
     }
     println!("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,");
     println!("  plain value = read it with GA100 semantics, ffffffff/badf1100 = not decoded here (AD10x fuse-PLM relocation precedent)");

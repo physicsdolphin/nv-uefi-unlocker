@@ -335,6 +335,13 @@ PLM_PL0_WE = 0x0082_00F8  # bit4 = PL0 write enable
 PLM_PL2_WE = [0x0082_3B24, 0x0082_3B28]  # bit6 = PL2 write enable
 GB20X_PES_STATUS_BASE = 0x0082_2A78
 GB20X_OFA_DISABLE = 0x0082_2A68
+# #237 round 3: the 4090 L2-slice cut is FLAT BAR0 - per-LTC 4-bit LTS mask
+# (~(val>>10)) & 0xf at NV_LTC_PRI_BASE 0x00140000 + 0x2000*K; broadcast
+# 0x0017e02c (NV_PLTCG_LTCS). Boot-static (no writers in app01/07/08/GSP).
+LTS_LTC0_SLICE = 0x0014_002C
+LTS_LTC_STRIDE = 0x2000
+LTS_LTC_SLOTS = 12
+LTS_BROADCAST = 0x0017_E02C
 
 # Mirror probe: 16 representative words x {0x820xxx, -0x800000, -0x7FF000}.
 # mirror == primary -> bit-23 alias; mirror badf while primary is plain ->
@@ -1058,6 +1065,24 @@ def report(bar, tag="", devpath=None):
     for p in PLM_PL2_WE:
         v = bar.rd(p)
         print(f"  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={(v >> 6) & 1} (VBIOS app08 gate)")
+    # #237 round 3: per-LTC LTS (L2 slice) masks - flat BAR0, every family.
+    print("  LTS_L2SLICE (per-LTC 4-bit slice mask = (~val>>10)&0xf; flat 0x14002c + 0x2000*K)")
+    for k in range(LTS_LTC_SLOTS):
+        a = LTS_LTC0_SLICE + k * LTS_LTC_STRIDE
+        v = bar.rd(a)
+        b = badf_bucket(v)
+        if b:
+            print(f"    LTC[{k:>2}] {a:#010x} = {v:#010x} [{b}]")
+            continue
+        active = (~(v >> 10)) & 0xF
+        print(f"    LTC[{k:>2}] {a:#010x} = {v:#010x} slices={active:04b} ({active.bit_count()}/4)")
+    v = bar.rd(LTS_BROADCAST)
+    b = badf_bucket(v)
+    if b:
+        print(f"    BCAST     {LTS_BROADCAST:#010x} = {v:#010x} [{b}]")
+    else:
+        active = (~(v >> 10)) & 0xF
+        print(f"    BCAST     {LTS_BROADCAST:#010x} = {v:#010x} slices={active:04b} ({active.bit_count()}/4)")
     # GR topology anchor, every family (open-questions #19): byte3 = die GPC
     # slots, byte0 = active GPC count - three-point calibrated (TU104 KO
     # 06030005, TU106 2070 08040003, TU106 1e93 08040006). On Ampere it is
