@@ -1713,6 +1713,29 @@ pub fn run_transaction(
         // chain shape, which hands the pre-OS state to the OS with zero
         // Xid and no reset.
         info!("TX-tu10x: FLR skipped (Turing FEAT PLM does not survive FLR - the unlock ships as-is; booter sanitize was the cleanup)");
+    } else if crate::tx::probe_file("\\tx-no-flr.txt") {
+        // \tx-no-flr.txt (issue #242 ablation diagnostic): hand the unlocked
+        // Ada/GA10x device to the OS WITHOUT the FLR. The unlock itself is
+        // already in and read back above; on these families the AON island
+        // holds it across any reset, so the FLR here is state cleanup, not
+        // part of the unlock - upstream wording: FLR "disposes of the old
+        // GSP execution" and stock RM "reject[s] preexisting WPR2" on the
+        // cold path. Skipping it therefore leaves WPR2/GFW live ON PURPOSE:
+        // that live state is the residue this diagnostic isolates from the
+        // post-FLR device state (issue #242: Round A zero-write boots, any
+        // transaction hangs, Hybrid/Discrete alike). The OS driver brings
+        // up over the live state and - per the #99 field record - will FLR
+        // the function itself during init; the AON unlock survives that.
+        info!("TX: \\tx-no-flr.txt present - FLR skipped on {} (unlock ships as-is; WPR2/GFW left live on purpose - issue #242 ablation)", assets.family);
+        // Read-only handoff record in place of the POST-FLR lines: the OS
+        // inherits this exact live shape.
+        let wpr_lo = gpu.pci.bar_read_u32(0, crate::tx::regs::WPR2_LO as u64);
+        let wpr_hi = gpu.pci.bar_read_u32(0, crate::tx::regs::WPR2_HI as u64);
+        let ss0_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_SS0 as u64);
+        let ss1_rb = gpu.pci.bar_read_u32(0, crate::tx::regs::FEAT_SS1 as u64);
+        info!(
+            "NO-FLR: WPR2={wpr_lo:#x}/{wpr_hi:#x} (left live) SS0={ss0_rb:#x} SS1={ss1_rb:#x}"
+        );
     } else {
         let flr_expect_unlock = payload_mode && booter_ok;
         tb::flr_phase(gpu, assets.family, flr_expect_unlock)?;
