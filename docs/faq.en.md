@@ -222,6 +222,8 @@ Controls for the three zero rows: the reference-to-video row already averaged 36
 - Clearly below the ceiling means the time should drop. If it does not, then check whether the gate was closed again ([locked again](#relock), [sleep and RTD3](#sleep)).
 - On laptops, a shared TGP eats the extra issue rate; the measured shared-TGP case is in the [Linux no-gain section](#linux).
 
+A third case is worth knowing beyond the rule: **the unlock is alive and the workload is compute-bound, yet the end-to-end GEMM figure still sits well below the raw-pipe convention** — CUDA libraries pick kernels through a fully static heuristic table calibrated for the stock half-speed hardware, which cannot sense the unlocked state and hands it an undersized, second-best kernel (measured on 8×RTX 4090: default vs best-in-library 1.2–1.9× apart, worst on FP8). This does not affect the [read-back verdict](#ssdiag) — silicon-state evidence and application-side numbers are two different things; to recover the difference on the application side, walk the heuristic candidates per shape and time them (autotune) or hand-write CUTLASS. Methods and per-precision recommended configurations: [Harry-Chen/unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm) and the [original blog post](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/).
+
 **Evidence level**: the table is one desktop machine (TB4 enclosure; setup in #54). The rule and its power criterion are what the numbers support; other architectures have different "full speed" baselines (`READOUT` semantics in the [read-back verdicts](#ssdiag)), so do not carry these multipliers to another card.
 
 <a id="relock"></a>

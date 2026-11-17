@@ -222,6 +222,8 @@ sudo update-initramfs -u
 - 明显低于上限 → 时间应该下降；若没下降，才回头查门是否已被关（[被锁回去](#relock) / [睡醒与 RTD3](#sleep)）。
 - 笔记本尤其注意：整机 TGP 共享时，解锁后的额外发射率会被功耗墙吃掉，详见 [Linux 无提升一节](#linux) 的共享 TGP 实测。
 
+还有第三种情形，判据之外也值得知道：**解锁活着、负载也 compute-bound，但端到端 GEMM 数字仍明显低于裸管线口径**——CUDA 库的 kernel 自动选择按出厂半速硬件校准（完全静态的启发式表，感知不到解锁态），会给解锁后的卡选中偏小 tile 的次优 kernel（8×RTX 4090 实测：默认与库内最优差 1.2–1.9×，FP8 最甚）。这不影响[读回判定](#ssdiag)——硅态判据与应用侧读数是两回事；应用侧想回收这部分，可按形状实测遍历候选择优（autotune）或手写 CUTLASS，具体方法与各精度推荐配置见 [Harry-Chen/unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm) 与[原始博客](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/)。
+
 **证据等级**：上表是一台桌面机（TB4 坞、驱动与场景见 #54）的结果，规则与其中的功耗判据一致；不同架构（如 Turing）的"满速"基准不同（`READOUT` 语义见 [读回判定](#ssdiag)），不要把这里的倍率直接套到别的卡上。
 
 <a id="relock"></a>

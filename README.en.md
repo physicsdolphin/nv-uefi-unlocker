@@ -384,6 +384,22 @@ into a local, untracked `reference/` directory, grouped by role:
 - [faucon](https://github.com/vbe0201/faucon) — alternative fuc5
   disassembler (could not decode the production booter in practice)
 
+**Post-unlock software-stack adaptation research**
+
+- [unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm) (Harry Chen)
+  with the [companion blog post](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/) —
+  the first systematic GEMM performance analysis of the unlocked state, on 8×RTX
+  4090: with the instruction-level doubling confirmed, end-to-end cuBLAS gains
+  only +12–34%, because CUDA libraries pick kernels through a fully static
+  heuristic calibrated for the stock half-speed hardware (it cannot sense the
+  unlock; spoofing device properties does nothing) — the best kernels exist
+  in-library but rank low. Walking the heuristic candidates per shape and timing
+  them (autotune) recovers FP8 1.17–1.93× and asymmetric large-N FP16/BF16
+  1.3–1.64×; very large K needs a CUTLASS swizzle. Tuning methods and
+  per-precision recommended configurations live in the repo and the blog; our
+  own reading is in the [performance FAQ](docs/faq.en.md#gain) and
+  [theoretical-uplift §7, wall 4](docs/theoretical-uplift.en.md)
+
 **Platform-side companion tool (unrelated to this project)**
 
 - [gsetupmod](https://github.com/MikeWuPing/gsetupmod) (MikeWuPing; free for

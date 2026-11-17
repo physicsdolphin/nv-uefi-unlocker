@@ -371,6 +371,18 @@ bash release/make-usbroot.sh --family 40 \
 - [faucon](https://github.com/vbe0201/faucon)——fuc5 反汇编备选（实测解不了
   量产 booter）
 
+**解锁后软件栈适配研究**
+
+- [unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm)（Harry Chen）
+  与[配套博客](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/)——
+  8×RTX 4090 解锁态的首份系统 GEMM 性能分析：指令级翻倍坐实后端到端 cuBLAS
+  仅 +12–34%，根因是 CUDA 库的 kernel 自动选择按出厂半速模型校准（完全静态
+  启发式，感知不到解锁态；伪装设备属性无效），库内自带最优 kernel 只是排序
+  靠后；按形状实测遍历候选择优（autotune）可回收 FP8 1.17–1.93×、非对称大
+  矩阵 FP16/BF16 1.3–1.64×，超大 K 需 CUTLASS swizzle。调优方法与各精度推荐
+  配置见其仓库与博客；本项目侧判读见
+  [性能 FAQ](docs/faq.md#gain) 与 [theoretical-uplift §7 墙 4](docs/theoretical-uplift.md)
+
 **平台侧伴侣工具（与本项目无关）**
 
 - [gsetupmod](https://github.com/MikeWuPing/gsetupmod)（MikeWuPing，个人使用免费/
