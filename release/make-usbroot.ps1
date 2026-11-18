@@ -806,10 +806,18 @@ function Resolve-ProvenBlob {
     ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
     if (-not $blob) {
         $blob = Join-Path $script:Work $script:ProvenBlobName
-        # Same transport + hash gate as the pinned sources above; throws its
+        # Same transport + hash gate as the pinned sources above; records its
         # own verdict (transport failure vs wrong bytes) on total failure.
-        Get-PinnedFile -Name $script:ProvenBlobName -Urls $script:ProvenBlobUrls `
+        # The verdict MUST be captured: an uncaptured call emits its $true into
+        # THIS function's output stream, so the caller's "$blob = Resolve-
+        # ProvenBlob" receives @($true, $path) instead of the path. PowerShell
+        # then splices that array into the native command line as two argv
+        # entries, and assets.exe reads the literal path "True" -> "read: ...
+        # (os error 2)" on exactly the runs where the download happened (a
+        # cached blob skips this branch, which is why a re-run always works).
+        $fetched = Get-PinnedFile -Name $script:ProvenBlobName -Urls $script:ProvenBlobUrls `
             -Sha256 $script:ProvenBlobSrcSha256 -Dest $blob
+        if (-not $fetched) { Write-Host "[gate] $($script:ProvenBlobName) not fetched ($($script:LastPinnedKind): $($script:LastPinnedReason))" }
     }
     if (-not (Test-Path $blob)) {
         throw "could not fetch $($script:ProvenBlobName) from any pinned transport; drop the exact file (sha256 $($script:ProvenBlobSrcSha256)) into $($script:Work) and re-run"
