@@ -885,6 +885,17 @@ expected+=("BOOTX64.EFI")
 for elf in gsp_ga10x.bin gsp_tu10x.bin; do
     [ -f "$OUT/$elf" ] && rm -f -- "$OUT/$elf"
 done
+# The 10x-named gsp-sections exports are the SAME class of intermediate: they
+# carry the ELF's SECTION family names (ga10x/ad10x), but the loader resolves
+# every device to a *102/tu10x/tu11x family and reads only those names - the
+# copies above are the real stick files. On a ga102+ad102 root the family-
+# neutral .fwimage section is byte-identical under every name, so leaving the
+# two 10x-named images behind cost ~85 MB of the ~189 MB layout (36b4089
+# scoped the EXPORTS but never deleted these after the copy). tu11x is NOT in
+# this list: fwimage_tu11x.bin is a genuine loader name, not an intermediate.
+for sec in fwimage_ga10x.bin fwsignature_ga10x.bin fwimage_ad10x.bin fwsignature_ad10x.bin; do
+    [ -f "$OUT/$sec" ] && rm -f -- "$OUT/$sec"
+done
 
 # Firmware only auto-boots \EFI\BOOT\BOOTX64.EFI; a flat copy of $OUT leaves the
 # executable at the root and the boot menu bounces back (issue #142).
@@ -998,6 +1009,22 @@ install_copy() { # $1 = src root, $2 = target mountpoint -> 0 ok, 1 refused
         fi
     done < <(find "$src" -type f)
     [ "$bad" -eq 1 ] && return 1
+    # Narrow-list prune, marker-gated: intermediates that OLDER layouts
+    # shipped but this maker no longer produces - the 10x-named gsp-sections
+    # exports (byte-identical twins of the *102 images, ~85 MB on a ga102+
+    # ad102 stick) and the consumed GSP ELFs. Only ever these six names at
+    # the target root, and only after the copy verified clean; every other
+    # pre-existing file stays untouched (issue #73 contract).
+    if our_marker "$mp"; then
+        for stale in fwimage_ga10x.bin fwsignature_ga10x.bin \
+                     fwimage_ad10x.bin fwsignature_ad10x.bin \
+                     gsp_ga10x.bin gsp_tu10x.bin; do
+            if [ -f "$mp/$stale" ]; then
+                rm -f -- "$mp/$stale"
+                log "[install] pruned stale intermediate: $mp/$stale"
+            fi
+        done
+    fi
     log "[install] done: $total files ($copied written, $skipped already identical) -> $mp (SHA-256 read-back verified)"
     return 0
 }

@@ -974,6 +974,19 @@ foreach ($elf in @("gsp_ga10x.bin", "gsp_tu10x.bin")) {
     $elfPath = Join-Path $Out $elf
     if (Test-Path $elfPath) { Remove-Item $elfPath -Force }
 }
+# The 10x-named gsp-sections exports are the SAME class of intermediate: they
+# carry the ELF's SECTION family names (ga10x/ad10x), but the loader resolves
+# every device to a *102/tu10x/tu11x family and reads only those names - the
+# copies above are the real stick files. On a ga102+ad102 root the family-
+# neutral .fwimage section is byte-identical under every name, so leaving the
+# two 10x-named images behind cost ~85 MB of the ~189 MB layout (36b4089
+# scoped the EXPORTS but never deleted these after the copy). tu11x is NOT in
+# this list: fwimage_tu11x.bin is a genuine loader name, not an intermediate.
+foreach ($sec in @("fwimage_ga10x.bin", "fwsignature_ga10x.bin",
+                   "fwimage_ad10x.bin", "fwsignature_ad10x.bin")) {
+    $secPath = Join-Path $Out $sec
+    if (Test-Path $secPath) { Remove-Item $secPath -Force }
+}
 
 $expected += "BOOTX64.EFI"
 Copy-Item $BootEfi (Join-Path $Out "BOOTX64.EFI") -Force
@@ -1131,6 +1144,23 @@ function Copy-UnlockRoot([string]$From, [string]$To) {
         Write-Host "[install] READ-BACK MISMATCH on $($To) - do not boot from this copy:"
         foreach ($b in $bad) { Write-Host "[install]   $b" }
         return $false
+    }
+    # Narrow-list prune, marker-gated: intermediates that OLDER layouts
+    # shipped but this maker no longer produces - the 10x-named gsp-sections
+    # exports (byte-identical twins of the *102 images, ~85 MB on a ga102+
+    # ad102 stick) and the consumed GSP ELFs. Only ever these six names at
+    # the target root, and only after the copy verified clean; every other
+    # pre-existing file stays untouched (issue #73 contract).
+    if ($ours) {
+        foreach ($stale in @("fwimage_ga10x.bin", "fwsignature_ga10x.bin",
+                             "fwimage_ad10x.bin", "fwsignature_ad10x.bin",
+                             "gsp_ga10x.bin", "gsp_tu10x.bin")) {
+            $stalePath = Join-Path $To $stale
+            if (Test-Path -LiteralPath $stalePath) {
+                Remove-Item -LiteralPath $stalePath -Force
+                Write-Host "[install] pruned stale intermediate: $stalePath"
+            }
+        }
     }
     $total = @(Get-ChildItem -LiteralPath $fromFull -Recurse -File).Count
     Write-Host ("[install] done: {0} files written ({1} refreshed), {2} already identical -> {3} (SHA-256 read-back verified)" -f
