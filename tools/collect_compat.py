@@ -30,8 +30,8 @@ import re
 import sys
 from datetime import datetime, timezone
 
-# loader.log SAMPLE lines: "SAMPLE <name> = 0x<value> [bucket]"
-SAMPLE_RE = re.compile(r"SAMPLE\s+(.+?)\s*=\s*(0x[0-9a-fA-F]+)(?:\s*\[(\w+)\])?")
+# loader.log SAMPLE lines carry 32-bit register reads: "SAMPLE <name> = 0x<value> [bucket]"
+SAMPLE_RE = re.compile(r"SAMPLE\s+(.+?)\s*=\s*(0x[0-9a-fA-F]{1,8})\b(?:\s*\[(\w+)\])?")
 # ssdiag-style lines: "<NAME> ... 0x<value>", "<NAME>: 0x<value>" or the
 # core/debug block's "<NAME> = 0x<value>" (the '=' separator is what real
 # ssdiag dumps print - without it in the class the whole block parsed as
@@ -46,7 +46,9 @@ CANONICAL = [
 VERDICT_RE = re.compile(
     r"(RESULT:|FINAL:|HANDOFF[- ].*:|claim: (EALREADY|EBUSY|.*accept)|"
     r"POST-FLR:|POST-BOOT:|booter returned|unlock landed|selected .* GPU)")
-DEVICE_RE = re.compile(r"10de:([0-9a-fA-F]{4})")
+FULL_BDF = r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]"
+DEVICE_RE = re.compile(rf"\b10de:([0-9a-f]{{4}})\b(?:\s+@\s+({FULL_BDF})\b)?", re.I)
+WINDOWS_NVIDIA_PCI_RE = re.compile(r"\bPCI\\VEN_10DE&DEV_([0-9a-f]{4})\b", re.I)
 
 # ---- ssdiag 0.7.0 / diag-unlock inventory block (stable KEY: prefixes) ----
 # platform lines: "OS:      Windows 11 24H2 build 26100.2894" etc.
@@ -69,9 +71,9 @@ INV_LIST_KEYS = {
 # per-GPU lines; the GPU index n ties them together within one block
 INV_GPU_RE = re.compile(r"^GPU (\d+): (.+)$")
 INV_PCI_RE = re.compile(
-    r"^GPU (\d+) PCI:\s+10de:([0-9a-fA-F]{4})"
-    r"(?:\s+SUBSYS ([0-9A-Fa-f]{8}))?"
-    r"(?:\s+BDF ([0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7]))?")
+    r"^GPU (\d+) PCI:\s+10de:([0-9a-fA-F]{4})\b"
+    r"(?:\s+SUBSYS ([0-9A-Fa-f]{8})\b)?"
+    r"(?:\s+BDF ([0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7])\b)?")
 INV_FAMILY_RE = re.compile(
     r"^GPU (\d+) family:\s+(.+?)\s+-\s+(IN-SCOPE|OUT-OF-SCOPE)")
 INV_VBIOS_RE = re.compile(r"^GPU (\d+) VBIOS:\s+(\S+?)(?:\s+\(nvapi\))?$")
@@ -84,8 +86,8 @@ INV_DRIVER_RE = re.compile(r"^GPU (\d+) driver:\s+([0-9.]+)(?:\s+\(([^)]+)\))?")
 # convention, not spec). Lines without a class fall back to DEVICE_RE with
 # the non-display known-ID exclusion below.
 PCI_ENUM_RE = re.compile(
-    r"PCI\s+([0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7])"
-    r"\s+10de:([0-9a-fA-F]{4})\s+class\s+([0-9a-fA-F]{6})")
+    rf"PCI\s+({FULL_BDF})"
+    r"\s+10de:([0-9a-fA-F]{4})\s+class\s+([0-9a-fA-F]{6})\b")
 DISPLAY_CLASSES = {"000300", "000301", "000302"}
 # NVIDIA non-display function IDs seen in the field (audio fn / USB-C fn):
 # they share the die with a real GPU and must not become GPU rows.
@@ -108,7 +110,16 @@ def family_of(devid: int) -> str:
     return "outside the three transaction families"
 
 
-def collect_inventory(path: str, platform: dict, gpus: dict) -> None:
+def conflicts_with_non_display(devid: int, bdf: str, non_display_bdfs: dict) -> bool:
+    addresses = non_display_bdfs.get(devid, ())
+    if not bdf:
+        return bool(addresses)
+    if bdf.count(":") == 1:  # Windows inventory omits the PCI domain.
+        return any(address.endswith(":" + bdf) for address in addresses)
+    return bdf in addresses
+
+
+def collect_inventory(path: str, platform: dict, gpus: dict, non_display_bdfs: dict) -> None:
     """Parse the ssdiag 0.7.0 / diag-unlock inventory block out of one log.
 
     `gpus` maps device-id -> {desc, subsys, bdf, family, verdict, vbios,
@@ -116,6 +127,7 @@ def collect_inventory(path: str, platform: dict, gpus: dict) -> None:
     missing (setdefault everywhere)."""
     with open_log(path) as f:
         idx = {}  # GPU index n -> device id (from the PCI line)
+        descs = {}  # Inventory indices are local to each log.
         for line in f:
             line = line.rstrip("\n")
             for key, rex in INV_PLATFORM_RES.items():
@@ -131,17 +143,19 @@ def collect_inventory(path: str, platform: dict, gpus: dict) -> None:
                 idx_key = int(m.group(1))
                 if idx_key not in idx:
                     idx[idx_key] = None  # placeholder until its PCI line
-                    descs = gpus.setdefault("__descs__", {})
-                    descs.setdefault(str(idx_key), m.group(2).strip())
+                    descs[idx_key] = m.group(2).strip()
                 continue
             m = INV_PCI_RE.match(line)
             if m:
                 n, devid = int(m.group(1)), m.group(2).lower()
+                if conflicts_with_non_display(int(devid, 16), (m.group(4) or "").lower(),
+                                              non_display_bdfs):
+                    idx[n] = None
+                    continue
                 idx[n] = devid
                 g = gpus.setdefault(devid, {})
-                descs = gpus.get("__descs__", {})
-                if descs.get(str(n)):
-                    g.setdefault("desc", descs[str(n)])
+                if descs.get(n):
+                    g.setdefault("desc", descs[n])
                 for k, v in (("subsys", m.group(3)), ("bdf", m.group(4))):
                     if v and not g.get(k):
                         g[k] = v.lower() if k == "bdf" else v.upper()
@@ -187,14 +201,18 @@ def open_log(path: str):
     return open(path, "r", encoding=enc, errors="replace")
 
 
-def collect(path: str, fields: dict, verdicts: list, devids: set) -> None:
+def collect(path: str, fields: dict, verdicts: list,
+            hints: set, display_ids: set, non_display_bdfs: dict) -> None:
     with open_log(path) as f:
         for line in f:
             em = PCI_ENUM_RE.search(line)
             if em:
                 # authoritative: enumeration line with class code
+                did = int(em.group(2), 16)
                 if em.group(3) in DISPLAY_CLASSES:
-                    devids.add(int(em.group(2), 16))
+                    display_ids.add(did)
+                else:
+                    non_display_bdfs.setdefault(did, set()).add(em.group(1).lower())
                 continue  # non-display functions (audio/USB-C) never become GPUs
             # devid fallback for logs without enum-class lines: only trust
             # lines that explicitly reference a GPU (SAMPLE target / selection
@@ -208,15 +226,15 @@ def collect(path: str, fields: dict, verdicts: list, devids: set) -> None:
                     did = int(m.group(1), 16)
                     if f"{did:04x}" in NON_DISPLAY_IDS:
                         continue  # known audio/USB-C function IDs
-                    devids.add(did)
+                    hints.add((did, (m.group(2) or "").lower()))
                 # ssdiag per-card headers carry "PCI\VEN_10DE&DEV_1F07" - the
                 # colon form does not appear there, so without this branch a
                 # pure-ssdiag log contributed no device id at all
-                for m in re.finditer(r"DEV_([0-9A-Fa-f]{4})", line):
+                for m in WINDOWS_NVIDIA_PCI_RE.finditer(line):
                     did = int(m.group(1), 16)
                     if f"{did:04x}" in NON_DISPLAY_IDS:
                         continue
-                    devids.add(did)
+                    hints.add((did, ""))
             sm = SAMPLE_RE.search(line)
             if sm:
                 name, val = sm.group(1).strip(), int(sm.group(2), 16)
@@ -254,16 +272,20 @@ def main() -> int:
 
     fields: dict = {}
     verdicts: list = []
-    devids: set = set()
+    hints: set = set()
+    display_ids: set = set()
+    non_display_bdfs: dict = {}
     inv_platform: dict = {}
     inv_gpus: dict = {}
     sources = []
     for path in args.log:
-        collect(path, fields, verdicts, devids)
-        collect_inventory(path, inv_platform, inv_gpus)
+        collect(path, fields, verdicts, hints, display_ids, non_display_bdfs)
+    for path in args.log:
+        collect_inventory(path, inv_platform, inv_gpus, non_display_bdfs)
         sources.append({"file": path, "sha256": sha256_file(path)})
-    inv_gpus.pop("__descs__", None)
-    devids |= {int(d, 16) for d in inv_gpus}
+    devids = display_ids | {int(d, 16) for d in inv_gpus}
+    devids.update(did for did, bdf in hints
+                  if not conflicts_with_non_display(did, bdf, non_display_bdfs))
 
     gpus = []
     for d in sorted(devids):
