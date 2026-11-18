@@ -349,7 +349,7 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 做得到的：
 
 0. **先排除我们自己的旧尾巴**：v2.1.11 及更早的载具默认在交棒前重锁 FEAT 门，部分驱动会因此在 init 期发起 PF FLR 并把 SS 清零（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)，2026-11-12 同卡 A/B）。`061aef8`（v2.1.12-rc1 起）默认改成门开交棒、SS 原样交棒，升级载具本身即消除该触发；不要用 v2.1.11 复测这个问题。
-1. **阻断复位源**：关 RTD3（[Linux](#linux) / Windows 对应驱动电源设置）、关快速启动与现代待机、BIOS 里关 PCIe 空闲电源门控；**固件侧的 ACPI D3 开关（含隐藏项）全局关闭已有实机验证**（2026-11-16，见[实例记录](#relock-acpid3)）；不要用“关机”当重启。
+1. **阻断复位源**：关 RTD3（[Linux](#linux) / Windows 侧显示适配器注册表 DWORD `EnableRuntimePowerManagement=0`，混合本实测见[实例记录](#relock-winrtd3)）、关快速启动与现代待机、BIOS 里关 PCIe 空闲电源门控；**固件侧的 ACPI D3 开关（含隐藏项）全局关闭已有实机验证**（2026-11-16，见[实例记录](#relock-acpid3)）；不要用“关机”当重启。
 2. **改变入口态**：独显直连优先；混合输出下 MUX/面板归属决定设备是否被枚举（[#148 记录](#relock-148)）。
 3. **事后修复**：门仍开时 `ssdiag --reapply` / `diag-unlock.py --reapply` 写回选择器；门已锁只能重放。
 4. **报告时带齐证据**：`loader.log` 的 `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` 三行（含 `CANARY` 与 `wpr2_lo`）、系统内读回值（用带 `CANARY:` 判定行的 `ssdiag` 0.6.5+）、`powercfg /a`、设备电源状态与事件日志。**外加同一 boot 的锁态基线**（解锁前、同一次引导内先跑一遍 `ssdiag`）：不少卡的 stock `SS0/SS1` 本来就含 0（本机实例见诊断协议 §4），没有基线时「SS=0」判不了是清零还是出厂。缺这些只能反复猜。
@@ -374,6 +374,16 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 - **深层状态的准入是固件+GSP 协商出来的，不是驱动硬编码**：RTD3 族的 GC6/GC8/GCOFF 能力位由 GSP 固件经 POWER_FEATURES 键值上报（`kernel_gsp.c`：`POWER_FEATURES_IS_{GC6,GC8,GCOFF}_RTD3_ALLOWED` → `bIsGcOffRtd3Allowed` 等），RM 落成 `PDB_PROP_GPU_RTD3_GCOFF_SUPPORTED`，`dynamic-power.c` 的 `RmCheckRtd3GcxSupport()` 只认这些属性。而 GCOFF 的动作本身就是"整颗芯片撤电"——根口 PME_Turn_Off → L2/3 → PERST#（驱动源码里连 `DEFAULT_GCOFF_PEXRST_DELAY` 都为它而设）→ 撤电，这条物理链只有平台固件走得通（见上文"平台上到底是谁在断电"），驱动还会专门评估上游根口的 D3cold `_DSM`（`nv_acpi_d3cold_dsm_for_upstream_port()`）。固件关掉 ACPI D3 后，平台断电资源（`_PR3`）从枚举里消失，GCOFF 失去准入——"关 ACPI D3 后 GCOFF 不再发生"的观察与此吻合。（`IS_GCOFF_RTD3_ALLOWED` 如何感知平台 `_PR3` 这一跳未在源码内钉死，此处按实测事实+上述定位如实记录。）
 - **NVPCF 是这条断电-唤醒循环的加速器**：`\_SB.NPCF` 是 Dynamic Boost 的平台 ACPI 设备，Linux 驱动注册 `NPCF` 通知回调并直接调 `\_SB.NPCF._DSM`（`nv-acpi.c`）。上游报告其通知会把已进 D3cold 的 GPU 周期性唤醒（open-gpu-kernel-modules [#1300](https://github.com/NVIDIA/open-gpu-kernel-modules/issues/1300)；[#1299](https://github.com/NVIDIA/open-gpu-kernel-modules/pull/1299) 尝试把通知推迟到运行时恢复再处理）——NVPCF 机器上这条循环本就更频繁，混合本"几分钟内掉锁"的节奏与此一致；固件关掉 ACPI D3 后 GPU 不再进 D3cold，NVPCF 通知也就没有可唤醒的对象。
 - **两层关法不同**：固件层（BIOS 选项，本条记录）最干净——驱动在能力协商阶段就看不到断电路径，整族需要平台断电的深层状态一并失去准入；运行时内核层禁（`pci_d3cold_disable()` / `d3cold_allowed=0`）只拦 D3hot→D3cold 的最后一步、设备停在 D3hot，驱动若未感知仍会按断电流程走（上游 [#1228](https://github.com/NVIDIA/open-gpu-kernel-modules/pull/1228) 描述的 eGPU 形态故障：GPU 侧走完断电流程、板电未断、GSP 报错掉总线）。
+
+<a id="relock-winrtd3"></a>
+
+### 实例记录：混合模式本只关驱动的运行时电源管理就保住了解锁（2026-11-18，MSI Vector 16 HX）
+
+机器：MSI Vector 16 HX A13VHG（MS-15M1，i9-13980HX，RTX 4080 Laptop `27a0`，BIOS `E15M1IMS.914`，驱动 610.47 LEGACY，Win11 26H2）。同一份报告（[#254](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/254) / [D#255](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/255)）把两种显示模式都测了：**独显直连一次通过、进系统保留**；**混合（MSHybrid）模式则在 Windows 驱动 init / 运行时电源管理阶段被清**——EFI 侧全链与 POST-FLR 都绿，失效发生在交棒之后。
+
+处理只有一项：在**动态解析到的 NVIDIA 显示适配器注册表键**下设 DWORD `EnableRuntimePowerManagement = 0`，重启后重放 EFI 事务，混合模式下解锁即保留进 Windows（同引导 ssdiag 判 `UNLOCKED`、canary intact）。这是机制表第 1 行"真掉电 / RTD3"在 Windows 侧的一个**驱动级旋钮**：不碰固件、不碰 ACPI 表，只让 NVIDIA 驱动不再对这张卡发起运行时 D3 转换——因此也不同于上面 G614JV 的"固件关 ACPI D3"（后者把平台侧 `_PR3` 路径一起去掉，代价是纯核显档失效）。
+
+边界如实：①该报告只用 ssdiag 0.7.9 读了寄存器与 canary，**没有"设 / 不设该键"的同会话因果对照**（混合模式的失败轮与成功轮之间隔着一次重启 + 重放）；②`EnableRuntimePowerManagement` 是 Windows 显示驱动的通用电源策略键，不同驱动分支是否都认这个键未逐一核对；③能用独显直连时仍优先独显直连，混合模式保留不等于所有平台可复现。排查顺序照旧：先确认 `POST-GOP` 与 `HANDOFF-OUT` 完好（排除事务与交棒），再看 `POWER:` 行的 D 态，最后才动这个键。
 
 <a id="relock-148"></a>
 
