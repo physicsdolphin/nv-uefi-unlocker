@@ -14,7 +14,8 @@
 #                     needs exactly these two, without dragging Turing assets)
 #
 # Options (1:1 with the PowerShell twin's parameters):
-#   --family F        ad102 | ga102 | tu10x | tu11x | all | localhost, or a
+#   --family F        ad102[/ad10x] | ga102[/ga10x] | tu10x | tu11x | all |
+#                     localhost, or a
 #                     comma/semicolon list of those tokens ("30,40"; list =
 #                     exact set to build, the mixed-generation rig form)
 #                     (aliases rtx40/40, rtx30/30, rtx20/20, rtx16/16;
@@ -47,8 +48,8 @@
 #   -h | --help       this text
 #
 # Family notes (same as make-usbroot.ps1):
-#   ad102  RTX 40 series (Ada)          - no host prerequisites
-#   ga102  RTX 30 series (Ampere)       - kmod-verified upstream, no silicon
+#   ad102[/ad10x]  RTX 40 series (Ada)  - no host prerequisites
+#   ga102[/ga10x]  RTX 30 series (Ampere) - kmod-verified upstream, no silicon
 #                                         evidence for this EFI path yet
 #   tu10x  RTX 20 series (Turing)       - REQUIRES GSP-RM firmware mode on the
 #                     TARGET machine; the legacy path TDR-loops on the
@@ -286,13 +287,13 @@ for _tok in "${_fam_tokens[@]}"; do
     [ -n "$_tok" ] || continue
     _tok="${_tok,,}"
     case "$_tok" in
-        ad102|rtx40|40) _fam=ad102 ;;
-        ga102|rtx30|30) _fam=ga102 ;;
+        ad102|ad10x|rtx40|40) _fam=ad102 ;;
+        ga102|ga10x|rtx30|30) _fam=ga102 ;;
         tu10x|rtx20|20) _fam=tu10x ;;
         tu11x|rtx16|16) _fam=tu11x ;;
         all) WANT_ALL=1; continue ;;
         localhost) WANT_LOCAL=1; continue ;;
-        *) die "unknown family: '$_tok' (ad102 | ga102 | tu10x | tu11x | all | localhost, or a comma list such as 30,40)" ;;
+        *) die "unknown family: '$_tok' (ad102 | ad10x | ga102 | ga10x | tu10x | tu11x | all | localhost, or a comma list such as 30,40)" ;;
     esac
     case " ${WANTED[*]-} " in *" $_fam "*) ;; *) WANTED+=("$_fam") ;; esac
 done
@@ -804,8 +805,13 @@ for fam in "${FAMILIES[@]}"; do
             fi
             log "[generate] V67 AD102 four-write payload"
             assets_run generate-ad102 "$OUT/v67-ad102-four-plm.bin"
-            # gsp-sections emits the ELF section family name (ad10x); the loader
-            # looks the device family up as ad102.
+            # Naming bridge between two schemes: gsp-sections emits the ELF
+            # SECTION family name (ad10x = NVIDIA's generation-scoped
+            # signature name); the loader keys the device family as ad102
+            # (= provenance chip of the pinned booter chain, serving the
+            # whole 0x2600-0x28ff span - see loader asset_family). These
+            # copies are the whole bridge; the 10x-named exports themselves
+            # are deleted with the other intermediates below.
             cp -f "$OUT/fwimage_ad10x.bin" "$OUT/fwimage_ad102.bin"
             cp -f "$OUT/fwsignature_ad10x.bin" "$OUT/fwsignature_ad102.bin"
             expected+=(booter_load_ad102.bin gsp_boot_desc_ad102.bin gsp_boot_ad102.bin

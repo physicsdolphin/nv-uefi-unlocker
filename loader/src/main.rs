@@ -396,6 +396,15 @@ fn main() -> Status {
 ///     0x20f1 A30 per cmp170hx p2p inventory) is NOT GA10x and stays
 ///     outside the Ampere ranges - the 20c2/20f1 arms that previously
 ///     routed to ga102 were a cross-family hazard and are removed.
+/// Key naming (why "102" names a whole generation): the Ampere/Ada keys
+/// are the PROVENANCE chip of the pinned asset chain - booter_load_ga102.bin
+/// is the GA102 driver archive's BINDATA, ad102 likewise - while the SCOPE
+/// is the entire ID span routed to the key above. NVIDIA's own GSP ELF
+/// signature sections are generation-scoped instead (fwimage_ga10x /
+/// fwsignature_ad10x), so the makers bridge 10x->102 when staging the
+/// stick; the two schemes name two different objects (byte origin vs
+/// signature scope) and greppable provenance wins for the chain binaries.
+/// Turing keeps generation keys (tu10x/tu11x) split per die archive.
 /// Unverified IDs now run instead of being refused: per-ID evidence
 /// tiers live in the README matrix, and a first-silicon report
 /// upgrades the row (issue #8 process). Shared by tx_one_card and the

@@ -25,8 +25,8 @@
 # ever created/resized/reformatted, and no NVRAM boot entry is written.
 #
 # -Family (default localhost):
-#   ad102 | rtx40 | 40   RTX 40 series (Ada)          - no Windows prerequisites
-#   ga102 | rtx30 | 30   RTX 30 series (Ampere)       - kmod-verified upstream,
+#   ad102 | ad10x | rtx40 | 40   RTX 40 series (Ada)    - no Windows prerequisites
+#   ga102 | ga10x | rtx30 | 30   RTX 30 series (Ampere) - kmod-verified upstream,
 #                                                     EFI path has no silicon evidence yet
 #   tu10x | rtx20 | 20   RTX 20 series (Turing)       - EXPECTS GSP firmware mode.
 #                        The script WARNS (never blocks) unless EnableGpuFirmware=1
@@ -129,6 +129,7 @@ $ProgressPreference = 'SilentlyContinue'
 # $Family is a list: `-Family 30,40` binds as two elements, and a single quoted
 # "30,40" is split here too, so both spellings work.
 $validFamilyTokens = @("ad102", "ga102", "tu10x", "tu11x", "all", "localhost",
+                       "ad10x", "ga10x",   # NVIDIA generation names as aliases
                        "rtx40", "rtx30", "rtx20", "rtx16", "40", "30", "20", "16")
 $familyTokens = @()
 foreach ($f in $Family) {
@@ -141,12 +142,12 @@ if ($familyTokens.Count -eq 0) { $familyTokens = @("localhost") }
 $normalizedTokens = @()
 foreach ($tok in $familyTokens) {
     if ($validFamilyTokens -notcontains $tok) {
-        throw ("unknown family: '{0}' (ad102 | ga102 | tu10x | tu11x | all | localhost, " -f $tok) +
-               "or a comma list such as 30,40)"
+        throw ("unknown family: '{0}' (ad102 | ad10x | ga102 | ga10x | tu10x | tu11x | " -f $tok) +
+               "all | localhost, or a comma list such as 30,40)"
     }
     $normalizedTokens += switch ($tok) {
-        { $_ -in "ad102", "rtx40", "40" } { "ad102" }
-        { $_ -in "ga102", "rtx30", "30" } { "ga102" }
+        { $_ -in "ad102", "ad10x", "rtx40", "40" } { "ad102" }
+        { $_ -in "ga102", "ga10x", "rtx30", "30" } { "ga102" }
         { $_ -in "tu10x", "rtx20", "20" } { "tu10x" }
         { $_ -in "tu11x", "rtx16", "16" } { "tu11x" }
         default { $tok }   # localhost | all pass through
@@ -880,8 +881,13 @@ foreach ($fam in $Families) {
             Write-Host "[generate] V67 AD102 four-write payload"
             & $AssetsExe generate-ad102 (Join-Path $Out "v67-ad102-four-plm.bin")
             if ($LASTEXITCODE) { throw "generate-ad102 failed" }
-            # gsp-sections emits the ELF section family name (ad10x); the loader
-            # looks the device family up as ad102.
+            # Naming bridge between two schemes: gsp-sections emits the ELF
+            # SECTION family name (ad10x = NVIDIA's generation-scoped
+            # signature name); the loader keys the device family as ad102
+            # (= provenance chip of the pinned booter chain, serving the
+            # whole 0x2600-0x28ff span - see loader asset_family). These
+            # copies are the whole bridge; the 10x-named exports themselves
+            # are deleted with the other intermediates below.
             Copy-Item (Join-Path $Out "fwimage_ad10x.bin")     (Join-Path $Out "fwimage_ad102.bin") -Force
             Copy-Item (Join-Path $Out "fwsignature_ad10x.bin") (Join-Path $Out "fwsignature_ad102.bin") -Force
             $expected += @(
