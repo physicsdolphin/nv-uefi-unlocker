@@ -94,7 +94,6 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-gop-hide.txt`（tx 构建） | **手动兜底**：每行一个 BDF（`bb:dd.f` 或 `dddd:bb:dd.f`）或 vendor:device（`vvvv:dddd`），对应 GOP child 直接 Disconnect（不重建）。拒绝条件：清单命中 console 卡自身（兄弟头规则，**整单拒执行**）、无可解析行（拒绝猜）、术后读回失败响亮上报。与默认重排互斥：hide 先执行 |
 | `tx-prom-sha256.txt`（tx 构建） | **可选身份门**：64 位十六进制，钉住 `BAR0+0x300000` 固定 1 MiB PROM 窗口的 SHA-256。缺省=未配置，事务照常进行；存在=必须匹配（两次稳定读取）才会调用 `run_transaction`，缺失/格式错/读不稳/不匹配都在任何写入之前拒绝，判定与资产缺失同级。登记方法：此文件存在时所有构建（含只读构建）都会把实测 `IDENTITY:` SHA-256 打进日志，默认引导不产生 PROM 读取开销——先放一个占位值启动一次，把日志里的实测值抄回文件即可 |
 | `tx-stop-on-failure.txt`（tx 构建） | **可选的硬失败即 STOP**：文件存在即启用，内容忽略。缺省（不存在）行为不变——通用失败照常跑 `emergency_flr`，多卡循环继续下一张。存在此 marker 时，通用失败改为立即停止：不跑 FLR、不释放桥 BME、不换下一张卡，loader 也不会链式启动 Windows。失败路径的 console 镜像恢复与只读判定行照跑，但屏幕可能保持黑屏（对状态已不可信的卡刻意不重连 GOP）——`loader.log` 是唯一记录。被停止的会话也不会 StartImage OS loader，连续尝试在 TPM 里测得的前置链逐位一致（对 BitLocker 类 PCR 密封档案有意义：恢复引导照常解封） |
-| `i_know_what_i_am_doing.txt` | 5 秒倒计时后自动运行，任意键中止；文件存在即启用，内容忽略 |
 | `tx-no-canary.txt` | 整组跳过复位金丝雀的读写（A/B 对照；见[回锁章](#relock)） |
 | `tx-relock.txt`（tx 构建） | **退出阀**：交棒前把 FEAT PLM 锁回 `0xffffff8f`（三代通用）。默认自 2026-11-08 起三代都门开交棒（Turing 加入 Ampere/Ada 的开门形态；TU106 bench 端到端坐实门开无害且系统内写入面开放，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`）。Turing 臂实测回锁值 `0xffffffef`/`0xffffff8f` 随板方差；Ampere/Ada 臂（FLR 判定后重锁）未上过 bench。**注意重锁本身有代价**：部分驱动会对重锁态发起 init 期 PF FLR 并清零 SS（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B），所以 v2.1.11 及更早的默认行为在那些驱动上会丢锁 |
 | `tx-ultrafast.txt`（tx 构建） | **速度档**（已验证机器用）：跳过全部纯诊断性质的事前/事后探测——M1 冷态采样、GOP 探测、AUTH-SCAN、ROOT-DIR 转储、opener/拓扑诊断、载荷后 FEAT sweep、HANDOFF-PCI / HANDOFF-VGA-FINAL 转储、POST-GOP 探针、CHAIN-MEMMAP——并折叠 quiet + **仅事务锚点 flush**（比阶段标记集紧得多：~80 次/轮 → ~15 次/轮；挂死时锚点之间的日志盲区更大，显式 `tx-flush-lines.txt` 仍优先）。**裁决链读回一个不少**：selector 写读回、WPR2/POST-BOOT 判定、booter 载入审计照跑——读回是唯一成功判据。**复位金丝雀不省**（写读回毫秒级、复位取证价值高；自 2026-11-09 起 ultrafast 照跑，`HANDOFF-OUT` 显示真实判定；确要跳过用 `tx-no-canary.txt`）。被跳过的阶段在日志里各留一行 `ultrafast - skipped`。只建议在已多轮验证的机器上使用 |
@@ -108,6 +107,27 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 无自动运行标记时，事务只接受空格或回车确认，其他键或 30 秒超时均中止。链回顺序为 Windows Boot Manager → 受支持的 Linux shim/grub/systemd-boot/Limine → 通用 `EFI/BOOT/BOOTX64.EFI`；最后一档提供 5 秒按键退出窗口。慢速 console 的提速走 `tx-quiet.txt` 的 console 白名单（issue #38），不做异步输出——UEFI 引导服务单线程，GOP 文本渲染本身是同步调用，异步提不了吞吐；每行日志带 `[+ms]` 阶段计时前缀，回显耗时与事务等待在 `loader.log` 里直接可分。
 
 多卡默认按固件枚举顺序处理所有受支持的卡；已解锁或不支持的卡跳过，单卡失败按失败路径处理，不重试该卡。只想解锁其中一张时必须明确指定 BDF。
+
+<a id="auto-run"></a>
+
+### 不想在 30 秒里按键，怎样全自动跑？
+
+在盘根放一个 `i_know_what_i_am_doing.txt` 即可——**文件放不放，就是"做盘时决定要不要确认"的那个选项**：
+
+```
+U盘根\
+  i_know_what_i_am_doing.txt   <- 内容写 0
+  tx-quiet.txt                 <- 可选，安静模式
+```
+
+- 文件存在 = 不再等按键，改为 N 秒倒计时后自动执行；倒计时内任意键仍可中止。
+- 内容留空默认 5 秒；首行数字改秒数，有效范围 0–30。
+- **内容写 `0` = 完全不等待**：只读预备（枚举/选卡/资产预读进内存）一结束立即开跑。`0` 需要 **v2.1.12-rc1 或更新**，v2.1.11 及更早会钳到 1 秒。
+- 看到 `CONFIRM: \i_know_what_i_am_doing.txt present - ARMED: Ns countdown auto-runs` 就是已识别。
+
+为什么默认仍然是按键：那 30 秒是**零写安全闸门**——超时或按错键直接退出，一根寄存器都不写（日志明写 `CONFIRM: 30s timeout - ABORT`）。从"每次开机按一下键"到"一次确认、永久自动"的正确切法，是把意图声明提前到做盘那一刻（marker），而不是把闸门整体拆掉。所以**看到 30 秒超时 ABORT 不是失败，是闸门按设计工作**——进系统读回 `NOT_UNLOCKED` 也别误判成工具坏了。
+
+倒计时被莫名打断（屏幕出现 `CONFIRM: key Printable(...)`）是固件在上报幽灵键，用 `tx-ignore-key.txt` 过滤（见上文表格与[幽灵按键](#ghost-key)一节）。
 
 ### 能不能装到内置硬盘分区、开机自动解锁？
 

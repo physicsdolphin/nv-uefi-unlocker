@@ -92,7 +92,6 @@ Optional markers go in the stick root; normal use needs none:
 | `tx-gop-hide.txt` (tx builds) | **Manual fallback**: one entry per line, a BDF (`bb:dd.f` or `dddd:bb:dd.f`) or vendor:device (`vvvv:dddd`); matching GOP children are disconnected without recreate. Refusals: a list entry hits the console card itself (sibling-head rule, **the whole operation is refused**), no parseable line (refusing to guess), a failed post-surgery readback is reported loudly. Mutually exclusive with the default reorder: hide runs first, reorder never runs |
 | `tx-prom-sha256.txt` (tx builds) | **Opt-in identity gate**: 64 hex digits, the pinned SHA-256 of the fixed 1 MiB PROM window at `BAR0+0x300000`. Absent = not configured, the transaction proceeds as always. Present = required to match (two stable reads) before `run_transaction` is ever called; a missing/unparsable/unreadable/mismatched measurement refuses the card before any write, same as an unsupported asset set. Enrollment: when this file exists, every build (read-only included) logs the measured `IDENTITY:` SHA-256 - and PROM reads cost nothing on default boots. Boot once with a placeholder value, copy the logged value back into the file |
 | `tx-stop-on-failure.txt` (tx builds) | **Opt-in STOP-on-hard-failure**: existence enables it, contents ignored. Default (absent) behavior is unchanged - a generic transaction failure runs `emergency_flr` and the multi-GPU loop continues to the next card. With this marker present, a generic failure instead halts immediately: no FLR, no bridge-BME release, no next card, and the loader does not chain-load Windows. The failure path's console re-enable and read-only verdict lines still run, but the screen may stay dark (the GOP is deliberately not reconnected on a card whose state is no longer trusted) - `loader.log` is the sole record. A stopped session also never StartImages the OS loader, so successive attempts measure an identical pre-OS chain into the TPM (relevant to BitLocker-style PCR-sealed profiles: recovery boots keep unsealing) |
-| `i_know_what_i_am_doing.txt` | Auto-run after 5 seconds, any key aborts; existence enables it, contents ignored |
 | `tx-no-canary.txt` | Skip the whole reset canary group (A/B control; see [relock](#relock)) |
 | `tx-relock.txt` (tx build) | **Escape hatch**: relock the FEAT PLM to `0xffffff8f` before handoff (all three families). The default since 2026-11-08 is to hand off with the gate OPEN everywhere (Turing joined the Ampere/Ada open-gate shape; a TU106 bench proved the open gate healthy end-to-end and leaves the in-OS write surface available, see `docs/evidence/tu106-1f07/keep-open-2026-11-08/`). The Turing arm's observed relock value is `0xffffffef`/`0xffffff8f` depending on the board; the Ampere/Ada arm (relock after the FLR verdict) has never been benched. **The relock itself has a cost**: some drivers answer a relocked state with an init-time PF FLR that wipes SS ([#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) same-card A/B), so the default through v2.1.11 loses the unlock on those drivers |
 | `tx-ultrafast.txt` (tx build) | **Speed profile** (for machines with several verified rounds): skips every purely diagnostic pre/post probe - M1 cold-state sample, GOP probe, AUTH-SCAN, ROOT-DIR dump, opener/topology dumps, the post-payload FEAT sweep, HANDOFF-PCI / HANDOFF-VGA-FINAL dumps, the POST-GOP probe, CHAIN-MEMMAP - and folds in quiet + **transaction-anchor-only flush** (much tighter than the stage-marker set: ~80 flushes/run → ~15; a hang between anchors leaves a bigger log blind spot; an explicit `tx-flush-lines.txt` still wins). **None of the verdict readbacks are skipped**: the selector write/readback, the WPR2/POST-BOOT verdicts and the booter load audit all still run - readback is the only success criterion. **The reset canary is NOT skipped** (two writes + two reads, milliseconds; high reset-forensics value - since 2026-11-09 ultrafast arms it too and `HANDOFF-OUT` shows the real verdict; use `tx-no-canary.txt` to skip it explicitly). Every skipped stage leaves one `ultrafast - skipped` line in the log. Only recommended on machines with multiple clean recorded rounds |
@@ -106,6 +105,27 @@ Optional markers go in the stick root; normal use needs none:
 Without the auto-run marker, only Space or Enter confirms; another key or a 30-second timeout aborts. Chainload order: Windows Boot Manager → supported Linux shim/grub/systemd-boot/Limine → generic `EFI/BOOT/BOOTX64.EFI`. The last tier offers a 5-second key-to-exit window. Slow-console speedup is the `tx-quiet.txt` console whitelist (issue #38), not async output - UEFI boot services are single-threaded and GOP text rendering is a synchronous call, so asynchrony cannot raise throughput; every log line carries a `[+ms]` stage-timing prefix so echo cost and transaction waits separate in `loader.log`.
 
 Multi-GPU default: process all supported cards in firmware order; skip unsupported/already-unlocked cards, handle a card's failure without retrying it. Pin the BDF when only one card is intended.
+
+<a id="auto-run"></a>
+
+### How do I skip the 30-second key press and run fully automatically?
+
+Put an `i_know_what_i_am_doing.txt` in the stick root - **whether that file exists is exactly the "decide at stick-preparation time whether a confirmation is needed" option**:
+
+```
+stick root\
+  i_know_what_i_am_doing.txt   <- contents: 0
+  tx-quiet.txt                 <- optional, quiet mode
+```
+
+- File present = no key wait: auto-run after an N-second countdown, and any key during the countdown still aborts.
+- Empty contents default to 5 seconds; a number on the first line sets the seconds (valid range 0-30).
+- **`0` = no wait at all**: PROCEED fires as soon as the read-only prep (enumerate / select / asset reads into RAM) finishes. `0` needs **v2.1.12-rc1 or newer**; v2.1.11 and earlier clamp it to 1 second.
+- `CONFIRM: \i_know_what_i_am_doing.txt present - ARMED: Ns countdown auto-runs` in the log means the marker was picked up.
+
+Why the key press is still the default: those 30 seconds are a **zero-write safety gate** - a timeout or a wrong key exits without touching a single register (the log says `CONFIRM: 30s timeout - ABORT`). The right way to go from "press a key every boot" to "confirm once, automatic forever" is to move the intent declaration to stick-preparation time (the marker), not to remove the gate. So **a 30-second timeout ABORT is not a failure, it is the gate working as designed** - and an in-OS read-back of `NOT_UNLOCKED` after one does not mean the tool is broken.
+
+A countdown interrupted by itself (a `CONFIRM: key Printable(...)` line nobody typed) means the firmware is reporting a phantom key; filter it with `tx-ignore-key.txt` (see the table above and the [ghost-key](#ghost-key) section).
 
 ### Can it be installed to an internal partition for automatic boot?
 
