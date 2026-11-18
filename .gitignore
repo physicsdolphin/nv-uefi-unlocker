@@ -47,3 +47,9 @@ romcore/testdata/
 # working drafts (notes and reply drafts, kept local)
 /docs/drafts/
 /inputs/
+
+# maker run outputs: repo-root stick layout + test-copy harness fixture
+# (same class as /release/usbroot*/ above, at the repo root where the
+# README examples and the harness default land)
+/usbroot/
+/.relcheck/
