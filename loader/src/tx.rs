@@ -1783,11 +1783,18 @@ pub fn run_transaction(
     // `\tx-reconnect-legacy.txt` restores the old reconnect_all path
     // (recursive + PR#13 non-recursive logic) as an escape hatch;
     // `\tu10x-no-reconnect.txt` keeps its experimental skip for Turing.
+    // Issue #261: if the target owned no GOP child at detach, the console
+    // lived on another GPU (hybrid display) or nowhere - there is nothing
+    // to rebuild, and loading the card's ROM GOP driver in that state just
+    // returns SUCCESS without publishing a child. Skip the ~2 s attempt
+    // and say so, instead of reporting a rebuild "failure".
     if family_is_turing(assets.family) && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
         info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
     } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
         info!("TX: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
         crate::tx_detach::reconnect_all(pci_handle);
+    } else if !claim.target_gop_seen {
+        info!("TX: native-GOP rebuild skipped - the target had no GOP child at detach (console lives on another GPU, or none was bound); nothing to rebuild, console left as firmware established it");
     } else if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
         info!("TX: native-GOP recovery failed: {e} - console left to bootmgfw (a wrong reconnect is worse than none)");
     }
