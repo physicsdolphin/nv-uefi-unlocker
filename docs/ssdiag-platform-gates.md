@@ -65,3 +65,4 @@ ssdiag 0.8.2 起的行为（0.8.1 的注册表正判据被 #244 在役闭环推�
 - `nvapi.dll not loadable` 在 0.6.4 前是 x64 加载名 bug（裸名只在 SysWOW64），GC6 wake 从不生效——0.6.4 起 `nvapi64.dll` 优先，parked 态卡才能真正拉出 D3 诊断；
 - 非 0.6.4 用户遇到 MAP error 5 时，升级本身可能就是修复（0.4.8 发现层的 17 MiB 合并候选是另一类假阳性，#118）。
 - 0.8.2 的 tier-2 判据 = **SDEV 表**（文档化触发的固件半，`GetSystemFirmwareTable` 只读探测）按 VBS 读取结果分支：`==2` 或 SystemGuard 键在场 → 拒；**unverified（注册表值缺席）+ SDEV 在场 → 拒（fail-closed，#244 ASSESSMENT 闭环）**；`==0/==1` → 放行。WMI `SecurityServicesRunning` [3]/[4] 是背景判别位；[2]（HVCI running）与 `SystemCodeIntegrityInformation` 0x10 位在该机结论相反，两接口差异待查。残余漏检形态 = 「tier 在跑 + SDEV 探测阴性」——SDEV 探测签名校验失败会报 unknown 而非阴性，只有 `need==0` 才判 absent；待样本（拒绝文案带确认命令）。
+- **tier-2 判据目前无故障注入测试**（`secure_pci_armed()` 直连 registry/固件表调用，`#[cfg(test)]` 无覆盖）：0.8.1 的静默失效正属"否定路径从未被观察"一类，矩阵（SDEV 在场/注册表缺席/SystemGuard 组合）+ 解析分支 + 拒绝文案断言已立 [#265](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/265) 跟踪，落地前本门的行为证据仍以在役样本为准。
