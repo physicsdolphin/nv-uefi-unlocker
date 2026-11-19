@@ -273,9 +273,27 @@ function Get-InstanceDesc($Props, [string]$InstancePath) {
 
 # Colored output helpers (Write-Host -ForegroundColor colors only a real
 # console; redirected output stays plain text, so logs never gain ANSI codes).
-function Write-Step([string]$m)  { Write-Host $m -ForegroundColor Cyan }
-function Write-Ok2([string]$m)   { Write-Host $m -ForegroundColor Green }
-function Write-WarnY([string]$m) { Write-Host $m -ForegroundColor Yellow }
+# Tagged stage lines color ONLY the [tag], not the content (2026-11-20,
+# user preference): the tag carries the phase, the text stays default so
+# numbers/filenames read neutrally. Errors keep whole-line red.
+function Write-Step([string]$m)  {
+    if ($m -match '^(\[[^\]]+\])(.*)$') {
+        Write-Host $Matches[1] -ForegroundColor Cyan -NoNewline
+        Write-Host $Matches[2]
+    } else { Write-Host $m -ForegroundColor Cyan }
+}
+function Write-Ok2([string]$m)   {
+    if ($m -match '^(\[[^\]]+\])(.*)$') {
+        Write-Host $Matches[1] -ForegroundColor Green -NoNewline
+        Write-Host $Matches[2]
+    } else { Write-Host $m -ForegroundColor Green }
+}
+function Write-WarnY([string]$m) {
+    if ($m -match '^(\[[^\]]+\])(.*)$') {
+        Write-Host $Matches[1] -ForegroundColor Yellow -NoNewline
+        Write-Host $Matches[2]
+    } else { Write-Host $m -ForegroundColor Yellow }
+}
 function Write-ErrY([string]$m)  { Write-Host $m -ForegroundColor Red }
 
 # Hybrid-output RTD3 advisory (issue #266): the rail-off wipe needs a laptop
