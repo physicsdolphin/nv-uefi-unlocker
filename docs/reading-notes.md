@@ -938,15 +938,18 @@ GPU-Z CUDA 页读取）**：
   （无 L2 切口）——分割策略逐 die/SKU 不同（对照：AD102 4090 SM+L2 双切、
   GA106 3060 双切、AD107 只切 SM）
 - **AD102 4090**：2MB × 36/48 = 72MB（96→72MB 已知 spec 事实锚定）
-- **GA102 3090**：48 × 128KB = 6MB（无切，spec；Linux torch 探针交叉验证待跑）
+- **GA102 3090 ×4**：属性报 **6291456B** ×4 卡全部精确 = 48 × 128KB
+  （无切，`l2probe-4x3090-linux.log`；SMs 82 亦同值——GA102 容量行从 spec
+  升格为驱动实测 n=4；方法=ctypes cuDeviceGetAttribute 38，免 torch）
 
 同代 slice 均匀性成立：**Ampere/Turing 128KB/片 vs Ada 2MB/片（代际跳变
-16×）**；每一 die 的 LTS 读数 × slice 尺寸 = 驱动已知或 spec 已知容量，
-无一例外。
+16×）**；每一 die 的 LTS 读数 × slice 尺寸 = 驱动实测或 spec 已知容量，
+**无一例外——寄存器侧与驱动侧双源收口**（TU106/GA106/GA102×4/AD107 四行
+驱动实测，AD102 spec 事实锚定）。
 **待采预测**：GB206 5060 Ti（若 4 LTC 槽活全 4/4 → 16×2MB=32MB=5060 Ti
 spec，X99 补 LTS 首采即验）；AD103 4080（4 FBP × 8 LTC × 4 × 2MB = 64MB；
 JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面，补跑即验）；4090 同探针应报
-73728KB。
+73728KB（AD102 侧唯一待补的驱动读数）。
 
 ### 7. 判读指南（TU106/GA106 实验用）
 

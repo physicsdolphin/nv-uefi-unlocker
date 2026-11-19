@@ -1,0 +1,17 @@
+# CUDA driver-API L2 probe (l2probe.py, ctypes cuDeviceGetAttribute 38)
+# Host: aa-WS-C621E-SAGE-Series (Ubuntu 22.04, 4x RTX 3090, root session)
+# Context: closes the GA102 capacity row - driver-side cross-check of the
+# LTS_L2SLICE decode (12 LTC x 4/4 = 48 slices x 128KB = 6MB, no cut).
+4 CUDA device(s)
+[0] NVIDIA GeForce RTX 3090
+    PCI 3b:00.0  cc 8.6  SMs 82
+    L2_CACHE_SIZE = 6291456 bytes = 6144 KB = 6.00 MB
+[1] NVIDIA GeForce RTX 3090
+    PCI 5e:00.0  cc 8.6  SMs 82
+    L2_CACHE_SIZE = 6291456 bytes = 6144 KB = 6.00 MB
+[2] NVIDIA GeForce RTX 3090
+    PCI 86:00.0  cc 8.6  SMs 82
+    L2_CACHE_SIZE = 6291456 bytes = 6144 KB = 6.00 MB
+[3] NVIDIA GeForce RTX 3090
+    PCI af:00.0  cc 8.6  SMs 82
+    L2_CACHE_SIZE = 6291456 bytes = 6144 KB = 6.00 MB
