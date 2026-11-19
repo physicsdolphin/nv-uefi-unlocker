@@ -82,7 +82,7 @@ fn extract(source: &Path, outdir: &Path) -> Result<(), String> {
             return Err(format!("derived asset differs from pinned SHA-256: {name} ({digest})"));
         }
         std::fs::write(outdir.join(name), &data).map_err(|e| e.to_string())?;
-        println!("derived {name}: {} bytes, SHA-256 verified", data.len());
+        verified_line("derived ", name, data.len(), "");
     }
     Ok(())
 }
@@ -225,10 +225,8 @@ fn slice_proven_rm_boot(blob: &Path, outdir: &Path, family: &str) -> Result<(), 
     }
     std::fs::create_dir_all(outdir).map_err(|e| e.to_string())?;
     std::fs::write(outdir.join(format!("gsp_boot_{family}.bin")), slice).map_err(|e| e.to_string())?;
-    println!(
-        "gsp_boot_{family}.bin: {} bytes, SHA-256 verified (proven BL slice, fired on TU106 2026-10-27; Turing-shared)",
-        slice.len()
-    );
+    verified_line("", &format!("gsp_boot_{family}.bin"), slice.len(),
+        "(proven BL slice, fired on TU106 2026-10-27; Turing-shared)");
     Ok(())
 }
 
@@ -250,7 +248,7 @@ fn extract_tu11x(source: &Path, outdir: &Path) -> Result<(), String> {
         if pinned == "UNMEASURED" {
             println!("{}", c_ok(&format!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len())));
         } else {
-            println!("TU116 derived {name}: {} bytes, SHA-256 verified", data.len());
+            verified_line("TU116 derived ", name, data.len(), "");
         }
         Ok(())
     };
@@ -594,7 +592,7 @@ fn extract_ad102(source: &Path, outdir: &Path) -> Result<(), String> {
             return Err(format!("AD102 derived asset mismatch: {name} ({digest})"));
         }
         std::fs::write(outdir.join(name), &data).map_err(|e| e.to_string())?;
-        println!("AD102 derived {name}: {} bytes, SHA-256 verified", data.len());
+        verified_line("AD102 derived ", name, data.len(), "");
     }
     Ok(())
 }
@@ -624,7 +622,7 @@ fn gsp_sections(gsp_bin: &Path, outdir: &Path, families: &[String]) -> Result<()
             let data = assets::elf::section_bytes(&img, &s.name).map_err(|e| e.to_string())?;
             std::fs::write(outdir.join(format!("fwsignature_{fam}.bin")), data)
                 .map_err(|e| e.to_string())?;
-            println!("fwsignature_{fam}.bin: {} bytes", data.len());
+            verified_line("", &format!("fwsignature_{fam}.bin"), data.len(), "");
         }
     }
     let fwimage = assets::elf::section_bytes(&img, ".fwimage").map_err(|e| e.to_string())?;
@@ -637,7 +635,7 @@ fn gsp_sections(gsp_bin: &Path, outdir: &Path, families: &[String]) -> Result<()
             }
             std::fs::write(outdir.join(format!("fwimage_{fam}.bin")), fwimage)
                 .map_err(|e| e.to_string())?;
-            println!("fwimage_{fam}.bin: {} bytes (same image)", fwimage.len());
+            verified_line("", &format!("fwimage_{fam}.bin"), fwimage.len(), "(same image)");
         }
     }
     Ok(())
