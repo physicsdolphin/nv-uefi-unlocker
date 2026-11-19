@@ -16,10 +16,13 @@ fn c_ok(m: &str) -> String {
 }
 /// One verified-asset line: green [ok], cyan filename, plain size
 /// (mirrors the make-usbroot asset table).
+fn c_step(m: &str) -> String {
+    if color_enabled() { format!("\x1b[36m{m}\x1b[0m") } else { m.to_string() }
+}
 fn verified_line(prefix: &str, name: &str, len: usize, suffix: &str) {
     let tail = if suffix.is_empty() { String::new() } else { format!(" {suffix}") };
     if color_enabled() {
-        println!("[32m[ok][0m [95m{prefix}{name}[0m: {} bytes,[32m SHA-256 verified[0m{tail}", len);
+        println!("[32m[ok][0m [95m{prefix}{name}[0m: [93m{} bytes[0m,[32m SHA-256 verified[0m{tail}", len);
     } else {
         println!("[ok] {prefix}{name}: {} bytes, SHA-256 verified{tail}", len);
     }
@@ -448,7 +451,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_ga102().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len())));
                 Ok(())
             })
         }
@@ -460,7 +463,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_ad102().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len())));
                 Ok(())
             })
         }
@@ -472,7 +475,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_tu102().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len())));
                 Ok(())
             })
         }
@@ -484,7 +487,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_tu116().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified; RE-derived, not field-proven - issue #151)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified; RE-derived, not field-proven - issue #151)", out.display(), payload.len())));
                 Ok(())
             })
         }
