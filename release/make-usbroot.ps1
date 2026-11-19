@@ -271,6 +271,77 @@ function Get-InstanceDesc($Props, [string]$InstancePath) {
     return $InstancePath
 }
 
+# Colored output helpers (Write-Host -ForegroundColor colors only a real
+# console; redirected output stays plain text, so logs never gain ANSI codes).
+function Write-Step([string]$m)  { Write-Host $m -ForegroundColor Cyan }
+function Write-Ok2([string]$m)   { Write-Host $m -ForegroundColor Green }
+function Write-WarnY([string]$m) { Write-Host $m -ForegroundColor Yellow }
+function Write-ErrY([string]$m)  { Write-Host $m -ForegroundColor Red }
+
+# Hybrid-output RTD3 advisory (issue #266): the rail-off wipe needs a laptop
+# chassis AND runtime D3 enabled AND no display active on the dGPU - the
+# #37/#171/#262/#266 signature. Desktops never get the box; a display-active
+# card is kept awake by its display; a suppressed key turns the box green.
+# GCOFF stops happening under the fix and idle power rises - the price of
+# keeping the unlock (docs/faq.md#relock-winrtd3).
+function Show-Rtd3Advisory {
+    $laptop = $false
+    try {
+        $laptop = ((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PCSystemType -eq 2)
+    } catch {
+        Write-WarnY "[rtd3] chassis type unknown (CIM query failed) - the hybrid/RTD3 risk check is skipped"
+        return
+    }
+    if (-not $laptop) { return }  # desktop chassis: the dGPU does not runtime-park
+
+    # RTD3 policy per NVIDIA display adapter (the same resolution the
+    # disable-rtd3.ps1 one-shot uses; absent/nonzero = the driver may park).
+    $risky = 0; $suppressed = 0
+    $insts = @(Get-BoundNvidiaInstancePaths)
+    if ($insts.Count -eq 0) {
+        $insts = @((Get-PnpDevice -Class Display -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like 'PCI\VEN_10DE*' } | ForEach-Object InstanceId))
+    }
+    foreach ($inst in $insts) {
+        $drv = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Enum\$inst" -ErrorAction SilentlyContinue).Driver
+        if (-not $drv) { continue }
+        $v = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Class\$drv" -ErrorAction SilentlyContinue).EnableRuntimePowerManagement
+        if ($v -eq 0) { $suppressed++ } else { $risky++ }
+    }
+    if ($insts.Count -eq 0) { return }  # no NVIDIA adapter on this host
+
+    # display_active on the dGPU (the same nvidia-smi dependency as the
+    # localhost detection; "Enabled" = a display is being driven by the card).
+    $dispActive = 0; $ngpu = 0
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+        foreach ($r in (& nvidia-smi --query-gpu=display_active --format=csv,noheader 2>$null)) {
+            $ngpu++
+            if (($r -split ',')[0].Trim() -eq 'Enabled') { $dispActive++ }
+        }
+    }
+
+    if ($risky -eq 0) {
+        Write-Ok2 "[ok] RTD3 suppressed (EnableRuntimePowerManagement=0 on $suppressed adapter(s)) - the hybrid retention key is set"
+        return
+    }
+    if ($dispActive -gt 0) {
+        Write-WarnY "[rtd3] runtime D3 enabled, but a display is active on the dGPU ($dispActive/$ngpu) - the card is kept awake; risk low while outputs stay on the card"
+        return
+    }
+
+    Write-ErrY  "======================================================================"
+    Write-ErrY  "WARNING (laptop + hybrid output + runtime D3 enabled): the unlock is"
+    Write-ErrY  "LIKELY WIPED after Windows boots - the #37/#171/#262/#266 signature"
+    Write-ErrY  "(green loader.log, then canary cleared in the OS, gain = zero)."
+    Write-ErrY  "Fix now, then reboot and re-run this maker:"
+    Write-Host  "    powershell -ExecutionPolicy Bypass -File tools\disable-rtd3.ps1"
+    Write-ErrY  "(or set EnableRuntimePowerManagement=0 on the NVIDIA display-adapter"
+    Write-ErrY  " registry key - docs/faq.md#relock-winrtd3). Alternative: switch the"
+    Write-ErrY  " BIOS/MUX to dGPU-direct. Note: GCOFF stops happening and idle power"
+    Write-ErrY  " rises - that is the price of keeping the unlock."
+    Write-ErrY  "======================================================================"
+}
+
 # localhost: NVIDIA display adapters in THIS machine. The driver's
 # bound-device list is authoritative (ghost-free by construction); the
 # display-class scan is the fallback for hosts without a bound driver, and
@@ -341,10 +412,10 @@ if ($useAll) {
         foreach ($a in Get-LocalNvidiaAdapters) {
             $fam = Get-UnlockFamily $a.Dev
             if (-not $fam) {
-                Write-Host ("[localhost] 10de:{0} - outside RTX 20/30/40 series, ignoring ({1})" -f $a.Dev, $a.Desc)
+                Write-WarnY ("[localhost] 10de:{0} - outside RTX 20/30/40 series, ignoring ({1})" -f $a.Dev, $a.Desc)
                 continue
             }
-            Write-Host ("[localhost] 10de:{0} -> {1} ({2})" -f $a.Dev, $fam, $a.Desc)
+            Write-Step ("[localhost] 10de:{0} -> {1} ({2})" -f $a.Dev, $fam, $a.Desc)
             if ($detected -notcontains $fam) { $detected += $fam }
         }
         if ($detected.Count -eq 0) {
@@ -357,16 +428,20 @@ this machine. Use an explicit -Family (ad102 | ga102 | tu10x | tu11x) or -Family
         foreach ($fam in $detected) {
             if ($wanted -notcontains $fam) { $wanted += $fam }
         }
-        Write-Host ("[localhost] building for: {0}" -f ($wanted -join ", "))
+        Write-Step ("[localhost] building for: {0}" -f ($wanted -join ", "))
         Write-Host "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): ssdiag --inventory"
         if ($wanted.Count -lt 3) {
-            Write-Host ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($wanted -join "/") +
+            Write-WarnY ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($wanted -join "/") +
                         " generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot." +
                         " For a multi-generation machine use the comma list (30,40) or -Family all")
         }
     } elseif ($wanted.Count -gt 1) {
         Write-Host ("[family] explicit list - building: {0}" -f ($wanted -join ", "))
     }
+    # The hybrid-output RTD3 advisory targets THIS machine's runtime state,
+    # so it runs whatever the family tokens were (an `all` stick usually
+    # boots right back into this host too).
+    Show-Rtd3Advisory
     # Canonical build order regardless of list/token order; a list also runs the
     # Turing GSP gate strict, same as a single explicit family.
     $Families = @("tu10x", "tu11x", "ga102", "ad102") | Where-Object { $wanted -contains $_ }

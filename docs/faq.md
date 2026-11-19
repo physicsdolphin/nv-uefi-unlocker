@@ -383,7 +383,7 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 
 机器：MSI Vector 16 HX A13VHG（MS-15M1，i9-13980HX，RTX 4080 Laptop `27a0`，BIOS `E15M1IMS.914`，驱动 610.47 LEGACY，Win11 26H2）。同一份报告（[#254](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/254) / [D#255](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/255)）把两种显示模式都测了：**独显直连一次通过、进系统保留**；**混合（MSHybrid）模式则在 Windows 驱动 init / 运行时电源管理阶段被清**——EFI 侧全链与 POST-FLR 都绿，失效发生在交棒之后。
 
-处理只有一项：在**动态解析到的 NVIDIA 显示适配器注册表键**下设 DWORD `EnableRuntimePowerManagement = 0`（一键脚本 `tools/disable-rtd3.ps1`：默认应用、`-Check` 只读体检、`-Undo` 还原；键索引随驱动安装变化，脚本运行时动态解析、永不硬编码；写模式需管理员），重启后重放 EFI 事务，混合模式下解锁即保留进 Windows（同引导 ssdiag 判 `UNLOCKED`、canary intact）。这是机制表第 1 行"真掉电 / RTD3"在 Windows 侧的一个**驱动级旋钮**：不碰固件、不碰 ACPI 表，只让 NVIDIA 驱动不再对这张卡发起运行时 D3 转换——因此也不同于上面 G614JV 的"固件关 ACPI D3"（后者把平台侧 `_PR3` 路径一起去掉，代价是纯核显档失效）。
+处理只有一项：在**动态解析到的 NVIDIA 显示适配器注册表键**下设 DWORD `EnableRuntimePowerManagement = 0`（一键脚本 `tools/disable-rtd3.ps1`：默认应用、`-Check` 只读体检、`-Undo` 还原；键索引随驱动安装变化，脚本运行时动态解析、永不硬编码；写模式需管理员），重启后重放 EFI 事务。**制盘脚本现在会主动提示**（2026-11-20 起）：`make-usbroot.ps1`/`.sh` 在“笔记本机箱 + 运行时 D3 开启 + 无显示输出接独显”三条件齐时打着色警告并指向本脚本——正是本节签名的前置条件组合，混合模式下解锁即保留进 Windows（同引导 ssdiag 判 `UNLOCKED`、canary intact）。这是机制表第 1 行"真掉电 / RTD3"在 Windows 侧的一个**驱动级旋钮**：不碰固件、不碰 ACPI 表，只让 NVIDIA 驱动不再对这张卡发起运行时 D3 转换——因此也不同于上面 G614JV 的"固件关 ACPI D3"（后者把平台侧 `_PR3` 路径一起去掉，代价是纯核显档失效）。
 
 边界如实：①该报告只用 ssdiag 0.7.9 读了寄存器与 canary，**没有"设 / 不设该键"的同会话因果对照**（混合模式的失败轮与成功轮之间隔着一次重启 + 重放）；②`EnableRuntimePowerManagement` 是 Windows 显示驱动的通用电源策略键，不同驱动分支是否都认这个键未逐一核对；③能用独显直连时仍优先独显直连，混合模式保留不等于所有平台可复现。排查顺序照旧：先确认 `POST-GOP` 与 `HANDOFF-OUT` 完好（排除事务与交棒），再看 `POWER:` 行的 D 态与 **RTD3 策略行**（`ssdiag` 0.8.3 起，直接读这个键的现值；`--inventory` 也打 `GPU n RTD3:`），最后才动这个键——键的现值探测不需要动它。
 

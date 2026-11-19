@@ -297,12 +297,12 @@ detect_local_families() { # echoes the build families found here, one per line
         [ -n "$dev" ] || continue
         fam="$(family_of_dev "0x$dev")"
         if [ -z "$fam" ]; then
-            logerr "[localhost] 10de:$dev - outside RTX 20/30/40 series, ignoring (${name:-unknown device})"
+            lwarn "[localhost] 10de:$dev - outside RTX 20/30/40 series, ignoring (${name:-unknown device})"
             continue
         fi
         # Human-readable lines go to stderr: this function's stdout IS the
         # family list consumed by the caller.
-        logerr "[localhost] 10de:$dev -> $fam (${name:-unknown device})"
+        lstep "[localhost] 10de:$dev -> $fam (${name:-unknown device})"
         case "$fam" in
             tu10x) has_tu=1 ;;
             tu11x) has_tu11=1 ;;
@@ -366,7 +366,7 @@ this machine. Use an explicit --family (ad102 | ga102 | tu10x | tu11x) or --fami
         for fam in "${_detected[@]}"; do
             case " ${WANTED[*]-} " in *" $fam "*) ;; *) WANTED+=("$fam") ;; esac
         done
-        log "[localhost] building for: ${WANTED[*]-}"
+        lstep "[localhost] building for: ${WANTED[*]-}"
         log "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): python3 tools/diag-unlock.py --inventory"
         if [ "${#WANTED[@]}" -lt 3 ]; then
             log "[localhost] NOTE: this stick will only carry ${WANTED[*]-} assets. Cards from other generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot. For a multi-generation machine use the comma list (30,40) or --family all"
@@ -426,23 +426,47 @@ assets_run() {
     "$ASSETS_BIN" "$@" || die "assets $1 failed"
 }
 
-# ---------- RTD3 host notice (issue #9) ----------
+# ---------- RTD3 host notice (issue #9, narrowed 2026-11-20 per #266) ----------
+# The rail-off wipe needs (laptop chassis) AND (runtime D3 enabled) AND (no
+# display active on the dGPU) - the #37/#171/#262/#266 hybrid signature. A
+# desktop never gets the loud box; a display-active card is kept awake by
+# the display itself. GCOFF stops happening under the fix either way, and
+# idle power rises - that is the price of keeping the unlock
+# (faq #relock-winrtd3 / #linux).
 rtd3_notice() {
     [ -r /proc/driver/nvidia/params ] || return 0
-    local v
+    local v laptop=0 disp_active=0 ngpu=0
     v="$(grep -E '^DynamicPowerManagement:' /proc/driver/nvidia/params | head -n1 | awk '{print $2}' || true)"
+    if [ -r /sys/class/dmi/id/chassis_type ]; then
+        case "$(cat /sys/class/dmi/id/chassis_type 2>/dev/null)" in
+            8|9|10|14) laptop=1 ;;
+        esac
+    fi
+    if have nvidia-smi; then
+        while IFS=, read -r disp _rest; do
+            ngpu=$((ngpu + 1))
+            [ "${disp// /}" = "Enabled" ] && disp_active=$((disp_active + 1))
+        done < <(nvidia-smi --query-gpu=display_active --format=csv,noheader 2>/dev/null || true)
+    fi
     case "${v,,}" in
+        0x00|0x0|0)
+            [ "$laptop" = 1 ] && lok "[rtd3] runtime D3 suppressed (DynamicPowerManagement=$v) - the unlock-retaining shape"
+            return 0 ;;
         0x02|0x2|2|0x03|0x3|3)
-            log "[rtd3] WARNING: this host runs the NVIDIA driver with runtime D3 enabled"
-            log "[rtd3]        (DynamicPowerManagement=$v). RTD3 parks the GPU in D3cold when"
-            log "[rtd3]        idle, and D3cold ERASES the volatile unlock after handoff"
-            log "[rtd3]        (issue #9): green loader.log, no gain in the OS."
-            log "[rtd3]        Fix, then reboot:"
-            log "[rtd3]          echo 'options nvidia NVreg_DynamicPowerManagement=0x00' | \\"
-            log "[rtd3]            sudo tee /etc/modprobe.d/nvidia-runtimepm.conf"
-            log "[rtd3]          sudo update-initramfs -u   # Fedora/RHEL: sudo dracut -f"
-            log "[rtd3]        (reuse the distro file's basename so it shadows it; verify with:"
-            log "[rtd3]         modprobe -c | grep -i DynamicPowerManagement)"
+            if [ "$laptop" = 0 ]; then
+                lwarn "[rtd3] runtime D3 enabled (DynamicPowerManagement=$v) on a desktop chassis - idle park is unlikely, leaving it as is"
+                return 0
+            fi
+            if [ "$disp_active" -gt 0 ]; then
+                lwarn "[rtd3] runtime D3 enabled, but a display is active on the dGPU ($disp_active/$ngpu) - the card is kept awake; risk low while outputs stay on the card"
+                return 0
+            fi
+            printf '%s\n' "${C_Y}[rtd3] WARNING: laptop + hybrid output + runtime D3 enabled (DynamicPowerManagement=$v)${C_0}"
+            lwarn "[rtd3] RTD3 parks the dGPU in D3cold when idle, and D3cold ERASES the volatile unlock after handoff - the #37/#171/#262/#266 signature (green loader.log, no gain in the OS)"
+            printf '%s\n' "${C_R}[rtd3] FIX NOW, then reboot and re-run this maker:${C_0}"
+            printf '%s\n' "${C_G}[rtd3]   sudo tools/disable-rtd3.sh${C_0}"
+            log   "[rtd3]   (or manually: echo 'options nvidia NVreg_DynamicPowerManagement=0x00' | sudo tee /etc/modprobe.d/nvidia-runtimepm.conf; sudo update-initramfs -u  # Fedora/RHEL: dracut -f)"
+            log   "[rtd3]   alternative: switch the BIOS/MUX to dGPU-direct. Details: docs/faq.md#relock-winrtd3 / #linux"
             ;;
     esac
 }
