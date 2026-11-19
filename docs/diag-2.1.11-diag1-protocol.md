@@ -121,7 +121,9 @@ M1 `SAMPLE` 对非 console 卡可能整行全 `0xffffffff`，连 `PMC_BOOT_0` �
 | 卡 `D3`、根端口 `D0` | 仅卡片自身 D3hot/D3cold，链路复位级；根端口轨道仍在，`_OFF` 未跑 |
 | 卡 `config space unreadable` | 卡已被切电或函数未解码——先看根端口一行再下结论 |
 
-两行的根端口身份直接打印（`BB:DD.F` + `VEN_xxxx&DEV_xxxx`），可与 `\acpi\index.txt` 里的 `_PR3` 命中位置对上：被打印的端口正是那个拥有 `_OFF` 的对象。**局限**：只是探针时刻的快照，`D0` 不证明这一引导内没进过 `D3`（那由金丝雀回答），`D3` 也不区分是谁（驱动/系统电源策略/空闲计时器）造成的。
+两行的根端口身份直接打印（`BB:DD.F` + `VEN_xxxx&DEV_xxxx`），可与 `\acpi\index.txt` 里的 `_PR3` 命中位置对上：被打印的端口正是那个拥有 `_OFF` 的对象。
+
+**RTD3 策略行（`ssdiag` 0.8.3 起）**：POWER 块追加一行，读 NVIDIA 显示适配器驱动键下的 `EnableRuntimePowerManagement`（只读、无管理员；`--inventory` 里也打印 `GPU n RTD3:`）。`0` = 驱动不停靠此卡（保留解锁的形状，[#254](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/254)/[#266](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/266)）；absent 或非零 = 运行时 D3 允许——**金丝雀 cleared + SS 回厂与此行配对 = #37/#262 的撤电签名**，处方 = [FAQ #relock-winrtd3](faq.md#relock-winrtd3) / `tools/disable-rtd3.ps1`。**局限**：只是探针时刻的快照，`D0` 不证明这一引导内没进过 `D3`（那由金丝雀回答），`D3` 也不区分是谁（驱动/系统电源策略/空闲计时器）造成的。
 
 **English**
 

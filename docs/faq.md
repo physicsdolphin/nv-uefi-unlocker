@@ -351,7 +351,7 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 做得到的：
 
 0. **先排除我们自己的旧尾巴**：v2.1.11 及更早的载具默认在交棒前重锁 FEAT 门，部分驱动会因此在 init 期发起 PF FLR 并把 SS 清零（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)，2026-11-12 同卡 A/B）。`061aef8`（v2.1.12-rc1 起）默认改成门开交棒、SS 原样交棒，升级载具本身即消除该触发；不要用 v2.1.11 复测这个问题。
-1. **阻断复位源**：关 RTD3（[Linux](#linux) / Windows 侧显示适配器注册表 DWORD `EnableRuntimePowerManagement=0`，混合本实测见[实例记录](#relock-winrtd3)）、关快速启动与现代待机、BIOS 里关 PCIe 空闲电源门控；**固件侧的 ACPI D3 开关（含隐藏项）全局关闭已有实机验证**（2026-11-16，见[实例记录](#relock-acpid3)）；不要用“关机”当重启。
+1. **阻断复位源（优先免固件的驱动级键）**：Windows 侧给 NVIDIA 显示适配器注册表键设 `EnableRuntimePowerManagement=0`（一键脚本 `tools/disable-rtd3.ps1`；不碰固件、可脚本化撤销，Intel+AMD 双平台实测 [#254](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/254)/[#266](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/266)，**G614JV 实测与固件开关在系统内行为等价**：混合解锁保留、GCOFF 不再发生、ghelper 热切换纯核显失效——2026-11-20，见[实例记录](#relock-winrtd3)）；Linux 侧 `disable-rtd3.sh`（[Linux 一节](#linux)）。**固件侧 ACPI D3 开关（含隐藏项）为备选**（2026-11-16 实证，见[实例记录](#relock-acpid3)）：全局生效（含 Linux、免疫驱动升级），但要进隐藏菜单且纯核显档失效。再关快速启动与现代待机、BIOS 里关 PCIe 空闲电源门控；不要用“关机”当重启。
 2. **改变入口态**：独显直连优先；混合输出下 MUX/面板归属决定设备是否被枚举（[#148 记录](#relock-148)）。
 3. **事后修复**：门仍开时 `ssdiag --reapply` / `diag-unlock.py --reapply` 写回选择器；门已锁只能重放。
 4. **报告时带齐证据**：`loader.log` 的 `POST-FLR` / `POST-GOP` / `HANDOFF-OUT` 三行（含 `CANARY` 与 `wpr2_lo`）、系统内读回值（用带 `CANARY:` 判定行的 `ssdiag` 0.6.5+）、`powercfg /a`、设备电源状态与事件日志。**外加同一 boot 的锁态基线**（解锁前、同一次引导内先跑一遍 `ssdiag`）：不少卡的 stock `SS0/SS1` 本来就含 0（本机实例见诊断协议 §4），没有基线时「SS=0」判不了是清零还是出厂。缺这些只能反复猜。
@@ -367,7 +367,7 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 **系统内金丝雀读数（同日补录）**：进系统 `ssdiag`（0.6.7+ 判定行）读回 `VERDICT [ada]: UNLOCKED (override values live)`、`CANARY: cleared + SS live - a reset happened but the AON island survived it (FLR/SBR class, not a rail-off)`。这把结论在**第二条独立证据轴**上又钉了一遍：金丝雀清零=本引导确实发生过一次 FLR/SBR 级复位，SS 活着=**撤电没有发生**——与第 1 行 rail 断的形态（金丝雀和 FEAT 一起没）正相反。这也是判读四格里“清零 + FEAT 完好”格的**首个实例记录**（#37 Victus 占“两者一起没”、#109 B650 占“完好+完好”、TU106 桌面对照占“完好+被抹”写入型）。关掉 ACPI D3 的效果由此在两条轴上同时可见：状态轴（解锁保留）与复位轴（只剩 FLR/SBR 级复位，AON 岛按设计存活——它只在撤电时复位，其余复位源够不着它）。
 
 价值在方向上：此前“混合模式进系统丢解锁 = ACPI D3 断电”是从 `POWER:`/`_PR3` 采样与 [#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)/[#126](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/126)/[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224) 现场归纳出的**判读**；这是第一次从**固件侧旋钮**反向验证——把固件给平台的 D3 电源路径本身关掉，丢失随之消失。第 1 行的处理顺序由此多出最优先的一档：固件有 ACPI D3 开关（含隐藏项）就先关它，比一切系统侧手段都更根本；零独显直出、欺诈器用不上的机器也多了一条路。
-**已知代价（2026-11-18 实测补充，同一台 G614JV）**：全局关闭 ACPI D3 会让**双显三模的热切换失效**——纯核显档需要 dGPU 断电，而 D3 被关后这条供电路径不复存在。表现为：切到纯核显后设备管理器里独显不消失；或消失但等价于一次单纯的驱动卸载（驱动不在了、电还在耗）。需要纯核显档（省电/续航场景）时把隐藏选项切回，或接受该档不可用——与机制表第 1 行自洽：D3 开关抑制的是"真掉电"复位源，它同时挡住了掉锁与省电，一体两面。 **若纯核显档是硬需求，可撤本开关改用驱动级键**（[实例记录](#relock-winrtd3)，AMD+Intel 双平台已验证）：模式切换的断电走固件/EC 的 ACPI `_OFF` 路径，不受该键影响——即换法后纯核显档的断电能力恢复，但每次切档仍是撤电事件、切回混合后需重放 U 盘；GCOFF 则两种方案下都不会发生（驱动不发起运行时 D3，GC6 自然不进），空闲功耗都升高，这点无差。
+**已知代价（2026-11-18 实测补充，同一台 G614JV）**：全局关闭 ACPI D3 会让**双显三模的热切换失效**——纯核显档需要 dGPU 断电，而 D3 被关后这条供电路径不复存在。表现为：切到纯核显后设备管理器里独显不消失；或消失但等价于一次单纯的驱动卸载（驱动不在了、电还在耗）。需要纯核显档（省电/续航场景）时把隐藏选项切回，或接受该档不可用——与机制表第 1 行自洽：D3 开关抑制的是"真掉电"复位源，它同时挡住了掉锁与省电，一体两面。 **换用驱动级键（[实例记录](#relock-winrtd3)，AMD+Intel 双平台）不能换回纯核显档**——2026-11-20 G614JV 实测：撤本开关、只设 `EnableRuntimePowerManagement=0` 后，混合解锁保留与 GCOFF 失效逐项与本开关一致，**ghelper 热切换进纯核显同样失效**（切档断电需要驱动发起运行时 D3 配合，键把它一并拦了；本节早先"模式切换走固件路径、不受键影响"的推断被此轮证伪）。两旋钮在系统内行为等价（保留/GCOFF/热切换三项一致），选择只看运维属性：键=免固件、单卡粒度、可脚本撤销、仅 Windows；本开关=全局生效（含 Linux）、免疫驱动升级、需隐藏菜单。
 
 固件里找不到这个开关的话：[gsetupmod](https://github.com/MikeWuPing/gsetupmod)（第三方 UEFI 设置浏览器，解析固件 HII/IFR、把 `SUPPRESS_IF` 隐藏项以可编辑形式显示、经 UEFI 变量写回）——**与本项目无关**，开发者在 G614JV 上实测：在其中关闭 ACPI D3 与解锁隐藏 BIOS 菜单效果一致。约束如实：镜像未签名（需 Secure Boot 关闭）；个人使用免费、商用需联系作者；改的是固件 setup 变量——一次只改一项并记录改了什么。
 
@@ -385,9 +385,11 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 
 处理只有一项：在**动态解析到的 NVIDIA 显示适配器注册表键**下设 DWORD `EnableRuntimePowerManagement = 0`（一键脚本 `tools/disable-rtd3.ps1`：默认应用、`-Check` 只读体检、`-Undo` 还原；键索引随驱动安装变化，脚本运行时动态解析、永不硬编码；写模式需管理员），重启后重放 EFI 事务，混合模式下解锁即保留进 Windows（同引导 ssdiag 判 `UNLOCKED`、canary intact）。这是机制表第 1 行"真掉电 / RTD3"在 Windows 侧的一个**驱动级旋钮**：不碰固件、不碰 ACPI 表，只让 NVIDIA 驱动不再对这张卡发起运行时 D3 转换——因此也不同于上面 G614JV 的"固件关 ACPI D3"（后者把平台侧 `_PR3` 路径一起去掉，代价是纯核显档失效）。
 
-边界如实：①该报告只用 ssdiag 0.7.9 读了寄存器与 canary，**没有"设 / 不设该键"的同会话因果对照**（混合模式的失败轮与成功轮之间隔着一次重启 + 重放）；②`EnableRuntimePowerManagement` 是 Windows 显示驱动的通用电源策略键，不同驱动分支是否都认这个键未逐一核对；③能用独显直连时仍优先独显直连，混合模式保留不等于所有平台可复现。排查顺序照旧：先确认 `POST-GOP` 与 `HANDOFF-OUT` 完好（排除事务与交棒），再看 `POWER:` 行的 D 态，最后才动这个键。
+边界如实：①该报告只用 ssdiag 0.7.9 读了寄存器与 canary，**没有"设 / 不设该键"的同会话因果对照**（混合模式的失败轮与成功轮之间隔着一次重启 + 重放）；②`EnableRuntimePowerManagement` 是 Windows 显示驱动的通用电源策略键，不同驱动分支是否都认这个键未逐一核对；③能用独显直连时仍优先独显直连，混合模式保留不等于所有平台可复现。排查顺序照旧：先确认 `POST-GOP` 与 `HANDOFF-OUT` 完好（排除事务与交棒），再看 `POWER:` 行的 D 态与 **RTD3 策略行**（`ssdiag` 0.8.3 起，直接读这个键的现值；`--inventory` 也打 `GPU n RTD3:`），最后才动这个键——键的现值探测不需要动它。
 
 **第二个平台 + 因果对照补强（2026-11-20，[#266](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/266)，AMD Acer Swift SFX14-41G / Ryzen 7 5800U）**：`25a2`（3050 Laptop 4GB，GA107）在**纯 MUXless、零 dGPU 出线**的轻薄本上（连欺骗器都物理不可行，BIOS 也无 ACPI D3 开关），v2.1.12-rc4 两次独立引导 `UNLOCKED`、金丝雀 intact、张量发射率 **2.00×**（寄存器级 WMMA 微基准，FP32 FFMA 对照 1.00× 平）。本报告还补上了上面边界 (1) 缺的**同机因果对照**：同机同盘，不设键的一轮=金丝雀 cleared + SS 回厂（[#262](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/262) 同形签名逐项一致），只加 `EnableRuntimePowerManagement=0`（+ASPM AC/DC=0）的一轮=intact + `UNLOCKED`——键是两轮间唯一变量，机制表第 1 行（轨掉）就此在 AMD 平台坐实。**也是 [#262](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/262)"混合+无 MUX+无 dGPU 出线"形态的第一条可行路**：固件开关与欺骗器都不可行的机器，先试这个驱动级键。边界更新：边界 (1) 已由本报告补上（同机、键为唯一变量）；新增一条——该键挂在驱动键下，**驱动升级/重装可能重建键，升级后须复查重设**（未实测升级轮）；边界 (2)(3) 维持。
+
+**与固件开关的系统内等价性（2026-11-20，G614JV 4060L 实测）**：同一台机先有固件 ACPI D3 全局关闭的 100% 保留记录（[上节](#relock-acpid3)），撤开关、只设本键后复测——**三个行为逐项一致**：混合模式解锁保留；GCOFF 不再发生；ghelper 热切换进纯核显失效（切换断电需要驱动发起运行时 D3 配合，键拦了它就拦了切换）。两旋钮在系统内等价，差异只在：固件开关全局生效（含 Linux）、免疫驱动升级、要进隐藏菜单；本键单卡粒度、Windows-only、可脚本化撤销（`tools/disable-rtd3.ps1 -Undo`）。**作为免固件方案优先提供**。
 
 <a id="relock-148"></a>
 

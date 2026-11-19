@@ -1,4 +1,11 @@
-//! ssdiag v0.8.2 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.3 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.3 adds a read-only RTD3 policy line to the POWER block (issue #266):
+//! the per-adapter `EnableRuntimePowerManagement` DWORD under the NVIDIA
+//! display adapter's driver key, resolved at run time through the Enum key.
+//! 0 = the driver will not park this card (the unlock-retaining shape);
+//! absent/nonzero = runtime D3 allowed, so a cleared canary after the handoff
+//! pairs with this line as the #37/#262 rail-off signature. Also printed
+//! per-GPU in --inventory (no admin, no driver). Registry read, unelevated.
 //! v0.8.2 makes the tier-2 gate genuinely fail-closed (field-closed on the
 //! #244 T14s): the DeviceGuard registry VirtualizationBasedSecurityStatus is
 //! ABSENT on some VBS-running machines (reporter's machine: WMI says 2, the
@@ -978,6 +985,19 @@ struct CardDriver {
     version: String,
     date: Option<String>,
     gsp: Option<u32>,
+    rtd3: Option<u32>,
+}
+
+/// Verdict wording shared by the --inventory line and the POWER-block line
+/// (issue #266): the display-adapter DWORD EnableRuntimePowerManagement is
+/// the Windows-side RTD3 policy - 0 keeps the driver from parking the card,
+/// which is the unlock-retaining shape.
+fn rtd3_verdict(v: Option<u32>) -> String {
+    match v {
+        Some(0) => "0 (suppressed) - the driver will not park this card; the unlock-retaining shape (#254/#266)".to_string(),
+        Some(n) => format!("{n} - the driver may initiate runtime D3; a cleared canary after the handoff is the expected rail-off signature"),
+        None => "absent (driver default: runtime D3 allowed) - a cleared canary pairs with this line; fix = FAQ #relock-winrtd3 / tools/disable-rtd3.ps1".to_string(),
+    }
 }
 
 fn card_driver(instance: &str, devinst: u32) -> Option<CardDriver> {
@@ -992,6 +1012,7 @@ fn card_driver(instance: &str, devinst: u32) -> Option<CardDriver> {
         version,
         date: hklm_string(&key, "DriverDate"),
         gsp: hklm_dword(&key, "EnableGpuFirmware"),
+        rtd3: hklm_dword(&key, "EnableRuntimePowerManagement"),
     })
 }
 
@@ -1858,6 +1879,7 @@ fn inventory_header(gpus: &[Gpu], skipped: &[String]) -> InventorySummary {
                 None => "EnableGpuFirmware unset (LEGACY mode)".to_string(),
             };
             println!("GPU {n} driver: {}{mkt}{date}; {gsp}", cd.version);
+            println!("GPU {n} RTD3: EnableRuntimePowerManagement = {}", rtd3_verdict(cd.rtd3));
         } else {
             println!(
                 "GPU {n} driver: no bound NVIDIA class key (driver not installed / never started this boot?)"
@@ -3507,6 +3529,30 @@ fn print_power_state(drv: &PmxDrv, devinst: u32, instance: &str, bdf: Option<(u3
 
 // ---------------------------------------------------------------- register dump
 
+/// RTD3 policy read (v0.8.3, read-only, pairs with the POWER block): the
+/// per-adapter Windows power-policy DWORD `EnableRuntimePowerManagement`
+/// under the NVIDIA display adapter's driver key (issue #266). 0 = the
+/// driver will not initiate runtime D3 for this card - the unlock-retaining
+/// shape; absent or nonzero = the driver may park it, and a cleared canary +
+/// factory SS after the handoff is the expected rail-off signature
+/// (#37/#262) until the key is set (docs/faq.md#relock-winrtd3,
+/// tools/disable-rtd3.ps1). Pure registry read, unelevated; the key index
+/// under Control\Class changes whenever a driver is installed, so it is
+/// resolved through the Enum key at run time, never hardcoded.
+fn print_rtd3_key(instance: &str, devinst: u32) {
+    match card_driver(instance, devinst) {
+        Some(cd) => println!(
+            "POWER: RTD3 policy = {} - EnableRuntimePowerManagement on the adapter driver key",
+            rtd3_verdict(cd.rtd3)
+        ),
+        None => println!(
+            "POWER: RTD3 policy: driver key unresolvable (device not started / driver never installed this boot?)"
+        ),
+    }
+}
+
+// ---------------------------------------------------------------- register dump
+
 const SS0_UNLOCK: u32 = 0x8888_8888;
 const SS1_UNLOCK: u32 = 0x8;
 
@@ -4935,6 +4981,8 @@ WHAT IT DOES:
          (LnkSta is the only trustworthy link-speed criterion)
        - POWER: card and upstream root-port PMCSR / D-state - the
          register-side witness of the platform _PR3/_OFF rail path
+       - POWER: RTD3 policy - the per-adapter EnableRuntimePowerManagement
+         driver-key DWORD (0 = the driver will not park this card)
   4. unlock verdict: FEAT SS0/SS1 == 0x88888888/0x8 => UNLOCKED
      (field-proven to persist in Windows on the Turing relock chain)
 
@@ -5125,6 +5173,7 @@ SSDIAG_COLOR=force pins on.",
         // D0/MEM decode) - hence before the BAR0 walk, not after
         print_config_rebar(&drv, &g.id, g.bdf);
         print_power_state(&drv, g.devinst, &g.id, g.bdf);
+        print_rtd3_key(&g.id, g.devinst);
         let mut picked = walk_candidates(&drv, g);
         // degenerate reads (GC6/GCOFF park, D3, MEM decode off) -> one NVAPI
         // driver-mediated wake, then a single re-walk
