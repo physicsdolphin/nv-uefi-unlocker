@@ -934,6 +934,8 @@ Turing 若返回 `0x91`，或 EFI 成功但 GSP 交棒蓝屏，查 [兼容性矩
 
 **事务失败时屏幕可能保持黑屏，但机器是活的。** `native-GOP` 重建只在成功路径执行；失败路径只做回滚（恢复原厂签名→FLR→链回引导），断开过的 console 不会重建。实测（[#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191)）：失败的 HIGH staging 轮之后系统照常启动、SSH 可用、驱动与桌面正常，只有内屏是黑的。单显笔记本站到这种画面按"黑屏但活着"处理——等它进系统用 SSH 或外接屏确认，或直接断电重来；不要因为黑屏就中途拔盘断电。
 
+**日志里的 `NATIVE-GOP: no gop child on target` 通常不是显示故障，而是"控制台本来就不在这张卡上"**（[#261](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/261) 首个形态记录）。看同一份日志的三处就能判：①`GOP-PROBE` 只有 1 个 GOP 句柄、路径是核显（`PciRoot(0)/Pci(0x2,0x0)`）且带 EDID；②目标卡行 `DETACH: ... is not on the target GPU (multi-GPU) - left untouched`；③目标卡 pre-claim VGA 子集 `0x0`。这说明固件层控制台归核显所有、`DETACH` 根本没拆过目标卡的显示路径，native-GOP 重建无事可做——我们从影子 ROM 把本卡原厂 GOP 驱动 `LoadImage`/`StartImage`/binding `Supported`+`Start` 全部跑绿，但驱动在这个状态下不发布 GOP child（它认为本卡没有自己拥有的显示路径），三个探针如实报空。此时控制台保持固件原样、bootmgfw 照常接管，`POST-GOP` 读回证明解锁不受影响——属于结构化降级里的**信息性**形态，与 #236 的 `console rebind failed NOT_FOUND`（child 已建、挂回 console 失败）和 #188 的 `no rom image`（影子 ROM 都没有）都不是同一型。要让重建真正发生，只能让固件在开机时就以 dGPU 为启动显示（BIOS 级独显直连 / 关核显），EFI 阶段改变不了显示归属。
+
 ### 解锁后一跑负载就报 CUDA 错误？先撤超频和降压
 
 解锁让张量发射率翻倍，**同一功耗包络内**的电流尖峰、VRM 与散热应力随之上升；原本刚好稳住的超频/降压工作点会在新的电流形态下失效。温度越高、漏电越大、同一频率需要的电压越高，所以"以前一直稳"不构成证据。
