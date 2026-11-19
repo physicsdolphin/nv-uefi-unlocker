@@ -19,6 +19,14 @@ Usage:
       --bdf 01:00.0 --platform "B760 + 12700K" --note "first 2709 report" \
       --out profile.json
 
+Scope: the repeatable --log is for the artifacts of ONE boot session
+(loader.log plus its same-boot ssdiag output). Merging logs from
+different boot sessions is undefined behavior: same-named SAMPLE fields
+resolve last-log-wins in input order (and a SAMPLE beats a same-named
+ssdiag KV line regardless of order), so never combine multiple boots
+into one profile and then compare its register values (found in PR #258
+review, three rc3/rc4 logs of issue #251).
+
 Output schema nvuu-compat-profile/2; sources carry per-file SHA-256 so a
 profile can be checked against the attached logs later.
 """
