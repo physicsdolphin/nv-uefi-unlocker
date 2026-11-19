@@ -239,6 +239,7 @@ bash release/make-usbroot.sh --family 40 \
   --assets ./target/release/assets \
   --boot-efi ./target/x86_64-unknown-uefi/release/loader.efi
 ```
+**Why `-AssetsExe`/`-BootEfi` (or `--assets`/`--boot-efi`) are mandatory here**: without them the maker falls back to the **bundled copies in `release/`**, which only change when the release packaging refreshes them. On a self-built checkout, omitting the flags can run an OLDER assets tool and EFI - the maker now detects this staleness (a yellow `[stale]` warning naming the right flags); follow the warning.
 
 Then copy to the USB stick using the layout above. [Read-only diagnosis, tests and development notes](docs/faq.en.md#layout).
 

@@ -653,6 +653,25 @@ if (-not $AssetsExe) { $AssetsExe = Join-Path $PSScriptRoot "assets-x86_64-windo
 if (-not $BootEfi)   { $BootEfi   = Join-Path $PSScriptRoot "BOOTX64.EFI" }
 if (-not (Test-Path $AssetsExe)) { throw "assets tool not found: $AssetsExe" }
 if (-not (Test-Path $BootEfi))   { throw "BOOTX64.EFI not found: $BootEfi" }
+
+# Staleness guard (2026-11-20): the default resolution points at the
+# release/ copies, which only change when the release packaging refreshes
+# them - a repo checkout that just ran `cargo build --release` + `cargo
+# efi-tx` has NEWER binaries under target/. Warn (do not auto-switch: the
+# release/ copies are the shipped, field-tested set) and name the flags.
+$targetAssets = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\assets.exe"
+$targetEfi    = Join-Path (Split-Path $PSScriptRoot -Parent) "target\x86_64-unknown-uefi\release\loader.efi"
+if (-not $AssetsExe.StartsWith($PSScriptRoot) -and (Test-Path $targetAssets) -and
+    ((Get-Item $targetAssets).LastWriteTime -gt (Get-Item $AssetsExe).LastWriteTime)) {
+    Write-WarnY "[stale] target\release\assets.exe is NEWER than $AssetsExe -"
+    Write-WarnY "[stale]   you are about to run an older assets build. Re-run with:"
+    Write-WarnY "[stale]   -AssetsExe .\target\release\assets.exe"
+}
+if (-not $BootEfi.StartsWith($PSScriptRoot) -and (Test-Path $targetEfi) -and
+    ((Get-Item $targetEfi).LastWriteTime -gt (Get-Item $BootEfi).LastWriteTime)) {
+    Write-WarnY "[stale] target\x86_64-unknown-uefi\release\loader.efi is NEWER than $BootEfi -"
+    Write-WarnY "[stale]   re-run with: -BootEfi .\target\x86_64-unknown-uefi\release\loader.efi"
+}
 New-Item -ItemType Directory -Force -Path $mkdirWork, $mkdirOut | Out-Null
 
 # ---------- pinned-download transport (issues #52/#59/#180/#205) ----------

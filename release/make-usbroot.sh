@@ -587,6 +587,21 @@ if [ -z "$BOOT_EFI" ]; then BOOT_EFI="$SCRIPT_DIR/BOOTX64.EFI"; fi
 Build it from the repo (see README: 'cargo efi-tx' gated transaction build)
 or pass --boot-efi."
 
+# Staleness guard (2026-11-20): the default resolution points at the
+# release/ copies, which only change when the release packaging refreshes
+# them - a repo checkout that just built has NEWER binaries under target/.
+# Warn (do not auto-switch: the release/ copies are the shipped, field-tested
+# set) and name the flags.
+$repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
+$t_assets="$repo_root/target/release/assets"
+$t_efi="$repo_root/target/x86_64-unknown-uefi/release/loader.efi"
+if [ "${ASSETS_BIN#$SCRIPT_DIR}" = "$ASSETS_BIN" ] && [ -x "$t_assets" ] &&    [ "$t_assets" -nt "$ASSETS_BIN" ]; then
+    logwarn "[stale] target/release/assets is NEWER than $ASSETS_BIN - you are about to run an older assets build. Re-run with: --assets $t_assets"
+fi
+if [ "${BOOT_EFI#$SCRIPT_DIR}" = "$BOOT_EFI" ] && [ -f "$t_efi" ] &&    [ "$t_efi" -nt "$BOOT_EFI" ]; then
+    logwarn "[stale] target/x86_64-unknown-uefi/release/loader.efi is NEWER than $BOOT_EFI - re-run with: --boot-efi $t_efi"
+fi
+
 mkdir -p "$OUT" "$WORK"
 log "[assets] $ASSETS_BIN"
 rtd3_notice

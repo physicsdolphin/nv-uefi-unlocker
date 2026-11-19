@@ -244,6 +244,7 @@ bash release/make-usbroot.sh --family 40 \
   --assets ./target/release/assets \
   --boot-efi ./target/x86_64-unknown-uefi/release/loader.efi
 ```
+**为什么必须带 `-AssetsExe`/`-BootEfi`（或 `--assets`/`--boot-efi`）**：省略这两个参数时，maker 会改用 `release/` 目录里的**发布随附副本**（只在发版打包时更新）。自行构建后不带参数，maker 可能运行**较旧的资产工具与 EFI**——maker 现在会检测这种过期（`[stale]` 黄色警告并给出正确参数），照警告加上参数即可。
 
 之后按上面的布局复制到 U 盘。[只读诊断、测试与开发说明](docs/faq.md#layout)。
 
