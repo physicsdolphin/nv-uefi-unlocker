@@ -1199,9 +1199,9 @@ Copy-Item $BootEfi (Join-Path $Out "EFI/BOOT/BOOTX64.EFI") -Force
 
 foreach ($f in $expected) {
     if (-not (Test-Path (Join-Path $Out $f))) { throw "missing: $f" }
-    Write-Host ("  {0,-28} " -f $f) -NoNewline; Write-Host ("{0,10} bytes" -f (Get-Item (Join-Path $Out $f)).Length) -ForegroundColor Yellow
+    Write-Host ("  {0,-28} " -f $f) -ForegroundColor Magenta -NoNewline; Write-Host ("{0,10} bytes" -f (Get-Item (Join-Path $Out $f)).Length) -ForegroundColor Yellow
 }
-Write-Host ("  {0,-28} " -f "EFI/BOOT/BOOTX64.EFI") -NoNewline; Write-Host ("{0,10} bytes" -f (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length) -ForegroundColor Yellow
+Write-Host ("  {0,-28} " -f "EFI/BOOT/BOOTX64.EFI") -ForegroundColor Magenta -NoNewline; Write-Host ("{0,10} bytes" -f (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length) -ForegroundColor Yellow
 
 # ---------- confirm-gate marker offer (issue #259) ----------
 # The loader waits 30s for Space/Enter unless the armed marker sits on the

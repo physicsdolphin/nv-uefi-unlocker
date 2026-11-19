@@ -19,7 +19,7 @@ fn c_ok(m: &str) -> String {
 fn verified_line(prefix: &str, name: &str, len: usize, suffix: &str) {
     let tail = if suffix.is_empty() { String::new() } else { format!(" {suffix}") };
     if color_enabled() {
-        println!("[32m[ok][0m [36m{prefix}{name}[0m: {} bytes,[32m SHA-256 verified[0m{tail}", len);
+        println!("[32m[ok][0m [95m{prefix}{name}[0m: {} bytes,[32m SHA-256 verified[0m{tail}", len);
     } else {
         println!("[ok] {prefix}{name}: {} bytes, SHA-256 verified{tail}", len);
     }
