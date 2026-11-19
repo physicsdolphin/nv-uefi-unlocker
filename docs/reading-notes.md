@@ -838,6 +838,35 @@ SYS_PIPE 行注记 TPC disable bank A 0x8203a0-bc、GPC7 对 GA100-only、
 （EN_SW_OVERRIDE）与 0x820410=1（SECURE_PRI_SRC_ISO_EN）；0x73a4 XVE 例程在
 `0x820148&1`（DEBUG_FEAT_SW_OVR_EN）时写 0x820520 bit21。
 
+### 6k. #237 四轮首验：0.8.2 双 die stock 轮——packing 恒等式第二 die 实证 + app08 门预测命中（2026-11-20）
+
+2070（1f07 stock）+ 3060（2504 stock）先跑（`ssdiag-082-round4-stock-*.log`；
+exe sha f8f4291a）：
+
+- **GA106 packing 恒等式现场验证（第二 die）**：LTS_L2SLICE 6 活 LTC
+  （0444/2044/0844/1044/1044/0844，切口 [0,3,1,2,2,1]，LTC6..11 badf2036-3b），
+  L2_FBP 三活 FBP 全 `cand=pack eff=pack`（0x81/0x42/0x24）——**OQ#19 ③ 旧模型
+  作废**：`L2_CANDIDATE=0x81` 不是"8×512KB 片关 2 片"，而是 FBP0 两 LTC 各关
+  一片（LTC0 切片 0、LTC1 切片 3 → (8<<4)|1）；GA106 = 3 活 FBP × 2 LTC ×
+  3 切片。FBP[3..5] cand=0x00 而 eff=0xff → **eff ≠ cand|sw，缺席 FBP 有
+  强制项**（新模型细节，待 0x4ab728 侧核对）。
+- **app08 门 retail 预测逐位命中**：GA106 `Q1=0x00000000`（bit0=0）、
+  `Q5=0x00000001`（bit0=1）→ `HELPER=BLOCK` → `WRITE_GATE=CLOSED`——
+  0x8203f4/0x8204e4 的 query 映射与 retail 值在 Ampere 上实证（此前是
+  〔JC-反汇编〕单源推断）。
+- **LTCNT 恒等式跨族实证**：GA106 ltcnt=6（LO/HI/SRC 三源一致 = 6 活 LTC 槽）、
+  TU106 ltcnt=8（8 槽全 4/4）。
+- TU106 stock：round-4 全窗口（per-FBP L2 数组、DEF 扫描、SRC 表、gate query）
+  **全部 badf5040 = PL0 挡**（存在性答案：Turing 上这些词在锁态不可读）；
+  SS0=0x00021000（冷态不稳词第三次独立复现，READOUT 仍 0x00400080）。
+- GA106 L2_DEF_SCAN **非零词**：0x8211d4/d8=0x1、0x8211e0=0x800、
+  0x8211e8=0x1、0x8211ec/f0=0x41×2——语义未定（窗口内相邻 option 词），
+  已录数待 4090 对照；窗口内 badf 岛 0x821218-1c / 0x821238-3c（**逐词 PLM
+  粒度**，非整段）。
+- 工具勘误（本轮抓到）：`PLM_PL2_WE` 行在 badf 词上印的 bit6=1 是毒值
+  0xbadf5040 自己的位；gate 逻辑改为 badf→bit6=?、毒值永不参与 OPEN 判定
+  （exe 换 sha 37afb795，同名 0.8.2）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

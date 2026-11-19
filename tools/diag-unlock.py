@@ -1160,17 +1160,30 @@ def report(bar, tag="", devpath=None):
     q5 = bar.rd(APP08_GATE_Q5)
     print(f"  APP08_GATE_Q1 {APP08_GATE_Q1:#010x} = {q1:#010x} bit0={q1 & 1} (OBJFUSE query 0xff000001; retail 0)")
     print(f"  APP08_GATE_Q5 {APP08_GATE_Q5:#010x} = {q5:#010x} bit0={q5 & 1} (OBJFUSE query 0xff000005; retail 1)")
-    pl2_bits = [(bar.rd(p) >> 6) & 1 for p in PLM_PL2_WE]
+    # bit6 read from a badf word is the POISON's bit, not the register's
+    # (0xbadf5040 bit6 = 1 - caught on the 2026-11-20 stock TU106 dump):
+    # degrade to "?" and never let a poison bit decide the gate.
+    pl2_bits = []
+    for p in PLM_PL2_WE:
+        v = bar.rd(p)
+        pl2_bits.append(None if badf_bucket(v) else (v >> 6) & 1)
     if badf_bucket(q1) or badf_bucket(q5):
         helper, gate = "?", "?"
     else:
         h = (q1 & 1) != 0 or (q5 & 1) == 0
         helper = "PASS" if h else "BLOCK"
-        gate = "OPEN" if (h and pl2_bits == [1, 1]) else "CLOSED"
+        if not h:
+            gate = "CLOSED"
+        elif pl2_bits == [1, 1]:
+            gate = "OPEN"
+        elif any(b is None for b in pl2_bits):
+            gate = "?"
+        else:
+            gate = "CLOSED"
     print(f"  APP08_HELPER_944C = {helper} ((q1&1)!=0 || (q5&1)==0)")
-    for p in PLM_PL2_WE:
+    for p, b6 in zip(PLM_PL2_WE, pl2_bits):
         v = bar.rd(p)
-        print(f"  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={(v >> 6) & 1} (VBIOS app08 gate)")
+        print(f"  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={'?' if b6 is None else b6} (VBIOS app08 gate)")
     print(f"  APP08_WRITE_GATE = {gate} (PL2 pair bit6=1/1 + helper 0x944c; DMEM8[0x646]/[0x64d] are ROM-internal)")
     # #237 round 3: per-LTC LTS (L2 slice) masks - flat BAR0, every family.
     print("  LTS_L2SLICE (per-LTC 4-bit slice mask = (~val>>10)&0xf; flat 0x14002c + 0x2000*K)")

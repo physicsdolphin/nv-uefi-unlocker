@@ -4639,20 +4639,32 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             hx32(q5),
             q5 & 1
         );
-        let pl2_bits = PLM_PL2_WE.map(|p| (rd(p) >> 6) & 1);
+        // bit6 read from a badf word is the POISON's bit, not the register's
+        // (0xbadf5040 bit6 = 1 - caught on the 2026-11-20 stock TU106 dump):
+        // degrade to "?" and never let a poison bit decide the gate.
+        let pl2_bits = PLM_PL2_WE.map(|p| {
+            let v = rd(p);
+            if badf_bucket(v).is_none() { Some((v >> 6) & 1) } else { None }
+        });
         let (helper, gate) = if badf_bucket(q1).is_some() || badf_bucket(q5).is_some() {
             ("?", "?")
         } else {
             let h = (q1 & 1) != 0 || (q5 & 1) == 0;
-            (
-                if h { "PASS" } else { "BLOCK" },
-                if h && pl2_bits == [1, 1] { "OPEN" } else { "CLOSED" },
-            )
+            if !h {
+                ("BLOCK", "CLOSED")
+            } else if pl2_bits == [Some(1), Some(1)] {
+                ("PASS", "OPEN")
+            } else if pl2_bits.iter().any(|b| b.is_none()) {
+                ("PASS", "?")
+            } else {
+                ("PASS", "CLOSED")
+            }
         };
         println!("  APP08_HELPER_944C = {helper} ((q1&1)!=0 || (q5&1)==0)");
-        for p in PLM_PL2_WE {
-            let v = rd(p);
-            println!("  PLM_PL2_WE {} = {} bit6={} (VBIOS app08 gate)", off_h(p), hx32(v), (v >> 6) & 1);
+        for (p, b) in PLM_PL2_WE.iter().zip(pl2_bits.iter()) {
+            let v = rd(*p);
+            let b6 = b.map(|x| x.to_string()).unwrap_or_else(|| "?".into());
+            println!("  PLM_PL2_WE {} = {} bit6={} (VBIOS app08 gate)", off_h(*p), hx32(v), b6);
         }
         println!(
             "  APP08_WRITE_GATE = {gate} (PL2 pair bit6=1/1 + helper 0x944c; DMEM8[0x646]/[0x64d] are ROM-internal)"
