@@ -867,6 +867,35 @@ exe sha f8f4291a）：
   0xbadf5040 自己的位；gate 逻辑改为 badf→bit6=?、毒值永不参与 OPEN 判定
   （exe 换 sha 37afb795，同名 0.8.2）。
 
+**AD107 4060L（28e0，G614JV stock）补跑**（`ssdiag-082-round4-stock-4060l.log`）：
+
+- **packing 恒等式第三 die**：4 活 LTC 全 4/4（raw 0x44，槽 4..11 badf2034-3b），
+  FBP[0]/[1] 全零掩码 `cand=pack eff=pack`（两 LTC 无切口）；FBP[2..5]
+  cand=0x00 而 eff=0xff——**缺席 FBP 强制项第二 die 确认**（AD107 = 2 FBP）。
+- **app08 门第三族（Ada）预测命中**：Q1=0/Q5=1 → BLOCK → CLOSED；且
+  **PLM_PL2_WE 两词在 AD107 可读真值**（0xffffff0f/0xffffff8f，bit6=0）——
+  毒值 bit6 修复后首个真值样本，gate CLOSED 由真 bit6=0 判出（非毒值）。
+  完整链条自洽：app08 跑了前奏（EN_SW_OVERRIDE=1 + SECURE_PRI_SRC_ISO_EN=1）
+  但 helper 0x944c 拦下 64 对写入——retail 上 OVR_PAIRS 目标区从未被写的
+  原因链闭合。
+- **APP08_SRC_A 在 AD107 可读且结构化**（GA106 全 badf 的同一区域）：
+  66 词 = 8×0x100、8×0x8、~34×0x80、8×0x8 的**8 词一组**结构，值词表
+  {0x100, 0x8, 0x80}；组内两个孤立 badf 岛（0x8214e8、0x821544）。
+- **APP08_SRC_B 可读且呈 data/badf 交替**：128 词 = 64 对（Data 可读、
+  Control PL0 挡）——data 序列 0x100×8、0x80×8、0x8×8、0x80×32、0x8×8，
+  词表与 SRC_A 同。0x6ae4 的"读源对→写目标对"链路第一次有了可读侧样本；
+  与 AD103 的 0x822148 值（0x0044/0x0840/0x0080）及 4090 切片模式
+  （0444/2044/0844/1044）均不同——逐 die 表内容。
+- **DEF 扫描共 trio**：0x8211d4=1、0x8211d8=1、0x8211e0=0x800 在两块 Ada die
+  （无 L2 缺陷）都出现 → 非 OPT_ROP_L2_DEFECTIVE（常量性相邻 option 词）；
+  GA106 独有 0x41×2。AD107 窗口无 badf 岛（GA106 有）——逐 die PLM 粒度。
+- LTCNT=4（第三族）；GR_TOPO **第五锚 0x04020003**（4 FBIO 槽/2 ROP 分区
+  ×16=32 ROP/3 活 GPC）；STAT_GPC=0xff8（bits3..11=GPC3..11 关）——
+  **STAT_GPC=禁用 GPC 位掩码三 die 自洽**（TU106 0x38/GA106 0x78/AD107 0xff8）；
+  FBIO≡FBP 词相等第二例（0x3c/0x3c，bits2-5 → 2 活 FBIO + 2 活 FBP 双 ✓）；
+  NVDEC=0x0e（同 AD103，LITTER 编码悬案维持）；NVJPG=0xf、PERLINK=0x5
+  （新值入档）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读
