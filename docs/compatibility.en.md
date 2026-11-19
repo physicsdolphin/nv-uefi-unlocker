@@ -78,6 +78,8 @@ Mobile, workstation, CMP and modded devices within a supported family use that f
 
 Full-chain unlock and Windows verification pass, including an independent platform reproduction of in-OS state and Tensor gains. [#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119) is a third independent datapoint (same PHN16-71 line, **BIOS V1.20**, driver 617.42): a three-run ablation shows **hybrid-mode entry reads BAR0/MMIO as all `0xffffffff` while NVIDIA-GPU-Only makes the sweep 13/13 readable** (display-mode matrix, Insyde V1.20 sample); TX fully green, FP16 +49.4% / BF16 +56.9% (group spread suggests a thermal limit - cooling under review); Secure Boot and BitLocker disabled for the run, restored and verified after. Sources: [report](ada28e0-uefi-report.md), [#63](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/63), [#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119).
 
+**A Lenovo read-only contrast point ([#251](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/251), 2026-11-16/19)**: the Y7000P IRH8 / BIOS `M2CN40WW` `28e0` read-only round (dGPU-direct, FEAT sweep 13/13, `FEAT_PLM=0xffffff8f`, selectors `0x22352016`/`0x2`, `READOUT_1=0x00410080`) plus both **zero-write gates** on rc4 (30 s timeout ABORT, `tx-dry-run.txt` skip); real TX was deliberately deferred by the reporter (only main machine), so this is **not an unlock sample**.
+
 <a id="device-2"></a>
 
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1

@@ -78,6 +78,8 @@
 
 本工具全链解锁与 Windows 验证通过。独立平台复现同样确认系统侧状态和 Tensor 性能提升。[#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119) 为第三个独立数据点（同机系 PHN16-71 但 **BIOS V1.20**，驱动 617.42）：三段消融确认**混合模式入口 BAR0/MMIO 全 `0xffffffff` 不可读、NVIDIA GPU Only 直连 13/13 sweep 可读**（显示模式矩阵 Insyde V1.20 样本），TX 全绿、FP16 +49.4% / BF16 +56.9%（组间离散提示热限，散热待查）；SB/BitLocker 先关后复并验证。来源：[实测报告](ada28e0-uefi-report.md)、[#63](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/63)、[#119](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/119)。
 
+**Lenovo 对照只读点（[#251](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/251)，2026-11-16/19）**：Y7000P IRH8 / BIOS `M2CN40WW` 的 `28e0` 只读段（独显直连，FEAT sweep 13/13，`FEAT_PLM=0xffffff8f`、选择器 `0x22352016`/`0x2`、`READOUT_1=0x00410080`）与 rc4 两条**零写闸门**（30 s 超时 ABORT、`tx-dry-run.txt` 跳过）实证；真 TX 报告者主动暂缓（唯一主力机），**不作解锁样本**。
+
 <a id="device-2"></a>
 
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1
