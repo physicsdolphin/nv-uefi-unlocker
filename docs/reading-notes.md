@@ -928,9 +928,18 @@ exe sha f8f4291a）：
 TU106 32×128KB=4MB（满血）——Turing/Ampere 128KB/片 vs Ada 2MB/片；
 **AD107 半开**（16 片 → 1.5MB 若 4060=24MB / 2MB 若 32MB，待查 spec）；
 **GA106 开**（18/24 活 → 128KB 则活 2.25MB、166.7KB 则活 3MB，取决于 3060
-官方 L2）；**GB206 预测已立**（若 4 LTC 槽活全 4/4 → 16×2MB=32MB=5060 Ti
-spec，X99 补 LTS 首采即验）；AD103 预测 4 FBP × 8 LTC × 4 × 2MB = 64MB
-（4080 spec 对照即验，JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面）。
+官方 L2）；**GA106 闭合（2026-11-20 驱动主源实测）**：3060 的
+`CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE`（GPU-Z CUDA 页）报 **2304KB=2.25MB**
+= 18 活片 × 128KB 精确——**GA106 slice=128KB 与 GA102 同代同尺寸定谳**；
+TPU/Wiki 的 3MB（3072KB）是 **die 容量**（24×128KB），非 SKU 容量——
+GA106 的 L2 切割此前无人知晓，公开 spec 对 3060 失真 25%（768KB=恰好
+6 个被切切片）。**四 die 容量核算全闭合**：AD102 2MB×36/48=72MB（spec
+事实锚定）、GA102 128KB×48=6MB、TU106 128KB×32=4MB、GA106 128KB×18/24
+=2.25MB（驱动实测）。同代 slice 均匀性成立（Ampere 128KB）。
+**GB206 预测已立**（若 4 LTC 槽活全 4/4 → 16×2MB=32MB=5060 Ti spec，
+X99 补 LTS 首采即验）；AD103 预测 4 FBP × 8 LTC × 4 × 2MB = 64MB
+（4080 spec 对照即验，JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面）；
+AD107 半开（16 片 → 1.5MB 或 2MB，4060L 同探针即闭）。
 
 ### 7. 判读指南（TU106/GA106 实验用）
 
