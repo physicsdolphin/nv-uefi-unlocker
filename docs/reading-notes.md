@@ -799,6 +799,45 @@ GSP 全扫描**零写者**（boot-static；app08 只写 0x1417e000/0x1417e27c �
 广播对）。ssdiag/py 0.7.9 已加 `LTS_L2SLICE` 面（12 LTC 槽逐槽解码
 active slices N/4 + 广播行）。此前"映射孔径路径不可达"的口头结论作废。
 
+### 6j. #237 四轮：AD102 4090 首采 LTS + per-FBP packing 恒等式定谳（2026-11-20）
+
+JeusChrit 用 0.8.2 跑出 **AD102 4090（2684/19da:4675）首份 LTS_L2SLICE 实测**：
+12 LTC 全 3/4（72MiB/96MiB），disabled 切片索引呈回文模板
+`[0,3,1,2 | 2,1,3,0 | 0,3,1,2]`（每条 slice lane 恰关 3/12，48 片关 12）。
+**并钉死 packing 恒等式**：MemorySystem+0x940 在 AD102/AD103（0x4ab728）逐
+FBP 打包 `(LTC[2f+1]<<4)|LTC[2f]` 的**原始 disable nibble**（bits[13:10] 原值，
+补码才是 active 掩码）→ 正是 `0x821200`/`0x822900` 上的字节（FBP0=(8<<4)|1=
+0x81 ✓）；GH100/GB20x（0x4ac6ec）则直读 `0x822900+4*fbp`。由此三组 per-FBP
+数组定谳（sw/eff 相距 +0x880 = **Page-2 偏移规则**，平行 Page-0 的 +0x400）：
+
+- `0x821200+4f`（f=0..5）= OPT_ROP_L2_DISABLE_FBP[0..5]（stage-1 熔丝禁用；
+  GA100 词典的 0x8202c4 在 Ada 搬到这里）
+- `0x822080+4f` = CTRL_OPT_ROP_L2_FBP[0..5]（stage-2 SW/RPR 控制掩码，RPR
+  记录 37-42；OBJFUSE +0x228 = 0x557b54）
+- `0x822900+4f` = STATUS_OPT_ROP_L2_FBP[0..5]（生效 8-bit disable；OBJFUSE
+  +0x270 = 0x557c5c；**缺席 FBP 读 0xff = 8 片全关**——AD103/GB203 256-bit
+  的 0xff 对由此得解）
+
+预测 4090 全序列 `0x81,0x42,0x24,0x18,0x81,0x42`（=单测锚
+`l2_pack_matches_ad102_4090_capture`）。per-GPC ROP 同规则：0x822000+4g →
+0x822880+4g（GPC0 禁 → ROP_GPC_ADA[0]=0x3，176/192 ROP 活）。
+
+**ssdiag/py 0.8.2 同名轮新增面**：`L2_FBP`（三数组 6 词 + packing 交叉验证
+`cand=pack`/`!=pack` 标记）、`L2_DEF_SCAN`（0x8211c0..0x821240——Ada 的
+OPT_ROP_L2_DEFECTIVE_FBP 猎场：595 caller 0x6c7334 读 OBJFUSE +0x228 后紧读
++0x248 取伴掩码 AND 入）、`APP08_SRC_A/B`（0x821480-584/0x822a48-2c44，
+app08 0x6ae4 的源表——验证带不带 4090 切片模式还是 AD103 值）、app08 完整
+写门（helper 0x944c：`(0x8203f4&1)!=0 || (0x8204e4&1)==0`，retail q1=0/q5=1
+→ BLOCK；加 PL2 对 bit6 → `APP08_WRITE_GATE`；DMEM 0x646/0x64d ROM 内部）、
+`LTCNT_LO/HI/SRC`（0x17e000/0x17e27c 广播对 + 0x12006c 低 5 位源——app08
+65b1..6647 拷贝；GSP MS+0x740/+0x638 亦读写 0x17e27c bits[4:0]）、以及
+**Ada 老 GA100 标签修正**（SM_OVR/STAT 注记 0x820838、TPC_RECFG_G100 更名、
+SYS_PIPE 行注记 TPC disable bank A 0x8203a0-bc、GPC7 对 GA100-only、
+0x8203f0 双印去重）。app08 四门补充：0x6ae4 写 64 对前还查
+`DMEM8[0x64d]!=0` + 0x944c + 两处 PL2 bit6，并先写 0x820040=1
+（EN_SW_OVERRIDE）与 0x820410=1（SECURE_PRI_SRC_ISO_EN）；0x73a4 XVE 例程在
+`0x820148&1`（DEBUG_FEAT_SW_OVR_EN）时写 0x820520 bit21。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

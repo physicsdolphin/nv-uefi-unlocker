@@ -40,6 +40,18 @@
 //! settles stock EN_SW_OVERRIDE=1 as routine VBIOS behavior), and the GB20x
 //! HAL 67-71 PES/OFA relocation 0x822a78/0x822a68 (why 0x820dbc reads
 //! all-badf on GB206).
+//! Same-version round 4 (2026-11-20, after the AD102 4090 first live LTS
+//! readout): the per-FBP L2 arrays on Ada (cand 0x821200+4f / sw 0x822080+4f
+//! / eff 0x822900+4f, fbp=0..5) with the (LTC[2f+1]<<4)|LTC[2f] packing
+//! cross-check against the LTS_L2SLICE nibbles (the 4090 proves the identity:
+//! nibbles 1/8/2/4... pack to 0x81/0x42/0x24/0x18), the 0x8211c0-0x821240
+//! scan for Ada's OPT_ROP_L2_DEFECTIVE_FBP (GA100 dict had 0x8205e8), the
+//! app08 0x6ae4 source tables 0x821480-584 / 0x822a48-2c44, the complete
+//! app08 write gate (helper 0x944c over the two OBJFUSE query words
+//! 0x8203f4/0x8204e4 + both PL2 write-enable bits), the two LTC broadcast
+//! words 0x17e000/0x17e27c (active-LTC-count copies of 0x12006c low 5 bits),
+//! and the stale-GA100-label fixes on Ada (SM_OVR/STAT banks, TPC_RECFG,
+//! SYS_PIPE -> TPC-disable bank A, GPC7 pair GA100-only, 0x8203f0 dedupe).
 //! Same-version UI/inventory round (2026-11-13): all-ones cells render
 //! green everywhere so the PLM survey's OPEN marker needs no text tag and
 //! two-column rows keep their alignment, and --inventory now runs with no
@@ -3757,15 +3769,14 @@ const GA100_FUSECTL_ROWS: [(&str, u32); 13] = [
 /// state (glitch-loop/EXAMPLES.md) plus the two words the write route needs
 /// (SECURE_FUSE_WDATA_WR_SECURE is the last PLM the GA100VFI chain clears;
 /// DEVID_SW_OVERRIDE_DIS gates the PCI ID override). FEATURE_FUSES_OVERRIDE
-/// _DISABLE is already probed as PRIV_ROWS FUSE_OPT_FEATURE_OVR (0x8203f0,
-/// the identity that started this round).
-const GA100_SEC_ALIAS_ROWS: [(&str, u32); 20] = [
+/// _DISABLE (0x8203f0) is NOT listed here: it is already probed as PRIV_ROWS
+/// FUSE_OPT_FEATURE_OVR and used to print twice (#237 round-4 dedupe).
+const GA100_SEC_ALIAS_ROWS: [(&str, u32); 19] = [
     ("DEBUG_FEAT_SW_OVR_EN", 0x0082_0148),
     ("IST_DEBUG_FA", 0x0082_0158),
     ("PRIV_SEC_EN", 0x0082_0434),
     ("SECURE_PRI_SRC_ISO_EN", 0x0082_0410),
     ("PRIVKEY_ACC_DIS", 0x0082_0324),
-    ("FEATURE_FUSES_OVR_DIS", 0x0082_03F0),
     ("SFK_ACC_DIS", 0x0082_05A8),
     ("SECURE_PMU_DEBUG_DIS", 0x0082_0640),
     ("SECURE_SECENG_DEBUG_DIS", 0x0082_063C),
@@ -3868,6 +3879,55 @@ const LTS_LTC0_SLICE: u32 = 0x0014_002C;
 const LTS_LTC_STRIDE: u32 = 0x2000;
 const LTS_LTC_SLOTS: u32 = 12;
 const LTS_BROADCAST: u32 = 0x0017_E02C;
+
+/// #237 round 4 (2026-11-20, AD102 4090 first live LTS readout): the per-FBP
+/// L2 arrays on Ada are the (LTC[2f+1]<<4)|LTC[2f] packing of the per-LTC
+/// disable nibbles at 0x14002c+0x2000*K bits[13:10] - the 4090 proves the
+/// identity (nibbles 1/8/2/4... pack to 0x81/0x42/0x24/0x18 = the words at
+/// 0x821200/0x822900). MemorySystem +0x940 (0x4ab728 on AD102/AD103) builds
+/// exactly this byte; GH100/GB20x (0x4ac6ec) read 0x822900+4*fbp directly.
+/// sw/eff sit +0x880 apart - the Page-2 rule (same as per-GPC ROP
+/// 0x822000 -> 0x822880). GA100 dict's 0x8202c4/0x8205e8 moved on Ada.
+const AD10X_L2_CAND_FBP: u32 = 0x0082_1200; // OPT_ROP_L2_DISABLE_FBP[0..5] (stage-1 fuse)
+const AD10X_L2_SW_FBP: u32 = 0x0082_2080; // CTRL_OPT_ROP_L2_FBP[0..5] (RPR 37-42, OBJFUSE +0x228)
+const AD10X_L2_EFF_FBP: u32 = 0x0082_2900; // STATUS_OPT_ROP_L2_FBP[0..5] (OBJFUSE +0x270)
+/// Ada's OPT_ROP_L2_DEFECTIVE_FBP hunt: caller 0x6c7334 reads OBJFUSE +0x228
+/// (-> 0x822080) then +0x248 for the companion mask it ANDs in - the array
+/// lives somewhere in 0x8211c0..0x821240 on the 4090 capture.
+const AD10X_L2_DEF_SCAN_BASE: u32 = 0x0082_11C0;
+const AD10X_L2_DEF_SCAN_WORDS: u32 = 33;
+/// app08 0x6ae4 source tables (what it WOULD write if the four gates pass):
+/// 0x821480..0x821584 and 0x822a48..0x822c44 - do they carry the 4090 slice
+/// pattern [0x0444/0x2044/0x0844/0x1044] or stay at the AD103 values?
+const APP08_SRC_A_BASE: u32 = 0x0082_1480;
+const APP08_SRC_A_WORDS: u32 = 66; // 0x821480..0x821584 inclusive, the reporter's stated end
+const APP08_SRC_B_BASE: u32 = 0x0082_2A48;
+const APP08_SRC_B_WORDS: u32 = 128; // 0x822a48..0x822c44 inclusive
+/// The two OBJFUSE query words helper 0x944c tests: pass iff
+/// (q1 & 1) != 0 || (q5 & 1) == 0. Retail: q1 (query 0xff000001) = 0,
+/// q5 (query 0xff000005) = 1 -> helper BLOCKS unless overridden.
+const APP08_GATE_Q1: u32 = 0x0082_03F4;
+const APP08_GATE_Q5: u32 = 0x0082_04E4;
+/// app08 65b1..6647 copies 0x12006c low 5 bits (active LTC count) into both
+/// LTC broadcast words; GSP MemorySystem +0x740/+0x638 also read/write
+/// bits[4:0] of 0x17e27c.
+const LTS_BCAST_LOW: u32 = 0x0017_E000;
+const LTS_BCAST_HIGH: u32 = 0x0017_E27C;
+const RING_LTC_COUNT: u32 = 0x0012_006C;
+
+/// Per-LTC RAW disable nibble (bits[13:10] as stored - NOT complemented;
+/// the complement is the active-slice mask the LTS_L2SLICE face prints) +
+/// the per-FBP byte packing (round-4 identity): the 0x821200/0x822900
+/// disable masks pack the raw nibbles directly, 0xff = all 8 disabled
+/// (absent FBP).
+fn lts_disable_nibble(v: u32) -> u32 {
+    (v >> 10) & 0xf
+}
+fn l2_pack_fbp(nibs: &[u32]) -> Vec<u32> {
+    (0..nibs.len() / 2)
+        .map(|f| (nibs[2 * f + 1] << 4) | nibs[2 * f])
+        .collect()
+}
 
 /// Turing mirror probe (open-questions #13 Turing arm + reading-notes §10).
 /// TU104 field data (#187) put the option-status bank at 0x021xxx
@@ -4325,8 +4385,17 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     }
     // GA100 PR#55 SM banks: 8 dwords per row, badf values colored red (no
     // per-cell bucket text - columns stay aligned). On consumer dies the
-    // whole row is the per-die existence answer.
-    println!("  GA100_SM_OVR {}", off_h(GA100_SM_OVR_BASE));
+    // whole row is the per-die existence answer. #237 round 4: on Ada the
+    // CTRL_OPT_TPC_GPC bank lives at 0x820838+4g (already in the TPC
+    // section below), so the GA100 0x820a40 sweep is labeled as such.
+    if fam == "ada" {
+        println!(
+            "  GA100_SM_OVR {} (GA100 bank; on Ada CTRL_OPT_TPC_GPC = 0x00820838+4g, see TPC section)",
+            off_h(GA100_SM_OVR_BASE)
+        );
+    } else {
+        println!("  GA100_SM_OVR {}", off_h(GA100_SM_OVR_BASE));
+    }
     for gpc in 0..8u32 {
         print!(" {}", cell_val(rd(GA100_SM_OVR_BASE + gpc * 4)));
     }
@@ -4389,7 +4458,21 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     None => String::new(),
                 }
             };
-            println!("  {label:<10} {name:<26} {}= {}{note}", off_h(*off), hx32(v));
+            // #237 round 4 stale-GA100-label fixes: on Ada 0x8203a0..0x8203bc
+            // is the TPC-disable fuse bank A (not SYS_PIPE), and the GPC7
+            // defective/CP pair is a GA100-only layout (badf on Ada).
+            let ada_note = if fam == "ada" {
+                if (0x0082_03A0..=0x0082_03B8).contains(off) {
+                    " [Ada: TPC disable bank A]"
+                } else if *name == "TPC_GPC7_DEFECTIVE" || *name == "TPC_GPC7_DISABLE_CP" {
+                    " [GA100-only]"
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            };
+            println!("  {label:<10} {name:<26} {}= {}{note}{ada_note}", off_h(*off), hx32(v));
         }
     }
     // STATUS_OPT arrays, 8 dwords per line, badf-bucketed inline (GA100_SM
@@ -4399,7 +4482,9 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         ("LTC_FBP", GA100_LTC_FBP_STATUS_BASE, 16u32),
         ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
         ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12u32),
-        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12u32),
+        // #237 round 4 label: GA100-layout base; on Ada this reads badf and
+        // the real RECONFIG RAM is the TPC_RECFG_ADA row right below.
+        ("TPC_RECFG_G100", GA100_TPC_RECONFIG_BASE, 12u32),
         // #237: the Ada/595 TPC RECONFIG RAM base (0x822800+4g) - our old
         // table carried the GA100-layout guess at 0x820788.
         ("TPC_RECFG_ADA", AD10X_TPC_RECONFIG_BASE, 12u32),
@@ -4458,6 +4543,74 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                 println!();
             }
         }
+        // #237 round 4: the per-FBP L2 arrays on Ada + the packing identity.
+        // cand 0x821200+4f = OPT_ROP_L2_DISABLE_FBP (stage-1 fuse), sw
+        // 0x822080+4f = CTRL_OPT_ROP_L2_FBP (RPR 37-42, OBJFUSE +0x228), eff
+        // 0x822900+4f = STATUS_OPT_ROP_L2_FBP (OBJFUSE +0x270); pred =
+        // (LTC[2f+1]<<4)|LTC[2f] from the LTS_L2SLICE face below - the 4090
+        // capture predicts 0x81/0x42/0x24/0x18/0x81/0x42 for cand+eff.
+        println!("  L2_FBP (fbp=0..5; cand 0x821200+4f / sw 0x822080+4f / eff 0x822900+4f; pred=(LTC[2f+1]<<4)|LTC[2f])");
+        for f in 0..6u32 {
+            let (c, s, e) = (
+                rd(AD10X_L2_CAND_FBP + f * 4),
+                rd(AD10X_L2_SW_FBP + f * 4),
+                rd(AD10X_L2_EFF_FBP + f * 4),
+            );
+            let (lo, hi) = (
+                rd(LTS_LTC0_SLICE + (2 * f) * LTS_LTC_STRIDE),
+                rd(LTS_LTC0_SLICE + (2 * f + 1) * LTS_LTC_STRIDE),
+            );
+            let (pred_s, marks) = if badf_bucket(lo).is_none() && badf_bucket(hi).is_none() {
+                let p = l2_pack_fbp(&[lts_disable_nibble(lo), lts_disable_nibble(hi)])[0];
+                let mut m = String::new();
+                for (nm, w) in [("cand", c), ("eff", e)] {
+                    if badf_bucket(w).is_none() {
+                        let tag = if w == p { "pack".to_string() } else { format!("!=pack({p:#04x})") };
+                        m.push_str(&format!(" {nm}={tag}"));
+                    }
+                }
+                (format!("{p:#04x}"), m)
+            } else {
+                ("n/a".to_string(), String::new())
+            };
+            println!(
+                "    FBP[{f}] {} cand={} sw={} eff={} pred={pred_s}{marks}",
+                off_h(AD10X_L2_CAND_FBP + f * 4),
+                cell_val(c),
+                cell_val(s),
+                cell_val(e)
+            );
+        }
+        // #237 round 4 sweep: Ada's OPT_ROP_L2_DEFECTIVE_FBP hunt. The GA100
+        // dict had ROP_L2_DEFECTIVE at 0x8205e8; on Ada the 595 caller
+        // (0x6c7334) reads OBJFUSE +0x228 (-> 0x822080) then +0x248 for a
+        // companion mask it ANDs in - sweep the candidate window so the 4090
+        // capture locates the real array.
+        println!("  L2_DEF_SCAN (0x8211c0..0x821240; Ada OPT_ROP_L2_DEFECTIVE_FBP hunt, GA100 dict had 0x8205e8)");
+        for chunk in (0..AD10X_L2_DEF_SCAN_WORDS).step_by(8) {
+            print!("    {}", off_h(AD10X_L2_DEF_SCAN_BASE + chunk * 4));
+            for i in chunk..(chunk + 8).min(AD10X_L2_DEF_SCAN_WORDS) {
+                print!(" {}", cell_val(rd(AD10X_L2_DEF_SCAN_BASE + i * 4)));
+            }
+            println!();
+        }
+        // #237 round 4 sweep: the app08 0x6ae4 SOURCE tables (what it would
+        // write if the four gates pass) - do they carry the 4090 slice
+        // pattern [0x0444/0x2044/0x0844/0x1044] or the AD103 values
+        // [0x0044/0x0840/0x0080]?
+        for (name, base, words) in [
+            ("APP08_SRC_A", APP08_SRC_A_BASE, APP08_SRC_A_WORDS),
+            ("APP08_SRC_B", APP08_SRC_B_BASE, APP08_SRC_B_WORDS),
+        ] {
+            println!("  {name} ({}..{}, {} words)", off_h(base), off_h(base + (words - 1) * 4), words);
+            for chunk in (0..words).step_by(8) {
+                print!("    {}", off_h(base + chunk * 4));
+                for i in chunk..(chunk + 8).min(words) {
+                    print!(" {}", cell_val(rd(base + i * 4)));
+                }
+                println!();
+            }
+        }
         // PLM write-enable bits (disassembly-proven semantics): FUSECTRL_PLM
         // bit4 = PL0 write enable (checked by the TU102/TU116 OBJBSP writer),
         // 0x823b24/28 bit6 = PL2 (checked by VBIOS app08 before its 64 pairs).
@@ -4468,10 +4621,42 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             hx32(pl0we),
             (pl0we >> 4) & 1
         );
+        // #237 round 4: the complete app08 0x6ae4 write gate. Helper 0x944c
+        // tests two OBJFUSE query words: pass iff (q1&1)!=0 || (q5&1)==0
+        // (retail q1=0, q5=1 -> BLOCK unless overridden); plus both PL2
+        // write-enable bits. DMEM8[0x646]/[0x64d] are ROM-internal.
+        let q1 = rd(APP08_GATE_Q1);
+        let q5 = rd(APP08_GATE_Q5);
+        println!(
+            "  APP08_GATE_Q1 {} = {} bit0={} (OBJFUSE query 0xff000001; retail 0)",
+            off_h(APP08_GATE_Q1),
+            hx32(q1),
+            q1 & 1
+        );
+        println!(
+            "  APP08_GATE_Q5 {} = {} bit0={} (OBJFUSE query 0xff000005; retail 1)",
+            off_h(APP08_GATE_Q5),
+            hx32(q5),
+            q5 & 1
+        );
+        let pl2_bits = PLM_PL2_WE.map(|p| (rd(p) >> 6) & 1);
+        let (helper, gate) = if badf_bucket(q1).is_some() || badf_bucket(q5).is_some() {
+            ("?", "?")
+        } else {
+            let h = (q1 & 1) != 0 || (q5 & 1) == 0;
+            (
+                if h { "PASS" } else { "BLOCK" },
+                if h && pl2_bits == [1, 1] { "OPEN" } else { "CLOSED" },
+            )
+        };
+        println!("  APP08_HELPER_944C = {helper} ((q1&1)!=0 || (q5&1)==0)");
         for p in PLM_PL2_WE {
             let v = rd(p);
             println!("  PLM_PL2_WE {} = {} bit6={} (VBIOS app08 gate)", off_h(p), hx32(v), (v >> 6) & 1);
         }
+        println!(
+            "  APP08_WRITE_GATE = {gate} (PL2 pair bit6=1/1 + helper 0x944c; DMEM8[0x646]/[0x64d] are ROM-internal)"
+        );
     }
     if fam.starts_with("blackwell") {
         // GB20x HAL 67-71 PES/OFA relocation: 0x820dbc is GA100/Ampere/Ada.
@@ -4525,6 +4710,20 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     active.count_ones()
                 );
             }
+        }
+    }
+    // #237 round 4: the other two LTC broadcast words - app08 65b1..6647
+    // copies 0x12006c low 5 bits (active LTC count) into both; GSP
+    // MemorySystem +0x740/+0x638 also read/write bits[4:0] of 0x17e27c.
+    for (name, off) in [
+        ("LTCNT_LO", LTS_BCAST_LOW),
+        ("LTCNT_HI", LTS_BCAST_HIGH),
+        ("LTCNT_SRC", RING_LTC_COUNT),
+    ] {
+        let v = rd(off);
+        match badf_bucket(v) {
+            Some(b) => println!("    {name:<9} {} = {} [{b}]", off_h(off), hx32(v)),
+            None => println!("    {name:<9} {} = {} ltcnt={}", off_h(off), hx32(v), v & 0x1f),
         }
     }
     println!("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,");
@@ -5207,6 +5406,44 @@ mod tests {
     }
 
     #[test]
+    fn ada_dump_renders_with_4090_capture() {
+        // #237 round 4: walks every ada-gated section with the reporter's
+        // 4090 values - the new L2_FBP face must pack the LTS nibbles to the
+        // predicted per-FBP words, the DEF scan / app08 source tables render
+        // multi-column, and the stale-GA100 annotations print.
+        let lts = [
+            0x0444u32, 0x2044, 0x0844, 0x1044, 0x1044, 0x0844, 0x2044, 0x0444, 0x0444, 0x2044,
+            0x0844, 0x1044,
+        ];
+        let rd = |off: u32| match off {
+            o if (0x0014_0000..0x0016_0000).contains(&o) && (o - 0x0014_0000) % 0x2000 == 0x2C => {
+                lts[((o - 0x0014_0000) / 0x2000) as usize]
+            }
+            0x0017_E02C => 0x0444,
+            0x0017_E000 | 0x0017_E27C => 0x000C,
+            0x0012_006C => 0x000C,
+            0x0082_1200 => 0x81,
+            0x0082_1204 => 0x42,
+            0x0082_1208 => 0x24,
+            0x0082_120C => 0x18,
+            0x0082_1210 => 0x81,
+            0x0082_1214 => 0x42,
+            0x0082_2900 => 0x81,
+            0x0082_2904 => 0x42,
+            0x0082_2908 => 0x24,
+            0x0082_290C => 0x18,
+            0x0082_2910 => 0x81,
+            0x0082_2914 => 0x42,
+            0x0082_2080..=0x0082_2094 => 0,
+            0x0082_3B24 | 0x0082_3B28 => 0xFFFF_FBFF,
+            0x0082_03F4 => 0,
+            0x0082_04E4 => 1,
+            _ => 0,
+        };
+        dump_debug(&rd, "ada");
+    }
+
+    #[test]
     fn turing_dump_renders_without_panicking() {
         // Walks every turing-gated section: the FEAT cluster, the GA100
         // dictionary, the -0x7FF000 shifted bank and the mirror probe. The
@@ -5233,6 +5470,28 @@ mod tests {
         assert_eq!(trim_decode(0x007e), (-2, 1));
         assert_eq!(trim_decode(0x0000), (0, 0));
         assert_eq!(trim_decode(0x003e), (-2, 0));
+    }
+
+    #[test]
+    fn l2_pack_matches_ad102_4090_capture() {
+        // #237 round 4 (AD102 4090, 12 LTCs all 3/4): the raw LTS_L2SLICE
+        // words' disable nibbles (bits[13:10]) pack per FBP as
+        // (LTC[2f+1]<<4)|LTC[2f] and reproduce the reporter's prediction
+        // 0x81/0x42/0x24/0x18/0x81/0x42 - the identity behind the words at
+        // 0x821200/0x822900.
+        let raw = [
+            0x0444u32, 0x2044, 0x0844, 0x1044, 0x1044, 0x0844, 0x2044, 0x0444, 0x0444, 0x2044,
+            0x0844, 0x1044,
+        ];
+        let nibs: Vec<u32> = raw.iter().map(|&v| lts_disable_nibble(v)).collect();
+        assert_eq!(
+            nibs,
+            vec![1, 8, 2, 4, 4, 2, 8, 1, 1, 8, 2, 4],
+            "disabled slice per LTC = [0,3,1,2 | 2,1,3,0 | 0,3,1,2]"
+        );
+        assert_eq!(l2_pack_fbp(&nibs), vec![0x81, 0x42, 0x24, 0x18, 0x81, 0x42]);
+        // and the single-pair form used by the live print face
+        assert_eq!(l2_pack_fbp(&[lts_disable_nibble(0x0444), lts_disable_nibble(0x2044)])[0], 0x81);
     }
 
     #[test]
