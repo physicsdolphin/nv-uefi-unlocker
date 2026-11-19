@@ -17,6 +17,32 @@
 #   .\make-usbroot.ps1 -InstallTo D:\      (copy the layout into an existing
 #                     FAT32 partition without asking; the volume must pass the
 #                     same eligibility checks as the probe)
+#   .\make-usbroot.ps1 -AutoRun 10         (arm auto-run at build time: write
+#                     i_know_what_i_am_doing.txt = 10s countdown, any key
+#                     aborts; 0 = no wait, loader v2.1.12-rc1+; "off" pins
+#                     the default; explicit value skips the interactive ask)
+#   .\make-usbroot.ps1 -Quiet              (write tx-quiet.txt; same as the
+#                     interactive ask, skips it)
+#   .\make-usbroot.ps1 -Ultrafast          (write tx-ultrafast.txt; verified-
+#                     machine speed profile, ask's default stays No)
+#   .\make-usbroot.ps1 -ChainTarget windows
+#                     (pin the chainload handoff, issue #204: 'windows' |
+#                     'ubuntu' | 'systemd' presets, a volume-relative EFI
+#                     path, or 'off'; "" asks the menu - Windows / GRUB /
+#                     systemd-boot / Ubuntu / shim / custom path, default
+#                     no pin)
+#   .\make-usbroot.ps1 -NoMarkerPrompt     (skip the interactive marker ask)
+#
+# At the end of the build an interactive ask offers the confirm-gate choice
+# (issue #259): by default the loader waits 30s for Space/Enter (zero-write
+# abort); the armed marker moves the run decision to build time. The DEFAULT
+# answer keeps the 30s confirm - armed mode is an explicit opt-in, never
+# written silently, and any key during the armed countdown still aborts.
+# Menu scope (debug vs speed): only what a stick-maker can decide for the
+# target WITHOUT symptom evidence, each defaulting to the documented
+# baseline - the armed marker, quiet console, the Windows chain pin and the
+# verified-machine ultrafast profile. Debug/diagnostic markers and exit
+# valves stay FAQ-driven on purpose.
 #
 # After generating the layout the script probes for EXISTING FAT32 partitions
 # it can copy into: an internal (non-USB) disk's non-boot data partition is
@@ -105,6 +131,36 @@ param(
     # ESP/system/boot volume, and never overwrites an existing file.
     # -NoInstallPrompt skips the interactive offer (scripted runs).
     [switch]$NoInstallPrompt,
+    # Confirm-gate choice at build time (issue #259). "" (default) = the
+    # interactive ask decides, its default answer keeps the loader's 30s
+    # keypress confirm; "off" pins that default non-interactively; a number
+    # 0-30 arms auto-run (writes i_know_what_i_am_doing.txt = the seconds;
+    # 0 = no wait, loader v2.1.12-rc1+). Any explicit value skips the ask.
+    [string]$AutoRun = "",
+    # Write tx-quiet.txt (issue #38 quiet console) into the layout. An
+    # explicit marker choice: the whole interactive menu is skipped (a
+    # scripted run), unspecified choices take their documented defaults.
+    [switch]$Quiet,
+    # Write tx-ultrafast.txt (verified-machine speed profile) into the
+    # layout; explicit choice, so the whole interactive menu is skipped.
+    # The ask's default stays No: the profile skips the diagnostic stages
+    # that make a FIRST run debuggable (docs/faq.md), so it belongs on
+    # sticks rebuilt for machines already verified over multiple rounds.
+    [switch]$Ultrafast,
+    # Pin the chainload target (chain-target.txt, issue #204): "" (default)
+    # asks the menu's y/N for the Windows pin \EFI\Microsoft\Boot\bootmgfw.efi
+    # (interactive runs only - an explicit -AutoRun/-Quiet/-Ultrafast value
+    # skips the whole menu); "off" skips the ask without writing; anything
+    # else must be a volume-relative EFI path (leading '\', no '/', <= 240
+    # chars - the loader's own parse rules) and is written verbatim.
+    # Handoff-shape declaration only: when the pinned path is missing the
+    # loader falls back to the default chain order, and no GPU-behavior
+    # knob is touched.
+    [string]$ChainTarget = "",
+    # Skip the interactive marker ask entirely (scripted runs); explicit
+    # -AutoRun/-Quiet already skip it. Neither arms anything: the default
+    # build is unarmed (AGENTS.deploy.md handoff doctrine).
+    [switch]$NoMarkerPrompt,
     # Non-interactive install target: the ROOT of a FAT32 volume ("D:\").
     # Must pass the same eligibility checks as the probe (FAT32, room for
     # the layout, not ESP/system/boot). Implies -NoInstallPrompt for the
@@ -1072,9 +1128,207 @@ foreach ($f in $expected) {
 }
 Write-Host ("  {0,-28} {1,10} bytes" -f "EFI/BOOT/BOOTX64.EFI", (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length)
 
+# ---------- confirm-gate marker offer (issue #259) ----------
+# The loader waits 30s for Space/Enter unless the armed marker sits on the
+# stick root; the marker moves the run decision to build time - which is
+# exactly what this ask offers (softmgr, issue #259). Doctrine
+# (AGENTS.deploy.md): a normal build stays UNARMED; the 30s keypress confirm
+# is the zero-write safety net for a mis-picked boot entry or a borrowed
+# machine, so the default answer and every swallowed-input path land on "no
+# marker written". Scope (debug vs speed): only what a stick-maker can
+# decide for the target WITHOUT symptom evidence, each defaulting to the
+# documented baseline - armed marker, quiet console, Windows chain pin,
+# ultrafast profile. Every other marker in docs/faq.md is a symptom-matched
+# diagnostic or exit valve and must not be blanket-enabled from a menu.
+function Invoke-MarkerOffer {
+    $markers = @()
+    # One rule for the whole ask block: any explicit marker choice
+    # (-AutoRun/-Quiet/-Ultrafast/-ChainTarget) or -NoMarkerPrompt makes this
+    # a scripted run - no prompts; every unspecified choice takes its
+    # documented default (unarmed, plain console, no pin, no ultrafast).
+    $menuInteractive = ($AutoRun -eq "" -and -not $Quiet -and -not $Ultrafast -and
+                        $ChainTarget -eq "" -and -not $NoMarkerPrompt)
+    $seconds = $null
+    if ($AutoRun -ne "") {
+        # Explicit parameter wins and skips the ask.
+        $n = 0
+        if ($AutoRun -ieq "off") {
+            Write-Host "[marker] auto-run not armed (-AutoRun off - the 30s keypress confirm stays)"
+        } elseif ([int]::TryParse($AutoRun, [ref]$n) -and $n -ge 0 -and $n -le 30) {
+            $seconds = $n
+        } else {
+            throw "-AutoRun '$AutoRun' is not a countdown: use a number 0-30 (0 = no wait) or 'off'."
+        }
+    } elseif ($menuInteractive) {
+        # Interactive ask, same shape as the install offer below: a failed
+        # read (non-interactive stdin) or any answer other than 1 falls
+        # through to the DEFAULT (unarmed), never arms on a swallowed error.
+        Write-Host ""
+        Write-Host "[marker] confirm gate: by default the loader waits 30s for Space/Enter before the"
+        Write-Host "[marker]   transaction (timeout or any other key = ABORT, zero writes - the safety"
+        Write-Host "[marker]   net for a mis-picked boot entry or a borrowed machine). The armed marker"
+        Write-Host "[marker]   moves the run decision to build time: countdown, then auto-run; any key"
+        Write-Host "[marker]   during the countdown still aborts."
+        Write-Host "[marker]   Enter = keep the 30s keypress confirm (default, recommended)"
+        Write-Host "[marker]   1     = arm auto-run (i_know_what_i_am_doing.txt on the stick root)"
+        $ans = $null
+        try { $ans = Read-Host "[marker] choice" } catch { $ans = $null }
+        if ($ans -and $ans.Trim() -eq "1") {
+            $secAns = $null
+            try { $secAns = Read-Host "[marker] countdown seconds 0-30 (Enter = 5; 0 = no wait, loader v2.1.12-rc1+)" } catch { $secAns = $null }
+            $secAns = $(if ($secAns) { $secAns.Trim() } else { "" })
+            $n = 5
+            if ($secAns -eq "") {
+                $seconds = 5
+            } elseif ([int]::TryParse($secAns, [ref]$n) -and $n -ge 0 -and $n -le 30) {
+                $seconds = $n
+            } else {
+                Write-Host "[marker] '$secAns' is not a countdown 0-30 - staying with the 30s keypress confirm"
+            }
+        }
+    }
+    if ($null -ne $seconds) {
+        Set-Content -Path (Join-Path $Out "i_know_what_i_am_doing.txt") -Value $seconds -Encoding Ascii
+        $markers += "i_know_what_i_am_doing.txt"
+        Write-Host ("[marker] ARMED: i_know_what_i_am_doing.txt = {0}s countdown auto-run, any key aborts" -f $seconds)
+        if ($seconds -eq 0) {
+            Write-Host "[marker]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
+        }
+    }
+    $wantQuiet = $false
+    if ($Quiet) {
+        $wantQuiet = $true
+    } elseif ($menuInteractive) {
+        $qAns = $null
+        try { $qAns = Read-Host "[marker] quiet console (tx-quiet.txt, verdict lines only)? y/N" } catch { $qAns = $null }
+        $wantQuiet = ($qAns -and $qAns.Trim() -match '^(y|yes)$')
+    }
+    if ($wantQuiet) {
+        Set-Content -Path (Join-Path $Out "tx-quiet.txt") -Value "" -Encoding Ascii -NoNewline
+        $markers += "tx-quiet.txt"
+        Write-Host "[marker] quiet console enabled (tx-quiet.txt - loader.log stays full)"
+    } elseif ($AutoRun -ne "") {
+        Write-Host "[marker] quiet console not requested (-Quiet writes tx-quiet.txt)"
+    }
+    # Chain-target pin (issue #204): a handoff-shape declaration, not a GPU
+    # knob - the loader falls back to the default chain order when the
+    # pinned path is missing. Menu default (Enter) keeps Linux/dual-boot
+    # targets and clean-BootOrder machines on the documented baseline. The
+    # list maps the loaders people actually pin; GRUB/shim paths are
+    # distro-relative (\EFI\<distro>\...), so those entries ask for the
+    # distro directory name. Limine is deliberately absent: its usual
+    # \EFI\BOOT\BOOTX64.EFI path is the stick's own loader and would chain
+    # back into the unlocker.
+    # Fixed-path presets double as -ChainTarget aliases (case-insensitive);
+    # scripted runs needing a distro loader just pass the full path.
+    $chainPresets = @{
+        windows = "\EFI\Microsoft\Boot\bootmgfw.efi"
+        ubuntu  = "\EFI\ubuntu\shimx64.efi"
+        systemd = "\EFI\systemd\systemd-bootx64.efi"
+    }
+    # Interactive inputs fail safe: anything unparsable lands on "no pin"
+    # with a message, never on a guessed path. Explicit values fail loud.
+    $chainPath = $null
+    if ($ChainTarget -ne "") {
+        # Explicit parameter wins and skips the ask.
+        $ct = $ChainTarget.ToLowerInvariant()
+        if ($ct -eq "off") {
+            Write-Host "[marker] chain target not pinned (-ChainTarget off - default chain order)"
+        } elseif ($chainPresets.ContainsKey($ct)) {
+            $chainPath = $chainPresets[$ct]
+        } elseif ($ChainTarget.StartsWith('\') -and $ChainTarget.Length -le 240 -and $ChainTarget -notmatch '/') {
+            $chainPath = $ChainTarget
+        } else {
+            throw "-ChainTarget '$ChainTarget' is neither 'off', a preset (windows | ubuntu | systemd), nor a volume-relative EFI path (leading '\', no '/', <= 240 chars - the loader ignores any other shape and falls back to the default order)."
+        }
+    } elseif ($menuInteractive) {
+        Write-Host "[marker]   chain-target.txt pins the handoff search (issue #204: a stale cross-disk"
+        Write-Host "[marker]   BootOrder entry can win the default resolve and chain into another disk's"
+        Write-Host "[marker]   loader). Missing path = graceful fallback to the default order."
+        Write-Host "[marker]   Enter = no pin (default chain order: Windows, then supported Linux loaders)"
+        Write-Host "[marker]   0 = Windows Boot Manager    \EFI\Microsoft\Boot\bootmgfw.efi"
+        Write-Host "[marker]   1 = GRUB, asks distro      \EFI\<distro>\grubx64.efi"
+        Write-Host "[marker]   2 = systemd-boot           \EFI\systemd\systemd-bootx64.efi"
+        Write-Host "[marker]   3 = Ubuntu (shim)          \EFI\ubuntu\shimx64.efi"
+        Write-Host "[marker]   4 = shim, asks distro      \EFI\<distro>\shimx64.efi"
+        Write-Host "[marker]   5 = custom EFI path        (typed; e.g. \EFI\fedora\grubx64.efi)"
+        $cAns = $null
+        try { $cAns = Read-Host "[marker] chain pin" } catch { $cAns = $null }
+        $cAns = $(if ($cAns) { $cAns.Trim() } else { "" })
+        if ($cAns -eq "0") {
+            $chainPath = $chainPresets["windows"]
+        } elseif ($cAns -eq "2") {
+            $chainPath = $chainPresets["systemd"]
+        } elseif ($cAns -eq "3") {
+            $chainPath = $chainPresets["ubuntu"]
+        } elseif ($cAns -eq "1" -or $cAns -eq "4") {
+            $kind = $(if ($cAns -eq "1") { "grubx64.efi" } else { "shimx64.efi" })
+            $dAns = $null
+            try { $dAns = Read-Host "[marker] distro directory name (e.g. ubuntu, fedora, debian)" } catch { $dAns = $null }
+            $dAns = $(if ($dAns) { $dAns.Trim() } else { "" })
+            if ($dAns -match '^[A-Za-z0-9_-]{1,100}$') {
+                $chainPath = "\EFI\$dAns\$kind"
+            } else {
+                Write-Host "[marker] '$dAns' is not a distro directory name - no pin written"
+            }
+        } elseif ($cAns -eq "5") {
+            $pAns = $null
+            try { $pAns = Read-Host "[marker] EFI path (leading '\', e.g. \EFI\fedora\grubx64.efi)" } catch { $pAns = $null }
+            $pAns = $(if ($pAns) { $pAns.Trim().Trim('"') } else { "" })
+            if ($pAns -ne "") {
+                # Normalize the two paste-mistakes that would otherwise make
+                # the loader silently ignore the pin: forward slashes and a
+                # missing leading backslash.
+                $pAns = $pAns.Replace('/', '\')
+                if ($pAns -notmatch '^\\') { $pAns = "\$pAns" }
+                if ($pAns.Length -le 240 -and $pAns -notmatch '/') {
+                    $chainPath = $pAns
+                } else {
+                    Write-Host "[marker] '$pAns' is not a volume-relative EFI path (<= 240 chars) - no pin written"
+                }
+            }
+        }
+    }
+    if ($chainPath) {
+        Set-Content -Path (Join-Path $Out "chain-target.txt") -Value $chainPath -Encoding Ascii
+        $markers += "chain-target.txt"
+        Write-Host ("[marker] chain pinned: chain-target.txt = {0}" -f $chainPath)
+    }
+    # Ultrafast profile: the one speed option whose default must stay No -
+    # it skips the diagnostic stages that make a FIRST run debuggable
+    # (M1 sampling, GOP probes, AUTH-SCAN, dumps; bigger log blind spots on
+    # a hang). For sticks rebuilt for machines already verified over
+    # multiple rounds (docs/faq.md). It folds quiet on the loader side, so
+    # tx-quiet.txt next to it is redundant (noted, harmless either way).
+    $wantFast = $false
+    if ($Ultrafast) {
+        $wantFast = $true
+    } elseif ($menuInteractive) {
+        Write-Host "[marker]   ultrafast (tx-ultrafast.txt): skips the diagnostic probes and folds"
+        Write-Host "[marker]   quiet - faster boots, bigger log blind spots on a hang. Only for"
+        Write-Host "[marker]   machines already verified over multiple rounds (docs/faq.md)."
+        $uAns = $null
+        try { $uAns = Read-Host "[marker] ultrafast speed profile? y/N" } catch { $uAns = $null }
+        $wantFast = ($uAns -and $uAns.Trim() -match '^(y|yes)$')
+    }
+    if ($wantFast) {
+        Set-Content -Path (Join-Path $Out "tx-ultrafast.txt") -Value "" -Encoding Ascii -NoNewline
+        $markers += "tx-ultrafast.txt"
+        Write-Host "[marker] ultrafast enabled (tx-ultrafast.txt - verdict read-backs still run)"
+        if ($wantQuiet) {
+            Write-Host "[marker]   ultrafast folds quiet - tx-quiet.txt alongside is redundant"
+        }
+    }
+    return $markers
+}
+
+$script:MarkerFiles = @(Invoke-MarkerOffer)
+
 # Layout marker: identifies a volume that already hosts THIS project's files
 # so a later run may upgrade them in place. Any other existing file is never
 # overwritten (data-safety contract; see the install offer at the end).
+# "markers" records the marker files THIS build wrote so a later handoff
+# audit starts from the layout json instead of listing the volume root.
 # fw_source records the GSP payload provenance (issue #263): the resolved
 # route (badge = host installed driver, version pin waived | arch | run |
 # cachyos | cachyos4), the driver version where parseable, and the staged
@@ -1084,6 +1338,7 @@ Write-Host ("  {0,-28} {1,10} bytes" -f "EFI/BOOT/BOOTX64.EFI", (Get-Item (Join-
     maker    = "make-usbroot.ps1"
     families = ($Families -join ",")
     built    = (Get-Date -Format o)
+    markers  = $script:MarkerFiles
     fw_source = @{
         route      = $UtilsInput.Route
         driver     = $UtilsInput.Ver

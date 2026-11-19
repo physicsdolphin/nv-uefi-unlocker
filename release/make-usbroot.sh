@@ -50,6 +50,21 @@
 #   --no-install-prompt  skip the post-build install-target offer
 #   --install-to MP   copy the layout into an EXISTING mounted FAT32 partition
 #                     without asking (same eligibility checks as the probe)
+#   --auto-run S      arm auto-run at build time (issue #259): write
+#                     i_know_what_i_am_doing.txt = S seconds countdown, any
+#                     key aborts; 0 = no wait, loader v2.1.12-rc1+; "off"
+#                     pins the default; explicit value skips the interactive ask
+#   --quiet           write tx-quiet.txt (quiet console) into the layout;
+#                     same as the interactive ask, skips it
+#   --ultrafast       write tx-ultrafast.txt (verified-machine speed profile,
+#                     ask's default stays No)
+#   --chain-target P  pin the chainload handoff (chain-target.txt, issue
+#                     #204): P = 'windows' | 'ubuntu' | 'systemd' preset,
+#                     a volume-relative EFI path (leading '\', <= 240 chars)
+#                     or "off"; "" asks the menu - Windows / GRUB /
+#                     systemd-boot / Ubuntu / shim / custom path, default
+#                     no pin
+#   --no-marker-prompt  skip the interactive marker ask
 #   -h | --help       this text
 #
 # Family notes (same as make-usbroot.ps1):
@@ -98,6 +113,19 @@ SKIP_GSP_CHECK=0
 # probe EXISTING FAT32 partitions and offer to copy the layout into one.
 NO_INSTALL_PROMPT=0
 INSTALL_TO=""
+# Confirm-gate choice at build time (issue #259). "" = the interactive ask
+# decides (its default keeps the loader's 30s keypress confirm); "off" pins
+# that default non-interactively; 0-30 arms auto-run (i_know_what_i_am_doing.txt
+# = the seconds; 0 = no wait, loader v2.1.12-rc1+). QUIET writes tx-quiet.txt,
+# ULTRAFAST=1 writes tx-ultrafast.txt (verified-machine speed profile), and
+# CHAIN_TARGET pins the handoff ("" = ask the menu's y/N for the Windows pin,
+# "off" = skip, otherwise a volume-relative EFI path, issue #204).
+# A normal build stays UNARMED (AGENTS.deploy.md handoff doctrine).
+AUTO_RUN=""
+QUIET=0
+ULTRAFAST=0
+CHAIN_TARGET=""
+NO_MARKER_PROMPT=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # Windows-hosted bash (Git Bash/MSYS) can run .exe pipelines, not Linux ELF;
@@ -214,6 +242,13 @@ while [ $# -gt 0 ]; do
         --no-install-prompt) NO_INSTALL_PROMPT=1; shift ;;
         --install-to)      INSTALL_TO="${2:?missing value for $1}"; shift 2 ;;
         --install-to=*)    INSTALL_TO="${1#*=}"; shift ;;
+        --auto-run)        AUTO_RUN="${2:?missing value for $1}"; shift 2 ;;
+        --auto-run=*)      AUTO_RUN="${1#*=}"; shift ;;
+        --quiet)           QUIET=1; shift ;;
+        --ultrafast)       ULTRAFAST=1; shift ;;
+        --chain-target)    CHAIN_TARGET="${2:?missing value for $1}"; shift 2 ;;
+        --chain-target=*)  CHAIN_TARGET="${1#*=}"; shift ;;
+        --no-marker-prompt) NO_MARKER_PROMPT=1; shift ;;
         -h|--help)         usage ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -980,15 +1015,215 @@ for f in "${expected[@]}"; do
 done
 printf '  %-28s %10s bytes\n' "EFI/BOOT/BOOTX64.EFI" "$(size_of "$OUT/EFI/BOOT/BOOTX64.EFI")"
 
+# ---------- confirm-gate marker offer (issue #259) ----------
+# The loader waits 30s for Space/Enter unless the armed marker sits on the
+# stick root; the marker moves the run decision to build time - which is
+# exactly what this ask offers (softmgr, issue #259). Doctrine
+# (AGENTS.deploy.md): a normal build stays UNARMED; the 30s keypress confirm
+# is the zero-write safety net for a mis-picked boot entry or a borrowed
+# machine, so the default answer, a non-tty stdin and every EOF path land on
+# "no marker written". Scope (debug vs speed): only what a stick-maker can
+# decide for the target WITHOUT symptom evidence, each defaulting to the
+# documented baseline - armed marker, quiet console, Windows chain pin,
+# ultrafast profile. Every other marker in docs/faq.md is a symptom-matched
+# diagnostic or exit valve and must not be blanket-enabled from a menu.
+MARKER_FILES=()
+
+marker_offer() {
+    # One rule for the whole ask block: any explicit marker choice
+    # (--auto-run/--quiet/--ultrafast/--chain-target) or --no-marker-prompt
+    # makes this a scripted run - no prompts; every unspecified choice takes
+    # its documented default (unarmed, plain console, no pin, no ultrafast).
+    local menu_interactive=0
+    if [ -z "$AUTO_RUN" ] && [ "$QUIET" -eq 0 ] && [ "$ULTRAFAST" -eq 0 ] \
+       && [ -z "$CHAIN_TARGET" ] && [ "$NO_MARKER_PROMPT" -eq 0 ] && [ -t 0 ]; then
+        menu_interactive=1
+    fi
+    local seconds=""
+    if [ -n "$AUTO_RUN" ]; then
+        # Explicit flag wins and skips the ask.
+        if [ "$AUTO_RUN" = "off" ]; then
+            log "[marker] auto-run not armed (--auto-run off - the 30s keypress confirm stays)"
+        elif [[ "$AUTO_RUN" =~ ^[0-9]+$ ]] && [ "$AUTO_RUN" -le 30 ]; then
+            seconds="$AUTO_RUN"
+        else
+            die "--auto-run '$AUTO_RUN' is not a countdown: use a number 0-30 (0 = no wait) or 'off'."
+        fi
+    elif [ "$menu_interactive" -eq 1 ]; then
+        # Interactive ask, same shape as the install offer below: a
+        # non-terminal stdin or any answer other than 1 falls through to
+        # the DEFAULT (unarmed), never arms on a swallowed read error.
+        log ""
+        log "[marker] confirm gate: by default the loader waits 30s for Space/Enter before the"
+        log "[marker]   transaction (timeout or any other key = ABORT, zero writes - the safety"
+        log "[marker]   net for a mis-picked boot entry or a borrowed machine). The armed marker"
+        log "[marker]   moves the run decision to build time: countdown, then auto-run; any key"
+        log "[marker]   during the countdown still aborts."
+        log "[marker]   Enter = keep the 30s keypress confirm (default, recommended)"
+        log "[marker]   1     = arm auto-run (i_know_what_i_am_doing.txt on the stick root)"
+        local ans=""
+        read -r ans || ans=""
+        if [ "$ans" = "1" ]; then
+            local secans=""
+            read -r secans || secans=""
+            secans="${secans//[[:space:]]/}"
+            if [ -z "$secans" ]; then
+                seconds=5
+            elif [[ "$secans" =~ ^[0-9]+$ ]] && [ "$secans" -le 30 ]; then
+                seconds="$secans"
+            else
+                log "[marker] '$secans' is not a countdown 0-30 - staying with the 30s keypress confirm"
+            fi
+        fi
+    fi
+    if [ -n "$seconds" ]; then
+        printf '%s\n' "$seconds" > "$OUT/i_know_what_i_am_doing.txt"
+        MARKER_FILES+=("i_know_what_i_am_doing.txt")
+        log "[marker] ARMED: i_know_what_i_am_doing.txt = ${seconds}s countdown auto-run, any key aborts"
+        [ "$seconds" = "0" ] && log "[marker]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
+    fi
+    local want_quiet=0
+    if [ "$QUIET" -eq 1 ]; then
+        want_quiet=1
+    elif [ "$menu_interactive" -eq 1 ]; then
+        local qans=""
+        read -r qans || qans=""
+        case "${qans,,}" in y|yes) want_quiet=1 ;; esac
+    fi
+    if [ "$want_quiet" -eq 1 ]; then
+        : > "$OUT/tx-quiet.txt"
+        MARKER_FILES+=("tx-quiet.txt")
+        log "[marker] quiet console enabled (tx-quiet.txt - loader.log stays full)"
+    elif [ "$QUIET" -eq 0 ] && [ -n "$AUTO_RUN" ]; then
+        log "[marker] quiet console not requested (--quiet writes tx-quiet.txt)"
+    fi
+    # Chain-target pin (issue #204): a handoff-shape declaration, not a GPU
+    # knob - the loader falls back to the default chain order when the
+    # pinned path is missing. Menu default (Enter) keeps Linux/dual-boot
+    # targets and clean-BootOrder machines on the documented baseline. The
+    # list maps the loaders people actually pin; GRUB/shim paths are
+    # distro-relative (\EFI\<distro>\...), so those entries ask for the
+    # distro directory name. Limine is deliberately absent: its usual
+    # \EFI\BOOT\BOOTX64.EFI path is the stick's own loader and would chain
+    # back into the unlocker.
+    # Fixed-path presets double as --chain-target aliases (case-insensitive);
+    # scripted runs needing a distro loader just pass the full path.
+    # Interactive inputs fail safe: anything unparsable lands on "no pin"
+    # with a message, never on a guessed path. Explicit values fail loud.
+    local chain_path=""
+    if [ -n "$CHAIN_TARGET" ]; then
+        # Explicit flag wins and skips the ask.
+        local ct="${CHAIN_TARGET,,}"
+        if [ "$ct" = "off" ]; then
+            log "[marker] chain target not pinned (--chain-target off - default chain order)"
+        elif [ "$ct" = "windows" ]; then
+            chain_path='\EFI\Microsoft\Boot\bootmgfw.efi'
+        elif [ "$ct" = "ubuntu" ]; then
+            chain_path='\EFI\ubuntu\shimx64.efi'
+        elif [ "$ct" = "systemd" ]; then
+            chain_path='\EFI\systemd\systemd-bootx64.efi'
+        elif [[ "$CHAIN_TARGET" == \\* ]] && [ "${#CHAIN_TARGET}" -le 240 ] && [[ "$CHAIN_TARGET" != */* ]]; then
+            chain_path="$CHAIN_TARGET"
+        else
+            die "--chain-target '$CHAIN_TARGET' is neither 'off', a preset (windows | ubuntu | systemd), nor a volume-relative EFI path (leading '\', no '/', <= 240 chars - the loader ignores any other shape and falls back to the default order)."
+        fi
+    elif [ "$menu_interactive" -eq 1 ]; then
+        log "[marker]   chain-target.txt pins the handoff search (issue #204: a stale cross-disk"
+        log "[marker]   BootOrder entry can win the default resolve and chain into another disk's"
+        log "[marker]   loader). Missing path = graceful fallback to the default order."
+        log "[marker]   Enter = no pin (default chain order: Windows, then supported Linux loaders)"
+        log "[marker]   0 = Windows Boot Manager    \\EFI\\Microsoft\\Boot\\bootmgfw.efi"
+        log "[marker]   1 = GRUB, asks distro      \\EFI\\<distro>\\grubx64.efi"
+        log "[marker]   2 = systemd-boot           \\EFI\\systemd\\systemd-bootx64.efi"
+        log "[marker]   3 = Ubuntu (shim)          \\EFI\\ubuntu\\shimx64.efi"
+        log "[marker]   4 = shim, asks distro      \\EFI\\<distro>\\shimx64.efi"
+        log "[marker]   5 = custom EFI path        (typed; e.g. \\EFI\\fedora\\grubx64.efi)"
+        local cans=""
+        read -r cans || cans=""
+        cans="${cans//[[:space:]]/}"
+        if [ "$cans" = "0" ]; then
+            chain_path='\EFI\Microsoft\Boot\bootmgfw.efi'
+        elif [ "$cans" = "2" ]; then
+            chain_path='\EFI\systemd\systemd-bootx64.efi'
+        elif [ "$cans" = "3" ]; then
+            chain_path='\EFI\ubuntu\shimx64.efi'
+        elif [ "$cans" = "1" ] || [ "$cans" = "4" ]; then
+            local kind=""
+            [ "$cans" = "1" ] && kind="grubx64.efi" || kind="shimx64.efi"
+            local dans=""
+            read -r dans || dans=""
+            dans="${dans#"${dans%%[![:space:]]*}"}"; dans="${dans%"${dans##*[![:space:]]}"}"
+            if [[ "$dans" =~ ^[A-Za-z0-9_-]{1,100}$ ]]; then
+                chain_path="\\EFI\\$dans\\$kind"
+            else
+                log "[marker] '$dans' is not a distro directory name - no pin written"
+            fi
+        elif [ "$cans" = "5" ]; then
+            local pans=""
+            read -r pans || pans=""
+            pans="${pans#"${pans%%[![:space:]]*}"}"; pans="${pans%"${pans##*[![:space:]]}"}"
+            pans="${pans#\"}"; pans="${pans%\"}"
+            if [ -n "$pans" ]; then
+                # Normalize the two paste-mistakes that would otherwise make
+                # the loader silently ignore the pin: forward slashes and a
+                # missing leading backslash.
+                pans="${pans//\//\\}"
+                [ "${pans:0:1}" = "\\" ] || pans="\\$pans"
+                if [ "${#pans}" -le 240 ] && [[ "$pans" != */* ]]; then
+                    chain_path="$pans"
+                else
+                    log "[marker] '$pans' is not a volume-relative EFI path (<= 240 chars) - no pin written"
+                fi
+            fi
+        fi
+    fi
+    if [ -n "$chain_path" ]; then
+        printf '%s\n' "$chain_path" > "$OUT/chain-target.txt"
+        MARKER_FILES+=("chain-target.txt")
+        log "[marker] chain pinned: chain-target.txt = $chain_path"
+    fi
+    # Ultrafast profile: the one speed option whose default must stay No -
+    # it skips the diagnostic stages that make a FIRST run debuggable
+    # (M1 sampling, GOP probes, AUTH-SCAN, dumps; bigger log blind spots on
+    # a hang). For sticks rebuilt for machines already verified over
+    # multiple rounds (docs/faq.md). It folds quiet on the loader side, so
+    # tx-quiet.txt next to it is redundant (noted, harmless either way).
+    local want_fast=0
+    if [ "$ULTRAFAST" -eq 1 ]; then
+        want_fast=1
+    elif [ "$menu_interactive" -eq 1 ]; then
+        log "[marker]   ultrafast (tx-ultrafast.txt): skips the diagnostic probes and folds"
+        log "[marker]   quiet - faster boots, bigger log blind spots on a hang. Only for"
+        log "[marker]   machines already verified over multiple rounds (docs/faq.md)."
+        local uans=""
+        read -r uans || uans=""
+        case "${uans,,}" in y|yes) want_fast=1 ;; esac
+    fi
+    if [ "$want_fast" -eq 1 ]; then
+        : > "$OUT/tx-ultrafast.txt"
+        MARKER_FILES+=("tx-ultrafast.txt")
+        log "[marker] ultrafast enabled (tx-ultrafast.txt - verdict read-backs still run)"
+        [ "$want_quiet" -eq 1 ] && log "[marker]   ultrafast folds quiet - tx-quiet.txt alongside is redundant"
+    fi
+}
+marker_offer
+
+markers_json=""
+for _m in ${MARKER_FILES[@]+"${MARKER_FILES[@]}"}; do
+    markers_json+="${markers_json:+,}\"$_m\""
+done
+
 # Layout marker: identifies a volume that already hosts THIS project's files
 # so a later run may upgrade them in place. Any other existing file is never
 # overwritten (data-safety contract; see the install offer at the end).
+# "markers" records the marker files THIS build wrote so a later handoff
+# audit starts from the layout json instead of listing the volume root.
 # "fw_source" records the GSP payload provenance (issue #263): the resolved
 # route (badge = host installed driver, version pin waived | arch | run |
 # cachyos | cachyos4), the driver version where parseable, and the staged
 # GSP ELF SHA-256s - "badge or pinned?" stays answerable after the fact.
-printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s",\n  "fw_source": {"route": %s, "driver": %s, "elf_sha256": {"gsp_ga10x.bin": %s, "gsp_tu10x.bin": %s}}\n}\n' \
-    "${FAMILIES[*]}" "$(date -Is)" \
+printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s",\n  "markers": [%s],\n  "fw_source": {"route": %s, "driver": %s, "elf_sha256": {"gsp_ga10x.bin": %s, "gsp_tu10x.bin": %s}}\n}\n' \
+    "${FAMILIES[*]}" "$(date -Is)" "$markers_json" \
     "$(json_str "${FW_ROUTE:-}")" "$(json_str "${FW_DRIVER:-}")" \
     "$(json_str "${FW_SHA_GA10X:-}")" "$(json_str "${FW_SHA_TU10X:-}")" > "$OUT/nvuu-stick.json"
 
