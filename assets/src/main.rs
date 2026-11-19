@@ -4,6 +4,27 @@ use std::path::{Path, PathBuf};
 
 use assets::manifest::ga102_610 as pins;
 
+/// tty-gated ANSI colors, the make-usbroot semantic palette: green = a
+/// verified success line, cyan = a stage step. NO_COLOR honored; piped
+/// output stays plain so the log files never gain escape codes.
+fn color_enabled() -> bool {
+    std::io::IsTerminal::is_terminal(&std::io::stdout())
+        && std::env::var_os("NO_COLOR").is_none()
+}
+fn c_ok(m: &str) -> String {
+    if color_enabled() { format!("[32m[ok] {m}[0m") } else { format!("[ok] {m}") }
+}
+/// One verified-asset line: green [ok], cyan filename, plain size
+/// (mirrors the make-usbroot asset table).
+fn verified_line(prefix: &str, name: &str, len: usize, suffix: &str) {
+    let tail = if suffix.is_empty() { String::new() } else { format!(" {suffix}") };
+    if color_enabled() {
+        println!("[32m[ok][0m [36m{prefix}{name}[0m: {} bytes,[32m SHA-256 verified[0m{tail}", len);
+    } else {
+        println!("[ok] {prefix}{name}: {} bytes, SHA-256 verified{tail}", len);
+    }
+}
+
 /// Raw extracted BINDATA sources (the `*_raw.c` dumps) are forensics
 /// material - 100-440 KiB of dead weight on a USB root the loader never
 /// reads. Emission is opt-in: set ASSETS_DEBUG_C=1 to keep them (they never
@@ -224,7 +245,7 @@ fn extract_tu11x(source: &Path, outdir: &Path) -> Result<(), String> {
         }
         std::fs::write(outdir.join(name), data).map_err(|e| e.to_string())?;
         if pinned == "UNMEASURED" {
-            println!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len());
+            println!("{}", c_ok(&format!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len())));
         } else {
             println!("TU116 derived {name}: {} bytes, SHA-256 verified", data.len());
         }
@@ -280,9 +301,9 @@ fn extract_tu10x(source: &Path, outdir: &Path) -> Result<(), String> {
         }
         std::fs::write(outdir.join(name), data).map_err(|e| e.to_string())?;
         if pinned == "UNMEASURED" {
-            println!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len());
+            println!("{}", c_ok(&format!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len())));
         } else {
-            println!("TU102 derived {name}: {} bytes, SHA-256 verified", data.len());
+            verified_line("TU102 derived ", name, data.len(), "");
         }
         Ok(())
     };
@@ -344,9 +365,9 @@ fn extract_scrub(source: &Path, outdir: &Path) -> Result<(), String> {
     }
     std::fs::write(outdir.join("scrubber_ad10x.bin"), &bundle).map_err(|e| e.to_string())?;
     if pins::SCRUB_DERIVED == "UNMEASURED" {
-        println!("PIN-ME scrubber_ad10x.bin: {} bytes, sha256 {digest}", bundle.len());
+        println!("{}", c_ok(&format!("PIN-ME scrubber_ad10x.bin: {} bytes, sha256 {digest}", bundle.len())));
     } else {
-        println!("scrubber_ad10x.bin: {} bytes, SHA-256 verified", bundle.len());
+        verified_line("", "scrubber_ad10x.bin", bundle.len(), "");
     }
     Ok(())
 }
