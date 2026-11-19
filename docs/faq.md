@@ -387,6 +387,8 @@ dGPU 的电只有两种来源：桌面由插槽直供；笔记本/一体机的 d
 
 边界如实：①该报告只用 ssdiag 0.7.9 读了寄存器与 canary，**没有"设 / 不设该键"的同会话因果对照**（混合模式的失败轮与成功轮之间隔着一次重启 + 重放）；②`EnableRuntimePowerManagement` 是 Windows 显示驱动的通用电源策略键，不同驱动分支是否都认这个键未逐一核对；③能用独显直连时仍优先独显直连，混合模式保留不等于所有平台可复现。排查顺序照旧：先确认 `POST-GOP` 与 `HANDOFF-OUT` 完好（排除事务与交棒），再看 `POWER:` 行的 D 态，最后才动这个键。
 
+**第二个平台 + 因果对照补强（2026-11-20，[#266](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/266)，AMD Acer Swift SFX14-41G / Ryzen 7 5800U）**：`25a2`（3050 Laptop 4GB，GA107）在**纯 MUXless、零 dGPU 出线**的轻薄本上（连欺骗器都物理不可行，BIOS 也无 ACPI D3 开关），v2.1.12-rc4 两次独立引导 `UNLOCKED`、金丝雀 intact、张量发射率 **2.00×**（寄存器级 WMMA 微基准，FP32 FFMA 对照 1.00× 平）。本报告还补上了上面边界 (1) 缺的**同机因果对照**：同机同盘，不设键的一轮=金丝雀 cleared + SS 回厂（[#262](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/262) 同形签名逐项一致），只加 `EnableRuntimePowerManagement=0`（+ASPM AC/DC=0）的一轮=intact + `UNLOCKED`——键是两轮间唯一变量，机制表第 1 行（轨掉）就此在 AMD 平台坐实。**也是 [#262](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/262)"混合+无 MUX+无 dGPU 出线"形态的第一条可行路**：固件开关与欺骗器都不可行的机器，先试这个驱动级键。边界更新：边界 (1) 已由本报告补上（同机、键为唯一变量）；新增一条——该键挂在驱动键下，**驱动升级/重装可能重建键，升级后须复查重设**（未实测升级轮）；边界 (2)(3) 维持。
+
 <a id="relock-148"></a>
 
 ### 实例记录：GA107M 笔记本在 Linux 上被驱动 init 重推导（[#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)）
