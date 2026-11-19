@@ -664,7 +664,8 @@ function Get-UtilsPackage {
     # NVIDIA driver installed; its GSP is the handoff target's own firmware
     # and badge mode waives the version pin - measured 525-621 compatible,
     # docs/gsp-compatibility.md); downloads follow as fallback. Returns
-    # @{ Path; Kind }; on total failure throws the all-sources report so the
+    # @{ Path; Kind; Route; Ver } - Route/Ver feed the fw_source provenance
+    # record (issue #263); on total failure throws the all-sources report so the
     # user sees every transport, its pinned hash and how to go fully
     # offline (any ONE of the files).
     $candidates = if ($UtilsSource -eq "auto") { @(@{ Id = "local"; Kind = "local" }) + @($UtilsSources) }
@@ -674,14 +675,17 @@ function Get-UtilsPackage {
         if ($s.Kind -eq "local") {
             $store = Get-LocalDriverStoreGsp
             if ($store) {
-                return @{ Path = $store.Dir; Kind = "local"; Ver = $store.Ver }
+                Write-Host ("fwimage source: BADGE host-driver {0} (pin waived) - recorded in nvuu-stick.json fw_source" -f $(if ($store.Ver) { $store.Ver } else { "unknown" }))
+                return @{ Path = $store.Dir; Kind = "local"; Route = "badge"; Ver = $store.Ver }
             }
             Write-Host "[fallback] local DriverStore unusable - trying the next pinned source"
             continue
         }
         $dest = Join-Path $Work $s.Name
         if (Get-PinnedFile -Name $s.Name -Urls $s.Urls -Sha256 $s.Sha256 -Dest $dest) {
-            return @{ Path = $dest; Kind = $s.Kind }
+            $ver = if ($s.Name -match '(\d{3}\.\d{2}\.\d{2})') { $Matches[1] } else { $null }
+            Write-Host ("fwimage source: PINNED nvidia-utils-{0} (route: {1}) - recorded in nvuu-stick.json fw_source" -f $(if ($ver) { $ver } else { $s.Name }), $s.Id)
+            return @{ Path = $dest; Kind = $s.Kind; Route = $s.Id; Ver = $ver }
         }
         Write-Host ("[fallback] {0} unusable ({1}: {2}) - trying the next pinned source" -f $s.Name, $script:LastPinnedKind, $script:LastPinnedReason)
     }
@@ -764,6 +768,64 @@ if ($UtilsInput.Kind -eq "local") {
 } else {
     & $AssetsExe fw $UtilsInput.Path $Out
     if ($LASTEXITCODE) { throw "fw failed" }
+}
+
+# fw_source provenance (issue #263): hash the staged GSP ELFs. Both routes
+# stage both ELFs, so both hashes exist for every family set.
+$script:FwSha = @{}
+foreach ($elf in @("gsp_ga10x.bin", "gsp_tu10x.bin")) {
+    $elfPath = Join-Path $Out $elf
+    if (Test-Path $elfPath) {
+        $script:FwSha[$elf] = (Get-FileHash -Algorithm SHA256 -LiteralPath $elfPath).Hash.ToLowerInvariant()
+    }
+}
+
+# Badge-mode mismatch warning (issue #263): a badge stage and a pinned
+# rebuild of the same tag may ship DIFFERENT GSP payloads, which is a
+# silent extra variable for cross-field ablations. When a hash-verified
+# pinned container is already in the work dir, extract it and compare -
+# zero downloads. Degrades to a plain warning if the comparison
+# extraction fails; never blocks the build.
+if ($UtilsInput.Kind -eq "local") {
+    $pin = $UtilsSources | Where-Object {
+        $d = Join-Path $Work $_.Name
+        (Test-Path $d) -and ((Get-FileHash -Algorithm SHA256 -LiteralPath $d).Hash.ToLowerInvariant() -eq $_.Sha256)
+    } | Select-Object -First 1
+    if ($pin) {
+        $cmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("nvuu-pin-cmp-" + [guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $cmpDir -Force | Out-Null
+        # assets prints extractor chatter on stderr; PS 5.1 + Stop turns a
+        # nonzero exit on 2>&1 into NativeCommandError - run under Continue.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $AssetsExe fw (Join-Path $Work $pin.Name) $cmpDir
+            if ($LASTEXITCODE -and $pin.Kind -eq "run") {
+                & $AssetsExe fw-run (Join-Path $Work $pin.Name) $cmpDir
+            }
+            $extractOk = (-not $LASTEXITCODE)
+        } catch { $extractOk = $false }
+        $ErrorActionPreference = $prevEap
+        if ($extractOk) {
+            $differ = $false
+            foreach ($elf in @("gsp_ga10x.bin", "gsp_tu10x.bin")) {
+                $pinElf = Join-Path $cmpDir $elf
+                if ((Test-Path $pinElf) -and $script:FwSha.ContainsKey($elf)) {
+                    $pinSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $pinElf).Hash.ToLowerInvariant()
+                    if ($pinSha -ne $script:FwSha[$elf]) {
+                        $differ = $true
+                        Write-Host ("[warn] badge-staged {0} DIFFERS from the pinned extraction ({1}) - the same pinned tag ships a different fwimage per build host. Re-run with -UtilsSource {2} to reproduce the pinned asset set byte-for-byte." -f $elf, $pin.Name, $pin.Id)
+                    }
+                }
+            }
+            if (-not $differ) {
+                Write-Host ("[ok] badge-staged GSP ELFs are byte-identical to the pinned extraction ({0}) - provenance converged" -f $pin.Name)
+            }
+        } else {
+            Write-Host ("[warn] badge mode active and the pinned container {0} is in the work dir, but the comparison extraction failed - provenance may differ from the pin" -f $pin.Name)
+        }
+        Remove-Item $cmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if (@($Families | Where-Object { $_ -ne "tu10x" -and $_ -ne "tu11x" }).Count -gt 0) {
@@ -1012,11 +1074,23 @@ Write-Host ("  {0,-28} {1,10} bytes" -f "EFI/BOOT/BOOTX64.EFI", (Get-Item (Join-
 # Layout marker: identifies a volume that already hosts THIS project's files
 # so a later run may upgrade them in place. Any other existing file is never
 # overwritten (data-safety contract; see the install offer at the end).
+# fw_source records the GSP payload provenance (issue #263): the resolved
+# route (badge = host installed driver, version pin waived | arch | run |
+# cachyos | cachyos4), the driver version where parseable, and the staged
+# GSP ELF SHA-256s - "badge or pinned?" stays answerable after the fact.
 @{
     project  = "nv-uefi-unlocker"
     maker    = "make-usbroot.ps1"
     families = ($Families -join ",")
     built    = (Get-Date -Format o)
+    fw_source = @{
+        route      = $UtilsInput.Route
+        driver     = $UtilsInput.Ver
+        elf_sha256 = @{
+            "gsp_ga10x.bin" = $script:FwSha["gsp_ga10x.bin"]
+            "gsp_tu10x.bin" = $script:FwSha["gsp_tu10x.bin"]
+        }
+    }
 } | ConvertTo-Json | Set-Content -Path (Join-Path $Out "nvuu-stick.json") -Encoding Ascii
 
 $outFull = (Resolve-Path -LiteralPath $Out).Path

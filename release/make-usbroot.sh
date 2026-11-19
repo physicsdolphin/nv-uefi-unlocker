@@ -40,7 +40,12 @@
 #                     firmware (badge mode) -> Arch archive -> first-party
 #                     .run -> CachyOS cache, first that lands) or arch | run |
 #                     cachyos | local to pin one route. Hash gate identical
-#                     for downloads; local is badge mode.
+#                     for downloads; local is badge mode. The resolved route
+#                     (badge vs pinned), the driver version where parseable,
+#                     and the staged GSP ELF SHA-256s are printed loudly at
+#                     build time and recorded in nvuu-stick.json fw_source
+#                     (issue #263) - once a stage is on an ESP, "badge or
+#                     pinned?" must stay answerable.
 #   --skip-gsp-check  build for another machine: skip the host Turing GSP check
 #   --no-install-prompt  skip the post-build install-target offer
 #   --install-to MP   copy the layout into an EXISTING mounted FAT32 partition
@@ -108,6 +113,11 @@ usage() {
 
 log() { printf '%s\n' "$*"; }
 logerr() { printf '%s\n' "$*" >&2; }
+# JSON string-or-null for the fw_source manifest record (issue #263): every
+# value interpolated into nvuu-stick.json comes from a fixed route id, a
+# version token or a sha256 - no free-form user input - so plain quoting
+# suffices; an unset value becomes null instead of "".
+json_str() { if [ -n "${1:-}" ]; then printf '"%s"' "$1"; else printf 'null'; fi; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -589,7 +599,8 @@ fetch_verify() { # <name> <sha> <url> [url...] -> sets FETCH_DEST on success;
 
 # Resolve the nvidia-utils source group: automatic fallback, the first
 # container that lands wins (cached file or verified download). Sets
-# UTILS_PATH + UTILS_KIND (pkg -> fw, run -> fw-run). On total failure dies
+# UTILS_PATH + UTILS_KIND (pkg -> fw, run -> fw-run) and the fw_source
+# provenance record FW_ROUTE/FW_DRIVER (issue #263). On total failure dies
 # with the all-sources report: every transport, its pinned hash, and the
 # fully-offline option (any ONE of the files).
 resolve_utils() {
@@ -621,7 +632,14 @@ resolve_utils() {
         if [ -n "$fwdir" ]; then
             UTILS_PATH="$fwdir"
             UTILS_KIND="local"
+            FW_ROUTE="badge"
+            # Linux nvidia-utils installs version-named the directory; a
+            # Windows DriverStore leaf does not carry the version (the
+            # badge-vs-pin ELF comparison below recovers the real answer).
+            local leaf="${fwdir##*/}"
+            case "$leaf" in [0-9]*.[0-9]*) FW_DRIVER="$leaf" ;; *) FW_DRIVER="" ;; esac
             log "[local] GSP from the installed driver: $fwdir (badge mode, version pin waived)"
+            log "fwimage source: BADGE host-driver ${FW_DRIVER:-unknown} (pin waived) - recorded in nvuu-stick.json fw_source"
             return 0
         fi
         log "[local] no installed-driver GSP found (/usr/lib|/lib|/run/current-system)/firmware/nvidia/*/gsp_*.bin and the Windows DriverStore are all absent)"
@@ -633,6 +651,10 @@ resolve_utils() {
         if fetch_verify "$name" "$sha" "$url"; then
             UTILS_PATH="$FETCH_DEST"
             UTILS_KIND="$kind"
+            FW_ROUTE="$id"
+            FW_DRIVER=""
+            [[ "$name" =~ ([0-9]{3}\.[0-9]{2}\.[0-9]{2}) ]] && FW_DRIVER="${BASH_REMATCH[1]}"
+            log "fwimage source: PINNED nvidia-utils-${FW_DRIVER:-$name} (route: $id) - recorded in nvuu-stick.json fw_source"
             return 0
         fi
         log "[fallback] $name unusable ($FAIL_KIND: $FAIL_LAST) - trying the next pinned source"
@@ -667,6 +689,10 @@ else
     die "download failed for $SRC1_NAME: no transport delivered the file (last: $FAIL_LAST).
 This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $WORK/ (sha256 $SRC1_SHA) to build offline."
 fi
+FW_ROUTE=""
+FW_DRIVER=""
+FW_SHA_GA10X=""
+FW_SHA_TU10X=""
 resolve_utils
 
 # Remove assets from an earlier run so a root cannot end up as a half-old,
@@ -703,6 +729,45 @@ elif [ "$UTILS_KIND" = "run" ]; then
     assets_run fw-run "$UTILS_PATH" "$OUT"
 else
     assets_run fw "$UTILS_PATH" "$OUT"
+fi
+
+# fw_source provenance (issue #263): hash the staged GSP ELFs. Both routes
+# stage both ELFs, so both hashes exist for every family set.
+[ -f "$OUT/gsp_ga10x.bin" ] && FW_SHA_GA10X="$(sha256_of "$OUT/gsp_ga10x.bin")"
+[ -f "$OUT/gsp_tu10x.bin" ] && FW_SHA_TU10X="$(sha256_of "$OUT/gsp_tu10x.bin")"
+
+# Badge-mode mismatch warning (issue #263): a badge stage and a pinned
+# rebuild of the same tag may ship DIFFERENT GSP payloads, which is a
+# silent extra variable for cross-field ablations. When a hash-verified
+# pinned container is already in the work dir, extract it and compare -
+# zero downloads, seconds of zstd. Degrades to a plain warning if the
+# comparison extraction fails; never blocks the build.
+if [ "$UTILS_KIND" = "local" ]; then
+    pin_name=""; pin_kind=""; pin_route=""
+    for entry in "${UTILS_SOURCES[@]}"; do
+        IFS='|' read -r id kind name sha url <<< "$entry"
+        if [ -f "$WORK/$name" ] && [ "$(sha256_of "$WORK/$name")" = "$sha" ]; then
+            pin_name="$name"; pin_kind="$kind"; pin_route="$id"; break
+        fi
+    done
+    if [ -n "$pin_name" ]; then
+        cmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/nvuu-pin-cmp.XXXXXX")"
+        if "$ASSETS_BIN" fw "$WORK/$pin_name" "$cmp_dir" >/dev/null 2>&1 \
+           || { [ "$pin_kind" = "run" ] && "$ASSETS_BIN" fw-run "$WORK/$pin_name" "$cmp_dir" >/dev/null 2>&1; }; then
+            differ=0
+            for elf in gsp_ga10x.bin gsp_tu10x.bin; do
+                [ -f "$cmp_dir/$elf" ] || continue
+                if [ "$(sha256_of "$cmp_dir/$elf")" != "$(sha256_of "$OUT/$elf")" ]; then
+                    differ=1
+                    log "[warn] badge-staged $elf DIFFERS from the pinned extraction ($pin_name) - the same pinned tag ships a different fwimage per build host. Re-run with --utils-source ${pin_route:-arch} to reproduce the pinned asset set byte-for-byte."
+                fi
+            done
+            [ "$differ" -eq 0 ] && log "[ok] badge-staged GSP ELFs are byte-identical to the pinned extraction ($pin_name) - provenance converged"
+        else
+            log "[warn] badge mode active and the pinned container $pin_name is in the work dir, but the comparison extraction failed - provenance may differ from the pin"
+        fi
+        rm -rf "$cmp_dir"
+    fi
 fi
 
 needs_scrub=0
@@ -917,8 +982,14 @@ printf '  %-28s %10s bytes\n' "EFI/BOOT/BOOTX64.EFI" "$(size_of "$OUT/EFI/BOOT/B
 # Layout marker: identifies a volume that already hosts THIS project's files
 # so a later run may upgrade them in place. Any other existing file is never
 # overwritten (data-safety contract; see the install offer at the end).
-printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s"\n}\n' \
-    "${FAMILIES[*]}" "$(date -Is)" > "$OUT/nvuu-stick.json"
+# "fw_source" records the GSP payload provenance (issue #263): the resolved
+# route (badge = host installed driver, version pin waived | arch | run |
+# cachyos | cachyos4), the driver version where parseable, and the staged
+# GSP ELF SHA-256s - "badge or pinned?" stays answerable after the fact.
+printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s",\n  "fw_source": {"route": %s, "driver": %s, "elf_sha256": {"gsp_ga10x.bin": %s, "gsp_tu10x.bin": %s}}\n}\n' \
+    "${FAMILIES[*]}" "$(date -Is)" \
+    "$(json_str "${FW_ROUTE:-}")" "$(json_str "${FW_DRIVER:-}")" \
+    "$(json_str "${FW_SHA_GA10X:-}")" "$(json_str "${FW_SHA_TU10X:-}")" > "$OUT/nvuu-stick.json"
 
 log ""
 if mountpoint -q "$OUT" 2>/dev/null; then
