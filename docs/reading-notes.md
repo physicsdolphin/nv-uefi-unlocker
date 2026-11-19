@@ -896,6 +896,28 @@ exe sha f8f4291a）：
   NVDEC=0x0e（同 AD103，LITTER 编码悬案维持）；NVJPG=0xf、PERLINK=0x5
   （新值入档）。
 
+**GA102 3090（2204，解锁态，Ubuntu 22.04 + diag-unlock.py 最新版）Linux 侧补跑**
+（`diag-unlock-082-round4-unlocked-3090.log`）——py twin 新面首次实机验证：
+
+- **四族恒等式 4/4**：packing 恒等式第四 die（GA102 全 6 FBP 在位，六行
+  `cand=pack eff=pack` 全零掩码——首个全 FBP 活的 die）；LTS 12 LTC 全 4/4
+  （48 切片全活 = 6MB ✓ 128KB/片）；LTCNT=12（三源一致）；app08 门
+  Q1=0/Q5=1 → BLOCK → CLOSED（第四族）。**py 侧毒值修复实机生效**：
+  PLM_PL2_WE 两词 badf → `bit6=?` 印出、gate CLOSED 由 helper BLOCK 判出
+  （不碰毒值位）。
+- **解锁态不影响 boot-static 面**：LTS/L2_FBP/DEF/gate 与 stock die 同形
+  （零写者结论第四次自洽）；FEAT 开 + SS 活 + READOUT=0；WPR2 LO/HI 双非零
+  （GSP in-OS 持窗，解锁态已知形态）；canary partial（A=0x0164c0de 活、
+  B=0x04d963ef 死——B 被扰，SS 对仍在故解锁判定不变）。
+- **DEF 扫描新离散**：共 trio（d4=1/d8=1/e0=0x800）第四 die 复现；
+  **0x8211e8 第三种值**（GA102=0x40；GA106=0x1、AD107=0x0）；**0x41 词数
+  逐 die**（GA102×4、GA106×2、AD107×0）——未识别词有了逐 die 离散度，
+  4090 对照价值上升。
+- **SRC_A/B 在 GA102 全 badf**（AD107 可读）——逐 die 可读性差异再添一例。
+- STAT_GPC=0x0（GA102 7 槽全活，禁用掩码语义**四 die 自洽**）；NVDEC=0x2
+  （Ampere 已知值）；TPC_RECFG_G100 idx6=0x10301（与 GA106 同词同位）；
+  0x82380c=0x00888888 **四 die 恒值**（SS0 复位默认影子，非活 SS0 镜像）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读
