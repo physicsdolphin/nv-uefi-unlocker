@@ -141,6 +141,20 @@ usage() {
 
 log() { printf '%s\n' "$*"; }
 logerr() { printf '%s\n' "$*" >&2; }
+
+# tty-gated colors (NO_COLOR honored; plain text when piped)
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_C=$'\033[36m'; C_0=$'\033[0m'
+else
+    C_G=''; C_Y=''; C_R=''; C_C=''; C_0=''
+fi
+# Tagged stage lines color ONLY the [tag], not the content (2026-11-20,
+# user preference - matches the PowerShell twin).
+lok()  { printf '%s\n' "${C_G}[ok]${C_0} $*"; }
+lwarn(){ local line="$*" tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
+    printf '%s\n' "${C_Y}${tag}${C_0} ${line#* }" >&2; else printf '%s\n' "${C_Y}${line}${C_0}" >&2; fi; }
+lstep(){ local line="$1" tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
+    printf '%s\n' "${C_C}${tag}${C_0} ${line#* }"; else printf '%s\n' "${C_C}${line}${C_0}"; fi; }
 # JSON string-or-null for the fw_source manifest record (issue #263): every
 # value interpolated into nvuu-stick.json comes from a fixed route id, a
 # version token or a sha256 - no free-form user input - so plain quoting

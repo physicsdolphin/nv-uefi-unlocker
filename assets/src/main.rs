@@ -17,7 +17,17 @@ fn c_ok(m: &str) -> String {
 /// One verified-asset line: green [ok], cyan filename, plain size
 /// (mirrors the make-usbroot asset table).
 fn c_step(m: &str) -> String {
-    if color_enabled() { format!("\x1b[36m{m}\x1b[0m") } else { m.to_string() }
+    if !color_enabled() {
+        return m.to_string();
+    }
+    // Tag-only coloring (2026-11-20, user preference): "[generate] rest"
+    // colors the tag, the content stays default.
+    if let Some(close) = m.find(']') {
+        if m.starts_with('[') {
+            return format!("\x1b[36m{}\x1b[0m{}", &m[..=close], &m[close + 1..]);
+        }
+    }
+    format!("\x1b[36m{m}\x1b[0m")
 }
 fn verified_line(prefix: &str, name: &str, len: usize, suffix: &str) {
     let tail = if suffix.is_empty() { String::new() } else { format!(" {suffix}") };
