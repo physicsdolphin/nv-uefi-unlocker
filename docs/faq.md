@@ -470,7 +470,7 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 **`--reapply` 在这条路上救不了。** 门是被那次复位关掉的，发生在任何驱动（重新）绑定之前；拆建之后没有主机写路径，系统内读到的是一个已关的门，写不回去。能救的只有"不让 OS 侧 CM 做那次拆建"，而两个 OS 都已有实测可行的抑制：
 
 - **Linux**：内核命令行 `thunderbolt.host_reset=0`。已实测（#54 Run C）：模块照常加载、坞在雷电侧照常被发现，但不再出现 `pci_bus … is released`，层级不拆，金丝雀 `intact`、门 `0xffffffff`、`UNLOCKED`。
-- **Windows**：把 `Usb4DeviceRouter` 服务的 `Start` 设为 `4`（Disabled），`Usb4HostRouter` 保持 `3`（Manual）。**只禁设备侧、留主机侧**——两个都禁会让隧道根本不存在。两台不同主机栈（ASMedia TB4 + AD102 桌面 / Intel 原生 USB4 + GA104 笔记本）实测：卡正常枚举并绑定 `nvlddmkm`、金丝雀 `intact`、`ssdiag` 判 `UNLOCKED`，AD102 那台 8192³ FP16 达满血张量速率的 95% 并叠加 `nvidia-smi -lgc` 做了逐时钟扫描。代价如实说：坞的设备路由器服务没了，坞上 USB 口失效、两个 `USB4\ROOT_DEVICE_ROUTER` 节点 `Problem 32`（Code 32 = 服务被禁用，不是故障）；GPU、卡载音频、`nvidia-smi` 均正常。`DevPnPCapabilities=0x100` 已证伪；`Usb4HostRouter` 的 `Device Parameters` 子键只有 WDF/DMA/中断三类，无复位策略面。
+- **Windows**：把 `Usb4DeviceRouter` 服务的 `Start` 设为 `4`（Disabled），`Usb4HostRouter` 保持 `3`（Manual）。**只禁设备侧、留主机侧**——两个都禁会让隧道根本不存在。三台不同主机栈（ASMedia TB4 + AD102 桌面 / Intel 原生 USB4 + GA104 笔记本 / Dell WD22TB4 坞 + Sonnet eGPU 盒 + GA102 3090 Ti 笔记本外接，[D#260](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/260)）实测：卡正常枚举并绑定 `nvlddmkm`、金丝雀 `intact`、`ssdiag` 判 `UNLOCKED`，AD102 那台 8192³ FP16 达满血张量速率的 95% 并叠加 `nvidia-smi -lgc` 做了逐时钟扫描；D#260 那台 3090 Ti FP16 +76.9% / TF32 +81.5%、FP32 对照平（也是**坞→eGPU 盒链式拓扑**的首例——坞的 USB4 路由节点在解锁会话中显示 Unknown，与代价栏吻合）。代价如实说：坞的设备路由器服务没了，坞上 USB 口失效、两个 `USB4\ROOT_DEVICE_ROUTER` 节点 `Problem 32`（Code 32 = 服务被禁用，不是故障）；GPU、卡载音频、`nvidia-smi` 均正常。`DevPnPCapabilities=0x100` 已证伪；`Usb4HostRouter` 的 `Device Parameters` 子键只有 WDF/DMA/中断三类，无复位策略面。
 
 ```bat
 :: Windows：抑制（管理员）——改完重启生效，只影响本机
