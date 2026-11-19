@@ -918,6 +918,20 @@ exe sha f8f4291a）：
   （Ampere 已知值）；TPC_RECFG_G100 idx6=0x10301（与 GA106 同词同位）；
   0x82380c=0x00888888 **四 die 恒值**（SS0 复位默认影子，非活 SS0 镜像）。
 
+**容量级闭合（2026-11-20，事实锚定）**：AD102 满血（RTX 6000 Ada）96MB、
+4090 砍 72MB 是已知真实——LTS 读数 12 LTC × 3/4 = 36/48 活 → **48×2MB=96MB ✓、
+36×2MB=72MB ✓、12×2MB=24MB 切口 ✓** 三处算术精确咬合，AD102 slice=2MB 定谳。
+推论：①回文模板 = 工厂"每 LTC 均匀关一片"的**产能分割切**（非坏件——4090
+全部 DEFECTIVE 位为 0）；②4090 上 cand==eff 且 sw=0 → 24MB 切口烧在熔丝层
+（OPT_ROP_L2_DISABLE_FBP），三层角色分工获容量级佐证；③aajax 512KB 假说
+正式作废，slice 尺寸逐 die 设计。逐 die 几何：GA102 48×128KB=6MB（满血无切）、
+TU106 32×128KB=4MB（满血）——Turing/Ampere 128KB/片 vs Ada 2MB/片；
+**AD107 半开**（16 片 → 1.5MB 若 4060=24MB / 2MB 若 32MB，待查 spec）；
+**GA106 开**（18/24 活 → 128KB 则活 2.25MB、166.7KB 则活 3MB，取决于 3060
+官方 L2）；**GB206 预测已立**（若 4 LTC 槽活全 4/4 → 16×2MB=32MB=5060 Ti
+spec，X99 补 LTS 首采即验）；AD103 预测 4 FBP × 8 LTC × 4 × 2MB = 64MB
+（4080 spec 对照即验，JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读
