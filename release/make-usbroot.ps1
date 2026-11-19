@@ -334,7 +334,7 @@ function Show-Rtd3Advisory {
     Write-ErrY  "LIKELY WIPED after Windows boots - the #37/#171/#262/#266 signature"
     Write-ErrY  "(green loader.log, then canary cleared in the OS, gain = zero)."
     Write-ErrY  "Fix now, then reboot and re-run this maker:"
-    Write-Host  "    powershell -ExecutionPolicy Bypass -File tools\disable-rtd3.ps1"
+    Write-Host  "    powershell -ExecutionPolicy Bypass -File tools\disable-rtd3.ps1" -ForegroundColor Green
     Write-ErrY  "(or set EnableRuntimePowerManagement=0 on the NVIDIA display-adapter"
     Write-ErrY  " registry key - docs/faq.md#relock-winrtd3). Alternative: switch the"
     Write-ErrY  " BIOS/MUX to dGPU-direct. Note: GCOFF stops happening and idle power"
@@ -423,20 +423,20 @@ if ($useAll) {
                 throw "localhost: no supported NVIDIA adapter (RTX 20/30/40/16 series) found on
 this machine. Use an explicit -Family (ad102 | ga102 | tu10x | tu11x) or -Family all."
             }
-            Write-Host "[localhost] no local supported adapter - using the explicit list only"
+            Write-WarnY "[localhost] no local supported adapter - using the explicit list only"
         }
         foreach ($fam in $detected) {
             if ($wanted -notcontains $fam) { $wanted += $fam }
         }
         Write-Step ("[localhost] building for: {0}" -f ($wanted -join ", "))
-        Write-Host "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): ssdiag --inventory"
+        Write-Step "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): ssdiag --inventory"
         if ($wanted.Count -lt 3) {
             Write-WarnY ("[localhost] NOTE: this stick will only carry {0} assets. Cards from other" -f ($wanted -join "/") +
                         " generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot." +
                         " For a multi-generation machine use the comma list (30,40) or -Family all")
         }
     } elseif ($wanted.Count -gt 1) {
-        Write-Host ("[family] explicit list - building: {0}" -f ($wanted -join ", "))
+        Write-Step ("[family] explicit list - building: {0}" -f ($wanted -join ", "))
     }
     # The hybrid-output RTD3 advisory targets THIS machine's runtime state,
     # so it runs whatever the family tokens were (an `all` stick usually
@@ -587,18 +587,18 @@ function Get-GspRuntimeState {
 
 $gateStatus = "n/a"
 if (($Families -contains "tu10x" -or $Families -contains "tu11x") -and -not $SkipGspCheck) {
-    Write-Host "[gate] Turing family selected - checking Windows GSP firmware mode"
+    Write-Step "[gate] Turing family selected - checking Windows GSP firmware mode"
     $turing = @(Get-TuringAdapterState)
     if ($turing.Count -eq 0) {
         if ($gateStrict) {
             Write-Warning "No NVIDIA Turing display adapter PRESENT on THIS machine (orphaned display-class keys from removed cards are ignored)."
-            Write-Host "If the unlock target is a different machine, pass -SkipGspCheck to silence this check."
+            Write-Step "If the unlock target is a different machine, pass -SkipGspCheck to silence this check."
         } else {
             # -Family all may target a machine other than this one.
-            Write-Host "[gate] no Turing adapter on this host - GSP check not applicable (-Family all)"
+            Write-WarnY "[gate] no Turing adapter on this host - GSP check not applicable (-Family all)"
         }
         $gateStatus = "no-turing"
-        Write-Host "[gate] skipped (no Turing adapter on this host)"
+        Write-WarnY "[gate] skipped (no Turing adapter on this host)"
     } else {
         $notGsp = @($turing | Where-Object { $_.Gsp -ne 1 })
         foreach ($t in $turing) {
@@ -619,7 +619,7 @@ does NOT re-initialize the driver and will not apply the mode)."
             $runtime = Get-GspRuntimeState
             switch ($runtime) {
                 "active" {
-                    Write-Host "[ok] GSP firmware running (nvidia-smi reports a firmware version)"
+                    Write-Ok2 "[ok] GSP firmware running (nvidia-smi reports a firmware version)"
                 }
                 "absent" {
                     Write-Warning "nvidia-smi not found - registry check only"
@@ -639,14 +639,14 @@ If it persists, the driver may be too old for GSP."
                 }
             }
             if ($runtime -eq "active") {
-                Write-Host "[ok] all Turing adapters in GSP firmware mode"
+                Write-Ok2 "[ok] all Turing adapters in GSP firmware mode"
                 $gateStatus = "passed"
             }
         }
     }
 } elseif ($Families -contains "tu10x" -or $Families -contains "tu11x") {
     $gateStatus = "skipped"
-    Write-Host "[gate] Turing GSP check skipped (-SkipGspCheck)"
+    Write-WarnY "[gate] Turing GSP check skipped (-SkipGspCheck)"
 }
 
 if (-not $AssetsExe) { $AssetsExe = Join-Path $PSScriptRoot "assets-x86_64-windows.exe" }
@@ -703,7 +703,7 @@ function Get-PinnedFile {
     param([string]$Name, [string[]]$Urls, [string]$Sha256, [string]$Dest)
     $part = "$Dest.part"
     if ((Test-Path $Dest) -and (Get-FileHash -Algorithm SHA256 $Dest).Hash -eq $Sha256) {
-        Write-Host "[ok] $Name SHA-256 verified (cached)"
+        Write-Ok2 "[ok] $Name SHA-256 verified (cached)"
         return $true
     }
     Remove-Item $Dest -Force -ErrorAction SilentlyContinue
@@ -713,27 +713,27 @@ function Get-PinnedFile {
         foreach ($u in $Urls) {
             $had = [long](Get-Item $part -ErrorAction SilentlyContinue).Length
             if ($had -gt 0) {
-                Write-Host ("[fetch] {0} <- {1} (pass {2}, resuming {3} bytes)" -f $Name, $u, $pass, $had)
+                Write-Step ("[fetch] {0} <- {1} (pass {2}, resuming {3} bytes)" -f $Name, $u, $pass, $had)
             } else {
-                Write-Host ("[fetch] {0} <- {1} (pass {2})" -f $Name, $u, $pass)
+                Write-Step ("[fetch] {0} <- {1} (pass {2})" -f $Name, $u, $pass)
             }
             $r = Invoke-PinnedFetch $u $part
             if ($r.Ok) {
                 $hash = (Get-FileHash -Algorithm SHA256 $part).Hash
                 if ($hash -eq $Sha256) {
                     Move-Item -Force $part $Dest
-                    Write-Host "[ok] $Name SHA-256 verified"
+                    Write-Ok2 "[ok] $Name SHA-256 verified"
                     return $true
                 }
                 $servedWrongBytes = $true
                 $lastReason = "wrong bytes from $u (sha256 $hash)"
-                Write-Host "[warn] $Name`: $u served the wrong bytes (sha256 $hash, want $Sha256) - refusing this copy"
+                Write-ErrY "[warn] $Name`: $u served the wrong bytes (sha256 $hash, want $Sha256) - refusing this copy"
                 # Wrong bytes must never be resumed into a good file.
                 Remove-Item $part -Force
             } else {
                 # Keep .part: the next pass (or the next run) resumes it.
                 $kept = [long](Get-Item $part -ErrorAction SilentlyContinue).Length
-                Write-Host ("[warn] {0}: transport failed via {1} ({2}); {3} bytes kept for resume" -f $Name, $r.Via, $r.Reason, $kept)
+                Write-WarnY ("[warn] {0}: transport failed via {1} ({2}); {3} bytes kept for resume" -f $Name, $r.Via, $r.Reason, $kept)
                 $lastReason = "{0} from {1}" -f $r.Reason, $u
             }
         }
@@ -770,7 +770,7 @@ function Get-LocalDriverStoreGsp {
                 Select-Object -First 1)
             if ($line) { $ver = $line.Matches[0].Groups[1].Value.Trim() }
         }
-        Write-Host ("[local] candidate {0} (DriverVer {1})" -f $st.Name, $(if ($ver) { $ver } else { "unknown" }))
+        Write-Step ("[local] candidate {0} (DriverVer {1})" -f $st.Name, $(if ($ver) { $ver } else { "unknown" }))
         if (-not $best) { $best = @{ Dir = $st.FullName; Ver = $ver }; continue }
         # Newest wins; version-less candidates lose to any versioned one.
         if ($ver -and ($best.Ver -eq $null -or $ver -gt $best.Ver)) {
@@ -778,10 +778,10 @@ function Get-LocalDriverStoreGsp {
         }
     }
     if (-not (Test-Path (Join-Path $best.Dir 'gsp_ga10x.bin'))) {
-        Write-Host "[local] chosen store lacks gsp_ga10x.bin - refusing"
+        Write-WarnY "[local] chosen store lacks gsp_ga10x.bin - refusing"
         return $null
     }
-    Write-Host ("[local] using DriverStore {0} (DriverVer {1})" -f $best.Dir, $(if ($best.Ver) { $best.Ver } else { "unknown" }))
+    Write-Step ("[local] using DriverStore {0} (DriverVer {1})" -f $best.Dir, $(if ($best.Ver) { $best.Ver } else { "unknown" }))
     return @{ Dir = $best.Dir; Ver = $best.Ver }
 }
 
@@ -806,19 +806,19 @@ function Get-UtilsPackage {
         if ($s.Kind -eq "local") {
             $store = Get-LocalDriverStoreGsp
             if ($store) {
-                Write-Host ("fwimage source: BADGE host-driver {0} (pin waived) - recorded in nvuu-stick.json fw_source" -f $(if ($store.Ver) { $store.Ver } else { "unknown" }))
+                Write-Step ("fwimage source: BADGE host-driver {0} (pin waived) - recorded in nvuu-stick.json fw_source" -f $(if ($store.Ver) { $store.Ver } else { "unknown" }))
                 return @{ Path = $store.Dir; Kind = "local"; Route = "badge"; Ver = $store.Ver }
             }
-            Write-Host "[fallback] local DriverStore unusable - trying the next pinned source"
+            Write-WarnY "[fallback] local DriverStore unusable - trying the next pinned source"
             continue
         }
         $dest = Join-Path $Work $s.Name
         if (Get-PinnedFile -Name $s.Name -Urls $s.Urls -Sha256 $s.Sha256 -Dest $dest) {
             $ver = if ($s.Name -match '(\d{3}\.\d{2}\.\d{2})') { $Matches[1] } else { $null }
-            Write-Host ("fwimage source: PINNED nvidia-utils-{0} (route: {1}) - recorded in nvuu-stick.json fw_source" -f $(if ($ver) { $ver } else { $s.Name }), $s.Id)
+            Write-Step ("fwimage source: PINNED nvidia-utils-{0} (route: {1}) - recorded in nvuu-stick.json fw_source" -f $(if ($ver) { $ver } else { $s.Name }), $s.Id)
             return @{ Path = $dest; Kind = $s.Kind; Route = $s.Id; Ver = $ver }
         }
-        Write-Host ("[fallback] {0} unusable ({1}: {2}) - trying the next pinned source" -f $s.Name, $script:LastPinnedKind, $script:LastPinnedReason)
+        Write-WarnY ("[fallback] {0} unusable ({1}: {2}) - trying the next pinned source" -f $s.Name, $script:LastPinnedKind, $script:LastPinnedReason)
     }
     $listing = ($candidates | ForEach-Object {
         if ($_.Kind -eq "local") {
@@ -870,18 +870,18 @@ Get-ChildItem $Out -File -ErrorAction SilentlyContinue |
 # subcommand follows whichever source-group container landed: a .pkg.tar.zst
 # goes through fw, the first-party .run through fw-run (same inner hash
 # gate; requires an assets build that advertises fw-run in its usage).
-Write-Host "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
+Write-Step "[extract] GSP firmware images (gsp_ga10x + gsp_tu10x)"
 if ($UtilsInput.Kind -eq "local") {
     # Badge mode (docs/gsp-compatibility.md): the ELFs come from the local
     # DriverStore (the installed driver's own GSP; fwimage+fwsignature
     # paired by construction). Version pin WAIVED - measured 525-621 all
     # unlock. Format-gated downstream: the per-family gsp-sections calls
     # fail loudly on a pre-52x single-ELF store.
-    Write-Host "[extract] BADGE MODE: GSP from the local DriverStore$(
+    Write-Step "[extract] BADGE MODE: GSP from the local DriverStore$(
         if ($UtilsInput.Ver) { " (DriverVer $($UtilsInput.Ver))" }) - version pin waived (525-621 measured compatible)"
     Copy-Item (Join-Path $UtilsInput.Path 'gsp_ga10x.bin') (Join-Path $Out 'gsp_ga10x.bin') -Force
     Copy-Item (Join-Path $UtilsInput.Path 'gsp_tu10x.bin') (Join-Path $Out 'gsp_tu10x.bin') -Force
-    Write-Host "[ok] gsp_ga10x.bin + gsp_tu10x.bin staged from the local driver (format gate = per-family gsp-sections)"
+    Write-Ok2 "[ok] gsp_ga10x.bin + gsp_tu10x.bin staged from the local driver (format gate = per-family gsp-sections)"
 } elseif ($UtilsInput.Kind -eq "run") {
     # Capability probe: assets prints its usage on stderr with a nonzero
     # exit, which PS 5.1 + ErrorActionPreference=Stop turns into a
@@ -945,22 +945,22 @@ if ($UtilsInput.Kind -eq "local") {
                     $pinSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $pinElf).Hash.ToLowerInvariant()
                     if ($pinSha -ne $script:FwSha[$elf]) {
                         $differ = $true
-                        Write-Host ("[warn] badge-staged {0} DIFFERS from the pinned extraction ({1}) - the same pinned tag ships a different fwimage per build host. Re-run with -UtilsSource {2} to reproduce the pinned asset set byte-for-byte." -f $elf, $pin.Name, $pin.Id)
+                        Write-WarnY ("[warn] badge-staged {0} DIFFERS from the pinned extraction ({1}) - the same pinned tag ships a different fwimage per build host. Re-run with -UtilsSource {2} to reproduce the pinned asset set byte-for-byte." -f $elf, $pin.Name, $pin.Id)
                     }
                 }
             }
             if (-not $differ) {
-                Write-Host ("[ok] badge-staged GSP ELFs are byte-identical to the pinned extraction ({0}) - provenance converged" -f $pin.Name)
+                Write-Ok2 ("[ok] badge-staged GSP ELFs are byte-identical to the pinned extraction ({0}) - provenance converged" -f $pin.Name)
             }
         } else {
-            Write-Host ("[warn] badge mode active and the pinned container {0} is in the work dir, but the comparison extraction failed - provenance may differ from the pin" -f $pin.Name)
+            Write-WarnY ("[warn] badge mode active and the pinned container {0} is in the work dir, but the comparison extraction failed - provenance may differ from the pin" -f $pin.Name)
         }
         Remove-Item $cmpDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
 if (@($Families | Where-Object { $_ -ne "tu10x" -and $_ -ne "tu11x" }).Count -gt 0) {
-    Write-Host "[extract] SEC2 scrubber (shared: ad102/ga102)"
+    Write-Step "[extract] SEC2 scrubber (shared: ad102/ga102)"
     & $AssetsExe extract-scrub $SrcTar $Out
     if ($LASTEXITCODE) { throw "extract-scrub failed" }
 }
@@ -1011,7 +1011,7 @@ function Resolve-ProvenBlob {
         # cached blob skips this branch, which is why a re-run always works).
         $fetched = Get-PinnedFile -Name $script:ProvenBlobName -Urls $script:ProvenBlobUrls `
             -Sha256 $script:ProvenBlobSrcSha256 -Dest $blob
-        if (-not $fetched) { Write-Host "[gate] $($script:ProvenBlobName) not fetched ($($script:LastPinnedKind): $($script:LastPinnedReason))" }
+        if (-not $fetched) { Write-WarnY "[gate] $($script:ProvenBlobName) not fetched ($($script:LastPinnedKind): $($script:LastPinnedReason))" }
     }
     if (-not (Test-Path $blob)) {
         throw "could not fetch $($script:ProvenBlobName) from any pinned transport; drop the exact file (sha256 $($script:ProvenBlobSrcSha256)) into $($script:Work) and re-run"
@@ -1020,7 +1020,7 @@ function Resolve-ProvenBlob {
     if ($blobHash -ne $script:ProvenBlobSrcSha256) {
         throw "proven GspRmBoot blob mismatch: got $blobHash want $($script:ProvenBlobSrcSha256) ($blob) - refusing (the 128 KiB cmp50hx archive is the only accepted source; the gsp_tu10x.bin ELF is NOT it)"
     }
-    Write-Host "[ok] proven GspRmBoot archive SHA-256 verified ($((Get-Item $blob).Length) bytes)"
+    Write-Ok2 "[ok] proven GspRmBoot archive SHA-256 verified ($((Get-Item $blob).Length) bytes)"
     return $blob
 }
 
@@ -1028,7 +1028,7 @@ function Resolve-ProvenBlob {
 function Copy-ProvenSlice {
     param([string]$Family)
     $blob = Resolve-ProvenBlob
-    Write-Host "[slice] first 0x6000 bytes -> gsp_boot_$Family.bin"
+    Write-Step "[slice] first 0x6000 bytes -> gsp_boot_$Family.bin"
     & $script:AssetsExe slice-proven-rm-boot $blob $script:Out $Family
     if ($LASTEXITCODE) { throw "slice-proven-rm-boot failed" }
     # The proven slice is byte-pinned: exactly 0x6000 bytes, de676bae...
@@ -1043,7 +1043,7 @@ function Copy-ProvenSlice {
     if ($bootHash -ne $script:ProvenSliceSha256) {
         throw "gsp_boot_$Family.bin hash $bootHash != pinned $($script:ProvenSliceSha256)"
     }
-    Write-Host "[ok] gsp_boot_$Family.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
+    Write-Ok2 "[ok] gsp_boot_$Family.bin = 0x6000 bytes, de676bae... (proven slice, byte-identical to the fired TU106 run)"
 }
 
 # Turing gsp-gate.txt record (one per stick; the family line lists who built it).
@@ -1063,16 +1063,16 @@ function Write-GspGateRecord {
 foreach ($fam in $Families) {
     switch ($fam) {
         "ad102" {
-            Write-Host "[extract] AD102 booter / GSP boot"
+            Write-Step "[extract] AD102 booter / GSP boot"
             & $AssetsExe extract-ad102 $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract-ad102 failed" }
             if (-not $ga10xSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (ga10x ELF: $($ga10xSigFamilies -join ', '))"
+                Write-Step "[extract] fwimage / fwsignature sections (ga10x ELF: $($ga10xSigFamilies -join ', '))"
                 & $AssetsExe gsp-sections (Join-Path $Out "gsp_ga10x.bin") $Out $ga10xSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $ga10xSectionsDone = $true
             }
-            Write-Host "[generate] V67 AD102 four-write payload"
+            Write-Step "[generate] V67 AD102 four-write payload"
             & $AssetsExe generate-ad102 (Join-Path $Out "v67-ad102-four-plm.bin")
             if ($LASTEXITCODE) { throw "generate-ad102 failed" }
             # Naming bridge between two schemes: gsp-sections emits the ELF
@@ -1092,16 +1092,16 @@ foreach ($fam in $Families) {
             $unlockFiles += "v67-ad102-four-plm.bin"
         }
         "ga102" {
-            Write-Host "[extract] GA102 booter / GSP boot"
+            Write-Step "[extract] GA102 booter / GSP boot"
             & $AssetsExe extract $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract failed" }
             if (-not $ga10xSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (ga10x ELF: $($ga10xSigFamilies -join ', '))"
+                Write-Step "[extract] fwimage / fwsignature sections (ga10x ELF: $($ga10xSigFamilies -join ', '))"
                 & $AssetsExe gsp-sections (Join-Path $Out "gsp_ga10x.bin") $Out $ga10xSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $ga10xSectionsDone = $true
             }
-            Write-Host "[generate] V67 GA102 payload"
+            Write-Step "[generate] V67 GA102 payload"
             & $AssetsExe generate (Join-Path $Out "v67-ga102-four-plm.bin")
             if ($LASTEXITCODE) { throw "generate failed" }
             Copy-Item (Join-Path $Out "fwimage_ga10x.bin")     (Join-Path $Out "fwimage_ga102.bin") -Force
@@ -1114,16 +1114,16 @@ foreach ($fam in $Families) {
             $unlockFiles += "v67-ga102-four-plm.bin"
         }
         "tu10x" {
-            Write-Host "[extract] TU102 booter (BOOT_DIRECT) / generic BL"
+            Write-Step "[extract] TU102 booter (BOOT_DIRECT) / generic BL"
             & $AssetsExe extract-tu10x $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract-tu10x failed" }
             if (-not $tuSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF: $($tuSigFamilies -join ', '))"
+                Write-Step "[extract] fwimage / fwsignature sections (tu10x ELF: $($tuSigFamilies -join ', '))"
                 & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out $tuSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $tuSectionsDone = $true
             }
-            Write-Host "[generate] V67 TU10x payload"
+            Write-Step "[generate] V67 TU10x payload"
             & $AssetsExe generate-tu10x (Join-Path $Out "v67-tu10x-four-plm.bin")
             if ($LASTEXITCODE) { throw "generate-tu10x failed" }
             Copy-ProvenSlice "tu10x"
@@ -1136,20 +1136,20 @@ foreach ($fam in $Families) {
             Write-GspGateRecord @("tu10x")
         }
         "tu11x" {
-            Write-Host "[warn] TU11x route (GTX 16 series / CMP 30HX) is RE-derived and NOT"
-            Write-Host "[warn] field-proven (issue #151): die-keyed TU116 booter archive + the"
-            Write-Host "[warn] TU102 frame table with the park word re-anchored (0x7EA4 -> 0x7E9A)."
-            Write-Host "[warn] Read-back is the only verdict; a clean failure is an expected outcome."
-            Write-Host "[extract] TU116/TU117 booter (BOOT_DIRECT, die-keyed) / shared Turing BL"
+            Write-WarnY "[warn] TU11x route (GTX 16 series / CMP 30HX) is RE-derived and NOT"
+            Write-WarnY "[warn] field-proven (issue #151): die-keyed TU116 booter archive + the"
+            Write-WarnY "[warn] TU102 frame table with the park word re-anchored (0x7EA4 -> 0x7E9A)."
+            Write-WarnY "[warn] Read-back is the only verdict; a clean failure is an expected outcome."
+            Write-Step "[extract] TU116/TU117 booter (BOOT_DIRECT, die-keyed) / shared Turing BL"
             & $AssetsExe extract-tu11x $SrcTar $Out
             if ($LASTEXITCODE) { throw "extract-tu11x failed" }
             if (-not $tuSectionsDone) {
-                Write-Host "[extract] fwimage / fwsignature sections (tu10x ELF: $($tuSigFamilies -join ', '))"
+                Write-Step "[extract] fwimage / fwsignature sections (tu10x ELF: $($tuSigFamilies -join ', '))"
                 & $AssetsExe gsp-sections (Join-Path $Out "gsp_tu10x.bin") $Out $tuSigFamilies
                 if ($LASTEXITCODE) { throw "gsp-sections failed" }
                 $tuSectionsDone = $true
             }
-            Write-Host "[generate] V67 TU11x payload (RE-derived, unproven)"
+            Write-Step "[generate] V67 TU11x payload (RE-derived, unproven)"
             & $AssetsExe generate-tu11x (Join-Path $Out "v67-tu11x-four-plm.bin")
             if ($LASTEXITCODE) { throw "generate-tu11x failed" }
             Copy-ProvenSlice "tu11x"
@@ -1199,9 +1199,9 @@ Copy-Item $BootEfi (Join-Path $Out "EFI/BOOT/BOOTX64.EFI") -Force
 
 foreach ($f in $expected) {
     if (-not (Test-Path (Join-Path $Out $f))) { throw "missing: $f" }
-    Write-Host ("  {0,-28} {1,10} bytes" -f $f, (Get-Item (Join-Path $Out $f)).Length)
+    Write-Host ("  {0,-28} " -f $f) -NoNewline; Write-Host ("{1,10} bytes" -f (Get-Item (Join-Path $Out $f)).Length) -ForegroundColor Green
 }
-Write-Host ("  {0,-28} {1,10} bytes" -f "EFI/BOOT/BOOTX64.EFI", (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length)
+Write-Host ("  {0,-28} " -f "EFI/BOOT/BOOTX64.EFI") -NoNewline; Write-Host ("{1,10} bytes" -f (Get-Item (Join-Path $Out "EFI/BOOT/BOOTX64.EFI")).Length) -ForegroundColor Green
 
 # ---------- confirm-gate marker offer (issue #259) ----------
 # The loader waits 30s for Space/Enter unless the armed marker sits on the
@@ -1228,7 +1228,7 @@ function Invoke-MarkerOffer {
         # Explicit parameter wins and skips the ask.
         $n = 0
         if ($AutoRun -ieq "off") {
-            Write-Host "[marker] auto-run not armed (-AutoRun off - the 30s keypress confirm stays)"
+            Write-Step "[marker] auto-run not armed (-AutoRun off - the 30s keypress confirm stays)"
         } elseif ([int]::TryParse($AutoRun, [ref]$n) -and $n -ge 0 -and $n -le 30) {
             $seconds = $n
         } else {
@@ -1239,13 +1239,13 @@ function Invoke-MarkerOffer {
         # read (non-interactive stdin) or any answer other than 1 falls
         # through to the DEFAULT (unarmed), never arms on a swallowed error.
         Write-Host ""
-        Write-Host "[marker] confirm gate: by default the loader waits 30s for Space/Enter before the"
-        Write-Host "[marker]   transaction (timeout or any other key = ABORT, zero writes - the safety"
-        Write-Host "[marker]   net for a mis-picked boot entry or a borrowed machine). The armed marker"
-        Write-Host "[marker]   moves the run decision to build time: countdown, then auto-run; any key"
-        Write-Host "[marker]   during the countdown still aborts."
-        Write-Host "[marker]   Enter = keep the 30s keypress confirm (default, recommended)"
-        Write-Host "[marker]   1     = arm auto-run (i_know_what_i_am_doing.txt on the stick root)"
+        Write-Step "[marker] confirm gate: by default the loader waits 30s for Space/Enter before the"
+        Write-Step "[marker]   transaction (timeout or any other key = ABORT, zero writes - the safety"
+        Write-Step "[marker]   net for a mis-picked boot entry or a borrowed machine). The armed marker"
+        Write-Step "[marker]   moves the run decision to build time: countdown, then auto-run; any key"
+        Write-Step "[marker]   during the countdown still aborts."
+        Write-Step "[marker]   Enter = keep the 30s keypress confirm (default, recommended)"
+        Write-Step "[marker]   1     = arm auto-run (i_know_what_i_am_doing.txt on the stick root)"
         $ans = $null
         try { $ans = Read-Host "[marker] choice" } catch { $ans = $null }
         if ($ans -and $ans.Trim() -eq "1") {
@@ -1258,16 +1258,16 @@ function Invoke-MarkerOffer {
             } elseif ([int]::TryParse($secAns, [ref]$n) -and $n -ge 0 -and $n -le 30) {
                 $seconds = $n
             } else {
-                Write-Host "[marker] '$secAns' is not a countdown 0-30 - staying with the 30s keypress confirm"
+                Write-WarnY "[marker] '$secAns' is not a countdown 0-30 - staying with the 30s keypress confirm"
             }
         }
     }
     if ($null -ne $seconds) {
         Set-Content -Path (Join-Path $Out "i_know_what_i_am_doing.txt") -Value $seconds -Encoding Ascii
         $markers += "i_know_what_i_am_doing.txt"
-        Write-Host ("[marker] ARMED: i_know_what_i_am_doing.txt = {0}s countdown auto-run, any key aborts" -f $seconds)
+        Write-Ok2 ("[marker] ARMED: i_know_what_i_am_doing.txt = {0}s countdown auto-run, any key aborts" -f $seconds)
         if ($seconds -eq 0) {
-            Write-Host "[marker]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
+            Write-Step "[marker]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
         }
     }
     $wantQuiet = $false
@@ -1281,9 +1281,9 @@ function Invoke-MarkerOffer {
     if ($wantQuiet) {
         Set-Content -Path (Join-Path $Out "tx-quiet.txt") -Value "" -Encoding Ascii -NoNewline
         $markers += "tx-quiet.txt"
-        Write-Host "[marker] quiet console enabled (tx-quiet.txt - loader.log stays full)"
+        Write-Ok2 "[marker] quiet console enabled (tx-quiet.txt - loader.log stays full)"
     } elseif ($AutoRun -ne "") {
-        Write-Host "[marker] quiet console not requested (-Quiet writes tx-quiet.txt)"
+        Write-Step "[marker] quiet console not requested (-Quiet writes tx-quiet.txt)"
     }
     # Chain-target pin (issue #204): a handoff-shape declaration, not a GPU
     # knob - the loader falls back to the default chain order when the
@@ -1308,7 +1308,7 @@ function Invoke-MarkerOffer {
         # Explicit parameter wins and skips the ask.
         $ct = $ChainTarget.ToLowerInvariant()
         if ($ct -eq "off") {
-            Write-Host "[marker] chain target not pinned (-ChainTarget off - default chain order)"
+            Write-Step "[marker] chain target not pinned (-ChainTarget off - default chain order)"
         } elseif ($chainPresets.ContainsKey($ct)) {
             $chainPath = $chainPresets[$ct]
         } elseif ($ChainTarget.StartsWith('\') -and $ChainTarget.Length -le 240 -and $ChainTarget -notmatch '/') {
@@ -1317,16 +1317,16 @@ function Invoke-MarkerOffer {
             throw "-ChainTarget '$ChainTarget' is neither 'off', a preset (windows | ubuntu | systemd), nor a volume-relative EFI path (leading '\', no '/', <= 240 chars - the loader ignores any other shape and falls back to the default order)."
         }
     } elseif ($menuInteractive) {
-        Write-Host "[marker]   chain-target.txt pins the handoff search (issue #204: a stale cross-disk"
-        Write-Host "[marker]   BootOrder entry can win the default resolve and chain into another disk's"
-        Write-Host "[marker]   loader). Missing path = graceful fallback to the default order."
-        Write-Host "[marker]   Enter = no pin (default chain order: Windows, then supported Linux loaders)"
-        Write-Host "[marker]   0 = Windows Boot Manager    \EFI\Microsoft\Boot\bootmgfw.efi"
-        Write-Host "[marker]   1 = GRUB, asks distro      \EFI\<distro>\grubx64.efi"
-        Write-Host "[marker]   2 = systemd-boot           \EFI\systemd\systemd-bootx64.efi"
-        Write-Host "[marker]   3 = Ubuntu (shim)          \EFI\ubuntu\shimx64.efi"
-        Write-Host "[marker]   4 = shim, asks distro      \EFI\<distro>\shimx64.efi"
-        Write-Host "[marker]   5 = custom EFI path        (typed; e.g. \EFI\fedora\grubx64.efi)"
+        Write-Step "[marker]   chain-target.txt pins the handoff search (issue #204: a stale cross-disk"
+        Write-Step "[marker]   BootOrder entry can win the default resolve and chain into another disk's"
+        Write-Step "[marker]   loader). Missing path = graceful fallback to the default order."
+        Write-Step "[marker]   Enter = no pin (default chain order: Windows, then supported Linux loaders)"
+        Write-Step "[marker]   0 = Windows Boot Manager    \EFI\Microsoft\Boot\bootmgfw.efi"
+        Write-Step "[marker]   1 = GRUB, asks distro      \EFI\<distro>\grubx64.efi"
+        Write-Step "[marker]   2 = systemd-boot           \EFI\systemd\systemd-bootx64.efi"
+        Write-Step "[marker]   3 = Ubuntu (shim)          \EFI\ubuntu\shimx64.efi"
+        Write-Step "[marker]   4 = shim, asks distro      \EFI\<distro>\shimx64.efi"
+        Write-Step "[marker]   5 = custom EFI path        (typed; e.g. \EFI\fedora\grubx64.efi)"
         $cAns = $null
         try { $cAns = Read-Host "[marker] chain pin" } catch { $cAns = $null }
         $cAns = $(if ($cAns) { $cAns.Trim() } else { "" })
@@ -1344,7 +1344,7 @@ function Invoke-MarkerOffer {
             if ($dAns -match '^[A-Za-z0-9_-]{1,100}$') {
                 $chainPath = "\EFI\$dAns\$kind"
             } else {
-                Write-Host "[marker] '$dAns' is not a distro directory name - no pin written"
+                Write-WarnY "[marker] '$dAns' is not a distro directory name - no pin written"
             }
         } elseif ($cAns -eq "5") {
             $pAns = $null
@@ -1359,7 +1359,7 @@ function Invoke-MarkerOffer {
                 if ($pAns.Length -le 240 -and $pAns -notmatch '/') {
                     $chainPath = $pAns
                 } else {
-                    Write-Host "[marker] '$pAns' is not a volume-relative EFI path (<= 240 chars) - no pin written"
+                    Write-WarnY "[marker] '$pAns' is not a volume-relative EFI path (<= 240 chars) - no pin written"
                 }
             }
         }
@@ -1367,7 +1367,7 @@ function Invoke-MarkerOffer {
     if ($chainPath) {
         Set-Content -Path (Join-Path $Out "chain-target.txt") -Value $chainPath -Encoding Ascii
         $markers += "chain-target.txt"
-        Write-Host ("[marker] chain pinned: chain-target.txt = {0}" -f $chainPath)
+        Write-Ok2 ("[marker] chain pinned: chain-target.txt = {0}" -f $chainPath)
     }
     # Ultrafast profile: the one speed option whose default must stay No -
     # it skips the diagnostic stages that make a FIRST run debuggable
@@ -1379,9 +1379,9 @@ function Invoke-MarkerOffer {
     if ($Ultrafast) {
         $wantFast = $true
     } elseif ($menuInteractive) {
-        Write-Host "[marker]   ultrafast (tx-ultrafast.txt): skips the diagnostic probes and folds"
-        Write-Host "[marker]   quiet - faster boots, bigger log blind spots on a hang. Only for"
-        Write-Host "[marker]   machines already verified over multiple rounds (docs/faq.md)."
+        Write-Step "[marker]   ultrafast (tx-ultrafast.txt): skips the diagnostic probes and folds"
+        Write-Step "[marker]   quiet - faster boots, bigger log blind spots on a hang. Only for"
+        Write-Step "[marker]   machines already verified over multiple rounds (docs/faq.md)."
         $uAns = $null
         try { $uAns = Read-Host "[marker] ultrafast speed profile? y/N" } catch { $uAns = $null }
         $wantFast = ($uAns -and $uAns.Trim() -match '^(y|yes)$')
@@ -1389,9 +1389,9 @@ function Invoke-MarkerOffer {
     if ($wantFast) {
         Set-Content -Path (Join-Path $Out "tx-ultrafast.txt") -Value "" -Encoding Ascii -NoNewline
         $markers += "tx-ultrafast.txt"
-        Write-Host "[marker] ultrafast enabled (tx-ultrafast.txt - verdict read-backs still run)"
+        Write-Ok2 "[marker] ultrafast enabled (tx-ultrafast.txt - verdict read-backs still run)"
         if ($wantQuiet) {
-            Write-Host "[marker]   ultrafast folds quiet - tx-quiet.txt alongside is redundant"
+            Write-Step "[marker]   ultrafast folds quiet - tx-quiet.txt alongside is redundant"
         }
     }
     return $markers
@@ -1427,10 +1427,10 @@ $script:MarkerFiles = @(Invoke-MarkerOffer)
 $outFull = (Resolve-Path -LiteralPath $Out).Path
 $outRoot = [System.IO.Path]::GetPathRoot($outFull)
 if ($outRoot -and ($outRoot.TrimEnd('\') -ieq $outFull.TrimEnd('\'))) {
-    Write-Host "`nDONE ($($Families -join ', ')). $outFull already IS the stick root - nothing to copy, boot it directly."
+    Write-Ok2 "`nDONE ($($Families -join ', ')). $outFull already IS the stick root - nothing to copy, boot it directly."
 } else {
-    Write-Host "`nDONE ($($Families -join ', ')). The stick root must receive the layout; for example (X: = the FAT32 stick):"
-    Write-Host ("  xcopy `"{0}\*`" X:\ /E /H /Y" -f $outFull)
+    Write-Ok2 "`nDONE ($($Families -join ', ')). The stick root must receive the layout; for example (X: = the FAT32 stick):"
+    Write-Host ("  xcopy `"{0}\*`" X:\ /E /H /Y" -f $outFull) -ForegroundColor Green
     Write-Host "Or re-run with -Out X:\ to write the stick root directly."
 }
 Write-Host "The layout already contains EFI/BOOT/BOOTX64.EFI - keep that path, do not flatten it."
@@ -1530,9 +1530,9 @@ function Copy-UnlockRoot([string]$From, [string]$To) {
         }
     }
     if ($conflicts.Count -gt 0) {
-        Write-Host "[install] REFUSED: the target already holds different file(s) and is not a nv-uefi-unlocker layout:"
+        Write-ErrY "[install] REFUSED: the target already holds different file(s) and is not a nv-uefi-unlocker layout:"
         foreach ($c in $conflicts) { Write-Host "[install]   existing: $(Join-Path $To $c)" }
-        Write-Host "[install] nothing was written (the tool never overwrites existing files)."
+        Write-WarnY "[install] nothing was written (the tool never overwrites existing files)."
         Write-Host "[install] If it is a stale copy of this tool, delete those files yourself and re-run."
         return $false
     }
@@ -1552,7 +1552,7 @@ function Copy-UnlockRoot([string]$From, [string]$To) {
         if ($srcHash -ne $dstHash) { $bad += $item.Rel }
     }
     if ($bad.Count -gt 0) {
-        Write-Host "[install] READ-BACK MISMATCH on $($To) - do not boot from this copy:"
+        Write-ErrY "[install] READ-BACK MISMATCH on $($To) - do not boot from this copy:"
         foreach ($b in $bad) { Write-Host "[install]   $b" }
         return $false
     }
@@ -1574,13 +1574,13 @@ function Copy-UnlockRoot([string]$From, [string]$To) {
         }
     }
     $total = @(Get-ChildItem -LiteralPath $fromFull -Recurse -File).Count
-    Write-Host ("[install] done: {0} files written ({1} refreshed), {2} already identical -> {3} (SHA-256 read-back verified)" -f
+    Write-Ok2 ("[install] done: {0} files written ({1} refreshed), {2} already identical -> {3} (SHA-256 read-back verified)" -f
         $total, $plan.Count, ($total - $plan.Count), $To)
     return $true
 }
 
 function Write-InstallGuidance([long]$NeededBytes) {
-    Write-Host "[install] no install target was picked (none found, or both offers declined)."
+    Write-WarnY "[install] no install target was picked (none found, or both offers declined)."
     Write-Host "[install]   Internal (persistent) install: add a data FAT32 partition on an"
     Write-Host "[install]     INTERNAL (non-USB) disk - NOT the EFI system partition, NOT the"
     Write-Host "[install]     Windows boot volume (Disk Management: shrink a volume -> new simple"
@@ -1593,7 +1593,7 @@ function Write-InstallGuidance([long]$NeededBytes) {
 function Invoke-InstallOffer {
     $payload = Get-InstallPayload
     Write-Host ""
-    Write-Host ("[install] generated layout: {0} files, {1}" -f $payload.Count, (Format-Size $payload.Bytes))
+    Write-Step ("[install] generated layout: {0} files, {1}" -f $payload.Count, (Format-Size $payload.Bytes))
     $excludeRoot = [System.IO.Path]::GetPathRoot((Resolve-Path -LiteralPath $Out).Path)
 
     # Explicit non-interactive target (-InstallTo D:\): same eligibility
@@ -1605,7 +1605,7 @@ function Invoke-InstallOffer {
         if ($match.Count -eq 0) {
             throw "-InstallTo $wantRoot is not an eligible FAT32 target (FAT32 volume, at least $(Format-Size $payload.Bytes) free, not ESP/system/boot, not the -Out volume)."
         }
-        Write-Host ("[install] target: {0} (label '{1}', {2} free)" -f $match[0].Root, $match[0].Label, (Format-Size $match[0].Free))
+        Write-Step ("[install] target: {0} (label '{1}', {2} free)" -f $match[0].Root, $match[0].Label, (Format-Size $match[0].Free))
         if (Copy-UnlockRoot $Out $match[0].Root) { Write-InstallBootHints }
         return
     }
@@ -1621,16 +1621,16 @@ function Invoke-InstallOffer {
         Write-InstallGuidance $payload.Bytes
         return
     }
-    Write-Host "[install] FAT32 install-target probe (nothing already on a target is ever overwritten):"
+    Write-Step "[install] FAT32 install-target probe (nothing already on a target is ever overwritten):"
     $chosen = $null
     foreach ($phase in @(
         @{ Kind = "internal, non-boot data partitions (persistent install)"; List = $internal },
         @{ Kind = "USB / removable media"; List = $usb })) {
         if ($phase.List.Count -eq 0) { continue }
-        Write-Host ("[install]   {0}:" -f $phase.Kind)
+        Write-Step ("[install]   {0}:" -f $phase.Kind)
         $i = 1
         foreach ($t in $phase.List) {
-            Write-Host ("[install]     [{0}] {1,-4} label=""{2}""  {3} free of {4}" -f
+            Write-Step ("[install]     [{0}] {1,-4} label=""{2}""  {3} free of {4}" -f
                 $i, $t.Root, $t.Label, (Format-Size $t.Free), (Format-Size $t.Size))
             $i++
         }
@@ -1646,17 +1646,17 @@ function Invoke-InstallOffer {
         Write-InstallGuidance $payload.Bytes
         return
     }
-    Write-Host ("[install] target: {0} (label ""{1}"", {2} free)" -f $chosen.Root, $chosen.Label, (Format-Size $chosen.Free))
+    Write-Step ("[install] target: {0} (label ""{1}"", {2} free)" -f $chosen.Root, $chosen.Label, (Format-Size $chosen.Free))
     if (Copy-UnlockRoot $Out $chosen.Root) { Write-InstallBootHints }
 }
 
 function Write-InstallBootHints {
-    Write-Host "[install] boot path: firmware ONE-TIME boot menu -> the UEFI entry for that"
-    Write-Host "[install] volume -> \EFI\BOOT\BOOTX64.EFI. No NVRAM/BootOrder entry was"
-    Write-Host "[install] created; the unlock itself stays volatile by design and is replayed"
-    Write-Host "[install] at every boot."
-    Write-Host "[install] caveat: not every firmware lists internal FAT partitions in its boot"
-    Write-Host "[install] menu - the USB stick remains the universal path."
+    Write-Step "[install] boot path: firmware ONE-TIME boot menu -> the UEFI entry for that"
+    Write-Step "[install] volume -> \EFI\BOOT\BOOTX64.EFI. No NVRAM/BootOrder entry was"
+    Write-Step "[install] created; the unlock itself stays volatile by design and is replayed"
+    Write-Step "[install] at every boot."
+    Write-Step "[install] caveat: not every firmware lists internal FAT partitions in its boot"
+    Write-Step "[install] menu - the USB stick remains the universal path."
 }
 
 Invoke-InstallOffer
