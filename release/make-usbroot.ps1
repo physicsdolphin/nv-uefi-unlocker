@@ -924,6 +924,7 @@ function Write-GspGateRecord {
         "host: $env:COMPUTERNAME"
         "family: $($TuringFamilies -join ',')"
         "gate: $gateStatus"
+        ("fw-source: route={0} driver={1} provenance={2}" -f $UtilsInput.Route, $(if ($UtilsInput.Ver) { $UtilsInput.Ver } else { "unknown" }), $(if ($UtilsInput.Kind -eq "local") { "badge-pin-waived" } else { "pinned" }))
         "adapters:"
         Get-TuringAdapterState | ForEach-Object { "  $($_.Slot) $($_.Desc) EnableGpuFirmware=$($_.Gsp)" }
     ) | Set-Content -Path (Join-Path $Out "gsp-gate.txt") -Encoding Ascii

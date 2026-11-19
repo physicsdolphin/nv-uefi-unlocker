@@ -852,6 +852,7 @@ write_gate_record() { # $1 = family line for gsp-gate.txt
         echo "host: $(hostname)"
         echo "family: $1"
         echo "gate: $GSP_GATE_STATUS"
+        echo "fw-source: route=${FW_ROUTE:-unknown} driver=${FW_DRIVER:-unknown} provenance=$([ "$UTILS_KIND" = "local" ] && echo badge-pin-waived || echo pinned)"
         echo "adapters:"
         if [ -n "$ADAPTER_LINES" ]; then printf '%s\n' "$ADAPTER_LINES"; else echo "  (none detected on this host)"; fi
     } > "$OUT/gsp-gate.txt"
