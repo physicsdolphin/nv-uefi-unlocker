@@ -924,22 +924,29 @@ exe sha f8f4291a）：
 推论：①回文模板 = 工厂"每 LTC 均匀关一片"的**产能分割切**（非坏件——4090
 全部 DEFECTIVE 位为 0）；②4090 上 cand==eff 且 sw=0 → 24MB 切口烧在熔丝层
 （OPT_ROP_L2_DISABLE_FBP），三层角色分工获容量级佐证；③aajax 512KB 假说
-正式作废，slice 尺寸逐 die 设计。逐 die 几何：GA102 48×128KB=6MB（满血无切）、
-TU106 32×128KB=4MB（满血）——Turing/Ampere 128KB/片 vs Ada 2MB/片；
-**AD107 半开**（16 片 → 1.5MB 若 4060=24MB / 2MB 若 32MB，待查 spec）；
-**GA106 开**（18/24 活 → 128KB 则活 2.25MB、166.7KB 则活 3MB，取决于 3060
-官方 L2）；**GA106 闭合（2026-11-20 驱动主源实测）**：3060 的
-`CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE`（GPU-Z CUDA 页）报 **2304KB=2.25MB**
-= 18 活片 × 128KB 精确——**GA106 slice=128KB 与 GA102 同代同尺寸定谳**；
-TPU/Wiki 的 3MB（3072KB）是 **die 容量**（24×128KB），非 SKU 容量——
-GA106 的 L2 切割此前无人知晓，公开 spec 对 3060 失真 25%（768KB=恰好
-6 个被切切片）。**四 die 容量核算全闭合**：AD102 2MB×36/48=72MB（spec
-事实锚定）、GA102 128KB×48=6MB、TU106 128KB×32=4MB、GA106 128KB×18/24
-=2.25MB（驱动实测）。同代 slice 均匀性成立（Ampere 128KB）。
-**GB206 预测已立**（若 4 LTC 槽活全 4/4 → 16×2MB=32MB=5060 Ti spec，
-X99 补 LTS 首采即验）；AD103 预测 4 FBP × 8 LTC × 4 × 2MB = 64MB
-（4080 spec 对照即验，JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面）；
-AD107 半开（16 片 → 1.5MB 或 2MB，4060L 同探针即闭）。
+正式作废，slice 尺寸逐 die 设计。**逐 die 容量核算全闭合（2026-11-20，CUDA L2 属性=驱动主源实测收口，
+GPU-Z CUDA 页读取）**：
+
+- **TU106 2070**：属性报 **4096KB** = 32 片 × 128KB 精确（驱动证实，此前
+  仅 spec 推算）
+- **GA106 3060**：属性报 **2304KB** = 18/24 × 128KB 精确——**GA106
+  slice=128KB 与 GA102 同代同尺寸定谳**；TPU/Wiki 的 3MB（3072KB）是
+  **die 容量**（24×128KB），非 SKU 容量——GA106 的 L2 切割此前无人知晓，
+  公开 spec 对 3060 失真 25%（768KB=恰好 6 个被切切片）
+- **AD107 4060L**：属性报 **32768KB** = 16 片 × **2MB** 精确——**Ada 代内
+  slice 均匀（AD102/AD107 同 2MB）**；4060L 切 SM（36→24）但 L2 16/16 全活
+  （无 L2 切口）——分割策略逐 die/SKU 不同（对照：AD102 4090 SM+L2 双切、
+  GA106 3060 双切、AD107 只切 SM）
+- **AD102 4090**：2MB × 36/48 = 72MB（96→72MB 已知 spec 事实锚定）
+- **GA102 3090**：48 × 128KB = 6MB（无切，spec；Linux torch 探针交叉验证待跑）
+
+同代 slice 均匀性成立：**Ampere/Turing 128KB/片 vs Ada 2MB/片（代际跳变
+16×）**；每一 die 的 LTS 读数 × slice 尺寸 = 驱动已知或 spec 已知容量，
+无一例外。
+**待采预测**：GB206 5060 Ti（若 4 LTC 槽活全 4/4 → 16×2MB=32MB=5060 Ti
+spec，X99 补 LTS 首采即验）；AD103 4080（4 FBP × 8 LTC × 4 × 2MB = 64MB；
+JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面，补跑即验）；4090 同探针应报
+73728KB。
 
 ### 7. 判读指南（TU106/GA106 实验用）
 
