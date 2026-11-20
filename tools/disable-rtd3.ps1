@@ -18,12 +18,15 @@
 # restores the driver default (runtime power management allowed).
 #
 # Boundaries (docs/faq.md#relock-winrtd3): this blocks the DRIVER-initiated
-# idle park only - sleep / S4 / a whole-machine power loss still clear the
-# unlock (the AON island does not survive power loss), and with the key set the
-# card never parks, so idle power rises. The key must be re-checked after a
-# driver upgrade or reinstall (the driver key can be re-created). The setting
-# takes effect at the next driver init (reboot or device re-enable); replay
-# the USB unlock after that.
+# runtime-D3 transitions (the idle park and the bind-time park/rewind that can
+# reset the device) only - sleep / S4 / a whole-machine power loss still clear
+# the unlock (the AON island does not survive power loss), and with the key set
+# the card never parks, so idle power rises. First verified against a
+# driver-initiated reset at bind with the rail held on: issue #126 (82K2 /
+# 2520 MUXless, run 7, 2026-11-20), canary intact + in-OS UNLOCKED. The key
+# must be re-checked after a driver upgrade or reinstall (the driver key can be
+# re-created). The setting takes effect at the next driver init (reboot or
+# device re-enable); replay the USB unlock after that.
 #
 # SPDX-License-Identifier: GPL-2.0-only
 
