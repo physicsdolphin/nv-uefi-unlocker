@@ -125,6 +125,17 @@ class CollectCompatTests(unittest.TestCase):
         self.assertEqual(profile["loader_verdicts"],
                          ["FINAL: read-only run complete; nothing was written to the GPU."])
 
+    def test_same_boot_loader_sample_and_ssdiag_equals_field(self):
+        loader = ["SAMPLE FEAT_OVR_ECC 0x82380c = 0x00000001 [ok]"]
+        ssdiag = ["WPR2_LO                = 0x00002000"]
+        for first, second in ((loader, ssdiag), (ssdiag, loader)):
+            with self.subTest(first=first):
+                gpu, = self.profile(first, additional_logs=(second,))["gpus"]
+                self.assertEqual(gpu["fields"], {
+                    "FEAT_OVR_ECC 0x82380c": {"value": 1, "bucket": "ok"},
+                    "WPR2_LO": {"value": 0x2000, "bucket": ""},
+                })
+
     def test_empty_input_stays_unknown(self):
         profile = self.profile(["SAMPLE FEAT_OVR_PLM = not-a-value"])
         gpu, = profile["gpus"]
