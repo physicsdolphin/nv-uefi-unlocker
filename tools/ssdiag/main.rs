@@ -660,23 +660,27 @@ fn vbs_status() -> Option<u32> {
 /// condition). Read via GetSystemFirmwareTable - unelevated, read-only, and
 /// the query itself cannot trigger the bugcheck.
 fn sdev_present() -> Option<bool> {
-    let need = unsafe {
-        win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, core::ptr::null_mut(), 0)
-    };
+    let need =
+        unsafe { win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, core::ptr::null_mut(), 0) };
     if need == 0 {
-        return Some(false); // not enumerated on this system
+        return sdev_table_present(need, &[]);
     }
     let mut buf = vec![0u8; need as usize];
     let got = unsafe {
         win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, buf.as_mut_ptr(), need)
     };
-    if got < 4 {
-        return None; // query failed or table shorter than a header - unknown
-    }
-    if &buf[0..4] == b"SDEV" {
+    // 两次查询的大小不一致时，保留原有的切片越界检查。
+    let signature = if got < 4 { &[] } else { &buf[..4] };
+    sdev_table_present(need, signature)
+}
+
+fn sdev_table_present(need: u32, table: &[u8]) -> Option<bool> {
+    if need == 0 {
+        Some(false) // 系统未枚举到该表
+    } else if table.starts_with(b"SDEV") {
         Some(true)
     } else {
-        None // fetched something unexpected - treat as unknown, never as a verdict
+        None // 读取失败、表头过短或签名不符
     }
 }
 
@@ -692,6 +696,14 @@ fn sdev_present() -> Option<bool> {
 /// documented condition cannot be met, so unknown VBS there must not refuse
 /// (that would misfire on ordinary machines).
 fn secure_pci_armed() -> bool {
+    secure_pci_armed_with(vbs_status, sdev_present, securelaunch_provisioned)
+}
+
+fn secure_pci_armed_with(
+    vbs_status: impl FnOnce() -> Option<u32>,
+    sdev_present: impl FnOnce() -> Option<bool>,
+    securelaunch_provisioned: impl FnOnce() -> Option<bool>,
+) -> bool {
     match vbs_status() {
         Some(2) => sdev_present() == Some(true) || securelaunch_provisioned() == Some(true),
         None => sdev_present() == Some(true), // fail-closed: unverifiable + trigger half present
@@ -5479,6 +5491,58 @@ fn walk_candidates(drv: &PmxDrv, g: &Gpu) -> Option<(u64, u64, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secure_pci_gate_matrix() {
+        // 预期拒绝结果依次对应 SystemGuard 为 true、false 和未知。
+        let cases = [
+            (Some(true), Some(2), [true; 3]),
+            (Some(true), None, [true; 3]), // #244：VBS 运行中，注册表状态仍缺失
+            (Some(true), Some(0), [false; 3]),
+            (Some(true), Some(1), [false; 3]),
+            (Some(false), None, [false; 3]),
+            (Some(false), Some(2), [true, false, false]),
+            // 既有盲点：SDEV 状态未知时，仅凭此项不会触发拒绝。
+            (None, Some(2), [true, false, false]),
+        ];
+        for (sdev, vbs, expected) in cases {
+            for (guard, refuse) in [Some(true), Some(false), None].into_iter().zip(expected) {
+                assert_eq!(
+                    secure_pci_armed_with(|| vbs, || sdev, || guard),
+                    refuse,
+                    "SDEV={sdev:?}, registry VBS={vbs:?}, SystemGuard={guard:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn secure_pci_sdev_table() {
+        assert_eq!(sdev_table_present(0, b""), Some(false));
+        assert_eq!(sdev_table_present(8, b""), None);
+        assert_eq!(sdev_table_present(8, b"SDE"), None);
+        assert_eq!(sdev_table_present(4, b"MCFG"), None);
+        assert_eq!(sdev_table_present(4, b"SDEV"), Some(true));
+        assert_eq!(sdev_table_present(8, b"SDEVdata"), Some(true));
+    }
+
+    #[test]
+    fn secure_pci_refusal_guidance() {
+        let message = SECURE_PCI_REFUSAL
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for required in [
+            "SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION",
+            "SDEV (Secure Devices) ACPI table plus VBS RUNNING",
+            "fail-closed",
+            r"Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard | Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning",
+            "off-switch is FIRMWARE",
+            "UEFI option that publishes the SDEV table",
+        ] {
+            assert!(message.contains(required), "missing {required:?}");
+        }
+    }
 
     #[test]
     fn readout1_uses_the_gapped_offsets() {
