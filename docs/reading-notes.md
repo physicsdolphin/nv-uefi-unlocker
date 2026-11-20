@@ -976,6 +976,16 @@ diag-unlock-083-unlocked-3090.log）：GA106（Win ssdiag）与 GA102（Linux
 py）的 IFF_RECORD 均解出 rows=542..575 且 == FUSE_ADDR 标记器命中——两 die
 共享 Ampere 行空间；MAGIC_D bit21=1/bit25=0 双 die 一致（并带 0.8.3 的
 RTD3 policy 行：3060 = absent/driver default）。
+**TU106 2070 补跑（ssdiag-083-stock-2070.log）**：扁平 0x820050/0x820520
+双 badf（PL0 挡，如面内提示）——但 **-0x7FF000 移位库 MAGIC_D 可读：
+PCIE_MAGIC_D(0x21520)=0x16480000 → bit25=1、bit21=0**。跨代对照：
+bit25（ff-tools Gen4 限制位）Turing 出厂=1、有 Gen4 控制器的 die（GA10x/
+Ada/A100）全 0——命名获跨代佐证；bit21 与 bit23/25 的分布逐代异。又一
+旁证：TU106 的 XP3G_STATUS3=0x16480000 == MAGIC_D（XP3G_STATUS3 镜像
+MAGIC_D 跨族成立，GA10x 已见）。TU106 移位 FUSE_ADDR=0x000000ff——
+若 FUSE_ADDR==LAST 行则 TU106 行空间 256 行（无 IFF_RECORD 可交叉，
+存疑标注；扁平 FUSE_ADDR=0 与移位 255 再添双面差异例）。SS0=0x00401100
+（TU106 冷态不稳词又一样本，READOUT 恒 0x00400080）。
 
 **② MAGIC_D 的两个不同位**：ff-tools/ffcalc 线：bit25（0x02000000）=
 PCIe Gen4 限制位（GA100 chain2 blk47 bit3；A100 vBIOS 校验整字，
