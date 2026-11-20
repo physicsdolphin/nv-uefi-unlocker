@@ -95,7 +95,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-prom-sha256.txt`（tx 构建） | **可选身份门**：64 位十六进制，钉住 `BAR0+0x300000` 固定 1 MiB PROM 窗口的 SHA-256。缺省=未配置，事务照常进行；存在=必须匹配（两次稳定读取）才会调用 `run_transaction`，缺失/格式错/读不稳/不匹配都在任何写入之前拒绝，判定与资产缺失同级。登记方法：此文件存在时所有构建（含只读构建）都会把实测 `IDENTITY:` SHA-256 打进日志，默认引导不产生 PROM 读取开销——先放一个占位值启动一次，把日志里的实测值抄回文件即可 |
 | `tx-stop-on-failure.txt`（tx 构建） | **可选的硬失败即 STOP**：文件存在即启用，内容忽略。缺省（不存在）行为不变——通用失败照常跑 `emergency_flr`，多卡循环继续下一张。存在此 marker 时，通用失败改为立即停止：不跑 FLR、不释放桥 BME、不换下一张卡，loader 也不会链式启动 Windows。失败路径的 console 镜像恢复与只读判定行照跑，但屏幕可能保持黑屏（对状态已不可信的卡刻意不重连 GOP）——`loader.log` 是唯一记录。被停止的会话也不会 StartImage OS loader，连续尝试在 TPM 里测得的前置链逐位一致（对 BitLocker 类 PCR 密封档案有意义：恢复引导照常解封） |
 | `tx-no-canary.txt` | 整组跳过复位金丝雀的读写（A/B 对照；见[回锁章](#relock)） |
-| `tx-relock.txt`（tx 构建） | **退出阀**：交棒前把 FEAT PLM 锁回 `0xffffff8f`（三代通用）。默认自 2026-11-08 起三代都门开交棒（Turing 加入 Ampere/Ada 的开门形态；TU106 bench 端到端坐实门开无害且系统内写入面开放，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`）。Turing 臂实测回锁值 `0xffffffef`/`0xffffff8f` 随板方差；Ampere/Ada 臂（FLR 判定后重锁）未上过 bench。**注意重锁本身有代价**：部分驱动会对重锁态发起 init 期 PF FLR 并清零 SS（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B），所以 v2.1.11 及更早的默认行为在那些驱动上会丢锁 |
+| `tx-relock.txt`（tx 构建） | **退出阀**：交棒前把 FEAT PLM 锁回 `0xffffff8f`（三代通用）。默认自 2026-11-08 起三代都门开交棒（Turing 加入 Ampere/Ada 的开门形态；TU106 bench 端到端坐实门开无害且系统内写入面开放，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`）。Turing 臂实测回锁值 `0xffffffef`/`0xffffff8f` 随板方差；Ampere/Ada 臂（FLR 判定后重锁）未上过 bench。**注意重锁本身有代价**：部分驱动会对重锁态发起 init 期 PF FLR 并清零 SS（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B），所以 v2.1.11 及更早的默认行为（Turing 臂专属；GA10x/Ada 交棒一直门开）在那些驱动上会丢锁 |
 | `tx-ultrafast.txt`（tx 构建） | **速度档**（已验证机器用）：跳过全部纯诊断性质的事前/事后探测——M1 冷态采样、GOP 探测、AUTH-SCAN、ROOT-DIR 转储、opener/拓扑诊断、载荷后 FEAT sweep、HANDOFF-PCI / HANDOFF-VGA-FINAL 转储、POST-GOP 探针、CHAIN-MEMMAP——并折叠 quiet + **仅事务锚点 flush**（比阶段标记集紧得多：~80 次/轮 → ~15 次/轮；挂死时锚点之间的日志盲区更大，显式 `tx-flush-lines.txt` 仍优先）。**裁决链读回一个不少**：selector 写读回、WPR2/POST-BOOT 判定、booter 载入审计照跑——读回是唯一成功判据。**复位金丝雀不省**（写读回毫秒级、复位取证价值高；自 2026-11-09 起 ultrafast 照跑，`HANDOFF-OUT` 显示真实判定；确要跳过用 `tx-no-canary.txt`）。被跳过的阶段在日志里各留一行 `ultrafast - skipped`。只建议在已多轮验证的机器上使用（制盘菜单可代写，默认 N） |
 | `tx-no-log.txt`（tx 构建） | 不开 `\loader.log`（全程仅 console 输出；quiet 因"console 是唯一记录"守卫结构性失效，console 保持完整）。挂死即零取证，只建议与 armed、已多轮验证的机器同用 |
 | `tx-no-console.txt`（tx 构建） | 完全不回显（慢速 GOP 文本输出的回显成本归零，issue #38 的分钟级回显形态直接消失）。确认提示不可见——**必须与 armed 同用**（键盘语义不变：armed 倒计时内任意键仍中止）；与 `tx-no-log.txt` 同置即全程零输出的完全静默跑，挂死时屏与盘两处都无证据 |
@@ -276,7 +276,7 @@ sudo update-initramfs -u
 | `POST-GOP` 完好，系统内门关、`SS` 变成既非基线也非覆盖值 | 重推导（驱动 init 主动编程） | 机制表第 3 行；见 [#148 记录](#relock-148) |
 | `POST-GOP` 完好，系统内门关、`SS` 回到该卡开机基线（覆盖字段归零） | 整域复位（掉电 / SBR / 全芯片复位） | 机制表第 1、2 行 |
 
-Turing 自 2026-11-08（`061aef8`，v2.1.12-rc1 起）交棒默认也是门开（与 Ampere/Ada 一致）；只有 `\tx-relock.txt` 在位时才会出现重锁值——别把 marker 臂的正常值当丢失，判读见[雷电一节](#thunderbolt)与[冷态对照](cold-values.md)。**v2.1.11 及更早的默认是交棒前重锁，那是当时已知的最大一条自造回锁源（机制表第 7 行，[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)）。**
+Turing 自 2026-11-08（`061aef8`，v2.1.12-rc1 起）交棒默认也是门开（与 Ampere/Ada 一致）；只有 `\tx-relock.txt` 在位时才会出现重锁值——别把 marker 臂的正常值当丢失，判读见[雷电一节](#thunderbolt)与[冷态对照](cold-values.md)。**v2.1.11 及更早的默认是交棒前重锁（Turing 臂专属——GA10x/Ada 的载荷四写链自带门开、交棒一直门开，`061aef8` 对它们是 no-op），那是当时已知的最大一条自造回锁源（机制表第 7 行，[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99)）。**
 
 **基线纪律：** 判「SS 被清零」必须先有一条**同一 boot、解锁之前**的锁态 `ssdiag` 采样。stock 的 `SS0/SS1` 并非恒为零（#99 同卡实测两次 stock 分别 `0x00040000`/`0x6` 与 `0x0`/`0x0`，READOUT 都是 `0x00400080`）；只有「基线 → 交棒 `POST-GOP` → 系统内」三段同 boot 可比，SS 的变化才有判别力。
 
@@ -299,7 +299,7 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 | 4 | **窄写入**（只碰门） | 存活 | 少数平台 | 门锁 + `SS` 完好（[#82](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/82) 类） |
 | 5 | **我们自己的尾巴**：native-GOP 重建 `StartImage` 卡自己的 ROM | — | 某些平台的 ROM POST 会带 devinit | `POST-GOP` 坏而 `POST-FLR` 好 |
 | 6 | **OS 侧连接管理器（USB4 CM）建立/重建 USB4/雷电隧道** | 复位 | 雷电/USB4 eGPU（[#54](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)，已关闭，桌面 TB4 + AD102、笔记本原生 USB4 + GA104 实测）：Windows `Usb4DeviceRouter`、Linux `thunderbolt` 模块绑定/接管时拆掉并重建整棵下游总线。固件 CM 的独立雷电主机（Intel 雷电面板那类）开机不走此行，但重插线时管理栈重建隧道、同样触发 | 金丝雀 `cleared`（域复位）。两 OS 都有抑制：Linux `thunderbolt.host_reset=0`、Windows `Usb4DeviceRouter` `Start=4`（均实测，见本节正文） |
-| 7 | **我们自己的交棒重锁写**（v2.1.11 及更早的默认行为） | 复位（PF FLR） | 交棒前把 `FEAT_PLM` 锁回 `0xffffff8f`（硬件读回 `0xffffffef`）；驱动 init 再把门推回并触发 PF FLR | SS 在交棒时完好、系统内被清零；`nvlddmkm` id=14 明写 `None → PF FLR`（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 2026-11-12 同卡 A/B；`061aef8` 起默认门开，见 `docs/evidence/issue99-1f07-x99-gate-open/`） |
+| 7 | **我们自己的交棒重锁写**（v2.1.11 及更早的 **Turing 臂**默认行为；GA10x/Ada 交棒一直门开） | 复位（PF FLR） | 交棒前把 `FEAT_PLM` 锁回 `0xffffff8f`（硬件读回 `0xffffffef`）；驱动 init 再把门推回并触发 PF FLR | SS 在交棒时完好、系统内被清零；`nvlddmkm` id=14 明写 `None → PF FLR`（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 2026-11-12 同卡 A/B；`061aef8` 起默认门开，见 `docs/evidence/issue99-1f07-x99-gate-open/`） |
 
 第 6 行的特殊性：复位由**建立/重建隧道的 CM** 执行——USB4 主机上是 OS 侧 CM，发生在任何驱动绑定之前，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）；固件 CM 主机开机不触发此行（见雷电节分型），重插才触发。唯一出路是抑制那次拆建，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
@@ -443,7 +443,7 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 | 状态 | 常见于 | 睡眠期间 GPU 供电 | 唤醒后 | 处理 |
 | --- | --- | --- | --- | --- |
 | S0 工作态（熄屏/锁屏） | 所有机器 | 保留 | 解锁不受影响 | 无需处理 |
-| S0ix / 现代待机（Modern Standby） | 近年笔记本 | 可被驱动运行时电源管理降入 D3cold（rail 掉电） | 通常掉；选择器回厂 | 先只读检查，多数可用 `--reapply` 修回 |
+| S0ix / 现代待机（Modern Standby） | 近年笔记本 | 可被驱动运行时电源管理降入 D3cold（rail 掉电） | 多数掉；选择器回厂（有带金丝雀判据的保留反例，见下方机制说明） | 先只读检查，多数可用 `--reapply` 修回 |
 | S3 传统睡眠 | 多数台式机 BIOS 的"睡眠" | 整机除内存外掉电 | 必然掉 | 同上，视检查结果 |
 | S4 休眠 / 快速启动"关机" | 笔记本休眠、Win10/11 默认快速启动 | 全机断电 | 必然掉，等同冷启动 | 同上，视检查结果 |
 
@@ -452,6 +452,7 @@ sudo update-initramfs -u     # Fedora/RHEL: sudo dracut -f
 几点机制说明：
 
 - **判据是 rail 是否掉电，不是"睡没睡"**。S0ix 名义上停在 S0，但 dGPU 空闲时可被独立断电（与 Linux 的 RTD3 同机制，见[上一节](#linux)）；S3 则整机掉电。两者在唤醒后的表现可能一样：选择器被 devinit 重新推导回厂。
+- **S0ix 不必然掉——首个带金丝雀判据的保留现场（2026-11-20，[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99#issuecomment-7041057712)）**：GA104M `249D`（神舟 NH5xEPER，混合无 MUX）在 v2.1.12-rc3 上"开始 → 电源 → 睡眠"四轮全部存活、金丝雀 `intact`——其中一轮**删除 `EnableRuntimePowerManagement` 键后**照常保留。金丝雀完好意味着整个睡眠→唤醒周期无 FLR/SBR、无断轨、无写入：该机的 S0ix 路径对 dGPU 保电，"通常掉"在这台机上不发生——睡眠掉锁按平台分布，不是定律。同机 v2.1.6 一次唤醒即丢且**形状不同**：门关 + SS 非覆盖值（`0x03000141`/`0x7`）——落机制表第 1/2 行（回开机基线）或第 3 行（重推导），`--reapply` 会被 `REFUSED: gate closed` 拒绝，只能重跑 U 盘事务；该轮丢失归因未定（v2.1.6 在 GA10x 上交棒本就门开，重锁是 Turing 臂专属，机制表第 7 行），单次负样本不足以判版本因果，判读仍以同 boot 锁态基线 + 金丝雀 + `POWER:` 为准。注意旧载具（< v2.1.11-diag1）没有金丝雀写者，其 boot 上金丝雀读到 `0x0/0x0` 是"从未武装"的默认态，ssdiag 的罐头复位判读在该场景是假阳性。
 - **FLR 不掉、掉电掉**：解锁写活在 AON（常开岛），事务内 FLR 后选择器存活是设计判据；但 AON 不活过失电——所以"重启进不了系统就丢"和"睡眠唤醒丢"可以是同一件事。
 - **门与选择器要分开判**：唤醒后 Ampere/Ada 常见形态是 FEAT 门仍开、SS 值回厂——跑 [系统内检查](#ssdiag)确认后用 `ssdiag --reapply` 写回即可，不必重跑 U 盘；若门已锁或设备不可读，说明 rail 确实掉了，需重跑 U 盘事务。**全机断电路径（S4 休眠 / 快速启动）必然门锁**：AON 岛不活过失电，此时 `--reapply` 会以 `REFUSED: gate closed` 拒绝——这是正确判读不是工具故障，唯一恢复 = 重跑 U 盘事务（D#129 用户侧实证）。Turing 的 ssdiag 保持只读（其 SS 覆盖值在驱动加载后持久，devinit 重推导行为不同）。
 - **不想让它掉**：台式机可在 BIOS/驱动侧避免空闲掉电；笔记本 S0ix 机器可关掉"现代待机"（部分固件提供）或接受唤醒后 reapply。Linux 侧对应配置见 [RTD3 节](#linux)。
