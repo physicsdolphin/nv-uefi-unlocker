@@ -956,17 +956,21 @@ JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面，补跑即验）；4090 同探�
 五仓入库（ga100-fuse-re 快进 74dfb16 / ga100-ff-tools / pico-ga100vfi /
 rp2040-glitch-tool / cmp170hx-ffcalc；详 peer-landscape §2.7）。两条交叉发现：
 
-**① IFF_RECORD（0x820050）行数解码**（ff-tools 语义：START[8:0] /
-LAST[24:16] 含尾，GA100 域 222..511）：回查我方已有捕获——GA106/GA102 的
-FUSE_REG_50=0x023f021e → START=542/LAST=**575**；AD107 的
-0x033f02ff → START=767/LAST=**1023**。**消费级 die 的熔丝行数 > GA100 的
-512 且逐 die 不同**（GA10x ≥576 行、AD107 =1024 行）。FUSE_ADDR 独立佐证：
+**① IFF_RECORD（0x820050）行数解码**（ff-tools 语义 GA100 域：START[8:0] /
+LAST[24:16] 含尾，222..511；**消费级捕获要求 10-bit 字段**
+START[9:0]/LAST[25:16]——9-bit 读法给 GA106 (30,63)，被 FUSE_ADDR 证伪）：
+回查我方已有捕获——GA106/GA102 的 FUSE_REG_50=0x023f021e →
+START=542/LAST=**575**；AD107 的 0x033f02ff → START=767/LAST=**831**。
+**消费级 die 的熔丝行数 > GA100 的 512 且逐 die 不同**（GA10x ≥576 行、
+AD107 =832 行）。FUSE_ADDR 独立佐证：
 GA106/GA102=0x23f、AD107=0x33f——与 LAST 字段精确同值（=最后行地址；
 TU106 的 0x820050 是 badf/PL0 挡、FUSE_ADDR=0，Turing 读数不参与）。
 GA100 行数 512 来自 kate-land 512 行 dump 与 fuse-re 的 row222..488 FF 域——
 **行地址空间逐 die 配置**，未来任何行级操作/解码必须按 die 取行界。
 （语义推断按 GA100 布局外推，LAST==FUSE_ADDR 三 die 一致是强旁证；
-TU106 挡读防验证。）
+TU106 挡读防验证。）**已实现**（0.8.3：IFF_RECORD 解码行 +
+MAGIC_D_BITS bit21/bit25 双位行，ssdiag+py 双 twin，单测
+iff_decode_matches_real_captures 锁定两组实捕获值）。
 
 **② MAGIC_D 的两个不同位**：ff-tools/ffcalc 线：bit25（0x02000000）=
 PCIe Gen4 限制位（GA100 chain2 blk47 bit3；A100 vBIOS 校验整字，

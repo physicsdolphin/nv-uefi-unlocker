@@ -2058,6 +2058,16 @@ fn trim_decode(v: u32) -> (i32, i32) {
     (temp, volt)
 }
 
+/// IFF_RECORD (0x820050) row-range decode per the ga100-ff-tools map,
+/// widened to 10-bit fields: START [9:0], inclusive LAST [25:16].
+/// ff-tools documents [8:0]/[24:16] for the 512-row GA100 (LAST <= 511
+/// fits 9 bits); our consumer captures need the 10-bit width - GA106/GA102
+/// read LAST=575 and AD107 LAST=831, and FUSE_ADDR agrees exactly with
+/// the 10-bit LAST on all three (0x23f/0x23f/0x33f), pinning the width.
+fn iff_decode(v: u32) -> (u32, u32) {
+    (v & 0x3ff, (v >> 16) & 0x3ff)
+}
+
 /// Offset column for `name = value` rows, house style: yellow 0x + cyan
 /// digits (same as the PLM survey gutter). Always 10 visible chars.
 fn off_h(off: u32) -> String {
@@ -4716,6 +4726,60 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             "  APP08_WRITE_GATE = {gate} (PL2 pair bit6=1/1 + helper 0x944c; DMEM8[0x646]/[0x64d] are ROM-internal)"
         );
     }
+    println!("  --- ga100-ff-tools cross round (kprinssu map; read-only) ---");
+    {
+        // IFF_RECORD (0x820050): writable current FF execution range,
+        // START [8:0] / inclusive LAST [24:16] (GA100 domain 222..511).
+        // Consumer dies extend: our captures decode LAST=575 (GA106/GA102)
+        // and LAST=831 (AD107), with FUSE_ADDR agreeing exactly - the row
+        // address space is per-die configured (reading-notes 6l).
+        let iff = rd(0x0082_0050);
+        match badf_bucket(iff) {
+            Some(b) => println!(
+                "  IFF_RECORD {} = {} [{}] (row-range decode needs a plain word; TU106 PL0-blocks it)",
+                off_h(0x0082_0050),
+                hx32(iff),
+                red(b)
+            ),
+            None => {
+                let (start, last) = iff_decode(iff);
+                let fa = rd(0x0082_0004);
+                let agree = if badf_bucket(fa).is_none() && fa == last {
+                    " ; == FUSE_ADDR"
+                } else {
+                    ""
+                };
+                println!(
+                    "  IFF_RECORD {} = {} rows={}..{} ({} rows; GA100 domain 222..511 - consumer dies extend{agree})",
+                    off_h(0x0082_0050),
+                    hx32(iff),
+                    start,
+                    last,
+                    last + 1
+                );
+            }
+        }
+        // PCIE_MAGIC_D (0x820520) dual-bit display: bit21 = the word VBIOS
+        // app08 0x73a4 writes when DEBUG_FEAT_SW_OVR_EN&1 (#237), bit25 =
+        // the Gen4 restriction bit (ga100-ff-tools: chain2 blk47 bit3; A100
+        // vBIOS checks the whole word, 0x14680000 reported live).
+        let magic = rd(0x0082_0520);
+        match badf_bucket(magic) {
+            Some(b) => println!(
+                "  MAGIC_D_BITS {} = {} [{}] (bit decode needs a plain word)",
+                off_h(0x0082_0520),
+                hx32(magic),
+                red(b)
+            ),
+            None => println!(
+                "  MAGIC_D_BITS {} = {} bit21(app08 target)={} bit25(gen4 restriction)={}",
+                off_h(0x0082_0520),
+                hx32(magic),
+                (magic >> 21) & 1,
+                (magic >> 25) & 1
+            ),
+        }
+    }
     if fam.starts_with("blackwell") {
         // GB20x HAL 67-71 PES/OFA relocation: 0x820dbc is GA100/Ampere/Ada.
         println!("  GB20X_PES   (HAL 67-71 relocated face)");
@@ -5531,6 +5595,23 @@ mod tests {
         assert_eq!(trim_decode(0x007e), (-2, 1));
         assert_eq!(trim_decode(0x0000), (0, 0));
         assert_eq!(trim_decode(0x003e), (-2, 0));
+    }
+
+    #[test]
+    fn iff_decode_matches_real_captures() {
+        // 10-bit fields (START[9:0]/LAST[25:16]) against our own stock
+        // captures: GA106/GA102 read 0x023f021e (rows 0..575 = 576 rows,
+        // beyond GA100's 512) and AD107 reads 0x033f02ff (0x33f = 831, so
+        // rows 0..831 = 832 rows). FUSE_ADDR agrees with LAST on all three
+        // (0x23f/0x23f/0x33f) - the 9-bit ff-tools GA100 reading would give
+        // (30,63), refuted.
+        assert_eq!(iff_decode(0x023f_021e), (0x21e, 0x23f));
+        assert_eq!(iff_decode(0x023f_021e), (542, 575));
+        assert_eq!(iff_decode(0x033f_02ff), (0x2ff, 0x33f));
+        assert_eq!(iff_decode(0x033f_02ff), (767, 831));
+        // a GA100-domain word stays inside the 222..511 window
+        let (s, l) = iff_decode(0x0000_0122_00de);
+        assert!(s <= l);
     }
 
     #[test]

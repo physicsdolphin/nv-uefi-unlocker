@@ -125,7 +125,7 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 | **rp2040-glitch-tool**（JosiahWhite，11-12，新入库） | 09f26ef | 通用 RP2040 分段时序工具箱（I2C/GPIO 脉冲/调度写/PIO-DMA 波形，core1 独立执行，协议 v3）；Jupyter notebook 工作流 | pico-ga100vfi 是 GA100 专用应用层，此仓是通用基底；JosiahWhite=mellojello_（首证 I2C+PEX_RST 路径） |
 | **cmp170hx-ffcalc**（sayhellotojungle，11-17，新入库） | 94a16e5 | 中文生态 FF 预计算：scan/mergeff/verify/report/gen/sim/burntool 七命令；16-bit 块自动合并；UUID/fingerprint 绑卡；burntool 断言式执行（program_row 幂等=断点续烧安全）；--a100 整字 MAGIC_BITS_D→0x00200000（chain2 blk46→0x8000/blk47→0x0000，**实验性猜测未实测**） | 与 cmpunlocker 独立的第三实现（同域三实现：ga100-ff-tools/ffcalc/170hx-rir-tool）；中文 README=中文矿卡生态自有工具线的标志 |
 
-**交叉发现（reading-notes §6l）**：ff-tools 的 IFF_RECORD 解码反推消费级 die 熔丝行数——GA106/GA102 的 FUSE_REG_50=0x023f021e → START=542/LAST=575（>GA100 的 511，**≥576 行**），AD107 的 0x033f02ff → START=767/LAST=1023（**1024 行**）；FUSE_ADDR（GA10x=0x23f、AD107=0x33f）独立佐证=最后行地址。消费级 die 熔丝行数逐 die 不同且大于 GA100 的 512——交叉对照才浮出的新事实。
+**交叉发现（reading-notes §6l）**：ff-tools 的 IFF_RECORD 解码反推消费级 die 熔丝行数——GA106/GA102 的 FUSE_REG_50=0x023f021e → START=542/LAST=575（>GA100 的 511，**≥576 行**），AD107 的 0x033f02ff → START=767/LAST=831（**832 行**）；FUSE_ADDR（GA10x=0x23f、AD107=0x33f）独立佐证=最后行地址。消费级 die 熔丝行数逐 die 不同且大于 GA100 的 512——交叉对照才浮出的新事实。
 
 ## §3 差距清单（五维，只列核实过的真实差距）
 

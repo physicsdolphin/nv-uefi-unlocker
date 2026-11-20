@@ -381,6 +381,16 @@ def lts_disable_nibble(v):
 def l2_pack_fbp(nibs):
     return [(nibs[2 * f + 1] << 4) | nibs[2 * f] for f in range(len(nibs) // 2)]
 
+
+def iff_decode(v):
+    """IFF_RECORD (0x820050) row range: START[9:0], inclusive LAST[25:16].
+
+    ga100-ff-tools documents [8:0]/[24:16] for the 512-row GA100 (LAST <=
+    511 fits 9 bits); our consumer captures need the 10-bit width -
+    GA106/GA102 LAST=575, AD107 LAST=831, FUSE_ADDR agreeing exactly.
+    """
+    return (v & 0x3FF, (v >> 16) & 0x3FF)
+
 # Mirror probe: 16 representative words x {0x820xxx, -0x800000, -0x7FF000}.
 # mirror == primary -> bit-23 alias; mirror badf while primary is plain ->
 # 0x820xxx exclusive; different plain values in two columns -> two live banks.
@@ -1218,6 +1228,24 @@ def report(bar, tag="", devpath=None):
     # 06030005, TU106 2070 08040003, TU106 1e93 08040006). On Ampere it is
     # the OQ#19 polarity discriminator (GA106 byte0 4 -> masks bit=off,
     # 7 -> bit=on).
+    # ga100-ff-tools cross round: IFF_RECORD row range + MAGIC_D dual bits.
+    iff = bar.rd(0x0082_0050)
+    b = badf_bucket(iff)
+    if b:
+        print(f"  IFF_RECORD {0x0082_0050:#010x} = {iff:#010x} [{b}] (row-range decode needs a plain word; TU106 PL0-blocks it)")
+    else:
+        start, last = iff_decode(iff)
+        fa = bar.rd(0x0082_0004)
+        agree = ""
+        if badf_bucket(fa) is None and fa == last:
+            agree = " ; == FUSE_ADDR"
+        print(f"  IFF_RECORD {0x0082_0050:#010x} = {iff:#010x} rows={start}..{last} ({last + 1} rows; GA100 domain 222..511 - consumer dies extend{agree})")
+    magic = bar.rd(0x0082_0520)
+    b = badf_bucket(magic)
+    if b:
+        print(f"  MAGIC_D_BITS {0x0082_0520:#010x} = {magic:#010x} [{b}] (bit decode needs a plain word)")
+    else:
+        print(f"  MAGIC_D_BITS {0x0082_0520:#010x} = {magic:#010x} bit21(app08 target)={(magic >> 21) & 1} bit25(gen4 restriction)={(magic >> 25) & 1}")
     gr = bar.rd(0x0040_9604)
     print(f"  GR_TOPO_409604 0x00409604 = {gr:#010x}"
           f" (byte3 GPC-slots {(gr >> 24) & 0xff} / byte0 active-GPC {gr & 0xff};"
