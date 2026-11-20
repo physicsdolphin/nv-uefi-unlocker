@@ -971,13 +971,22 @@ GA100 行数 512 来自 kate-land 512 行 dump 与 fuse-re 的 row222..488 FF �
 TU106 挡读防验证。）**已实现**（0.8.3：IFF_RECORD 解码行 +
 MAGIC_D_BITS bit21/bit25 双位行，ssdiag+py 双 twin，单测
 iff_decode_matches_real_captures 锁定两组实捕获值）。
+**0.8.3 双 twin 实机首验**（ssdiag-083-stock-3060.log /
+diag-unlock-083-unlocked-3090.log）：GA106（Win ssdiag）与 GA102（Linux
+py）的 IFF_RECORD 均解出 rows=542..575 且 == FUSE_ADDR 标记器命中——两 die
+共享 Ampere 行空间；MAGIC_D bit21=1/bit25=0 双 die 一致（并带 0.8.3 的
+RTD3 policy 行：3060 = absent/driver default）。
 
 **② MAGIC_D 的两个不同位**：ff-tools/ffcalc 线：bit25（0x02000000）=
 PCIe Gen4 限制位（GA100 chain2 blk47 bit3；A100 vBIOS 校验整字，
 0x14680000 亦有实report）；JeusChrit 线（#237）：app08 0x73a4 在
 DEBUG_FEAT_SW_OVR_EN 时写 0x00200000=**bit21**。两位不同、均涉 PCIe ——
 ssdiag 的 OPT_MAGIC/PCIE_MAGIC_D 行（0x820520）读数时两个位都值得看
-（GA102 读 0x10a80000：bit21=0、bit25=0；AD107 读 0x00a0000c 同）。
+**【11-20 0.8.3 实测修正】GA102 0x10a80000 的 bit21=1（初稿算错为 0——
+0x00200000 位在词内）。bit21=1 是消费级出厂态**（GA106/GA102/AD107 三 die
+全 1；A100 报告值 0x14680000 亦含 bit21）——app08 0x73a4 写 0x00200000 的
+语义改为「确保位」（出厂已 1）而非解锁置位；consumer bits{28,23,21,19} vs
+A100 bits{28,26,22,21,19}，bit23↔(bit26+22) 差异、bit25 两侧全 0。
 
 **生态状态**：fuse-re 的 NO-GO 判定被 Kate VFI 第三方烧写证据取代
 （执行风险非证据风险）；GA100 熔丝写入域现有**三个独立工具实现**
