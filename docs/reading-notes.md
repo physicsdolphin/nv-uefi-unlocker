@@ -951,6 +951,36 @@ spec，X99 补 LTS 首采即验）；AD103 4080（4 FBP × 8 LTC × 4 × 2MB = 6
 JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面，补跑即验）；4090 同探针应报
 73728KB（AD102 侧唯一待补的驱动读数）。
 
+### 6l. GA100 熔丝工具生态入库 + IFF_RECORD 反推消费级 die 熔丝行数（2026-11-20）
+
+五仓入库（ga100-fuse-re 快进 74dfb16 / ga100-ff-tools / pico-ga100vfi /
+rp2040-glitch-tool / cmp170hx-ffcalc；详 peer-landscape §2.7）。两条交叉发现：
+
+**① IFF_RECORD（0x820050）行数解码**（ff-tools 语义：START[8:0] /
+LAST[24:16] 含尾，GA100 域 222..511）：回查我方已有捕获——GA106/GA102 的
+FUSE_REG_50=0x023f021e → START=542/LAST=**575**；AD107 的
+0x033f02ff → START=767/LAST=**1023**。**消费级 die 的熔丝行数 > GA100 的
+512 且逐 die 不同**（GA10x ≥576 行、AD107 =1024 行）。FUSE_ADDR 独立佐证：
+GA106/GA102=0x23f、AD107=0x33f——与 LAST 字段精确同值（=最后行地址；
+TU106 的 0x820050 是 badf/PL0 挡、FUSE_ADDR=0，Turing 读数不参与）。
+GA100 行数 512 来自 kate-land 512 行 dump 与 fuse-re 的 row222..488 FF 域——
+**行地址空间逐 die 配置**，未来任何行级操作/解码必须按 die 取行界。
+（语义推断按 GA100 布局外推，LAST==FUSE_ADDR 三 die 一致是强旁证；
+TU106 挡读防验证。）
+
+**② MAGIC_D 的两个不同位**：ff-tools/ffcalc 线：bit25（0x02000000）=
+PCIe Gen4 限制位（GA100 chain2 blk47 bit3；A100 vBIOS 校验整字，
+0x14680000 亦有实report）；JeusChrit 线（#237）：app08 0x73a4 在
+DEBUG_FEAT_SW_OVR_EN 时写 0x00200000=**bit21**。两位不同、均涉 PCIe ——
+ssdiag 的 OPT_MAGIC/PCIE_MAGIC_D 行（0x820520）读数时两个位都值得看
+（GA102 读 0x10a80000：bit21=0、bit25=0；AD107 读 0x00a0000c 同）。
+
+**生态状态**：fuse-re 的 NO-GO 判定被 Kate VFI 第三方烧写证据取代
+（执行风险非证据风险）；GA100 熔丝写入域现有**三个独立工具实现**
+（ga100-ff-tools / cmp170hx-ffcalc / 170hx-rir-tool）+ 两个 glitch 开源
+形态（pico-ga100vfi I2C-only 四线 / rp2040-glitch-tool 通用基底）。
+宪法 §1.6（永不烧写）立场不变；本仓只读消费级 die 不入此域。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

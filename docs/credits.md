@@ -108,6 +108,15 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
   **[gpcprobe](https://github.com/matstatman/gpcprobe)**（matstatman）·
   **[170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool)**
   （lixiangwuxian）：GA100 熔丝/RIR 架构（熔丝语义参考线）。
+- **[ga100-ff-tools](https://github.com/kprinssu/ga100-ff-tools)**（kprinssu）：GA100 FF
+  capture/plan/simulate 工具链（52 寄存器表=我方 GA100 词典的独立第二源；IFF_RECORD
+  0x820050 解码线索）。
+- **[pico-ga100vfi](https://github.com/dalzyu/pico-ga100vfi)**（dalzyu）·
+  **[rp2040-glitch-tool](https://github.com/JosiahWhite/rp2040-glitch-tool)**
+  （JosiahWhite）：GA100 电压故障注入的 RP2040/RP2350 工具线（I2C-only 四线方案与
+  通用分段时序基底）。
+- **[cmp170hx-ffcalc](https://github.com/sayhellotojungle/cmp170hx-ffcalc)**
+  （sayhellotojungle）：GA100 FF 离线预计算/回放/断言式烧写（中文生态独立实现）。
 - **[p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock)**
   （skbskhud）：P104 PCIe Gen2 链路工具（PCI 配置空间操作参考，与算力
   解锁正交）。

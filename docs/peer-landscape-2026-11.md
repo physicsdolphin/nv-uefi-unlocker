@@ -112,6 +112,21 @@ tu102-22g-uefi-unlock 6ee61bd(10-25)、turing-unlock 417f333(10-26)、turing-unl
 已收录（普查前）：TechPowerUp 354316（EN）、wccftech（EN）、r/overclocking 1xj5jp3（EN）、搜狐（ZH）。
 **本轮实际追加**（README.md + README.en.md，rebase 合流后）：VideoCardz（EN）、WindowsForum 450453（EN）、Notebookcheck（EN；zh 侧原本缺失）、Hacker News Show HN（EN）。**Tom's Hardware 由并行会话先行收录**（合流时去重保留单条）；并行会话同期另补 PixLib（RU）、ShiftDelete 论坛（TR）、网易二条（ZH）、X/xiax0603（ZH），并把 Instagram 条目改标 ZH-HK。
 **存在但 URL 未核实，暂不收录**：快科技/mydrivers（ZH，11-01）、新浪财经（ZH，11-01）——核实法要求逐条 URL 落实后再入表。
+
+### 2.7 第三轮发现（2026-11-20 执行：GA100 熔丝工具生态扫描 + 五仓入库）
+
+触发：用户点名 ahnguyen17/ga100-fuse-re 与 kprinssu/ga100-ff-tools；顺藤摸瓜补全整条 GA100 熔丝工具生态。reference/ 本地库不入 git（.gitignore），登记于此。
+
+| 仓库 | 版本 | 内容 | 与我们的关系 |
+|---|---|---|---|
+| ga100-fuse-re（ahnguyen17） | 7a10172→**74dfb16**（11-12 快进） | **FINDINGS-NOV12**：FF 池解码获 Kate VFI 第三方执行佐证（chain1 bits307-318 = 我方 append 记录 0x420004C1 的 data 字，两条独立推导一条实卡执行一致）；NO-GO 判定被外部烧写证据**取代**（剩余风险是执行性非证据性；append recipe 的 INCOMPLETE 旗仍立——FBP 记录只复活分区 1/4，完整 80G 还要 FBPA/FBIO/ROP_L2/GPC/TPC 各 die 记录）；gpcprobe 只读复审：8GB 卡 80GiB latent（FBP 1,4 门控非死、6,11 死）、10GB 卡 disable==defective 全域（40GiB 终局但 GPC 0,1,5 零 defect 可解）；8GB RIR 仍死（15/16 厂烧+1 毒记录）；10GB RIR 门烧社区已证（170hx-rir-tool，清除 disable_sw_override 后 Gen3+128SM 成为**易失软件覆盖**，每次引导重放）；glitch 工具两开源形态（pico-ga100vfi / rp2040-glitch-tool） | ** Kate VFI 佐证=两独立推导收敛**（我们 11-11 考据过 kate-land 库）；NO-GO→证据已存是重大状态变化，宪法 §1.6 永不烧写立场不变 |
+| **ga100-ff-tools**（kprinssu，11-17，新入库） | 04573c9 | capture/plan/simulate/可选 burner 四件套，全公开源（Kate 的 ga100-options/core json + VFI blog）；**52 寄存器常量表全量核对与我们 ssdiag GA100 词典逐词一致**（独立实现零分歧=双向验证）；AGENTS.md 明文禁止 agent 烧写（与我方宪法 §1.6 同构）；**IFF_RECORD 0x820050 解码**（START[8:0]/LAST[24:16]，GA100 域 222..511）；MAGIC_D bit25=Gen4 限制位（chain2 blk47 bit3）；实验性 Gen3 pair（chain2 blk39 data bits1+9，0x0782→0x0580→DISABLE_GEN3_SPEED=0）；Gen4 completion（blk46 bit13+blk47 bits0/4/6，一 die 经验图）；CMP→A100 DEVID 0x20c2→0x20b5（chain2 blk37/38） | 寄存器表=**我方词典的独立第二源**；IFF_RECORD 解码是新增语义（见 reading-notes §6l——消费级 die 行数反推）；MAGIC_D bit25 与 JeusChrit 报的 bit21（app08 写 0x00200000）是**不同位**，均涉 Gen4 |
+| **pico-ga100vfi**（dalzyu，11-18，新入库） | e1ebd97 | RP2350 **I2C-only** glitch：PMBus VOUT_COMMAND 三脉冲浅 dipping（MP2888B）对齐 PEX_RST 释放沿，**四线**免 PWMVID 拦截免 0402 拆除；实测 14% Goldilocks/shot、~5.5 shots/s、100/100 PCIe 链路恢复、中位 ~5 shots(<1s)；Goldilocks 判据 DSOV=0+CRC=0x55+PLM 开（单深 dip 会清整块→CRC=0，三脉冲浅波形只打 row0/1 控制 fuses）；adaptive v_dip（Thompson 采样） | 处理 glitch 步；FF append 执行器未公开；我方载具线不涉及（GA100 无 GSP），生态拼图+宪法引文素材 |
+| **rp2040-glitch-tool**（JosiahWhite，11-12，新入库） | 09f26ef | 通用 RP2040 分段时序工具箱（I2C/GPIO 脉冲/调度写/PIO-DMA 波形，core1 独立执行，协议 v3）；Jupyter notebook 工作流 | pico-ga100vfi 是 GA100 专用应用层，此仓是通用基底；JosiahWhite=mellojello_（首证 I2C+PEX_RST 路径） |
+| **cmp170hx-ffcalc**（sayhellotojungle，11-17，新入库） | 94a16e5 | 中文生态 FF 预计算：scan/mergeff/verify/report/gen/sim/burntool 七命令；16-bit 块自动合并；UUID/fingerprint 绑卡；burntool 断言式执行（program_row 幂等=断点续烧安全）；--a100 整字 MAGIC_BITS_D→0x00200000（chain2 blk46→0x8000/blk47→0x0000，**实验性猜测未实测**） | 与 cmpunlocker 独立的第三实现（同域三实现：ga100-ff-tools/ffcalc/170hx-rir-tool）；中文 README=中文矿卡生态自有工具线的标志 |
+
+**交叉发现（reading-notes §6l）**：ff-tools 的 IFF_RECORD 解码反推消费级 die 熔丝行数——GA106/GA102 的 FUSE_REG_50=0x023f021e → START=542/LAST=575（>GA100 的 511，**≥576 行**），AD107 的 0x033f02ff → START=767/LAST=1023（**1024 行**）；FUSE_ADDR（GA10x=0x23f、AD107=0x33f）独立佐证=最后行地址。消费级 die 熔丝行数逐 die 不同且大于 GA100 的 512——交叉对照才浮出的新事实。
+
 ## §3 差距清单（五维，只列核实过的真实差距）
 
 **① 芯片覆盖**：上游 recipes.c 理论表 87 ID（TU1x 19/GA10x 51/AD10x 17）远大于我方实机 22；但 2.0 重构把 GA106M 2520/2560 与 GA107 2582/25a2 从支持面**丢掉**（PR#160 只进了旧 main.c，refactor 未搬入 recipes.c，#238 用户靠手补一行宏）——逐 ID 表的维护性回归，反衬我方全段放行+映射表的稳健。上游 Turing **零实机报告**（#238）；我方 Turing 是全网唯一有 GSP 模式纪律+取证矩阵+Windows 实机（1f07/1f06 + fork 侧 MSI TU102）的深度线。笔记本：上游新增 27e0/2860/25a2/24dd 等报告，我方对应 ID 仍是 🟡/待复测（2560 复测、2507/25a2、2820）——**追赶点**。
