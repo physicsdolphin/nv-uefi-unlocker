@@ -1004,6 +1004,42 @@ A100 bits{28,26,22,21,19}，bit23↔(bit26+22) 差异、bit25 两侧全 0。
 形态（pico-ga100vfi I2C-only 四线 / rp2040-glitch-tool 通用基底）。
 宪法 §1.6（永不烧写）立场不变；本仓只读消费级 die 不入此域。
 
+### 6m. #237 五轮：4090 0.8.3 全量收口——DEF 窗破案 + SRC 表定谳 + Ada 行域（2026-11-20）
+
+JeusChrit 的 4090 0.8.3 dump（`ad102-2704/ssdiag-083-4090-unlocked.txt`，
+解锁态）把四轮的三条悬案一次收口：
+
+1. **L2_DEF_SCAN 窗口身份破案**：`0x8211e8..0x8211fc` = **per-FBPA 内存/
+   PHY trim 熔丝**（app08 AD103 反汇编 PC 0x3e00..0x3ffb：循环 i=0..5，以
+   `~0x820c14` 的活 FBIO 位 i 门控，读 `0x8211e8+4i` 合并进
+   `0x903d50+0x4000*i` = NV_PFB_FBPA_n+0x3d50）。4090 六词 = f1/20/00/10/
+   e1/10——**此前 0x41 词数逐 die（0/2/4）之谜由此解**：trim 值本就逐卡。
+   OPT_ROP_L2_DEFECTIVE_FBP 仍未定位（窗口排除该区；0x8211d4/d8=1、
+   0x8211e0=0x800 的常量 trio 也不是 DEF——DEF 猎场退回 OBJFUSE +0x248
+   指针）。L2_FBP 六 FBP 全 `cand=pack eff=pack`（AD102 3/4 切 die 的
+   packing 恒等式现场确认，sw=0 同 4090）。4090 切口在熔丝层的结论不变。
+2. **APP08 源表定谳**：AD102 与 AD103 **逐字节相同**（8×0x80, 8×0x44,
+   8×0x840, 32×0x840, 8×0x44，同样 0x8214e8/0x821544 两个 badf 岛）——
+   **app08 的 64 对是按子族常量表**（AD102/AD103 一张、AD107 一张
+   {0x100,0x80,0x8}），**不带 4090 的 L2 切片**。SRC 表=B 的 Data 可读/
+   Control 挡在 AD102 上也成立（AD107 唯一可读样本地位解除）。
+3. **Ada 行域**：IFF_RECORD AD102=`0x033f02e5` → 741..831（832 行
+   == FUSE_ADDR）；AD103（JeusChrit 转述）=`0x033f02e3` → 739..831。
+   **Ada 三 die 共享 832 行、START 逐 die**（741/739/767）——START 即 FF
+   记录池首行（GA100=222，ga100-fuse-re 域），行界+池首均逐 die 配置。
+4. 小项收口：4090 gate Q1=0/Q5=1→BLOCK→CLOSED（第五族）；LTCNT=12；
+   MAGIC_D=0x00a0000c bit21=1/bit25=0（预测命中，见 6l 跨代表）。
+   TU106 移位 FUSE_ADDR=0xff 的 256 行假设仍挂（Turing 无 IFF 可验）。
+
+**同轮新参与者 Willian-Zhang（专业 AD102）**：FEAT_OVR_PLM 写 nibble[7:4]
+出厂=0（消费=0x8=L3-write only）——**连 heavy-secure L3 写位都关**：V67
+载具第四写（FEAT=0xffffffff）被丢 → 载具照常 HALT 但门不开，结构性死锁
+（其 payload HALT 形态+门保持闭合与此完全自洽）。GSP 镜像内无 0x823804
+store = 预期（FWSEC 在 VBIOS BIT token 0x85，不在 GSP ELF；kate-land
+Goldilocks——故障注入让 fuse-sense 窗口读空后 PLM 全开——证明 PLM 态来自
+早期 boot 模板路径）。bit25=1 恰在无 Gen4 的 TU106、SS0 冷/热 boot 两 bit
+漂移=我方 TU106 冷态不稳词第五回响。详见 #237 Willian-Zhang 11-20 帖。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读
