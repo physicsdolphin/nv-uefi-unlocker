@@ -1,5 +1,10 @@
 # 功能评估记录：CMP PCIe Gen2 / SM 开核 / AD102 BAR1+L2（2026-11-01）
 
+> 状态更新（2026-11-21）：本文的判定表已并入总账 [gate-inventory](gate-inventory.md)
+> （含 2^n BAR1 尺寸表推导、帧预算机械化与突破路径）；§3 的 BAR1 构造已工具化为
+> falcgen `--gate bar1 --bar1-size`（64G 产物 = cf3566d0 逐字节复现）。§1 的
+> "参数化 nlzy 生成器"落地路径即 falcgen，第三写仍被帧预算硬拒（机械可证）。
+
 三个新功能方向的可行性判定。来源参考：本地 `reference/cmp170hx`（机制百科）、`reference/cmp50hx-unlock`（Turing 实证链）、`reference/cmp90hx-unlock`（GA102 分析）、`reference/ga100-fuse-re`（熔丝布局）、`amoghmunikote/cmpunlocker`（PR #55）、`aajax.top` AD102 L2 研究。判定纪律：读回是唯一判据；改常量不构成已验证移植。
 
 ## 1. CMP 矿卡 PCIe Gen2 解锁 —— 落地但需探索（本轮不开 PR）

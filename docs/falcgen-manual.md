@@ -174,7 +174,7 @@ falcgen lst-compare <plain.bin> <envydis.lst> --base 0
 
 ```bash
 falcgen run <file> --base <va> [--trace] [--steps N] [--sig-len N] \
-            [--sig-hex XX..] [--break <pc>]
+            [--sig-hex XX..] [--break <pc>] [--no-stop-after-dma]
 ```
 
 | 参数 | 默认 | 说明 |
@@ -184,6 +184,7 @@ falcgen run <file> --base <va> [--trace] [--steps N] [--sig-len N] \
 | `--sig-hex` | 0xaa 填充 | 签名缓冲内容（hex 字节流） |
 | `--trace` | 关 | 全指令 trace（stdout，量大——重定向后 grep） |
 | `--break` | — | 执行到 PC 前停（帧链抓取点） |
+| `--no-stop-after-dma` | 关 | 关闭"首个触栈签名 DMA 后快照"的默认停车（继续跑到 halt/断点） |
 
 **内置环境模型**（全部从 booter 自身代码逆向，改动需 trace 实证）：
 
@@ -213,14 +214,31 @@ falcgen run TU102_sec_plain.bin --base 0x100 --steps 50000000 --break 0x39bb
 ### 4.5 `synth` — payload 合成
 
 ```bash
-falcgen synth --family tu102|ga102|ad102 --writes <addr>=<val>[,...] \
-              [--golden <file>] [--out <file>]
+falcgen synth [--family tu102|tu11x|ga102|ad102]
+              (--writes <addr>=<val>[,...] | --gate ss | --gate bar1 --bar1-size <GiB>)
+              [--marker <hex>] [--golden <file>] [--out <file>]
 ```
 
 - `--writes`：写链（十六进制，`addr=value` 逗号分隔；无 `=` 视为 value=0）。
-  **写链 = 唯一政策输入**，顺序 = 执行顺序。
+  **写链 = 唯一政策输入**，顺序 = 执行顺序。与 `--gate` 互斥。
+- `--gate ss`：各族出厂解锁链预设（tu102/tu11x：FEAT PLM 0x409650 + WPR2_HI=0；
+  ga102：0x823804 单写；ad102：四写链）。四个预设的产物被 `tests/goldens.rs`
+  钉死在四张 pinned SHA 上逐字节验收（b0ec9029 / c79208ac / 2a0aa1f8 / 44c36b2d）。
+- `--gate bar1 --bar1-size <GiB>`：AD102 BAR1 构造（仅 ad102）。尺寸走
+  **2^n 尺寸表**（64MiB<<i：TU106 0x02=256MiB、AD102 0x9=32GiB、0xa=64GiB 三点
+  交叉验证；CYA=(index-4)<<3 两点拟合）。**只有 64G 有实证**（marker 0x67b00004
+  产物 = cf3566d0，八卡工件）；其余档产 manifest 标 UNPROVEN。
+- `--marker`：仅 ad102（唯一带邮箱 marker 的载荷）；bar1 门默认 0x67b00004。
 - `--golden`：对照物（不入库！）；逐字节比对，差异报前 8 处（带 DMEM 偏移）。
-- `--out`：写出产物（同样不入库）。
+- `--out`：写出产物（同样不入库），并落 manifest 侧车 `<out>.manifest.txt`
+  （写链、marker、预期读回、前置条件、UNPROVEN 标记）。
+
+**写数预算（机械边界）**：链帧必须落在 chain_base 与 tail_base 之间（Turing
+文法 (0xff80-0xff50)/0x18=2），GA/Ada put-list 模板容量即上限——
+tu102/tu11x=2、ga102=1、ad102=4。超预算硬拒并打印全表；第三写（如 CMP Gen2
+的 XP3G 0x8e1b0）在 Turing 上进不去，突破需 pivot 重排（cmp50hx stockflow 式，
+逐 gadget 重审计）。"`--gate ss`" 是与金标对拍的验收面；"`--writes`" 是通用
+逃生口（产物标 unproven）。
 
 ```bash
 falcgen synth --writes 0x409650=0xffffffff,0x1fa828=0 \
@@ -231,7 +249,7 @@ falcgen synth --writes 0x409650=0xffffffff,0x1fa828=0 \
 
 **TU102 走帧循环语法**（Geometry 参数化：fill/guard/main_sp/活帧/链基/步长/gadget 族/尾块）；
 **GA102/AD102 走 put-list 模板**（GA-line/Ada booter 尾声形状不同——GA102 单写 +
-0x81ee 终止符；AD102 四写链 + marker 0x67b00001 + 0x31b5/0x771e 收尾）。
+0x81ee 终止符；AD102 四写链 + marker + 0x31b5/0x771e 收尾）。
 
 ---
 
