@@ -372,7 +372,7 @@ impl Interp {
             }
             Expr::Add(a, b) => self.eval(a).wrapping_add(self.eval(b)),
             Expr::Mul(a, b) => self.eval(a).wrapping_mul(self.eval(b)),
-            Expr::VecRange(lo, hi) => ((((*hi & 0xffff) << 16) | (*lo & 0xffff)) as u32),
+            Expr::VecRange(lo, hi) => (((*hi & 0xffff) << 16) | (*lo & 0xffff)) as u32,
         }
     }
 
@@ -576,7 +576,7 @@ impl Interp {
                     if d == "sp" {
                         // add $sp, imm (frame alloc) / sub
                         let delta = match name {
-                            "add" => (bv as i32),
+                            "add" => bv as i32,
                             "sub" => -(bv as i32),
                             _ => 0,
                         };
@@ -1051,7 +1051,15 @@ fn alu(name: &str, a: u32, b: u32, _old: u32) -> (u32, u32) {
         "and" => (a & b, false),
         "or" => (a | b, false),
         "xor" => (a ^ b, false),
-        "shl" | "shlc" => (a.wrapping_shl(b & 31), (a << b.min(31)) > 0xffff_ffff_u32 && b > 0),
+        // CF = the last bit shifted out (the x86 convention, same shape as
+        // shr below); counts >= width leave CF clear. The old predicate was
+        // a dead comparison (u32 > u32::MAX is always false), so shl carry
+        // never set. Not verified against real fuc5 flags - no known booter
+        // path branches on it (the pinned goldens never exercise it).
+        "shl" | "shlc" => (
+            a.wrapping_shl(b & 31),
+            b > 0 && b <= 32 && (a >> (32 - b)) & 1 != 0,
+        ),
         "shr" | "shrc" => (a.wrapping_shr(b & 31), a & 1 != 0 && b > 0),
         "sar" => (((a as i32) >> (b & 31)) as u32, false),
         "mulu" => {
