@@ -1188,7 +1188,45 @@ pub fn run_transaction(
                     return Err(TxError::ENodev);
                 }
             };
-            crate::tx_fwsec::fwsec_ignite_tu10x(gpu, &layout, bl)?;
+            if let Err(e) = crate::tx_fwsec::fwsec_ignite_tu10x(gpu, &layout, bl, false) {
+                // FWSEC-FALLBACK (issues #89/#275): the WPR2-never residue
+                // with the 0x3ff error cluster pins the "GSP Falcon FBIF ->
+                // sysmem aperture does not deliver" class - BOTH staging
+                // bands are dead there (#89: high 0x00a003ff, low
+                // 0x009003ff), so no band retry can help; the field vehicle
+                // is VRAM staging (BAR1 + TRANSCFG4 -> LOCAL_FB, v2.1.9;
+                // #89 marker round green, #275 marker round green
+                // 2026-11-21). One function-level FLR - nothing is unlocked
+                // at the FWSEC stage, the selectors are still at factory,
+                // so payload_mode=false on the flr mechanics - + the BME
+                // re-arm (issue #156 rc2 field: flr_phase restores command
+                // WITHOUT BME and the BL fetch needs bus master) + a single
+                // VRAM-staged re-ignition. A retry that fails again takes
+                // the canonical failure path: single shot, no loop. Skipped
+                // when the marker already staged VRAM - there is no arm
+                // left to fall to.
+                if crate::tx_fwsec::fwsec_aperture_dead_signature(gpu)
+                    && !crate::tx::probe_file("\\tx-fwsec-vram-staging.txt")
+                {
+                    info!(
+                        "FWSEC-FALLBACK: WPR2-never + empty-window + EXCI 0x3ff signature = the FBIF->sysmem aperture class (issues #89/#275) - one VRAM-staged retry after a function-level FLR"
+                    );
+                    if let Err(e2) = crate::tx_booter::flr_phase(gpu, &assets.family, false) {
+                        info!("FWSEC-FALLBACK: FLR failed ({e2:?}) - canonical failure path follows");
+                        return Err(e2);
+                    }
+                    let cmd_pre = gpu.pci.config_read_u16(0x04);
+                    gpu.pci.cfg_write_u16(0x04, cmd_pre | 0x0004);
+                    let cmd_rb = gpu.pci.config_read_u16(0x04);
+                    info!(
+                        "FWSEC-FALLBACK: GPU BME re-armed (cmd={cmd_pre:#06x} -> {cmd_rb:#06x}) - the re-ignition's sysmem side needs bus master"
+                    );
+                    crate::tx_fwsec::fwsec_ignite_tu10x(gpu, &layout, bl, true)?;
+                    info!("FWSEC-FALLBACK: VRAM-staged re-ignition verified - continuing the chain");
+                } else {
+                    return Err(e);
+                }
+            }
         }
     } else {
         crate::tx_fwsec::fwsec_ignite(gpu, &layout)?;
@@ -1480,7 +1518,7 @@ pub fn run_transaction(
                         return Err(TxError::ENodev);
                     }
                 };
-                if let Err(e) = crate::tx_fwsec::fwsec_ignite_tu10x(gpu, &layout, bl) {
+                if let Err(e) = crate::tx_fwsec::fwsec_ignite_tu10x(gpu, &layout, bl, false) {
                     info!("STAGING-FALLBACK: FWSEC re-ignition failed ({e:?}) - canonical failure path follows");
                     return Err(TxError::EIO);
                 }

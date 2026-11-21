@@ -750,7 +750,22 @@ const _: () = {
 ///   bare 0x5 leaves MEM_TYPE virtual and the BL DMA never completes.
 /// - Signature rides inside the blob data segment (prod bytes); the
 ///   explicit per-fuse sig placement of the V3 path does not apply.
-pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<(), TxError> {
+/// FWSEC-FALLBACK gate (issues #89/#275): the WPR2-never residue that pins
+/// the "GSP Falcon FBIF -> sysmem aperture does not deliver" class. All
+/// four values are the failure dump line itself, so the gate is four reads
+/// with no new instrumentation. The EXCI compare is low-16 ONLY: #89 read
+/// 0x00a003ff on the old high band and 0x009003ff on the low band - the
+/// sub-code drifts with the staging arm, the 0x3ff error cluster does not.
+pub fn fwsec_aperture_dead_signature(gpu: &TxGpu) -> bool {
+    const GSP: u32 = 0x0011_0000;
+    let lo = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a824);
+    let hi = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a828);
+    let cpuctl = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x100) as u64);
+    let exci = gpu.pci.bar_read_u32(gpu.bar, (GSP + 0x0d0) as u64);
+    lo == 0x1fff_fe00 && hi == 0 && cpuctl == 0 && (exci & 0xffff) == 0x3ff
+}
+
+pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram: bool) -> Result<(), TxError> {
     const GSP: u32 = 0x0011_0000;
     const FALCON2: u32 = 0x0011_1000;
     const BL_START_TAG: u32 = 0xfd;
@@ -849,7 +864,10 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8]) -> Result<
     // TRANSCFG4 aperture to LOCAL_FB ((t4&!7)|4). The meta itself MUST stay
     // in sysmem (the booter reads it through the sysmem aperture - VRAM meta
     // reads back as garbage and exits 0x89, #89 measured). Default OFF.
-    let vram_staging = crate::tx::probe_file("\\tx-fwsec-vram-staging.txt");
+    let vram_staging = force_vram || crate::tx::probe_file("\\tx-fwsec-vram-staging.txt");
+    if force_vram {
+        info!("FWSEC-TU10X: forced VRAM staging (FWSEC-FALLBACK retry arm)");
+    }
     const FWSEC_VRAM_OFF: u64 = 0x0100_0000; // 16 MiB into FB (BAR1 window)
     if vram_staging {
         let img = unsafe { core::slice::from_raw_parts(dma.host, fw.image_size as usize) };

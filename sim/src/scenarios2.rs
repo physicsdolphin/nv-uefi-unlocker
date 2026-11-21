@@ -564,6 +564,66 @@ fn t40_fbif_dead_after_run_flr_retry_recovers() {
     );
 }
 
+/// FWSEC-FALLBACK (issues #89/#275): the GSP Falcon FBIF->sysmem aperture
+/// does not deliver - the first FWSEC attempt dies with the WPR2-never
+/// residue and the loader retries ONCE with VRAM staging (the aperture
+/// that still works on that host class). Field basis: the #89 marker round
+/// (v2.1.9, WPR2 UP 3ms, 20.6->33.7 TFLOPS) and the #275 marker round
+/// (2026-11-21, B760M-A + 2060 12GB, "Resolved").
+#[test]
+fn t41_fwsec_aperture_dead_vram_fallback_recovers() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx =
+        Transaction::new(&mut gpu, Faults { sysmem_aperture_dead: true, ..Default::default() });
+    let report = tx.run().expect("the VRAM-staged retry must carry the boot");
+    assert!(report.unwind_clean && report.selectors_written);
+    assert!(
+        tx.log().iter().any(|l| l.contains("FWSEC-FALLBACK: WPR2-never")),
+        "the A-class gate line must be on the log"
+    );
+    assert!(
+        tx.log().iter().any(|l| l.contains("VRAM-staged re-ignition verified")),
+        "the VRAM vehicle completion line must be on the log"
+    );
+    let gate_hits =
+        tx.log().iter().filter(|l| l.contains("FWSEC-FALLBACK: WPR2-never")).count();
+    assert_eq!(gate_hits, 1, "the gate must fire exactly once, got {gate_hits}");
+}
+
+/// Negative control: a DIFFERENT FWSEC death (alien WPR2 geometry - the
+/// fetch DELIVERED, the install is wrong) must not fire the aperture
+/// fallback; the canonical failure path stands.
+#[test]
+fn t42_wpr2_mismatch_does_not_fire_aperture_fallback() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults { wpr2_mismatch: true, ..Default::default() });
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "fwsec");
+    assert!(err.reason.contains("WPR2 mismatch"), "{err:?}");
+    assert!(
+        !tx.log().iter().any(|l| l.contains("FWSEC-FALLBACK")),
+        "the aperture fallback must not fire on a delivered-but-wrong install"
+    );
+}
+
+/// Terminal path: the VRAM retry fails as well - the fallback must stay
+/// single-shot and the run ends in the canonical fwsec failure (no loop,
+/// no second FLR attempt).
+#[test]
+fn t43_vram_retry_also_fails_single_shot_terminal() {
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(
+        &mut gpu,
+        Faults { sysmem_aperture_dead: true, wpr2_mismatch: true, ..Default::default() },
+    );
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "fwsec");
+    assert!(err.reason.contains("WPR2 mismatch"), "{err:?}");
+    let hits =
+        tx.log().iter().filter(|l| l.contains("FWSEC-FALLBACK: WPR2-never")).count();
+    assert_eq!(hits, 1, "the fallback must stay single-shot, got {hits}");
+}
+
 #[test]
 fn t_no_flr_ada_ablation() {
     // Loader analog of the loader-side no-flr skip: the FLR is state

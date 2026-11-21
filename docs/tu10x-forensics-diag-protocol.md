@@ -16,6 +16,7 @@
 1. **v2.1.8 默认已修 TB 型**（FWSEC staging 低位化，#74 实证）——#89 已证明低位在该机**仍不够**（EXCI 0x009003ff）。
 2. **v2.1.9 新增载具 `\tx-fwsec-vram-staging.txt`**（#89 实证路径）：FWSEC 镜像经 BAR1 写入 FB 16MiB、GSP FBIF TRANSCFG4→LOCAL_FB（(t4&!7)|4）、BL DESC 指向 VRAM，WPR2 验证后恢复 sysmem 口径；**meta 留 sysmem**（RE+实测：VRAM meta→0x89）。
 3. 若 booter 阶段变 0x91/0x89（#16 型 sub-4GB meta 锁），回报即可（混合带机器的存在性本身是重要数据）。
+4. **FWSEC-FALLBACK 已落 main（2026-11-22，#89/#275 双机指纹）**：主链 FWSEC 点火死于 A 类签名（WPR2-never + 空窗残影 `0x1ffffe00/0` + `CPUCTL=0` + EXCI[15:0]=`0x3ff`；EXCI 只比低 16 位——#89 高位带 `0xa`/低位带 `0x9` 子码随带漂移）时，免 marker 单次 `FLR(false)` + BME 重臂（#156 rc2 场教训）+ VRAM staging 重点火；重试再死 = EIO 终态，单发无循环。`\tx-fwsec-vram-staging.txt` 转为手动先手/消融（在位时不触发）。健康台架无法真机复现 A 类——触发器的真机验证依赖两台无 marker 复测（sim t41–t43 覆盖门控逻辑：触发/负控/终态单发）。
 
 **B 类（FWSEC 全绿但终值 0x0B/0x11）——#57、#82**（v3 语义：GA 明文 RE 定位为**签名/验证参数域**——meta/WPR2 校验已过、死在签名页 DMA→PSS 验签→期望值对账）：
 1. `\tx-low-staging.txt`（全局低位，meta/签名/radix/boot image 一起压低）——**首要**：该域的 DMA 地址带是头号变量（与 #74"签名/radix ≥4G→挂死"同域）。

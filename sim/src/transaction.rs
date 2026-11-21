@@ -70,6 +70,14 @@ pub struct Faults {
     /// loader's fallback must therefore FLR + re-ignite FWSEC, not just
     /// re-fire through the reset dance.
     pub fbif_write_dead_after_run: bool,
+    /// #89/#275 class (2026-11-01 / 2026-11-21): the GSP Falcon FBIF ->
+    /// sysmem aperture does not deliver on this host - BOTH staging bands
+    /// fail and even NONCOHERENT_SYSMEM is dead; LOCAL_FB works. The first
+    /// FWSEC attempt dies with the WPR2-never residue (empty window,
+    /// CPUCTL=0, EXCI 0x3ff cluster); the loader's FWSEC-FALLBACK retries
+    /// once with VRAM staging, which is exactly the aperture that still
+    /// works.
+    pub sysmem_aperture_dead: bool,
 }
 
 /// Payload return-path shape (canonical falcon_hs `wait_plm` split).
@@ -136,6 +144,8 @@ pub struct Transaction<'a> {
     /// false; the phase log carries the evidence.
     pub staging_high: bool,
     staging_fallback_used: bool,
+    fwsec_fallback_used: bool,
+    fwsec_vram_staged: bool,
     // bookkeeping (unwind contract)
     dma_live: usize,
     dma_allocs: usize,
@@ -170,6 +180,8 @@ impl<'a> Transaction<'a> {
             no_flr: false,
             staging_high: false,
             staging_fallback_used: false,
+            fwsec_fallback_used: false,
+            fwsec_vram_staged: false,
             dma_live: 0,
             last_marker: None,
             last_cpuctl: None,
@@ -302,6 +314,13 @@ impl<'a> Transaction<'a> {
         if !self.bme_set {
             return Err(PhaseError::new("fwsec",
                 "GPU bus master is off - the FWSEC BL sysmem DMA fetch would wedge (issue #156 rc2 field)"));
+        }
+        if self.faults.sysmem_aperture_dead && !self.fwsec_vram_staged {
+            // #89/#275 class: the BL's sysmem fetch never delivers - WPR2
+            // stays at the empty cold default and the core never launches.
+            self.note("FWSEC: WPR2 never came up (FBIF->sysmem aperture undelivered, issues #89/#275 class)");
+            return Err(PhaseError::new("fwsec",
+                "WPR2 never came up: the FBIF->sysmem aperture did not deliver the FWSEC image (issues #89/#275 class)"));
         }
         self.alloc_dma_page()?;
         let want = (0x1fff_fe00u32, 0x0400_0000u32);
@@ -635,7 +654,31 @@ impl<'a> Transaction<'a> {
         let result = (|| {
             self.claim()?;
             self.gfw_wait()?;
-            self.fwsec()?;
+            if let Err(e) = self.fwsec() {
+                // FWSEC-FALLBACK gate (issues #89/#275): the loader retries
+                // ONCE, gated on the A-class residue (modeled by the fault
+                // flag here) and skipped when the first attempt already
+                // staged VRAM - no arm left to fall to. Mirror classes
+                // (alien geometry install, BME-less wedge) must NOT retry.
+                if !self.faults.sysmem_aperture_dead
+                    || self.fwsec_fallback_used
+                    || self.fwsec_vram_staged
+                {
+                    return Err(e);
+                }
+                self.fwsec_fallback_used = true;
+                self.note("FWSEC-FALLBACK: WPR2-never + empty-window + EXCI 0x3ff signature = the FBIF->sysmem aperture class (issues #89/#275) - one VRAM-staged retry after a function-level FLR");
+                // FLR analog: power-on defaults (bme_set drops, per
+                // flr_phase's WITHOUT-BME restore) and the loader re-arms
+                // bus master before the re-ignition (issue #156 rc2 field).
+                self.bme_set = false;
+                self.fwsec_done = false;
+                self.bme_set = true;
+                self.note("FWSEC-FALLBACK: GPU BME re-armed - VRAM-staged re-ignition follows");
+                self.fwsec_vram_staged = true;
+                self.fwsec()?;
+                self.note("FWSEC-FALLBACK: VRAM-staged re-ignition verified (the LOCAL_FB aperture delivers) - continuing the chain");
+            }
             self.booter_fire_and_verify()?;
             if self.payload {
                 self.selectors()?;
