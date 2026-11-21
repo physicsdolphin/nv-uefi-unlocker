@@ -1040,6 +1040,11 @@ Goldilocks——故障注入让 fuse-sense 窗口读空后 PLM 全开——证�
 早期 boot 模板路径）。bit25=1 恰在无 Gen4 的 TU106、SS0 冷/热 boot 两 bit
 漂移=我方 TU106 冷态不稳词第五回响。详见 #237 Willian-Zhang 11-20 帖。
 
+**同轮兑现（0.8.4）**：双胞胎的 `L2_DEF_SCAN` 面已改名 **`FBPA_TRIM`**，
+头部印破案结论（per-FBPA mem/PHY trim fuses、ex-L2_DEF_SCAN、DEF 猎场
+=OBJFUSE +0x248），const 注释带消费链（app08 PC 0x3e00..0x3ffb →
+NV_PFB_FBPA_n+0x3d50）。老历史日志里的 `L2_DEF_SCAN` 行按此对照。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

@@ -353,10 +353,14 @@ LTS_BROADCAST = 0x0017_E02C
 AD10X_L2_CAND_FBP = 0x0082_1200  # OPT_ROP_L2_DISABLE_FBP[0..5] (stage-1 fuse)
 AD10X_L2_SW_FBP = 0x0082_2080  # CTRL_OPT_ROP_L2_FBP[0..5] (RPR 37-42, OBJFUSE +0x228)
 AD10X_L2_EFF_FBP = 0x0082_2900  # STATUS_OPT_ROP_L2_FBP[0..5] (OBJFUSE +0x270)
-# Ada's OPT_ROP_L2_DEFECTIVE_FBP hunt: 595 caller 0x6c7334 reads OBJFUSE
-# +0x228 (-> 0x822080) then +0x248 for a companion mask it ANDs in.
-AD10X_L2_DEF_SCAN_BASE = 0x0082_11C0
-AD10X_L2_DEF_SCAN_WORDS = 33
+# Round-5 solve (was mislabeled the OPT_ROP_L2_DEFECTIVE_FBP hunt): the
+# nonzero core 0x8211e8..0x8211fc is per-FBPA memory/PHY trim fuse data -
+# app08 consumer copy (PC 0x3e00..0x3ffb) merges into NV_PFB_FBPA_n + 0x3d50.
+# Word counts scale 0/2/4 with populated FBPAs (per-card data, not floorsweep);
+# the 4090's six words f1/20/00/10/e1/10 are the AD102 reference row.
+# DEFective-FBP hunting returns to OBJFUSE +0x248 only.
+AD10X_FBPA_TRIM_BASE = 0x0082_11C0
+AD10X_FBPA_TRIM_WORDS = 33
 # app08 0x6ae4 SOURCE tables (what it would write if the four gates pass).
 APP08_SRC_A_BASE = 0x0082_1480
 APP08_SRC_A_WORDS = 66  # 0x821480..0x821584 inclusive, the reporter's stated end
@@ -1142,13 +1146,15 @@ def report(bar, tag="", devpath=None):
         else:
             pred_s, marks = "n/a", ""
         print(f"    FBP[{f}] {AD10X_L2_CAND_FBP + 4 * f:#010x} cand={c:#010x} sw={s:#010x} eff={e:#010x} pred={pred_s}{marks}")
-    # #237 round 4 sweep: Ada's OPT_ROP_L2_DEFECTIVE_FBP hunt (GA100 dict had
-    # 0x8205e8; the 595 caller 0x6c7334 ANDs OBJFUSE +0x248 in after +0x228).
-    print("  L2_DEF_SCAN (0x8211c0..0x821240; Ada OPT_ROP_L2_DEFECTIVE_FBP hunt, GA100 dict had 0x8205e8)")
-    for chunk in range(0, AD10X_L2_DEF_SCAN_WORDS, 8):
-        cells = " ".join(f"{bar.rd(AD10X_L2_DEF_SCAN_BASE + 4 * i):#010x}"
-                         for i in range(chunk, min(chunk + 8, AD10X_L2_DEF_SCAN_WORDS)))
-        print(f"    {AD10X_L2_DEF_SCAN_BASE + 4 * chunk:#010x} {cells}")
+    # Round-5 solve: FBPA_TRIM - the nonzero core 0x8211e8..0x8211fc is
+    # per-FBPA mem/PHY trim fuses (app08 consumer copy merges into
+    # NV_PFB_FBPA_n + 0x3d50), NOT the DEFective array - that stays hunted
+    # at OBJFUSE +0x248. Trim words are per-card data; compare same-die only.
+    print("  FBPA_TRIM (0x8211c0..0x821240; per-FBPA mem/PHY trim fuses, ex-L2_DEF_SCAN; DEF hunt stays at OBJFUSE +0x248)")
+    for chunk in range(0, AD10X_FBPA_TRIM_WORDS, 8):
+        cells = " ".join(f"{bar.rd(AD10X_FBPA_TRIM_BASE + 4 * i):#010x}"
+                         for i in range(chunk, min(chunk + 8, AD10X_FBPA_TRIM_WORDS)))
+        print(f"    {AD10X_FBPA_TRIM_BASE + 4 * chunk:#010x} {cells}")
     # #237 round 4 sweep: the app08 0x6ae4 SOURCE tables (what it would write
     # if the four gates pass) - 4090 slice pattern or the AD103 values?
     for name, base, words in (
