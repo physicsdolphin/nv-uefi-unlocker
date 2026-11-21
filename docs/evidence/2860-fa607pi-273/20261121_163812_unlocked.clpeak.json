@@ -1,0 +1,563 @@
+{
+  "schema": "clpeak/run",
+  "format_version": 3,
+  "clpeak_version": "3.0.5",
+  "generated_at": "2026-11-21T08:38:12Z",
+  "duration_s": 111.0612,
+  "build": {
+    "backends": [
+      "CUDA",
+      "Vulkan",
+      "OpenCL",
+      "CPU",
+      "LiteRT",
+      "ONNX"
+    ],
+    "config": "Release"
+  },
+  "host": {
+    "os": "Win64",
+    "os_version": "25H2",
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 9 7940HX with Radeon Graphics        ",
+    "logical_cores": 32,
+    "memory_bytes": 33520250880
+  },
+  "invocation": {
+    "argv": [
+      "clpeak",
+      "--devices",
+      "cuda:0",
+      "-o",
+      "C:\\Users\\zsh\\.clpeak\\runs\\20261121_163812.clpeak.json"
+    ],
+    "target_time_us": 500000,
+    "target_time_us_cpu": 2000000,
+    "target_time_us_ml_gpu": 1000000,
+    "warmup": 2,
+    "categories": [
+      "compute",
+      "crypto",
+      "string",
+      "bandwidth",
+      "latency",
+      "ai"
+    ]
+  },
+  "devices": [
+    {
+      "backend": "CUDA",
+      "platform": "CUDA",
+      "name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "driver": "13.3",
+      "type": "gpu",
+      "device_index": 0,
+      "properties": [
+        {
+          "key": "Arch",
+          "value": "sm_89"
+        },
+        {
+          "key": "Toolkit",
+          "value": "13.5"
+        },
+        {
+          "key": "SMs",
+          "value": "36"
+        },
+        {
+          "key": "VRAM",
+          "value": "8187 MB"
+        }
+      ],
+      "tests": [
+        {
+          "id": "single_precision_compute",
+          "title": "Single-precision compute",
+          "category": "compute",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "flops",
+          "unit": "FLOPS",
+          "description": "Peak fp32 arithmetic rate of the GPU's ALUs, with no memory traffic.",
+          "duration_s": 0.3772616,
+          "metrics": [
+            {
+              "id": "float",
+              "value": 1.786511e+13
+            }
+          ]
+        },
+        {
+          "id": "half_precision_compute",
+          "title": "Half-precision compute",
+          "category": "compute",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "flops",
+          "unit": "FLOPS",
+          "description": "Peak fp16 arithmetic rate, with fp16 inputs and accumulator.",
+          "duration_s": 0.9457252,
+          "metrics": [
+            {
+              "id": "half",
+              "value": 2.353569e+13,
+              "description": "Scalar, one value per thread."
+            },
+            {
+              "id": "half2",
+              "value": 2.35471e+13,
+              "description": "Two fp16 values packed in one instruction."
+            }
+          ]
+        },
+        {
+          "id": "double_precision_compute",
+          "title": "Double-precision compute",
+          "category": "compute",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "flops",
+          "unit": "FLOPS",
+          "description": "Peak fp64 arithmetic rate. Consumer GPUs run it at a small fraction of their fp32 rate.",
+          "duration_s": 1.48909,
+          "metrics": [
+            {
+              "id": "double",
+              "value": 3.728415e+11
+            }
+          ]
+        },
+        {
+          "id": "mixed_precision_compute",
+          "title": "Mixed-precision compute fp16xfp16+fp32",
+          "category": "compute",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "flops",
+          "unit": "FLOPS",
+          "description": "Peak rate of fp16 multiplies accumulated in fp32, without the matrix engine.",
+          "duration_s": 0.5299551,
+          "metrics": [
+            {
+              "id": "mp",
+              "value": 2.29988e+13
+            }
+          ]
+        },
+        {
+          "id": "bfloat16_compute",
+          "title": "BF16 compute bf16xbf16+fp32",
+          "category": "compute",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "flops",
+          "unit": "FLOPS",
+          "description": "Peak rate of bf16 multiplies accumulated in fp32, without the matrix engine.",
+          "duration_s": 0.5252156,
+          "metrics": [
+            {
+              "id": "bf16",
+              "value": 2.2935e+13
+            }
+          ]
+        },
+        {
+          "id": "integer_compute",
+          "title": "Integer compute (32-bit IMAD)",
+          "category": "compute",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "ops",
+          "unit": "OPS",
+          "description": "Peak 32-bit integer arithmetic rate.",
+          "duration_s": 0.5426634,
+          "metrics": [
+            {
+              "id": "int",
+              "value": 1.173659e+13
+            }
+          ]
+        },
+        {
+          "id": "integer_compute_int8_dp",
+          "title": "INT8 dot-product compute (__dp4a)",
+          "category": "compute",
+          "shape": "homogeneous",
+          "axis": "chains in flight",
+          "direction": "higher_is_better",
+          "quantity": "ops",
+          "unit": "OPS",
+          "description": "Peak rate of the 4-way int8 dot-product instruction, without the matrix engine.",
+          "duration_s": 1.9261,
+          "metrics": [
+            {
+              "id": "int8_dp",
+              "value": 4.682487e+13,
+              "description": "One dependent chain of dot products."
+            },
+            {
+              "id": "int8_dp2",
+              "value": 4.658356e+13,
+              "description": "2 independent chains."
+            },
+            {
+              "id": "int8_dp4",
+              "value": 4.70765e+13,
+              "description": "4 independent chains."
+            },
+            {
+              "id": "int8_dp8",
+              "value": 4.679917e+13,
+              "description": "8 independent chains."
+            }
+          ]
+        },
+        {
+          "id": "wmma",
+          "title": "Tensor cores (WMMA / mma.sync)",
+          "category": "compute",
+          "shape": "heterogeneous",
+          "axis": "data type",
+          "direction": "higher_is_better",
+          "quantity": "flops",
+          "unit": "FLOPS",
+          "description": "Peak matrix-multiply rate of the tensor cores.",
+          "duration_s": 36.01149,
+          "metrics": [
+            {
+              "id": "fp16",
+              "value": 9.295907e+13,
+              "description": "fp16 inputs, fp32 accumulator (WMMA 16x16x16). GeForce runs it at half rate; see f16acc."
+            },
+            {
+              "id": "fp16 f16acc",
+              "value": 9.314491e+13,
+              "description": "fp16 inputs and accumulator (mma.sync m16n8k16)."
+            },
+            {
+              "id": "bf16",
+              "value": 9.310331e+13,
+              "description": "bf16 inputs, fp32 accumulator (WMMA 16x16x16)."
+            },
+            {
+              "id": "tf32",
+              "value": 4.7364e+13,
+              "description": "fp32 inputs rounded to tf32, fp32 accumulator (mma.sync m16n8k8)."
+            },
+            {
+              "id": "fp64",
+              "value": 3.221199e+11,
+              "description": "fp64 inputs and accumulator (WMMA 8x8x4). Full rate on datacenter parts only."
+            },
+            {
+              "id": "fp8_e4m3",
+              "value": 1.849852e+14,
+              "description": "fp8 E4M3 inputs, fp32 accumulator (mma.sync m16n8k32). GeForce runs it at half rate; see f16acc."
+            },
+            {
+              "id": "fp8_e5m2",
+              "value": 1.850868e+14,
+              "description": "fp8 E5M2 inputs (more range, less precision), fp32 accumulator (mma.sync m16n8k32)."
+            },
+            {
+              "id": "fp8_e4m3 f16acc",
+              "value": 1.865642e+14,
+              "description": "fp8 E4M3 inputs, fp16 accumulator (mma.sync m16n8k32)."
+            },
+            {
+              "id": "fp8_e4m3 2:4",
+              "value": 3.684074e+14,
+              "description": "fp8 E4M3 inputs, fp32 accumulator, 2:4 structured sparsity (mma.sp m16n8k64)."
+            },
+            {
+              "id": "fp8_e4m3 2:4 f16acc",
+              "status": "unsupported",
+              "reason": "FP8 mma.sp 2:4 sparsity with fp16 accumulate requires Blackwell sm_120a or newer! Skipped",
+              "description": "fp8 E4M3 inputs, fp16 accumulator, 2:4 structured sparsity (mma.sp m16n8k64)."
+            },
+            {
+              "id": "fp4_e2m1",
+              "status": "unsupported",
+              "reason": "FP4 mma.sync requires Blackwell sm_120a or newer! Skipped",
+              "description": "fp4 E2M1 inputs with no block scale (mma.sync m16n8k32). sm_120+ only, not datacenter Blackwell."
+            },
+            {
+              "id": "mxf4_e2m1",
+              "status": "unsupported",
+              "reason": "MXFP4 mma.sync requires Blackwell sm_120a or newer! Skipped",
+              "description": "fp4 E2M1 inputs, one shared scale per 32 values (OCP MX, mma.sync m16n8k64)."
+            },
+            {
+              "id": "nvf4_e2m1",
+              "status": "unsupported",
+              "reason": "NVFP4 mma.sync requires Blackwell sm_120a or newer! Skipped",
+              "description": "fp4 E2M1 inputs, one shared scale per 16 values (NVFP4, mma.sync m16n8k64)."
+            },
+            {
+              "id": "mxf4_e2m1 2:4",
+              "status": "unsupported",
+              "reason": "MXFP4 mma.sp 2:4 sparsity requires Blackwell sm_120a or newer! Skipped",
+              "description": "fp4 E2M1 inputs, one scale per 32 values, 2:4 structured sparsity (OCP MX, mma.sp m16n8k128)."
+            },
+            {
+              "id": "nvf4_e2m1 2:4",
+              "status": "unsupported",
+              "reason": "NVFP4 mma.sp 2:4 sparsity requires Blackwell sm_120a or newer! Skipped",
+              "description": "fp4 E2M1 inputs, one scale per 16 values, 2:4 structured sparsity (NVFP4, mma.sp m16n8k128)."
+            },
+            {
+              "id": "int8",
+              "value": 1.874418e+14,
+              "unit": "OPS",
+              "quantity": "ops",
+              "direction": "higher_is_better",
+              "description": "int8 inputs, int32 accumulator (WMMA 16x16x16)."
+            },
+            {
+              "id": "int8 k32",
+              "value": 1.806551e+14,
+              "unit": "OPS",
+              "quantity": "ops",
+              "direction": "higher_is_better",
+              "description": "int8 inputs, int32 accumulator (mma.sync m16n8k32)."
+            },
+            {
+              "id": "int8 2:4",
+              "value": 3.744367e+14,
+              "unit": "OPS",
+              "quantity": "ops",
+              "direction": "higher_is_better",
+              "description": "int8 inputs, int32 accumulator, 2:4 structured sparsity (mma.sp m16n8k64)."
+            },
+            {
+              "id": "int4",
+              "value": 3.454882e+14,
+              "unit": "OPS",
+              "quantity": "ops",
+              "direction": "higher_is_better",
+              "description": "int4 inputs, int32 accumulator (mma.sync m8n8k32). Turing through Ada only (later parts emulate it)."
+            }
+          ]
+        },
+        {
+          "id": "cublas_gemm",
+          "title": "cuBLASLt GEMM peak",
+          "category": "compute",
+          "shape": "heterogeneous",
+          "axis": "data type",
+          "direction": "higher_is_better",
+          "quantity": "flops",
+          "unit": "FLOPS",
+          "description": "Peak GEMM rate through NVIDIA's cuBLASLt library, on a large square problem.",
+          "duration_s": 61.95449,
+          "metrics": [
+            {
+              "id": "fp32",
+              "value": 1.708255e+13,
+              "description": "fp32 inputs and accumulator, without the tensor cores."
+            },
+            {
+              "id": "fp64",
+              "value": 3.245816e+11,
+              "description": "fp64 inputs and accumulator. Consumer GPUs run it at a small fraction of their fp32 rate."
+            },
+            {
+              "id": "tf32",
+              "value": 4.161296e+13,
+              "description": "fp32 inputs rounded to tf32, fp32 accumulator."
+            },
+            {
+              "id": "fp16",
+              "value": 7.740029e+13,
+              "description": "fp16 inputs and accumulator."
+            },
+            {
+              "id": "bf16",
+              "value": 7.744985e+13,
+              "description": "bf16 inputs, fp32 accumulator."
+            },
+            {
+              "id": "fp8_e4m3",
+              "value": 1.563215e+14,
+              "description": "fp8 E4M3 inputs (more precision, less range), fp32 accumulator."
+            },
+            {
+              "id": "fp8_e5m2",
+              "value": 1.556173e+14,
+              "description": "fp8 E5M2 x E4M3 inputs, fp32 accumulator. cuBLASLt has no E5M2 x E5M2 GEMM."
+            },
+            {
+              "id": "mxf4_e2m1",
+              "status": "unsupported",
+              "reason": "FP4 tensor cores require Blackwell -- unsupported on sm_89",
+              "description": "fp4 E2M1 inputs, one shared scale per 32 values (OCP MX)."
+            },
+            {
+              "id": "nvf4_e2m1",
+              "status": "unsupported",
+              "reason": "FP4 tensor cores require Blackwell -- unsupported on sm_89",
+              "description": "fp4 E2M1 inputs, one shared scale per 16 values (NVFP4)."
+            },
+            {
+              "id": "int8",
+              "value": 1.329556e+14,
+              "unit": "OPS",
+              "quantity": "ops",
+              "direction": "higher_is_better",
+              "description": "int8 inputs, int32 accumulator."
+            }
+          ]
+        },
+        {
+          "id": "global_memory_bandwidth",
+          "title": "Global memory bandwidth",
+          "category": "bandwidth",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "bytes_per_second",
+          "unit": "B/s",
+          "description": "Read bandwidth from GPU memory, over a buffer too large to cache.",
+          "duration_s": 1.792686,
+          "metrics": [
+            {
+              "id": "float",
+              "value": 2.123188e+11,
+              "description": "Scalar, one value per thread."
+            },
+            {
+              "id": "float2",
+              "value": 2.31042e+11,
+              "description": "2-wide vector per thread."
+            },
+            {
+              "id": "float4",
+              "value": 2.354067e+11,
+              "description": "4-wide vector per thread."
+            }
+          ]
+        },
+        {
+          "id": "local_memory_bandwidth",
+          "title": "Local memory bandwidth",
+          "category": "bandwidth",
+          "shape": "homogeneous",
+          "axis": "vector width",
+          "direction": "higher_is_better",
+          "quantity": "bytes_per_second",
+          "unit": "B/s",
+          "description": "Bandwidth of shared memory, the on-chip scratchpad a block shares.",
+          "duration_s": 1.564463,
+          "metrics": [
+            {
+              "id": "float",
+              "value": 4.589475e+12,
+              "description": "Scalar, one value per thread."
+            },
+            {
+              "id": "float2",
+              "value": 8.318702e+12,
+              "description": "2-wide vector per thread."
+            },
+            {
+              "id": "float4",
+              "value": 9.646216e+12,
+              "description": "4-wide vector per thread."
+            }
+          ]
+        },
+        {
+          "id": "image_memory_bandwidth",
+          "title": "Image memory bandwidth",
+          "category": "bandwidth",
+          "shape": "homogeneous",
+          "direction": "higher_is_better",
+          "quantity": "bytes_per_second",
+          "unit": "B/s",
+          "description": "Read bandwidth through the texture units, reading each pixel of an image once.",
+          "duration_s": 1.174778,
+          "metrics": [
+            {
+              "id": "float4",
+              "value": 2.37008e+11,
+              "description": "One RGBA fp32 pixel (16 bytes) per fetch."
+            }
+          ]
+        },
+        {
+          "id": "transfer_bandwidth",
+          "title": "Transfer bandwidth",
+          "category": "bandwidth",
+          "shape": "heterogeneous",
+          "axis": "direction",
+          "direction": "higher_is_better",
+          "quantity": "bytes_per_second",
+          "unit": "B/s",
+          "description": "Copy bandwidth between host and GPU memory, over PCIe on a discrete card. Both rows use pinned host memory.",
+          "duration_s": 1.456552,
+          "metrics": [
+            {
+              "id": "h2d_pinned",
+              "value": 1.317859e+10,
+              "description": "Host to GPU."
+            },
+            {
+              "id": "d2h_pinned",
+              "value": 1.314779e+10,
+              "description": "GPU to host."
+            }
+          ]
+        },
+        {
+          "id": "kernel_launch_latency",
+          "title": "Kernel launch latency",
+          "category": "latency",
+          "shape": "heterogeneous",
+          "direction": "lower_is_better",
+          "quantity": "seconds",
+          "unit": "s",
+          "description": "Time to launch an empty kernel, the fixed cost every dispatch pays.",
+          "duration_s": 0.0272259,
+          "metrics": [
+            {
+              "id": "dispatch",
+              "status": "unsupported",
+              "reason": "Not measurable via CUDA driver API",
+              "description": "Host submit to kernel start, one way. CUDA has no host/GPU shared clock to measure it."
+            },
+            {
+              "id": "roundtrip",
+              "value": 1.313205e-05,
+              "description": "Host submit to completion seen by the host."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "log": [
+    {"elapsed_s": 0.0182486, "level": "info", "backend": "CUDA", "message": "Backend: CUDA"},
+    {"elapsed_s": 0.0670442, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "message": "  Device 0: NVIDIA GeForce RTX 4070 Laptop GPU"},
+    {"elapsed_s": 0.0674223, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "single_precision_compute", "message": "    Single-precision compute"},
+    {"elapsed_s": 0.4456086, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "half_precision_compute", "message": "    Half-precision compute"},
+    {"elapsed_s": 1.392181, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "double_precision_compute", "message": "    Double-precision compute"},
+    {"elapsed_s": 2.88209, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "mixed_precision_compute", "message": "    Mixed-precision compute fp16xfp16+fp32"},
+    {"elapsed_s": 3.412962, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "bfloat16_compute", "message": "    BF16 compute bf16xbf16+fp32"},
+    {"elapsed_s": 3.939141, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "integer_compute", "message": "    Integer compute (32-bit IMAD)"},
+    {"elapsed_s": 4.482774, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "integer_compute_int8_dp", "message": "    INT8 dot-product compute (__dp4a)"},
+    {"elapsed_s": 6.409908, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "wmma", "message": "    Tensor cores (WMMA / mma.sync)"},
+    {"elapsed_s": 43.04736, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "cublas_gemm", "message": "    cuBLASLt GEMM peak"},
+    {"elapsed_s": 105.0034, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "global_memory_bandwidth", "message": "    Global memory bandwidth"},
+    {"elapsed_s": 106.7972, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "local_memory_bandwidth", "message": "    Local memory bandwidth"},
+    {"elapsed_s": 108.3632, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "image_memory_bandwidth", "message": "    Image memory bandwidth"},
+    {"elapsed_s": 109.5395, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "transfer_bandwidth", "message": "    Transfer bandwidth"},
+    {"elapsed_s": 110.9973, "level": "info", "backend": "CUDA", "device": "NVIDIA GeForce RTX 4070 Laptop GPU", "device_index": 0, "test": "kernel_launch_latency", "message": "    Kernel launch latency"}
+  ]
+}
