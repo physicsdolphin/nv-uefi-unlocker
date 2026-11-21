@@ -606,9 +606,9 @@ or pass --boot-efi."
 # them - a repo checkout that just built has NEWER binaries under target/.
 # Warn (do not auto-switch: the release/ copies are the shipped, field-tested
 # set) and name the flags.
-$repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
-$t_assets="$repo_root/target/release/assets"
-$t_efi="$repo_root/target/x86_64-unknown-uefi/release/loader.efi"
+repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
+t_assets="$repo_root/target/release/assets"
+t_efi="$repo_root/target/x86_64-unknown-uefi/release/loader.efi"
 if [ "${ASSETS_BIN#$SCRIPT_DIR}" = "$ASSETS_BIN" ] && [ -x "$t_assets" ] &&    [ "$t_assets" -nt "$ASSETS_BIN" ]; then
     logwarn "[stale] target/release/assets is NEWER than $ASSETS_BIN - you are about to run an older assets build. Re-run with: --assets $t_assets"
 fi
