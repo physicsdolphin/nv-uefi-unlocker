@@ -4,6 +4,40 @@ use std::path::{Path, PathBuf};
 
 use assets::manifest::ga102_610 as pins;
 
+/// tty-gated ANSI colors, the make-usbroot semantic palette: green = a
+/// verified success line, cyan = a stage step. NO_COLOR honored; piped
+/// output stays plain so the log files never gain escape codes.
+fn color_enabled() -> bool {
+    std::io::IsTerminal::is_terminal(&std::io::stdout())
+        && std::env::var_os("NO_COLOR").is_none()
+}
+fn c_ok(m: &str) -> String {
+    if color_enabled() { format!("[32m[ok] {m}[0m") } else { format!("[ok] {m}") }
+}
+/// One verified-asset line: green [ok], cyan filename, plain size
+/// (mirrors the make-usbroot asset table).
+fn c_step(m: &str) -> String {
+    if !color_enabled() {
+        return m.to_string();
+    }
+    // Tag-only coloring (2026-11-20, user preference): "[generate] rest"
+    // colors the tag, the content stays default.
+    if let Some(close) = m.find(']') {
+        if m.starts_with('[') {
+            return format!("\x1b[36m{}\x1b[0m{}", &m[..=close], &m[close + 1..]);
+        }
+    }
+    format!("\x1b[36m{m}\x1b[0m")
+}
+fn verified_line(prefix: &str, name: &str, len: usize, suffix: &str) {
+    let tail = if suffix.is_empty() { String::new() } else { format!(" {suffix}") };
+    if color_enabled() {
+        println!("[32m[ok][0m [95m{prefix}{name}[0m: [93m{} bytes[0m,[32m SHA-256 verified[0m{tail}", len);
+    } else {
+        println!("[ok] {prefix}{name}: {} bytes, SHA-256 verified{tail}", len);
+    }
+}
+
 /// Raw extracted BINDATA sources (the `*_raw.c` dumps) are forensics
 /// material - 100-440 KiB of dead weight on a USB root the loader never
 /// reads. Emission is opt-in: set ASSETS_DEBUG_C=1 to keep them (they never
@@ -58,7 +92,7 @@ fn extract(source: &Path, outdir: &Path) -> Result<(), String> {
             return Err(format!("derived asset differs from pinned SHA-256: {name} ({digest})"));
         }
         std::fs::write(outdir.join(name), &data).map_err(|e| e.to_string())?;
-        println!("derived {name}: {} bytes, SHA-256 verified", data.len());
+        verified_line("derived ", name, data.len(), "");
     }
     Ok(())
 }
@@ -201,10 +235,8 @@ fn slice_proven_rm_boot(blob: &Path, outdir: &Path, family: &str) -> Result<(), 
     }
     std::fs::create_dir_all(outdir).map_err(|e| e.to_string())?;
     std::fs::write(outdir.join(format!("gsp_boot_{family}.bin")), slice).map_err(|e| e.to_string())?;
-    println!(
-        "gsp_boot_{family}.bin: {} bytes, SHA-256 verified (proven BL slice, fired on TU106 2026-10-27; Turing-shared)",
-        slice.len()
-    );
+    verified_line("", &format!("gsp_boot_{family}.bin"), slice.len(),
+        "(proven BL slice, fired on TU106 2026-10-27; Turing-shared)");
     Ok(())
 }
 
@@ -224,9 +256,9 @@ fn extract_tu11x(source: &Path, outdir: &Path) -> Result<(), String> {
         }
         std::fs::write(outdir.join(name), data).map_err(|e| e.to_string())?;
         if pinned == "UNMEASURED" {
-            println!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len());
+            println!("{}", c_ok(&format!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len())));
         } else {
-            println!("TU116 derived {name}: {} bytes, SHA-256 verified", data.len());
+            verified_line("TU116 derived ", name, data.len(), "");
         }
         Ok(())
     };
@@ -280,9 +312,9 @@ fn extract_tu10x(source: &Path, outdir: &Path) -> Result<(), String> {
         }
         std::fs::write(outdir.join(name), data).map_err(|e| e.to_string())?;
         if pinned == "UNMEASURED" {
-            println!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len());
+            println!("{}", c_ok(&format!("PIN-ME {name}: {} bytes, sha256 {digest}", data.len())));
         } else {
-            println!("TU102 derived {name}: {} bytes, SHA-256 verified", data.len());
+            verified_line("TU102 derived ", name, data.len(), "");
         }
         Ok(())
     };
@@ -344,9 +376,9 @@ fn extract_scrub(source: &Path, outdir: &Path) -> Result<(), String> {
     }
     std::fs::write(outdir.join("scrubber_ad10x.bin"), &bundle).map_err(|e| e.to_string())?;
     if pins::SCRUB_DERIVED == "UNMEASURED" {
-        println!("PIN-ME scrubber_ad10x.bin: {} bytes, sha256 {digest}", bundle.len());
+        println!("{}", c_ok(&format!("PIN-ME scrubber_ad10x.bin: {} bytes, sha256 {digest}", bundle.len())));
     } else {
-        println!("scrubber_ad10x.bin: {} bytes, SHA-256 verified", bundle.len());
+        verified_line("", "scrubber_ad10x.bin", bundle.len(), "");
     }
     Ok(())
 }
@@ -427,7 +459,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_ga102().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len())));
                 Ok(())
             })
         }
@@ -439,7 +471,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_ad102().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len())));
                 Ok(())
             })
         }
@@ -451,7 +483,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_tu102().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified)", out.display(), payload.len())));
                 Ok(())
             })
         }
@@ -463,7 +495,7 @@ fn main() {
                 .into();
             assets::payload::build_pinned_tu116().and_then(|payload| {
                 std::fs::write(&out, &payload).map_err(|e| e.to_string())?;
-                println!("wrote {} ({} bytes, SHA-256 verified; RE-derived, not field-proven - issue #151)", out.display(), payload.len());
+                println!("{}", c_step(&format!("[generate] wrote {} ({} bytes, SHA-256 verified; RE-derived, not field-proven - issue #151)", out.display(), payload.len())));
                 Ok(())
             })
         }
@@ -570,7 +602,7 @@ fn extract_ad102(source: &Path, outdir: &Path) -> Result<(), String> {
             return Err(format!("AD102 derived asset mismatch: {name} ({digest})"));
         }
         std::fs::write(outdir.join(name), &data).map_err(|e| e.to_string())?;
-        println!("AD102 derived {name}: {} bytes, SHA-256 verified", data.len());
+        verified_line("AD102 derived ", name, data.len(), "");
     }
     Ok(())
 }
@@ -600,7 +632,7 @@ fn gsp_sections(gsp_bin: &Path, outdir: &Path, families: &[String]) -> Result<()
             let data = assets::elf::section_bytes(&img, &s.name).map_err(|e| e.to_string())?;
             std::fs::write(outdir.join(format!("fwsignature_{fam}.bin")), data)
                 .map_err(|e| e.to_string())?;
-            println!("fwsignature_{fam}.bin: {} bytes", data.len());
+            verified_line("", &format!("fwsignature_{fam}.bin"), data.len(), "");
         }
     }
     let fwimage = assets::elf::section_bytes(&img, ".fwimage").map_err(|e| e.to_string())?;
@@ -613,7 +645,7 @@ fn gsp_sections(gsp_bin: &Path, outdir: &Path, families: &[String]) -> Result<()
             }
             std::fs::write(outdir.join(format!("fwimage_{fam}.bin")), fwimage)
                 .map_err(|e| e.to_string())?;
-            println!("fwimage_{fam}.bin: {} bytes (same image)", fwimage.len());
+            verified_line("", &format!("fwimage_{fam}.bin"), fwimage.len(), "(same image)");
         }
     }
     Ok(())

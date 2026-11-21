@@ -126,6 +126,11 @@ pub struct Transaction<'a> {
     /// Operator-marker analog of the loader's \tx-accept-warm-wpr2.txt:
     /// accept an up WPR2 whose evidence is inconclusive.
     pub warm_wpr2_marker: bool,
+    /// Loader analog of \tx-no-flr.txt (issue #242 ablation): Ada/GA10x
+    /// ship the unlock WITHOUT the FLR - WPR2/GFW stay live on purpose
+    /// (the residue under test); the selectors are already in and read
+    /// back before this point, and the unwind contract is unchanged.
+    pub no_flr: bool,
     /// Staging band gate (loader analog: >4GB staging is the Turing default,
     /// \tx-low-staging.txt forces LOW). The STAGING-FALLBACK retry flips it
     /// false; the phase log carries the evidence.
@@ -162,6 +167,7 @@ impl<'a> Transaction<'a> {
             shape: PayloadShape::AdaTriad,
             tu10x_entry: false,
             warm_wpr2_marker: false,
+            no_flr: false,
             staging_high: false,
             staging_fallback_used: false,
             dma_live: 0,
@@ -635,7 +641,14 @@ impl<'a> Transaction<'a> {
                 self.selectors()?;
                 self.signature_restore()?;
             }
-            self.flr_and_post()?;
+            if self.no_flr {
+                // \tx-no-flr.txt ablation: the FLR is state cleanup on
+                // Ada/GA10x (unlock read back above; AON holds it across
+                // any reset) - skipping leaves WPR2/GFW live by design.
+                self.note("FLR skipped by no_flr (WPR2/GFW left live - issue #242 ablation)");
+            } else {
+                self.flr_and_post()?;
+            }
             Ok(())
         })();
         let unwound = self.unwind(result);
@@ -651,7 +664,7 @@ impl<'a> Transaction<'a> {
             plm_open_verified: self.last_plm == Some(0xffff_ffff),
             selectors_written: self.payload,
             bme_restored: !self.bme_set,
-            flr_done: !self.faults.fail_flr,
+            flr_done: !self.faults.fail_flr && !self.no_flr,
             signature_restored: !self.payload || !self.faults.signature_restore_fail,
             unwind_clean: self.dma_live == 0 && !self.bme_set,
         })

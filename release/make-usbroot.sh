@@ -14,7 +14,8 @@
 #                     needs exactly these two, without dragging Turing assets)
 #
 # Options (1:1 with the PowerShell twin's parameters):
-#   --family F        ad102 | ga102 | tu10x | tu11x | all | localhost, or a
+#   --family F        ad102[/ad10x] | ga102[/ga10x] | tu10x | tu11x | all |
+#                     localhost, or a
 #                     comma/semicolon list of those tokens ("30,40"; list =
 #                     exact set to build, the mixed-generation rig form)
 #                     (aliases rtx40/40, rtx30/30, rtx20/20, rtx16/16;
@@ -39,16 +40,36 @@
 #                     firmware (badge mode) -> Arch archive -> first-party
 #                     .run -> CachyOS cache, first that lands) or arch | run |
 #                     cachyos | local to pin one route. Hash gate identical
-#                     for downloads; local is badge mode.
+#                     for downloads; local is badge mode. The resolved route
+#                     (badge vs pinned), the driver version where parseable,
+#                     and the staged GSP ELF SHA-256s are printed loudly at
+#                     build time and recorded in nvuu-stick.json fw_source
+#                     (issue #263) - once a stage is on an ESP, "badge or
+#                     pinned?" must stay answerable.
 #   --skip-gsp-check  build for another machine: skip the host Turing GSP check
 #   --no-install-prompt  skip the post-build install-target offer
 #   --install-to MP   copy the layout into an EXISTING mounted FAT32 partition
 #                     without asking (same eligibility checks as the probe)
+#   --auto-run S      arm auto-run at build time (issue #259): write
+#                     i_know_what_i_am_doing.txt = S seconds countdown, any
+#                     key aborts; 0 = no wait, loader v2.1.12-rc1+; "off"
+#                     pins the default; explicit value skips the interactive ask
+#   --quiet           write tx-quiet.txt (quiet console) into the layout;
+#                     same as the interactive ask, skips it
+#   --ultrafast       write tx-ultrafast.txt (verified-machine speed profile,
+#                     ask's default stays No)
+#   --chain-target P  pin the chainload handoff (chain-target.txt, issue
+#                     #204): P = 'windows' | 'ubuntu' | 'systemd' preset,
+#                     a volume-relative EFI path (leading '\', <= 240 chars)
+#                     or "off"; "" asks the menu - Windows / GRUB /
+#                     systemd-boot / Ubuntu / shim / custom path, default
+#                     no pin
+#   --no-marker-prompt  skip the interactive marker ask
 #   -h | --help       this text
 #
 # Family notes (same as make-usbroot.ps1):
-#   ad102  RTX 40 series (Ada)          - no host prerequisites
-#   ga102  RTX 30 series (Ampere)       - kmod-verified upstream, no silicon
+#   ad102[/ad10x]  RTX 40 series (Ada)  - no host prerequisites
+#   ga102[/ga10x]  RTX 30 series (Ampere) - kmod-verified upstream, no silicon
 #                                         evidence for this EFI path yet
 #   tu10x  RTX 20 series (Turing)       - REQUIRES GSP-RM firmware mode on the
 #                     TARGET machine; the legacy path TDR-loops on the
@@ -92,6 +113,19 @@ SKIP_GSP_CHECK=0
 # probe EXISTING FAT32 partitions and offer to copy the layout into one.
 NO_INSTALL_PROMPT=0
 INSTALL_TO=""
+# Confirm-gate choice at build time (issue #259). "" = the interactive ask
+# decides (its default keeps the loader's 30s keypress confirm); "off" pins
+# that default non-interactively; 0-30 arms auto-run (i_know_what_i_am_doing.txt
+# = the seconds; 0 = no wait, loader v2.1.12-rc1+). QUIET writes tx-quiet.txt,
+# ULTRAFAST=1 writes tx-ultrafast.txt (verified-machine speed profile), and
+# CHAIN_TARGET pins the handoff ("" = ask the menu's y/N for the Windows pin,
+# "off" = skip, otherwise a volume-relative EFI path, issue #204).
+# A normal build stays UNARMED (AGENTS.deploy.md handoff doctrine).
+AUTO_RUN=""
+QUIET=0
+ULTRAFAST=0
+CHAIN_TARGET=""
+NO_MARKER_PROMPT=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # Windows-hosted bash (Git Bash/MSYS) can run .exe pipelines, not Linux ELF;
@@ -107,6 +141,25 @@ usage() {
 
 log() { printf '%s\n' "$*"; }
 logerr() { printf '%s\n' "$*" >&2; }
+
+# tty-gated colors (NO_COLOR honored; plain text when piped)
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_C=$'\033[36m'; C_0=$'\033[0m'
+else
+    C_G=''; C_Y=''; C_R=''; C_C=''; C_0=''
+fi
+# Tagged stage lines color ONLY the [tag], not the content (2026-11-20,
+# user preference - matches the PowerShell twin).
+lok()  { printf '%s\n' "${C_G}[ok]${C_0} $*"; }
+lwarn(){ local line="$*" tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
+    printf '%s\n' "${C_Y}${tag}${C_0} ${line#* }" >&2; else printf '%s\n' "${C_Y}${line}${C_0}" >&2; fi; }
+lstep(){ local line="$1" tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
+    printf '%s\n' "${C_C}${tag}${C_0} ${line#* }"; else printf '%s\n' "${C_C}${line}${C_0}"; fi; }
+# JSON string-or-null for the fw_source manifest record (issue #263): every
+# value interpolated into nvuu-stick.json comes from a fixed route id, a
+# version token or a sha256 - no free-form user input - so plain quoting
+# suffices; an unset value becomes null instead of "".
+json_str() { if [ -n "${1:-}" ]; then printf '"%s"' "$1"; else printf 'null'; fi; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -203,6 +256,13 @@ while [ $# -gt 0 ]; do
         --no-install-prompt) NO_INSTALL_PROMPT=1; shift ;;
         --install-to)      INSTALL_TO="${2:?missing value for $1}"; shift 2 ;;
         --install-to=*)    INSTALL_TO="${1#*=}"; shift ;;
+        --auto-run)        AUTO_RUN="${2:?missing value for $1}"; shift 2 ;;
+        --auto-run=*)      AUTO_RUN="${1#*=}"; shift ;;
+        --quiet)           QUIET=1; shift ;;
+        --ultrafast)       ULTRAFAST=1; shift ;;
+        --chain-target)    CHAIN_TARGET="${2:?missing value for $1}"; shift 2 ;;
+        --chain-target=*)  CHAIN_TARGET="${1#*=}"; shift ;;
+        --no-marker-prompt) NO_MARKER_PROMPT=1; shift ;;
         -h|--help)         usage ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -251,12 +311,12 @@ detect_local_families() { # echoes the build families found here, one per line
         [ -n "$dev" ] || continue
         fam="$(family_of_dev "0x$dev")"
         if [ -z "$fam" ]; then
-            logerr "[localhost] 10de:$dev - outside RTX 20/30/40 series, ignoring (${name:-unknown device})"
+            lwarn "[localhost] 10de:$dev - outside RTX 20/30/40 series, ignoring (${name:-unknown device})"
             continue
         fi
         # Human-readable lines go to stderr: this function's stdout IS the
         # family list consumed by the caller.
-        logerr "[localhost] 10de:$dev -> $fam (${name:-unknown device})"
+        lstep "[localhost] 10de:$dev -> $fam (${name:-unknown device})"
         case "$fam" in
             tu10x) has_tu=1 ;;
             tu11x) has_tu11=1 ;;
@@ -286,13 +346,13 @@ for _tok in "${_fam_tokens[@]}"; do
     [ -n "$_tok" ] || continue
     _tok="${_tok,,}"
     case "$_tok" in
-        ad102|rtx40|40) _fam=ad102 ;;
-        ga102|rtx30|30) _fam=ga102 ;;
+        ad102|ad10x|rtx40|40) _fam=ad102 ;;
+        ga102|ga10x|rtx30|30) _fam=ga102 ;;
         tu10x|rtx20|20) _fam=tu10x ;;
         tu11x|rtx16|16) _fam=tu11x ;;
         all) WANT_ALL=1; continue ;;
         localhost) WANT_LOCAL=1; continue ;;
-        *) die "unknown family: '$_tok' (ad102 | ga102 | tu10x | tu11x | all | localhost, or a comma list such as 30,40)" ;;
+        *) die "unknown family: '$_tok' (ad102 | ad10x | ga102 | ga10x | tu10x | tu11x | all | localhost, or a comma list such as 30,40)" ;;
     esac
     case " ${WANTED[*]-} " in *" $_fam "*) ;; *) WANTED+=("$_fam") ;; esac
 done
@@ -320,7 +380,7 @@ this machine. Use an explicit --family (ad102 | ga102 | tu10x | tu11x) or --fami
         for fam in "${_detected[@]}"; do
             case " ${WANTED[*]-} " in *" $fam "*) ;; *) WANTED+=("$fam") ;; esac
         done
-        log "[localhost] building for: ${WANTED[*]-}"
+        lstep "[localhost] building for: ${WANTED[*]-}"
         log "[localhost] full platform snapshot (board/BIOS/VBIOS/driver + advisories): python3 tools/diag-unlock.py --inventory"
         if [ "${#WANTED[@]}" -lt 3 ]; then
             log "[localhost] NOTE: this stick will only carry ${WANTED[*]-} assets. Cards from other generations in the TARGET machine (e.g. a mixed 30/40-series rig) will be skipped at boot. For a multi-generation machine use the comma list (30,40) or --family all"
@@ -380,23 +440,47 @@ assets_run() {
     "$ASSETS_BIN" "$@" || die "assets $1 failed"
 }
 
-# ---------- RTD3 host notice (issue #9) ----------
+# ---------- RTD3 host notice (issue #9, narrowed 2026-11-20 per #266) ----------
+# The rail-off wipe needs (laptop chassis) AND (runtime D3 enabled) AND (no
+# display active on the dGPU) - the #37/#171/#262/#266 hybrid signature. A
+# desktop never gets the loud box; a display-active card is kept awake by
+# the display itself. GCOFF stops happening under the fix either way, and
+# idle power rises - that is the price of keeping the unlock
+# (faq #relock-winrtd3 / #linux).
 rtd3_notice() {
     [ -r /proc/driver/nvidia/params ] || return 0
-    local v
+    local v laptop=0 disp_active=0 ngpu=0
     v="$(grep -E '^DynamicPowerManagement:' /proc/driver/nvidia/params | head -n1 | awk '{print $2}' || true)"
+    if [ -r /sys/class/dmi/id/chassis_type ]; then
+        case "$(cat /sys/class/dmi/id/chassis_type 2>/dev/null)" in
+            8|9|10|14) laptop=1 ;;
+        esac
+    fi
+    if have nvidia-smi; then
+        while IFS=, read -r disp _rest; do
+            ngpu=$((ngpu + 1))
+            [ "${disp// /}" = "Enabled" ] && disp_active=$((disp_active + 1))
+        done < <(nvidia-smi --query-gpu=display_active --format=csv,noheader 2>/dev/null || true)
+    fi
     case "${v,,}" in
+        0x00|0x0|0)
+            [ "$laptop" = 1 ] && lok "[rtd3] runtime D3 suppressed (DynamicPowerManagement=$v) - the unlock-retaining shape"
+            return 0 ;;
         0x02|0x2|2|0x03|0x3|3)
-            log "[rtd3] WARNING: this host runs the NVIDIA driver with runtime D3 enabled"
-            log "[rtd3]        (DynamicPowerManagement=$v). RTD3 parks the GPU in D3cold when"
-            log "[rtd3]        idle, and D3cold ERASES the volatile unlock after handoff"
-            log "[rtd3]        (issue #9): green loader.log, no gain in the OS."
-            log "[rtd3]        Fix, then reboot:"
-            log "[rtd3]          echo 'options nvidia NVreg_DynamicPowerManagement=0x00' | \\"
-            log "[rtd3]            sudo tee /etc/modprobe.d/nvidia-runtimepm.conf"
-            log "[rtd3]          sudo update-initramfs -u   # Fedora/RHEL: sudo dracut -f"
-            log "[rtd3]        (reuse the distro file's basename so it shadows it; verify with:"
-            log "[rtd3]         modprobe -c | grep -i DynamicPowerManagement)"
+            if [ "$laptop" = 0 ]; then
+                lwarn "[rtd3] runtime D3 enabled (DynamicPowerManagement=$v) on a desktop chassis - idle park is unlikely, leaving it as is"
+                return 0
+            fi
+            if [ "$disp_active" -gt 0 ]; then
+                lwarn "[rtd3] runtime D3 enabled, but a display is active on the dGPU ($disp_active/$ngpu) - the card is kept awake; risk low while outputs stay on the card"
+                return 0
+            fi
+            printf '%s\n' "${C_Y}[rtd3] WARNING: laptop + hybrid output + runtime D3 enabled (DynamicPowerManagement=$v)${C_0}"
+            lwarn "[rtd3] RTD3 parks the dGPU in D3cold when idle, and D3cold ERASES the volatile unlock after handoff - the #37/#171/#262/#266 signature (green loader.log, no gain in the OS)"
+            printf '%s\n' "${C_R}[rtd3] FIX NOW, then reboot and re-run this maker:${C_0}"
+            printf '%s\n' "${C_G}[rtd3]   sudo tools/disable-rtd3.sh${C_0}"
+            log   "[rtd3]   (or manually: echo 'options nvidia NVreg_DynamicPowerManagement=0x00' | sudo tee /etc/modprobe.d/nvidia-runtimepm.conf; sudo update-initramfs -u  # Fedora/RHEL: dracut -f)"
+            log   "[rtd3]   alternative: switch the BIOS/MUX to dGPU-direct. Details: docs/faq.md#relock-winrtd3 / #linux"
             ;;
     esac
 }
@@ -517,6 +601,21 @@ if [ -z "$BOOT_EFI" ]; then BOOT_EFI="$SCRIPT_DIR/BOOTX64.EFI"; fi
 Build it from the repo (see README: 'cargo efi-tx' gated transaction build)
 or pass --boot-efi."
 
+# Staleness guard (2026-11-20): the default resolution points at the
+# release/ copies, which only change when the release packaging refreshes
+# them - a repo checkout that just built has NEWER binaries under target/.
+# Warn (do not auto-switch: the release/ copies are the shipped, field-tested
+# set) and name the flags.
+$repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
+$t_assets="$repo_root/target/release/assets"
+$t_efi="$repo_root/target/x86_64-unknown-uefi/release/loader.efi"
+if [ "${ASSETS_BIN#$SCRIPT_DIR}" = "$ASSETS_BIN" ] && [ -x "$t_assets" ] &&    [ "$t_assets" -nt "$ASSETS_BIN" ]; then
+    logwarn "[stale] target/release/assets is NEWER than $ASSETS_BIN - you are about to run an older assets build. Re-run with: --assets $t_assets"
+fi
+if [ "${BOOT_EFI#$SCRIPT_DIR}" = "$BOOT_EFI" ] && [ -f "$t_efi" ] &&    [ "$t_efi" -nt "$BOOT_EFI" ]; then
+    logwarn "[stale] target/x86_64-unknown-uefi/release/loader.efi is NEWER than $BOOT_EFI - re-run with: --boot-efi $t_efi"
+fi
+
 mkdir -p "$OUT" "$WORK"
 log "[assets] $ASSETS_BIN"
 rtd3_notice
@@ -588,7 +687,8 @@ fetch_verify() { # <name> <sha> <url> [url...] -> sets FETCH_DEST on success;
 
 # Resolve the nvidia-utils source group: automatic fallback, the first
 # container that lands wins (cached file or verified download). Sets
-# UTILS_PATH + UTILS_KIND (pkg -> fw, run -> fw-run). On total failure dies
+# UTILS_PATH + UTILS_KIND (pkg -> fw, run -> fw-run) and the fw_source
+# provenance record FW_ROUTE/FW_DRIVER (issue #263). On total failure dies
 # with the all-sources report: every transport, its pinned hash, and the
 # fully-offline option (any ONE of the files).
 resolve_utils() {
@@ -620,7 +720,14 @@ resolve_utils() {
         if [ -n "$fwdir" ]; then
             UTILS_PATH="$fwdir"
             UTILS_KIND="local"
+            FW_ROUTE="badge"
+            # Linux nvidia-utils installs version-named the directory; a
+            # Windows DriverStore leaf does not carry the version (the
+            # badge-vs-pin ELF comparison below recovers the real answer).
+            local leaf="${fwdir##*/}"
+            case "$leaf" in [0-9]*.[0-9]*) FW_DRIVER="$leaf" ;; *) FW_DRIVER="" ;; esac
             log "[local] GSP from the installed driver: $fwdir (badge mode, version pin waived)"
+            log "fwimage source: BADGE host-driver ${FW_DRIVER:-unknown} (pin waived) - recorded in nvuu-stick.json fw_source"
             return 0
         fi
         log "[local] no installed-driver GSP found (/usr/lib|/lib|/run/current-system)/firmware/nvidia/*/gsp_*.bin and the Windows DriverStore are all absent)"
@@ -632,6 +739,10 @@ resolve_utils() {
         if fetch_verify "$name" "$sha" "$url"; then
             UTILS_PATH="$FETCH_DEST"
             UTILS_KIND="$kind"
+            FW_ROUTE="$id"
+            FW_DRIVER=""
+            [[ "$name" =~ ([0-9]{3}\.[0-9]{2}\.[0-9]{2}) ]] && FW_DRIVER="${BASH_REMATCH[1]}"
+            log "fwimage source: PINNED nvidia-utils-${FW_DRIVER:-$name} (route: $id) - recorded in nvuu-stick.json fw_source"
             return 0
         fi
         log "[fallback] $name unusable ($FAIL_KIND: $FAIL_LAST) - trying the next pinned source"
@@ -666,6 +777,10 @@ else
     die "download failed for $SRC1_NAME: no transport delivered the file (last: $FAIL_LAST).
 This is a network/client failure, not a bad pin - re-run to retry (a partial download resumes), or obtain the exact file by any means and drop it into $WORK/ (sha256 $SRC1_SHA) to build offline."
 fi
+FW_ROUTE=""
+FW_DRIVER=""
+FW_SHA_GA10X=""
+FW_SHA_TU10X=""
 resolve_utils
 
 # Remove assets from an earlier run so a root cannot end up as a half-old,
@@ -702,6 +817,45 @@ elif [ "$UTILS_KIND" = "run" ]; then
     assets_run fw-run "$UTILS_PATH" "$OUT"
 else
     assets_run fw "$UTILS_PATH" "$OUT"
+fi
+
+# fw_source provenance (issue #263): hash the staged GSP ELFs. Both routes
+# stage both ELFs, so both hashes exist for every family set.
+[ -f "$OUT/gsp_ga10x.bin" ] && FW_SHA_GA10X="$(sha256_of "$OUT/gsp_ga10x.bin")"
+[ -f "$OUT/gsp_tu10x.bin" ] && FW_SHA_TU10X="$(sha256_of "$OUT/gsp_tu10x.bin")"
+
+# Badge-mode mismatch warning (issue #263): a badge stage and a pinned
+# rebuild of the same tag may ship DIFFERENT GSP payloads, which is a
+# silent extra variable for cross-field ablations. When a hash-verified
+# pinned container is already in the work dir, extract it and compare -
+# zero downloads, seconds of zstd. Degrades to a plain warning if the
+# comparison extraction fails; never blocks the build.
+if [ "$UTILS_KIND" = "local" ]; then
+    pin_name=""; pin_kind=""; pin_route=""
+    for entry in "${UTILS_SOURCES[@]}"; do
+        IFS='|' read -r id kind name sha url <<< "$entry"
+        if [ -f "$WORK/$name" ] && [ "$(sha256_of "$WORK/$name")" = "$sha" ]; then
+            pin_name="$name"; pin_kind="$kind"; pin_route="$id"; break
+        fi
+    done
+    if [ -n "$pin_name" ]; then
+        cmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/nvuu-pin-cmp.XXXXXX")"
+        if "$ASSETS_BIN" fw "$WORK/$pin_name" "$cmp_dir" >/dev/null 2>&1 \
+           || { [ "$pin_kind" = "run" ] && "$ASSETS_BIN" fw-run "$WORK/$pin_name" "$cmp_dir" >/dev/null 2>&1; }; then
+            differ=0
+            for elf in gsp_ga10x.bin gsp_tu10x.bin; do
+                [ -f "$cmp_dir/$elf" ] || continue
+                if [ "$(sha256_of "$cmp_dir/$elf")" != "$(sha256_of "$OUT/$elf")" ]; then
+                    differ=1
+                    log "[warn] badge-staged $elf DIFFERS from the pinned extraction ($pin_name) - the same pinned tag ships a different fwimage per build host. Re-run with --utils-source ${pin_route:-arch} to reproduce the pinned asset set byte-for-byte."
+                fi
+            done
+            [ "$differ" -eq 0 ] && log "[ok] badge-staged GSP ELFs are byte-identical to the pinned extraction ($pin_name) - provenance converged"
+        else
+            log "[warn] badge mode active and the pinned container $pin_name is in the work dir, but the comparison extraction failed - provenance may differ from the pin"
+        fi
+        rm -rf "$cmp_dir"
+    fi
 fi
 
 needs_scrub=0
@@ -786,6 +940,7 @@ write_gate_record() { # $1 = family line for gsp-gate.txt
         echo "host: $(hostname)"
         echo "family: $1"
         echo "gate: $GSP_GATE_STATUS"
+        echo "fw-source: route=${FW_ROUTE:-unknown} driver=${FW_DRIVER:-unknown} provenance=$([ "$UTILS_KIND" = "local" ] && echo badge-pin-waived || echo pinned)"
         echo "adapters:"
         if [ -n "$ADAPTER_LINES" ]; then printf '%s\n' "$ADAPTER_LINES"; else echo "  (none detected on this host)"; fi
     } > "$OUT/gsp-gate.txt"
@@ -804,8 +959,13 @@ for fam in "${FAMILIES[@]}"; do
             fi
             log "[generate] V67 AD102 four-write payload"
             assets_run generate-ad102 "$OUT/v67-ad102-four-plm.bin"
-            # gsp-sections emits the ELF section family name (ad10x); the loader
-            # looks the device family up as ad102.
+            # Naming bridge between two schemes: gsp-sections emits the ELF
+            # SECTION family name (ad10x = NVIDIA's generation-scoped
+            # signature name); the loader keys the device family as ad102
+            # (= provenance chip of the pinned booter chain, serving the
+            # whole 0x2600-0x28ff span - see loader asset_family). These
+            # copies are the whole bridge; the 10x-named exports themselves
+            # are deleted with the other intermediates below.
             cp -f "$OUT/fwimage_ad10x.bin" "$OUT/fwimage_ad102.bin"
             cp -f "$OUT/fwsignature_ad10x.bin" "$OUT/fwsignature_ad102.bin"
             expected+=(booter_load_ad102.bin gsp_boot_desc_ad102.bin gsp_boot_ad102.bin
@@ -885,6 +1045,17 @@ expected+=("BOOTX64.EFI")
 for elf in gsp_ga10x.bin gsp_tu10x.bin; do
     [ -f "$OUT/$elf" ] && rm -f -- "$OUT/$elf"
 done
+# The 10x-named gsp-sections exports are the SAME class of intermediate: they
+# carry the ELF's SECTION family names (ga10x/ad10x), but the loader resolves
+# every device to a *102/tu10x/tu11x family and reads only those names - the
+# copies above are the real stick files. On a ga102+ad102 root the family-
+# neutral .fwimage section is byte-identical under every name, so leaving the
+# two 10x-named images behind cost ~85 MB of the ~189 MB layout (36b4089
+# scoped the EXPORTS but never deleted these after the copy). tu11x is NOT in
+# this list: fwimage_tu11x.bin is a genuine loader name, not an intermediate.
+for sec in fwimage_ga10x.bin fwsignature_ga10x.bin fwimage_ad10x.bin fwsignature_ad10x.bin; do
+    [ -f "$OUT/$sec" ] && rm -f -- "$OUT/$sec"
+done
 
 # Firmware only auto-boots \EFI\BOOT\BOOTX64.EFI; a flat copy of $OUT leaves the
 # executable at the root and the boot menu bounces back (issue #142).
@@ -897,11 +1068,217 @@ for f in "${expected[@]}"; do
 done
 printf '  %-28s %10s bytes\n' "EFI/BOOT/BOOTX64.EFI" "$(size_of "$OUT/EFI/BOOT/BOOTX64.EFI")"
 
+# ---------- confirm-gate marker offer (issue #259) ----------
+# The loader waits 30s for Space/Enter unless the armed marker sits on the
+# stick root; the marker moves the run decision to build time - which is
+# exactly what this ask offers (softmgr, issue #259). Doctrine
+# (AGENTS.deploy.md): a normal build stays UNARMED; the 30s keypress confirm
+# is the zero-write safety net for a mis-picked boot entry or a borrowed
+# machine, so the default answer, a non-tty stdin and every EOF path land on
+# "no marker written". Scope (debug vs speed): only what a stick-maker can
+# decide for the target WITHOUT symptom evidence, each defaulting to the
+# documented baseline - armed marker, quiet console, Windows chain pin,
+# ultrafast profile. Every other marker in docs/faq.md is a symptom-matched
+# diagnostic or exit valve and must not be blanket-enabled from a menu.
+MARKER_FILES=()
+
+marker_offer() {
+    # One rule for the whole ask block: any explicit marker choice
+    # (--auto-run/--quiet/--ultrafast/--chain-target) or --no-marker-prompt
+    # makes this a scripted run - no prompts; every unspecified choice takes
+    # its documented default (unarmed, plain console, no pin, no ultrafast).
+    local menu_interactive=0
+    if [ -z "$AUTO_RUN" ] && [ "$QUIET" -eq 0 ] && [ "$ULTRAFAST" -eq 0 ] \
+       && [ -z "$CHAIN_TARGET" ] && [ "$NO_MARKER_PROMPT" -eq 0 ] && [ -t 0 ]; then
+        menu_interactive=1
+    fi
+    local seconds=""
+    if [ -n "$AUTO_RUN" ]; then
+        # Explicit flag wins and skips the ask.
+        if [ "$AUTO_RUN" = "off" ]; then
+            log "[marker] auto-run not armed (--auto-run off - the 30s keypress confirm stays)"
+        elif [[ "$AUTO_RUN" =~ ^[0-9]+$ ]] && [ "$AUTO_RUN" -le 30 ]; then
+            seconds="$AUTO_RUN"
+        else
+            die "--auto-run '$AUTO_RUN' is not a countdown: use a number 0-30 (0 = no wait) or 'off'."
+        fi
+    elif [ "$menu_interactive" -eq 1 ]; then
+        # Interactive ask, same shape as the install offer below: a
+        # non-terminal stdin or any answer other than 1 falls through to
+        # the DEFAULT (unarmed), never arms on a swallowed read error.
+        log ""
+        log "[marker] confirm gate: by default the loader waits 30s for Space/Enter before the"
+        log "[marker]   transaction (timeout or any other key = ABORT, zero writes - the safety"
+        log "[marker]   net for a mis-picked boot entry or a borrowed machine). The armed marker"
+        log "[marker]   moves the run decision to build time: countdown, then auto-run; any key"
+        log "[marker]   during the countdown still aborts."
+        log "[marker]   Enter = keep the 30s keypress confirm (default, recommended)"
+        log "[marker]   1     = arm auto-run (i_know_what_i_am_doing.txt on the stick root)"
+        local ans=""
+        read -r ans || ans=""
+        if [ "$ans" = "1" ]; then
+            local secans=""
+            read -r secans || secans=""
+            secans="${secans//[[:space:]]/}"
+            if [ -z "$secans" ]; then
+                seconds=5
+            elif [[ "$secans" =~ ^[0-9]+$ ]] && [ "$secans" -le 30 ]; then
+                seconds="$secans"
+            else
+                log "[marker] '$secans' is not a countdown 0-30 - staying with the 30s keypress confirm"
+            fi
+        fi
+    fi
+    if [ -n "$seconds" ]; then
+        printf '%s\n' "$seconds" > "$OUT/i_know_what_i_am_doing.txt"
+        MARKER_FILES+=("i_know_what_i_am_doing.txt")
+        log "[marker] ARMED: i_know_what_i_am_doing.txt = ${seconds}s countdown auto-run, any key aborts"
+        [ "$seconds" = "0" ] && log "[marker]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
+    fi
+    local want_quiet=0
+    if [ "$QUIET" -eq 1 ]; then
+        want_quiet=1
+    elif [ "$menu_interactive" -eq 1 ]; then
+        local qans=""
+        read -r qans || qans=""
+        case "${qans,,}" in y|yes) want_quiet=1 ;; esac
+    fi
+    if [ "$want_quiet" -eq 1 ]; then
+        : > "$OUT/tx-quiet.txt"
+        MARKER_FILES+=("tx-quiet.txt")
+        log "[marker] quiet console enabled (tx-quiet.txt - loader.log stays full)"
+    elif [ "$QUIET" -eq 0 ] && [ -n "$AUTO_RUN" ]; then
+        log "[marker] quiet console not requested (--quiet writes tx-quiet.txt)"
+    fi
+    # Chain-target pin (issue #204): a handoff-shape declaration, not a GPU
+    # knob - the loader falls back to the default chain order when the
+    # pinned path is missing. Menu default (Enter) keeps Linux/dual-boot
+    # targets and clean-BootOrder machines on the documented baseline. The
+    # list maps the loaders people actually pin; GRUB/shim paths are
+    # distro-relative (\EFI\<distro>\...), so those entries ask for the
+    # distro directory name. Limine is deliberately absent: its usual
+    # \EFI\BOOT\BOOTX64.EFI path is the stick's own loader and would chain
+    # back into the unlocker.
+    # Fixed-path presets double as --chain-target aliases (case-insensitive);
+    # scripted runs needing a distro loader just pass the full path.
+    # Interactive inputs fail safe: anything unparsable lands on "no pin"
+    # with a message, never on a guessed path. Explicit values fail loud.
+    local chain_path=""
+    if [ -n "$CHAIN_TARGET" ]; then
+        # Explicit flag wins and skips the ask.
+        local ct="${CHAIN_TARGET,,}"
+        if [ "$ct" = "off" ]; then
+            log "[marker] chain target not pinned (--chain-target off - default chain order)"
+        elif [ "$ct" = "windows" ]; then
+            chain_path='\EFI\Microsoft\Boot\bootmgfw.efi'
+        elif [ "$ct" = "ubuntu" ]; then
+            chain_path='\EFI\ubuntu\shimx64.efi'
+        elif [ "$ct" = "systemd" ]; then
+            chain_path='\EFI\systemd\systemd-bootx64.efi'
+        elif [[ "$CHAIN_TARGET" == \\* ]] && [ "${#CHAIN_TARGET}" -le 240 ] && [[ "$CHAIN_TARGET" != */* ]]; then
+            chain_path="$CHAIN_TARGET"
+        else
+            die "--chain-target '$CHAIN_TARGET' is neither 'off', a preset (windows | ubuntu | systemd), nor a volume-relative EFI path (leading '\', no '/', <= 240 chars - the loader ignores any other shape and falls back to the default order)."
+        fi
+    elif [ "$menu_interactive" -eq 1 ]; then
+        log "[marker]   chain-target.txt pins the handoff search (issue #204: a stale cross-disk"
+        log "[marker]   BootOrder entry can win the default resolve and chain into another disk's"
+        log "[marker]   loader). Missing path = graceful fallback to the default order."
+        log "[marker]   Enter = no pin (default chain order: Windows, then supported Linux loaders)"
+        log "[marker]   0 = Windows Boot Manager    \\EFI\\Microsoft\\Boot\\bootmgfw.efi"
+        log "[marker]   1 = GRUB, asks distro      \\EFI\\<distro>\\grubx64.efi"
+        log "[marker]   2 = systemd-boot           \\EFI\\systemd\\systemd-bootx64.efi"
+        log "[marker]   3 = Ubuntu (shim)          \\EFI\\ubuntu\\shimx64.efi"
+        log "[marker]   4 = shim, asks distro      \\EFI\\<distro>\\shimx64.efi"
+        log "[marker]   5 = custom EFI path        (typed; e.g. \\EFI\\fedora\\grubx64.efi)"
+        local cans=""
+        read -r cans || cans=""
+        cans="${cans//[[:space:]]/}"
+        if [ "$cans" = "0" ]; then
+            chain_path='\EFI\Microsoft\Boot\bootmgfw.efi'
+        elif [ "$cans" = "2" ]; then
+            chain_path='\EFI\systemd\systemd-bootx64.efi'
+        elif [ "$cans" = "3" ]; then
+            chain_path='\EFI\ubuntu\shimx64.efi'
+        elif [ "$cans" = "1" ] || [ "$cans" = "4" ]; then
+            local kind=""
+            [ "$cans" = "1" ] && kind="grubx64.efi" || kind="shimx64.efi"
+            local dans=""
+            read -r dans || dans=""
+            dans="${dans#"${dans%%[![:space:]]*}"}"; dans="${dans%"${dans##*[![:space:]]}"}"
+            if [[ "$dans" =~ ^[A-Za-z0-9_-]{1,100}$ ]]; then
+                chain_path="\\EFI\\$dans\\$kind"
+            else
+                log "[marker] '$dans' is not a distro directory name - no pin written"
+            fi
+        elif [ "$cans" = "5" ]; then
+            local pans=""
+            read -r pans || pans=""
+            pans="${pans#"${pans%%[![:space:]]*}"}"; pans="${pans%"${pans##*[![:space:]]}"}"
+            pans="${pans#\"}"; pans="${pans%\"}"
+            if [ -n "$pans" ]; then
+                # Normalize the two paste-mistakes that would otherwise make
+                # the loader silently ignore the pin: forward slashes and a
+                # missing leading backslash.
+                pans="${pans//\//\\}"
+                [ "${pans:0:1}" = "\\" ] || pans="\\$pans"
+                if [ "${#pans}" -le 240 ] && [[ "$pans" != */* ]]; then
+                    chain_path="$pans"
+                else
+                    log "[marker] '$pans' is not a volume-relative EFI path (<= 240 chars) - no pin written"
+                fi
+            fi
+        fi
+    fi
+    if [ -n "$chain_path" ]; then
+        printf '%s\n' "$chain_path" > "$OUT/chain-target.txt"
+        MARKER_FILES+=("chain-target.txt")
+        log "[marker] chain pinned: chain-target.txt = $chain_path"
+    fi
+    # Ultrafast profile: the one speed option whose default must stay No -
+    # it skips the diagnostic stages that make a FIRST run debuggable
+    # (M1 sampling, GOP probes, AUTH-SCAN, dumps; bigger log blind spots on
+    # a hang). For sticks rebuilt for machines already verified over
+    # multiple rounds (docs/faq.md). It folds quiet on the loader side, so
+    # tx-quiet.txt next to it is redundant (noted, harmless either way).
+    local want_fast=0
+    if [ "$ULTRAFAST" -eq 1 ]; then
+        want_fast=1
+    elif [ "$menu_interactive" -eq 1 ]; then
+        log "[marker]   ultrafast (tx-ultrafast.txt): skips the diagnostic probes and folds"
+        log "[marker]   quiet - faster boots, bigger log blind spots on a hang. Only for"
+        log "[marker]   machines already verified over multiple rounds (docs/faq.md)."
+        local uans=""
+        read -r uans || uans=""
+        case "${uans,,}" in y|yes) want_fast=1 ;; esac
+    fi
+    if [ "$want_fast" -eq 1 ]; then
+        : > "$OUT/tx-ultrafast.txt"
+        MARKER_FILES+=("tx-ultrafast.txt")
+        log "[marker] ultrafast enabled (tx-ultrafast.txt - verdict read-backs still run)"
+        [ "$want_quiet" -eq 1 ] && log "[marker]   ultrafast folds quiet - tx-quiet.txt alongside is redundant"
+    fi
+}
+marker_offer
+
+markers_json=""
+for _m in ${MARKER_FILES[@]+"${MARKER_FILES[@]}"}; do
+    markers_json+="${markers_json:+,}\"$_m\""
+done
+
 # Layout marker: identifies a volume that already hosts THIS project's files
 # so a later run may upgrade them in place. Any other existing file is never
 # overwritten (data-safety contract; see the install offer at the end).
-printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s"\n}\n' \
-    "${FAMILIES[*]}" "$(date -Is)" > "$OUT/nvuu-stick.json"
+# "markers" records the marker files THIS build wrote so a later handoff
+# audit starts from the layout json instead of listing the volume root.
+# "fw_source" records the GSP payload provenance (issue #263): the resolved
+# route (badge = host installed driver, version pin waived | arch | run |
+# cachyos | cachyos4), the driver version where parseable, and the staged
+# GSP ELF SHA-256s - "badge or pinned?" stays answerable after the fact.
+printf '{\n  "project": "nv-uefi-unlocker",\n  "maker": "make-usbroot.sh",\n  "families": "%s",\n  "built": "%s",\n  "markers": [%s],\n  "fw_source": {"route": %s, "driver": %s, "elf_sha256": {"gsp_ga10x.bin": %s, "gsp_tu10x.bin": %s}}\n}\n' \
+    "${FAMILIES[*]}" "$(date -Is)" "$markers_json" \
+    "$(json_str "${FW_ROUTE:-}")" "$(json_str "${FW_DRIVER:-}")" \
+    "$(json_str "${FW_SHA_GA10X:-}")" "$(json_str "${FW_SHA_TU10X:-}")" > "$OUT/nvuu-stick.json"
 
 log ""
 if mountpoint -q "$OUT" 2>/dev/null; then
@@ -998,6 +1375,22 @@ install_copy() { # $1 = src root, $2 = target mountpoint -> 0 ok, 1 refused
         fi
     done < <(find "$src" -type f)
     [ "$bad" -eq 1 ] && return 1
+    # Narrow-list prune, marker-gated: intermediates that OLDER layouts
+    # shipped but this maker no longer produces - the 10x-named gsp-sections
+    # exports (byte-identical twins of the *102 images, ~85 MB on a ga102+
+    # ad102 stick) and the consumed GSP ELFs. Only ever these six names at
+    # the target root, and only after the copy verified clean; every other
+    # pre-existing file stays untouched (issue #73 contract).
+    if our_marker "$mp"; then
+        for stale in fwimage_ga10x.bin fwsignature_ga10x.bin \
+                     fwimage_ad10x.bin fwsignature_ad10x.bin \
+                     gsp_ga10x.bin gsp_tu10x.bin; do
+            if [ -f "$mp/$stale" ]; then
+                rm -f -- "$mp/$stale"
+                log "[install] pruned stale intermediate: $mp/$stale"
+            fi
+        done
+    fi
     log "[install] done: $total files ($copied written, $skipped already identical) -> $mp (SHA-256 read-back verified)"
     return 0
 }

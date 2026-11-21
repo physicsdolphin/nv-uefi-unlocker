@@ -77,6 +77,21 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
 - **[gpuunlock](https://github.com/miounet11/gpuunlock)**（miounet11）：
   4090/4070 Ti SUPER 合并发行版。
 
+## 3b. 解锁后性能研究（软件栈适配）
+
+- **[unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm)**
+  （Harry Chen）与[配套博客](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/)：
+  8×RTX 4090 解锁态的首份系统 GEMM 性能分析——指令级翻倍坐实（FP16/FP32acc
+  165.6→331.6 TF/s、FP8 332.8→660.6，对照组不变），端到端 cuBLAS 仅 +12–34%；
+  NCU 对照与候选遍历把缺口定位到 CUDA 库按出厂半速模型校准的完全静态 kernel
+  启发式（锁频不变、LD_PRELOAD 伪装 6000 Ada 设备属性无效、
+  `CUBLASLT_HEURISTICS_LUT_FILE` 死路径、kernel 集只按 CC 划分），库内自带
+  最优 kernel；autotune/CUTLASS 调优方法与推荐配置（FP8 1.17–1.93×、非对称
+  大矩阵 FP16/BF16 1.3–1.64×、超大 K swizzle +24–128%），另附 FP32 累加器
+  24-bit 完整性验证与 FastAccum 大 K 精度陷阱。落点：
+  [theoretical-uplift](theoretical-uplift.md) §7 墙 4 外部实证与 §8 旁证、
+  [FAQ 性能节](faq.md#gain)。
+
 ## 4. BAR1 / 寄存器 / 熔丝侧线
 
 - **[ReBarUEFI](https://github.com/xCuri0/ReBarUEFI)**（xCuri0，MIT）：
@@ -93,6 +108,15 @@ unlock40x_v70.c，MIT，仓库已删）→ 下列各支。TU106 全链可行性�
   **[gpcprobe](https://github.com/matstatman/gpcprobe)**（matstatman）·
   **[170hx-rir-tool](https://github.com/lixiangwuxian/170hx-rir-tool)**
   （lixiangwuxian）：GA100 熔丝/RIR 架构（熔丝语义参考线）。
+- **[ga100-ff-tools](https://github.com/kprinssu/ga100-ff-tools)**（kprinssu）：GA100 FF
+  capture/plan/simulate 工具链（52 寄存器表=我方 GA100 词典的独立第二源；IFF_RECORD
+  0x820050 解码线索）。
+- **[pico-ga100vfi](https://github.com/dalzyu/pico-ga100vfi)**（dalzyu）·
+  **[rp2040-glitch-tool](https://github.com/JosiahWhite/rp2040-glitch-tool)**
+  （JosiahWhite）：GA100 电压故障注入的 RP2040/RP2350 工具线（I2C-only 四线方案与
+  通用分段时序基底）。
+- **[cmp170hx-ffcalc](https://github.com/sayhellotojungle/cmp170hx-ffcalc)**
+  （sayhellotojungle）：GA100 FF 离线预计算/回放/断言式烧写（中文生态独立实现）。
 - **[p104-gen2-unlock](https://github.com/skbskhud/p104-gen2-unlock)**
   （skbskhud）：P104 PCIe Gen2 链路工具（PCI 配置空间操作参考，与算力
   解锁正交）。

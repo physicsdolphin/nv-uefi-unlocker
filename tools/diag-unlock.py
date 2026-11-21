@@ -271,7 +271,8 @@ GA100_SEC_ALIAS_ROWS = [
     ("PRIV_SEC_EN", 0x0082_0434),
     ("SECURE_PRI_SRC_ISO_EN", 0x0082_0410),
     ("PRIVKEY_ACC_DIS", 0x0082_0324),
-    ("FEATURE_FUSES_OVR_DIS", 0x0082_03F0),
+    # FEATURE_FUSES_OVR_DIS (0x8203f0) not listed: already probed as
+    # PRIV_ROWS FUSE_OPT_FEATURE_OVR - used to print twice (#237 round 4).
     ("SFK_ACC_DIS", 0x0082_05A8),
     ("SECURE_PMU_DEBUG_DIS", 0x0082_0640),
     ("SECURE_SECENG_DEBUG_DIS", 0x0082_063C),
@@ -335,6 +336,64 @@ PLM_PL0_WE = 0x0082_00F8  # bit4 = PL0 write enable
 PLM_PL2_WE = [0x0082_3B24, 0x0082_3B28]  # bit6 = PL2 write enable
 GB20X_PES_STATUS_BASE = 0x0082_2A78
 GB20X_OFA_DISABLE = 0x0082_2A68
+# #237 round 3: the 4090 L2-slice cut is FLAT BAR0 - per-LTC 4-bit LTS mask
+# (~(val>>10)) & 0xf at NV_LTC_PRI_BASE 0x00140000 + 0x2000*K; broadcast
+# 0x0017e02c (NV_PLTCG_LTCS). Boot-static (no writers in app01/07/08/GSP).
+LTS_LTC0_SLICE = 0x0014_002C
+LTS_LTC_STRIDE = 0x2000
+LTS_LTC_SLOTS = 12
+LTS_BROADCAST = 0x0017_E02C
+
+# #237 round 4 (2026-11-20, AD102 4090 first live LTS readout): the per-FBP
+# L2 arrays on Ada are the (LTC[2f+1]<<4)|LTC[2f] packing of the per-LTC RAW
+# disable nibbles (bits[13:10] as stored, NOT complemented) - the 4090 proves
+# the identity (nibbles 1/8/2/4... pack to 0x81/0x42/0x24/0x18 = the words at
+# 0x821200/0x822900). sw/eff sit +0x880 apart (the Page-2 rule, same as
+# per-GPC ROP 0x822000 -> 0x822880). GA100 dict's 0x8202c4/0x8205e8 moved.
+AD10X_L2_CAND_FBP = 0x0082_1200  # OPT_ROP_L2_DISABLE_FBP[0..5] (stage-1 fuse)
+AD10X_L2_SW_FBP = 0x0082_2080  # CTRL_OPT_ROP_L2_FBP[0..5] (RPR 37-42, OBJFUSE +0x228)
+AD10X_L2_EFF_FBP = 0x0082_2900  # STATUS_OPT_ROP_L2_FBP[0..5] (OBJFUSE +0x270)
+# Round-5 solve (was mislabeled the OPT_ROP_L2_DEFECTIVE_FBP hunt): the
+# nonzero core 0x8211e8..0x8211fc is per-FBPA memory/PHY trim fuse data -
+# app08 consumer copy (PC 0x3e00..0x3ffb) merges into NV_PFB_FBPA_n + 0x3d50.
+# Word counts scale 0/2/4 with populated FBPAs (per-card data, not floorsweep);
+# the 4090's six words f1/20/00/10/e1/10 are the AD102 reference row.
+# DEFective-FBP hunting returns to OBJFUSE +0x248 only.
+AD10X_FBPA_TRIM_BASE = 0x0082_11C0
+AD10X_FBPA_TRIM_WORDS = 33
+# app08 0x6ae4 SOURCE tables (what it would write if the four gates pass).
+APP08_SRC_A_BASE = 0x0082_1480
+APP08_SRC_A_WORDS = 66  # 0x821480..0x821584 inclusive, the reporter's stated end
+APP08_SRC_B_BASE = 0x0082_2A48
+APP08_SRC_B_WORDS = 128  # 0x822a48..0x822c44 inclusive
+# Helper 0x944c inputs: pass iff (q1&1)!=0 || (q5&1)==0. Retail q1=0, q5=1
+# -> BLOCK unless overridden.
+APP08_GATE_Q1 = 0x0082_03F4
+APP08_GATE_Q5 = 0x0082_04E4
+# app08 65b1..6647 copies 0x12006c low 5 bits (active LTC count) into both
+# broadcast words; GSP MemorySystem +0x740/+0x638 also touch 0x17e27c bits[4:0].
+LTS_BCAST_LOW = 0x0017_E000
+LTS_BCAST_HIGH = 0x0017_E27C
+RING_LTC_COUNT = 0x0012_006C
+
+
+def lts_disable_nibble(v):
+    """RAW disable nibble bits[13:10] as stored (complement = active mask)."""
+    return (v >> 10) & 0xF
+
+
+def l2_pack_fbp(nibs):
+    return [(nibs[2 * f + 1] << 4) | nibs[2 * f] for f in range(len(nibs) // 2)]
+
+
+def iff_decode(v):
+    """IFF_RECORD (0x820050) row range: START[9:0], inclusive LAST[25:16].
+
+    ga100-ff-tools documents [8:0]/[24:16] for the 512-row GA100 (LAST <=
+    511 fits 9 bits); our consumer captures need the 10-bit width -
+    GA106/GA102 LAST=575, AD107 LAST=831, FUSE_ADDR agreeing exactly.
+    """
+    return (v & 0x3FF, (v >> 16) & 0x3FF)
 
 # Mirror probe: 16 representative words x {0x820xxx, -0x800000, -0x7FF000}.
 # mirror == primary -> bit-23 alias; mirror badf while primary is plain ->
@@ -743,7 +802,7 @@ def decode_tpc_bits(v):
 
 def dump_tpc(bar):
     """Read-only per-GPC TPC floorsweep survey (open question #13)."""
-    print("  --- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---")
+    print("  --- tpc (per-GPC floorsweep; STATUS bit set = TPC fused OFF; SM-count verified 5-die 2026-11-21) ---")
     off_total = 0
     off_mask = 0
     statuses = []
@@ -930,7 +989,8 @@ def report(bar, tag="", devpath=None):
         print("  --- GA100-style per-GPC SM banks (badf elsewhere = absent) ---")
         ovr = "  ".join(f"{bar.rd(GA100_SM_OVR_BASE + 4 * g):#010x}" for g in range(GA100_GPCS))
         stat = "  ".join(f"{bar.rd(GA100_SM_STATUS_BASE + 4 * g):#010x}" for g in range(GA100_GPCS))
-        print(f"  GA100_SM_OVR  {ovr}")
+        sm_note = " (GA100 bank; on Ada CTRL_OPT_TPC_GPC = 0x00820838+4g, see TPC section)" if fam == "ada" else ""
+        print(f"  GA100_SM_OVR{sm_note}  {ovr}")
         print(f"  GA100_SM_STAT {stat}")
         print("  --- PCIe link block (XVE shadows; consumer dies read stock/benign) ---")
         rrow(bar, PCIE_LINK_ROWS)
@@ -952,13 +1012,22 @@ def report(bar, tag="", devpath=None):
             note = f" ({decode_plm(v)})" if name.endswith("PLM") else ""
             b = badf_bucket(v)
             tag = f" [{b}]" if b else ""
-            print(f"  {label:<10} {name:<26} = {v:#010x}{note}{tag}")
+            # #237 round 4 stale-GA100-label fixes: on Ada 0x8203a0..0x8203bc
+            # is the TPC-disable fuse bank A (not SYS_PIPE), and the GPC7
+            # defective/CP pair is a GA100-only layout (badf on Ada).
+            ada_note = ""
+            if fam == "ada":
+                if 0x0082_03A0 <= off <= 0x0082_03B8:
+                    ada_note = " [Ada: TPC disable bank A]"
+                elif name in ("TPC_GPC7_DEFECTIVE", "TPC_GPC7_DISABLE_CP"):
+                    ada_note = " [GA100-only]"
+            print(f"  {label:<10} {name:<26} = {v:#010x}{note}{tag}{ada_note}")
     for label, base, count in [
         ("PES_GPC", GA100_PES_STATUS_BASE, 12),
         ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16),
         ("TPC_GPC", GA100_TPC_STATUS_BASE, 32),
         ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12),
-        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12),
+        ("TPC_RECFG_G100", GA100_TPC_RECONFIG_BASE, 12),
         ("TPC_RECFG_ADA", AD10X_TPC_RECONFIG_BASE, 12),
         ("ROP_GPC_ADA", AD10X_ROP_PER_GPC_BASE, 12),
     ]:
@@ -1002,7 +1071,7 @@ def report(bar, tag="", devpath=None):
             ("ROP_L2_FBP", GA100_ROP_L2_STATUS_BASE, 16),
             ("TPC_GPC", GA100_TPC_STATUS_BASE, 32),
             ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12),
-            ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12),
+            ("TPC_RECFG_G100", GA100_TPC_RECONFIG_BASE, 12),
             ("TPC_RECFG_ADA", AD10X_TPC_RECONFIG_BASE, 12),
             ("ROP_GPC_ADA", AD10X_ROP_PER_GPC_BASE, 12),
         ]:
@@ -1053,16 +1122,136 @@ def report(bar, tag="", devpath=None):
             printed += 1
         if printed > 0:
             print()
+    # #237 round 4: the per-FBP L2 arrays on Ada + the packing identity.
+    # cand 0x821200+4f = OPT_ROP_L2_DISABLE_FBP (stage-1 fuse), sw
+    # 0x822080+4f = CTRL_OPT_ROP_L2_FBP (RPR 37-42, OBJFUSE +0x228), eff
+    # 0x822900+4f = STATUS_OPT_ROP_L2_FBP (OBJFUSE +0x270); pred =
+    # (LTC[2f+1]<<4)|LTC[2f] from the LTS_L2SLICE face below - the 4090
+    # capture predicts 0x81/0x42/0x24/0x18/0x81/0x42 for cand+eff.
+    print("  L2_FBP (fbp=0..5; cand 0x821200+4f / sw 0x822080+4f / eff 0x822900+4f; pred=(LTC[2f+1]<<4)|LTC[2f])")
+    for f in range(6):
+        c = bar.rd(AD10X_L2_CAND_FBP + 4 * f)
+        s = bar.rd(AD10X_L2_SW_FBP + 4 * f)
+        e = bar.rd(AD10X_L2_EFF_FBP + 4 * f)
+        lo = bar.rd(LTS_LTC0_SLICE + (2 * f) * LTS_LTC_STRIDE)
+        hi = bar.rd(LTS_LTC0_SLICE + (2 * f + 1) * LTS_LTC_STRIDE)
+        if badf_bucket(lo) is None and badf_bucket(hi) is None:
+            pr = l2_pack_fbp([lts_disable_nibble(lo), lts_disable_nibble(hi)])[0]
+            marks = ""
+            for nm, w in (("cand", c), ("eff", e)):
+                if badf_bucket(w) is None:
+                    tag = "pack" if w == pr else f"!=pack({pr:#04x})"
+                    marks += f" {nm}={tag}"
+            pred_s = f"{pr:#04x}"
+        else:
+            pred_s, marks = "n/a", ""
+        print(f"    FBP[{f}] {AD10X_L2_CAND_FBP + 4 * f:#010x} cand={c:#010x} sw={s:#010x} eff={e:#010x} pred={pred_s}{marks}")
+    # Round-5 solve: FBPA_TRIM - the nonzero core 0x8211e8..0x8211fc is
+    # per-FBPA mem/PHY trim fuses (app08 consumer copy merges into
+    # NV_PFB_FBPA_n + 0x3d50), NOT the DEFective array - that stays hunted
+    # at OBJFUSE +0x248. Trim words are per-card data; compare same-die only.
+    print("  FBPA_TRIM (0x8211c0..0x821240; per-FBPA mem/PHY trim fuses, ex-L2_DEF_SCAN; DEF hunt stays at OBJFUSE +0x248)")
+    for chunk in range(0, AD10X_FBPA_TRIM_WORDS, 8):
+        cells = " ".join(f"{bar.rd(AD10X_FBPA_TRIM_BASE + 4 * i):#010x}"
+                         for i in range(chunk, min(chunk + 8, AD10X_FBPA_TRIM_WORDS)))
+        print(f"    {AD10X_FBPA_TRIM_BASE + 4 * chunk:#010x} {cells}")
+    # #237 round 4 sweep: the app08 0x6ae4 SOURCE tables (what it would write
+    # if the four gates pass) - 4090 slice pattern or the AD103 values?
+    for name, base, words in (
+        ("APP08_SRC_A", APP08_SRC_A_BASE, APP08_SRC_A_WORDS),
+        ("APP08_SRC_B", APP08_SRC_B_BASE, APP08_SRC_B_WORDS),
+    ):
+        print(f"  {name} ({base + 4 * (words - 1):#010x} end, {words} words)")
+        for chunk in range(0, words, 8):
+            cells = " ".join(f"{bar.rd(base + 4 * i):#010x}"
+                             for i in range(chunk, min(chunk + 8, words)))
+            print(f"    {base + 4 * chunk:#010x} {cells}")
     pl0we = bar.rd(PLM_PL0_WE)
     print(f"  PLM_PL0_WE {PLM_PL0_WE:#010x} = {pl0we:#010x} bit4={(pl0we >> 4) & 1} (FUSECTRL_PLM bit4; 1=host-level writes enabled)")
+    # #237 round 4: the complete app08 0x6ae4 write gate. Helper 0x944c tests
+    # two OBJFUSE query words: pass iff (q1&1)!=0 || (q5&1)==0 (retail q1=0,
+    # q5=1 -> BLOCK unless overridden); plus both PL2 write-enable bits.
+    # DMEM8[0x646]/[0x64d] are ROM-internal.
+    q1 = bar.rd(APP08_GATE_Q1)
+    q5 = bar.rd(APP08_GATE_Q5)
+    print(f"  APP08_GATE_Q1 {APP08_GATE_Q1:#010x} = {q1:#010x} bit0={q1 & 1} (OBJFUSE query 0xff000001; retail 0)")
+    print(f"  APP08_GATE_Q5 {APP08_GATE_Q5:#010x} = {q5:#010x} bit0={q5 & 1} (OBJFUSE query 0xff000005; retail 1)")
+    # bit6 read from a badf word is the POISON's bit, not the register's
+    # (0xbadf5040 bit6 = 1 - caught on the 2026-11-20 stock TU106 dump):
+    # degrade to "?" and never let a poison bit decide the gate.
+    pl2_bits = []
     for p in PLM_PL2_WE:
         v = bar.rd(p)
-        print(f"  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={(v >> 6) & 1} (VBIOS app08 gate)")
+        pl2_bits.append(None if badf_bucket(v) else (v >> 6) & 1)
+    if badf_bucket(q1) or badf_bucket(q5):
+        helper, gate = "?", "?"
+    else:
+        h = (q1 & 1) != 0 or (q5 & 1) == 0
+        helper = "PASS" if h else "BLOCK"
+        if not h:
+            gate = "CLOSED"
+        elif pl2_bits == [1, 1]:
+            gate = "OPEN"
+        elif any(b is None for b in pl2_bits):
+            gate = "?"
+        else:
+            gate = "CLOSED"
+    print(f"  APP08_HELPER_944C = {helper} ((q1&1)!=0 || (q5&1)==0)")
+    for p, b6 in zip(PLM_PL2_WE, pl2_bits):
+        v = bar.rd(p)
+        print(f"  PLM_PL2_WE {p:#010x} = {v:#010x} bit6={'?' if b6 is None else b6} (VBIOS app08 gate)")
+    print(f"  APP08_WRITE_GATE = {gate} (PL2 pair bit6=1/1 + helper 0x944c; DMEM8[0x646]/[0x64d] are ROM-internal)")
+    # #237 round 3: per-LTC LTS (L2 slice) masks - flat BAR0, every family.
+    print("  LTS_L2SLICE (per-LTC 4-bit slice mask = (~val>>10)&0xf; flat 0x14002c + 0x2000*K)")
+    for k in range(LTS_LTC_SLOTS):
+        a = LTS_LTC0_SLICE + k * LTS_LTC_STRIDE
+        v = bar.rd(a)
+        b = badf_bucket(v)
+        if b:
+            print(f"    LTC[{k:>2}] {a:#010x} = {v:#010x} [{b}]")
+            continue
+        active = (~(v >> 10)) & 0xF
+        print(f"    LTC[{k:>2}] {a:#010x} = {v:#010x} slices={active:04b} ({active.bit_count()}/4)")
+    v = bar.rd(LTS_BROADCAST)
+    b = badf_bucket(v)
+    if b:
+        print(f"    BCAST     {LTS_BROADCAST:#010x} = {v:#010x} [{b}]")
+    else:
+        active = (~(v >> 10)) & 0xF
+        print(f"    BCAST     {LTS_BROADCAST:#010x} = {v:#010x} slices={active:04b} ({active.bit_count()}/4)")
+    # #237 round 4: the other two LTC broadcast words - app08 65b1..6647
+    # copies 0x12006c low 5 bits (active LTC count) into both; GSP
+    # MemorySystem +0x740/+0x638 also read/write bits[4:0] of 0x17e27c.
+    for name, off in (("LTCNT_LO", LTS_BCAST_LOW), ("LTCNT_HI", LTS_BCAST_HIGH), ("LTCNT_SRC", RING_LTC_COUNT)):
+        v = bar.rd(off)
+        b = badf_bucket(v)
+        if b:
+            print(f"    {name:<9} {off:#010x} = {v:#010x} [{b}]")
+        else:
+            print(f"    {name:<9} {off:#010x} = {v:#010x} ltcnt={v & 0x1f}")
     # GR topology anchor, every family (open-questions #19): byte3 = die GPC
     # slots, byte0 = active GPC count - three-point calibrated (TU104 KO
     # 06030005, TU106 2070 08040003, TU106 1e93 08040006). On Ampere it is
     # the OQ#19 polarity discriminator (GA106 byte0 4 -> masks bit=off,
     # 7 -> bit=on).
+    # ga100-ff-tools cross round: IFF_RECORD row range + MAGIC_D dual bits.
+    iff = bar.rd(0x0082_0050)
+    b = badf_bucket(iff)
+    if b:
+        print(f"  IFF_RECORD {0x0082_0050:#010x} = {iff:#010x} [{b}] (row-range decode needs a plain word; TU106 PL0-blocks it)")
+    else:
+        start, last = iff_decode(iff)
+        fa = bar.rd(0x0082_0004)
+        agree = ""
+        if badf_bucket(fa) is None and fa == last:
+            agree = " ; == FUSE_ADDR"
+        print(f"  IFF_RECORD {0x0082_0050:#010x} = {iff:#010x} rows={start}..{last} ({last + 1} rows; GA100 domain 222..511 - consumer dies extend{agree})")
+    magic = bar.rd(0x0082_0520)
+    b = badf_bucket(magic)
+    if b:
+        print(f"  MAGIC_D_BITS {0x0082_0520:#010x} = {magic:#010x} [{b}] (bit decode needs a plain word)")
+    else:
+        print(f"  MAGIC_D_BITS {0x0082_0520:#010x} = {magic:#010x} bit21(app08 target)={(magic >> 21) & 1} bit25(gen4 restriction)={(magic >> 25) & 1}")
     gr = bar.rd(0x0040_9604)
     print(f"  GR_TOPO_409604 0x00409604 = {gr:#010x}"
           f" (byte3 GPC-slots {(gr >> 24) & 0xff} / byte0 active-GPC {gr & 0xff};"

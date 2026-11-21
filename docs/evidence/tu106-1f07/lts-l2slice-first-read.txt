@@ -1,0 +1,33 @@
+[TU106 1f07 (2070, unlocked) LTS_L2SLICE first read - ssdiag 0.7.9 build bd3622bf, 2026-11-17]
+[8 live LTCs x 4/4 slices = 4 MB L2 (PTOP LTC/FBP=2, 4 FBPs); slots 8-11 floorswept
+ with the K-index echoed in the badf low byte (0x38/39/3a/3b) - NEW badf pattern]
+    LTC[ 0] 0x0014002c = 0x00000044 slices=1111 (4/4)
+    LTC[ 1] 0x0014202c = 0x00000044 slices=1111 (4/4)
+    LTC[ 2] 0x0014402c = 0x00000044 slices=1111 (4/4)
+    LTC[ 3] 0x0014602c = 0x00000044 slices=1111 (4/4)
+    LTC[ 4] 0x0014802c = 0x00000044 slices=1111 (4/4)
+    LTC[ 5] 0x0014a02c = 0x00000044 slices=1111 (4/4)
+    LTC[ 6] 0x0014c02c = 0x00000044 slices=1111 (4/4)
+    LTC[ 7] 0x0014e02c = 0x00000044 slices=1111 (4/4)
+    LTC[ 8] 0x0015002c = 0xbadf2038 [FLOORSWEPT]
+    LTC[ 9] 0x0015202c = 0xbadf2039 [FLOORSWEPT]
+    LTC[10] 0x0015402c = 0xbadf203a [FLOORSWEPT]
+    LTC[11] 0x0015602c = 0xbadf203b [FLOORSWEPT]
+    BCAST     0x0017e02c = 0x00000044 slices=1111 (4/4)
+
+[AD107 28e0 4060L stock read - same build, 2026-11-14/17: 4 live LTCs (2 FBP x 2
+ LTC/FBP), slots 4-11 floorswept echoing 0x30+K - the index-echo formula confirmed
+ on a second die (TU106 slots 8-11 echoed 0x38-0x3b = 0x30+8..11)]
+    LTC[ 0] 0x0014002c = 0x00000044 slices=1111 (4/4)
+    LTC[ 1] 0x0014202c = 0x00000044 slices=1111 (4/4)
+    LTC[ 2] 0x0014402c = 0x00000044 slices=1111 (4/4)
+    LTC[ 3] 0x0014602c = 0x00000044 slices=1111 (4/4)
+    LTC[ 4] 0x0014802c = 0xbadf2034 [FLOORSWEPT]
+    LTC[ 5] 0x0014a02c = 0xbadf2035 [FLOORSWEPT]
+    LTC[ 6] 0x0014c02c = 0xbadf2036 [FLOORSWEPT]
+    LTC[ 7] 0x0014e02c = 0xbadf2037 [FLOORSWEPT]
+    LTC[ 8] 0x0015002c = 0xbadf2038 [FLOORSWEPT]
+    LTC[ 9] 0x0015202c = 0xbadf2039 [FLOORSWEPT]
+    LTC[10] 0x0015402c = 0xbadf203a [FLOORSWEPT]
+    LTC[11] 0x0015602c = 0xbadf203b [FLOORSWEPT]
+    BCAST     0x0017e02c = 0x00000044 slices=1111 (4/4)

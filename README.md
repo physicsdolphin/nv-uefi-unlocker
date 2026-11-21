@@ -33,7 +33,7 @@
 
 | 系列 | 支持情况 |
 | --- | --- |
-| GTX 16 · Turing | 理论兼容，欢迎实机验证 |
+| GTX 16 · Turing | TU117 已实机验证，其余型号待验证 |
 | RTX 20 · Turing | 全系兼容，支持笔记本与台式 |
 | RTX 30 · Ampere GA10x | 全系兼容，支持笔记本与台式 |
 | RTX 40 · Ada | 全系兼容，支持笔记本与台式 |
@@ -244,6 +244,7 @@ bash release/make-usbroot.sh --family 40 \
   --assets ./target/release/assets \
   --boot-efi ./target/x86_64-unknown-uefi/release/loader.efi
 ```
+**为什么必须带 `-AssetsExe`/`-BootEfi`（或 `--assets`/`--boot-efi`）**：省略这两个参数时，maker 会改用 `release/` 目录里的**发布随附副本**（只在发版打包时更新）。自行构建后不带参数，maker 可能运行**较旧的资产工具与 EFI**——maker 现在会检测这种过期（`[stale]` 黄色警告并给出正确参数），照警告加上参数即可。
 
 之后按上面的布局复制到 U 盘。[只读诊断、测试与开发说明](docs/faq.md#layout)。
 
@@ -371,6 +372,26 @@ bash release/make-usbroot.sh --family 40 \
 - [faucon](https://github.com/vbe0201/faucon)——fuc5 反汇编备选（实测解不了
   量产 booter）
 
+**解锁后软件栈适配研究**
+
+- [unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm)（Harry Chen）
+  与[配套博客](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/)——
+  8×RTX 4090 解锁态的首份系统 GEMM 性能分析：指令级翻倍坐实后端到端 cuBLAS
+  仅 +12–34%，根因是 CUDA 库的 kernel 自动选择按出厂半速模型校准（完全静态
+  启发式，感知不到解锁态；伪装设备属性无效），库内自带最优 kernel 只是排序
+  靠后；按形状实测遍历候选择优（autotune）可回收 FP8 1.17–1.93×、非对称大
+  矩阵 FP16/BF16 1.3–1.64×，超大 K 需 CUTLASS swizzle。调优方法与各精度推荐
+  配置见其仓库与博客；本项目侧判读见
+  [性能 FAQ](docs/faq.md#gain) 与 [theoretical-uplift §7 墙 4](docs/theoretical-uplift.md)
+
+**平台侧伴侣工具（与本项目无关）**
+
+- [gsetupmod](https://github.com/MikeWuPing/gsetupmod)（MikeWuPing，个人使用免费/
+  商用联系作者）——UEFI 设置浏览器：解析固件 HII/IFR，把 `SUPPRESS_IF` 隐藏项以
+  可编辑形式显示并经 UEFI 变量写回；本项目在丢锁对策（固件 ACPI D3 开关，含隐藏项）
+  中引用其定位开关，G614JV 实测与解锁隐藏 BIOS 菜单等效（需 Secure Boot 关闭）。
+  见 [FAQ 丢锁一节实例记录](docs/faq.md#relock-acpid3)
+
 许可：**GPL-2.0-only**（`LICENSE`）。NVIDIA 固件与 VBIOS 版权归 NVIDIA，按其
 原许可条款从钉版公开包本地再生，不在本仓库分发。
 
@@ -413,6 +434,7 @@ bash release/make-usbroot.sh --family 40 \
   [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh)（ZH） ·
   [小萝卜の博客「在NVIDIA显卡上解锁FP16算力」](https://www.milobo.moe/2026/1966/)（ZH，个人实践记录） ·
   [bailu974「Secure Boot 笔记本实操记录」](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot)（ZH，卡键补丁 + Insyde 按文件信任 + ESP 驻留部署） ·
+  [shisa84「RTX 3060 解锁 vs RTX 5050：ComfyUI 实测」](https://shisa84.github.io/rtx3060-unlocked-vs-rtx5050-comfyui/)（EN，v2.1.11 实操指南 + 三工作流时间/能耗 A/B） ·
   [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/)（ID） ·
   [Silicon Report](https://www.siliconreport.com/open-source-uefi-tool-unlocks-nvidia-gpu-tensor-performance)（EN） ·
   [Kantan.News](https://kantan.news/news/new-uefi-tool-removes-ai-speed-limitation-on-nvidia-graphics-cards)（EN） ·

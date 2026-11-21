@@ -563,3 +563,19 @@ fn t40_fbif_dead_after_run_flr_retry_recovers() {
         "the 1e93 vehicle (FLR + FWSEC re-ignition) must be on the log"
     );
 }
+
+#[test]
+fn t_no_flr_ada_ablation() {
+    // Loader analog of the loader-side no-flr skip: the FLR is state
+    // cleanup on Ada/GA10x (unlock read back; AON holds it across any
+    // reset) - skipping it leaves WPR2/GFW live ON PURPOSE. That live
+    // state is the residue the issue #242 diagnostic isolates from the
+    // post-FLR device state. Contract: everything before the FLR point
+    // is untouched, the unwind stays clean, and flr_done reads false.
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.no_flr = true;
+    let report = tx.run().expect("no-flr happy path");
+    assert!(report.unwind_clean && report.selectors_written && report.signature_restored);
+    assert!(!report.flr_done, "no_flr must report the FLR as skipped");
+}

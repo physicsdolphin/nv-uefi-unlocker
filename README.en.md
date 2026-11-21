@@ -239,6 +239,7 @@ bash release/make-usbroot.sh --family 40 \
   --assets ./target/release/assets \
   --boot-efi ./target/x86_64-unknown-uefi/release/loader.efi
 ```
+**Why `-AssetsExe`/`-BootEfi` (or `--assets`/`--boot-efi`) are mandatory here**: without them the maker falls back to the **bundled copies in `release/`**, which only change when the release packaging refreshes them. On a self-built checkout, omitting the flags can run an OLDER assets tool and EFI - the maker now detects this staleness (a yellow `[stale]` warning naming the right flags); follow the warning.
 
 Then copy to the USB stick using the layout above. [Read-only diagnosis, tests and development notes](docs/faq.en.md#layout).
 
@@ -384,6 +385,33 @@ into a local, untracked `reference/` directory, grouped by role:
 - [faucon](https://github.com/vbe0201/faucon) — alternative fuc5
   disassembler (could not decode the production booter in practice)
 
+**Post-unlock software-stack adaptation research**
+
+- [unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm) (Harry Chen)
+  with the [companion blog post](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/) —
+  the first systematic GEMM performance analysis of the unlocked state, on 8×RTX
+  4090: with the instruction-level doubling confirmed, end-to-end cuBLAS gains
+  only +12–34%, because CUDA libraries pick kernels through a fully static
+  heuristic calibrated for the stock half-speed hardware (it cannot sense the
+  unlock; spoofing device properties does nothing) — the best kernels exist
+  in-library but rank low. Walking the heuristic candidates per shape and timing
+  them (autotune) recovers FP8 1.17–1.93× and asymmetric large-N FP16/BF16
+  1.3–1.64×; very large K needs a CUTLASS swizzle. Tuning methods and
+  per-precision recommended configurations live in the repo and the blog; our
+  own reading is in the [performance FAQ](docs/faq.en.md#gain) and
+  [theoretical-uplift §7, wall 4](docs/theoretical-uplift.en.md)
+
+**Platform-side companion tool (unrelated to this project)**
+
+- [gsetupmod](https://github.com/MikeWuPing/gsetupmod) (MikeWuPing; free for
+  personal use, commercial use needs the author) — UEFI setup browser: parses
+  the firmware HII/IFR data, shows `SUPPRESS_IF`-hidden options as editable
+  and writes back via UEFI variables; referenced by this project's relock
+  remedy (locating the firmware ACPI D3 switch, hidden options included) —
+  measured on a G614JV as equivalent to unlocking the hidden BIOS menu
+  (requires Secure Boot off). See the [field record in the FAQ relock
+  section](docs/faq.en.md#relock-acpid3)
+
 License: **GPL-2.0-only** (`LICENSE`). NVIDIA firmware and VBIOS remain
 NVIDIA property; regenerate them locally from pinned public packages
 under their own license terms — they are not distributed in this
@@ -434,6 +462,7 @@ repository.
   [WORLDTECH](https://worldtech.news/story/cluster:99a2191612e071705d677715e85a108e87a0c329b66b40e4d2b79d07284014b8?lang=zh) (ZH) ·
   [Xiaoluobo blog "Unlocking FP16 compute on NVIDIA GPUs"](https://www.milobo.moe/2026/1966/) (ZH, personal practice write-up) ·
   [bailu974 "Secure Boot laptop practice record"](https://github.com/bailu974/nv-uefi-unlocker-on-SecureBoot) (ZH, stuck-key patch + Insyde per-file trust + ESP-resident deployment) ·
+  [shisa84 "RTX 3060 unlocked vs RTX 5050: ComfyUI benchmark"](https://shisa84.github.io/rtx3060-unlocked-vs-rtx5050-comfyui/) (EN, v2.1.11 how-to + time/energy A/B across three workflows) ·
   [Telset.id](https://telset.id/laptop-pc/tool-usb-unlock-tensor-nvidia-rtx-20-30-40-tanpa-flash-vbios/) (ID) ·
   [Silicon Report](https://www.siliconreport.com/open-source-uefi-tool-unlocks-nvidia-gpu-tensor-performance)(EN) ·
   [Kantan.News](https://kantan.news/news/new-uefi-tool-removes-ai-speed-limitation-on-nvidia-graphics-cards)(EN) ·

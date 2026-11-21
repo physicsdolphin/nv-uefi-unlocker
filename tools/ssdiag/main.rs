@@ -1,4 +1,31 @@
-//! ssdiag v0.8.1 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.5 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.5 fixes the tpc face semantics label (five-die SM-count check,
+//! #237 formula verification 2026-11-21): STATUS bit SET = TPC fused OFF,
+//! not present. The verdict lines already counted it this way (and matched
+//! GA102 82SM / GA106 28SM / AD107 24SM / AD102 128SM exactly); only the
+//! header and the const doc said the opposite.
+//! v0.8.4 renames the ex-L2_DEF_SCAN face to FBPA_TRIM with the round-5
+//! identity in the header (#237): 0x8211e8..0x8211fc is per-FBPA memory/PHY
+//! trim fuse data (consumer chain: app08 PC 0x3e00..0x3ffb merges into
+//! NV_PFB_FBPA_n + 0x3d50), so nobody hunts OPT_ROP_L2_DEFECTIVE_FBP here
+//! again - that hunt returns to OBJFUSE +0x248 only.
+//! v0.8.3 adds a read-only RTD3 policy line to the POWER block (issue #266):
+//! the per-adapter `EnableRuntimePowerManagement` DWORD under the NVIDIA
+//! display adapter's driver key, resolved at run time through the Enum key.
+//! 0 = the driver will not park this card (the unlock-retaining shape);
+//! absent/nonzero = runtime D3 allowed, so a cleared canary after the handoff
+//! pairs with this line as the #37/#262 rail-off signature. Also printed
+//! per-GPU in --inventory (no admin, no driver). Registry read, unelevated.
+//! v0.8.2 makes the tier-2 gate genuinely fail-closed (field-closed on the
+//! #244 T14s): the DeviceGuard registry VirtualizationBasedSecurityStatus is
+//! ABSENT on some VBS-running machines (reporter's machine: WMI says 2, the
+//! value is not in the registry), so requiring registry Some(2) - as 0.8.0
+//! and 0.8.1 both did - silently disarms the gate exactly where the tier is
+//! live. The unknown state is now explicit: SDEV table present + VBS state
+//! unreadable -> refuse (the cost of a miss is a whole-machine bugcheck; the
+//! cost of this refusal is reading the printed WMI command). VBS definitively
+//! off / configured-not-running still passes. Mock-able branches: SDEV
+//! present, registry absent, VBS=2.
 //! v0.8.1 re-grounds the tier-2 gate in the DOCUMENTED trigger (correction
 //! round, 2026-11-15): "secure PCI" keys on an SDEV (Secure Devices) ACPI
 //! table + VBS running - since Windows 10 2004 (19041.423) unsupported
@@ -30,6 +57,18 @@
 //! settles stock EN_SW_OVERRIDE=1 as routine VBIOS behavior), and the GB20x
 //! HAL 67-71 PES/OFA relocation 0x822a78/0x822a68 (why 0x820dbc reads
 //! all-badf on GB206).
+//! Same-version round 4 (2026-11-20, after the AD102 4090 first live LTS
+//! readout): the per-FBP L2 arrays on Ada (cand 0x821200+4f / sw 0x822080+4f
+//! / eff 0x822900+4f, fbp=0..5) with the (LTC[2f+1]<<4)|LTC[2f] packing
+//! cross-check against the LTS_L2SLICE nibbles (the 4090 proves the identity:
+//! nibbles 1/8/2/4... pack to 0x81/0x42/0x24/0x18), the 0x8211c0-0x821240
+//! scan for Ada's OPT_ROP_L2_DEFECTIVE_FBP (GA100 dict had 0x8205e8), the
+//! app08 0x6ae4 source tables 0x821480-584 / 0x822a48-2c44, the complete
+//! app08 write gate (helper 0x944c over the two OBJFUSE query words
+//! 0x8203f4/0x8204e4 + both PL2 write-enable bits), the two LTC broadcast
+//! words 0x17e000/0x17e27c (active-LTC-count copies of 0x12006c low 5 bits),
+//! and the stale-GA100-label fixes on Ada (SM_OVR/STAT banks, TPC_RECFG,
+//! SYS_PIPE -> TPC-disable bank A, GPC7 pair GA100-only, 0x8203f0 dedupe).
 //! Same-version UI/inventory round (2026-11-13): all-ones cells render
 //! green everywhere so the PLM survey's OPEN marker needs no text tag and
 //! two-column rows keep their alignment, and --inventory now runs with no
@@ -613,7 +652,10 @@ fn securelaunch_provisioned() -> Option<bool> {
     }
 }
 
-/// VBS runtime readback (kernel-written at boot; WMI mirrors it): 2 = running.
+/// VBS runtime readback: 2 = running, 1 = configured not running, 0 = off.
+/// "Kernel-written at boot" was the 0.8.0 assumption - field-corrected on
+/// the #244 T14s (build 26300): the value is ABSENT there while WMI
+/// Win32_DeviceGuard still reports 2, so None means UNVERIFIED, not off.
 fn vbs_status() -> Option<u32> {
     hklm_dword(DEVICEGUARD_KEY, "VirtualizationBasedSecurityStatus")
 }
@@ -628,39 +670,58 @@ fn vbs_status() -> Option<u32> {
 /// condition). Read via GetSystemFirmwareTable - unelevated, read-only, and
 /// the query itself cannot trigger the bugcheck.
 fn sdev_present() -> Option<bool> {
-    let need = unsafe {
-        win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, core::ptr::null_mut(), 0)
-    };
+    let need =
+        unsafe { win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, core::ptr::null_mut(), 0) };
     if need == 0 {
-        return Some(false); // not enumerated on this system
+        return sdev_table_present(need, &[]);
     }
     let mut buf = vec![0u8; need as usize];
     let got = unsafe {
         win::GetSystemFirmwareTable(ACPI_PROVIDER, SDEV_TABLE, buf.as_mut_ptr(), need)
     };
-    if got < 4 {
-        return None; // query failed or table shorter than a header - unknown
-    }
-    if &buf[0..4] == b"SDEV" {
+    // 两次查询的大小不一致时，保留原有的切片越界检查。
+    let signature = if got < 4 { &[] } else { &buf[..4] };
+    sdev_table_present(need, signature)
+}
+
+fn sdev_table_present(need: u32, table: &[u8]) -> Option<bool> {
+    if need == 0 {
+        Some(false) // 系统未枚举到该表
+    } else if table.starts_with(b"SDEV") {
         Some(true)
     } else {
-        None // fetched something unexpected - treat as unknown, never as a verdict
+        None // 读取失败、表头过短或签名不符
     }
 }
 
 /// Tier-2 armed. The DOCUMENTED trigger (issue #244 correction round): an
-/// SDEV ACPI table plus VBS actually running - without the hypervisor there
-/// is no enforcement, so either half missing means inert. The
-/// SystemGuard/SecureLaunch registry keys stay as a conservative secondary
-/// signal: no public document ties them to secure PCI (they co-occur on
-/// secured-stack machines), so refusing on them alone is overcautious but
-/// never unsafe.
+/// SDEV ACPI table plus VBS actually running. The registry VBS read-back is
+/// not trustworthy as a NEGATIVE signal (absent on VBS-running machines -
+/// the #244 T14s), so the unknown state fails CLOSED on the documented
+/// trigger half: SDEV present + unreadable VBS state -> refuse. Only a
+/// definitive "VBS not running" (0, or 1 = configured-not-running) clears
+/// the gate, since without the hypervisor there is no enforcement face.
+/// The SystemGuard/SecureLaunch keys stay as a conservative secondary
+/// signal, but only on a POSITIVE VBS=2 read - on an SDEV-less machine the
+/// documented condition cannot be met, so unknown VBS there must not refuse
+/// (that would misfire on ordinary machines).
 fn secure_pci_armed() -> bool {
-    let vbs = vbs_status() == Some(2);
-    (sdev_present() == Some(true) && vbs) || (securelaunch_provisioned() == Some(true) && vbs)
+    secure_pci_armed_with(vbs_status, sdev_present, securelaunch_provisioned)
 }
 
-const SECURE_PCI_REFUSAL: &str = "REFUSED: the Windows \"secure PCI\" tier is armed on this machine - the documented\ntrigger pair is present: an SDEV (Secure Devices) ACPI table plus VBS RUNNING\n(issue #244). In this tier the secure kernel blocks unsupported PCI config-space\naccess - parsing the MCFG table and mapping config space to virtual memory is\nnamed explicitly in the docs - and the access does not come back as a denied\nmap (win32 5): it is a whole-machine bugcheck 0x1EA\n(SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION).\nThis refusal has no override flag on purpose.\n  - `ssdiag --inventory` still works (PnP only: no driver, no config-space read);\n  - the SS/PLM readback belongs on the EFI side (the read-only sampler);\n  - the documented off-switch is FIRMWARE: the UEFI option that publishes the\n    SDEV table (Enhanced Windows Biometric Security / Enhanced Sign-in\n    Security; on the Lenovo page it sits under Security > Virtualization).\n    Disabling it removes the SDEV+VBS restrictions; a Windows reinstall does\n    NOT - the table lives in firmware, so if the tier \"disappeared\" after a\n    reinstall, VBS is most likely no longer running (check\n    VirtualizationBasedSecurityStatus == 2, not the Settings toggle).\n";
+fn secure_pci_armed_with(
+    vbs_status: impl FnOnce() -> Option<u32>,
+    sdev_present: impl FnOnce() -> Option<bool>,
+    securelaunch_provisioned: impl FnOnce() -> Option<bool>,
+) -> bool {
+    match vbs_status() {
+        Some(2) => sdev_present() == Some(true) || securelaunch_provisioned() == Some(true),
+        None => sdev_present() == Some(true), // fail-closed: unverifiable + trigger half present
+        _ => false,                           // 0 = off, 1 = configured-not-running: no enforcement
+    }
+}
+
+const SECURE_PCI_REFUSAL: &str = "REFUSED: the Windows \"secure PCI\" tier is armed on this machine - the documented\ntrigger pair is present: an SDEV (Secure Devices) ACPI table plus VBS RUNNING\n(or, if the registry VBS status is absent, plus VBS state UNVERIFIED - refused\nfail-closed, since the value is absent on some VBS-running machines, issue #244).\nIn this tier the secure kernel blocks unsupported PCI config-space access -\nparsing the MCFG table and mapping config space to virtual memory is named\nexplicitly in the docs - and the access does not come back as a denied map\n(win32 5): it is a whole-machine bugcheck 0x1EA\n(SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION).\nThis refusal has no override flag on purpose.\n  - `ssdiag --inventory` still works (PnP only: no driver, no config-space read);\n  - the SS/PLM readback belongs on the EFI side (the read-only sampler);\n  - to confirm the runtime VBS state independently, run:\n      Get-CimInstance -Namespace root\\Microsoft\\Windows\\DeviceGuard -ClassName Win32_DeviceGuard | Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning\n    (2 = running; the registry read-back above is NOT the authority - it is\n    absent on some running machines). Only a definitive \"VBS not running\"\n    clears this gate;\n  - the documented off-switch is FIRMWARE: the UEFI option that publishes the\n    SDEV table (Enhanced Windows Biometric Security / Enhanced Sign-in\n    Security; on the Lenovo page it sits under Security > Virtualization).\n    Disabling it removes the SDEV+VBS restrictions; a Windows reinstall does\n    NOT - the table lives in firmware, so if the tier \"disappeared\" after a\n    reinstall, VBS is most likely no longer running.\n";
 
 /// The platform gates that decide whether the pinned pmxdrv can load at all,
 /// plus what installing it looks like from the outside. All values are
@@ -701,7 +762,7 @@ fn preflight() {
             Some(2) => red("RUNNING"),
             Some(1) => yellow("configured, not running"),
             Some(0) => green("off"),
-            _ => yellow("unknown"),
+            _ => yellow("unverified (registry value absent - WMI may still say 2; fail-closed below)"),
         }
     );
     println!(
@@ -733,6 +794,16 @@ fn preflight() {
         println!("  read-only sampler are the driver-free paths. The documented off-switch is");
         println!("  firmware (Enhanced Windows Biometric Security / Enhanced Sign-in");
         println!("  Security) - a Windows reinstall does not remove the SDEV table.");
+    } else if vbs.is_none() && sdev_present() == Some(true) {
+        println!(
+            "{}",
+            yellow("PLATFORM: SDEV table PRESENT + VBS state unverifiable - refusing fail-closed.")
+        );
+        println!("  The registry VBS status is absent on some VBS-RUNNING machines (#244), so");
+        println!("  \"absent\" cannot be read as \"off\": with the SDEV table live, a raw");
+        println!("  config-space read is a whole-machine bugcheck 0x1EA. Confirm the runtime");
+        println!("  state with the WMI command printed by the refusal; only a definitive");
+        println!("  \"VBS off / not running\" re-enables the probe here.");
     }
     if secure_boot == Some(1) {
         println!(
@@ -936,6 +1007,19 @@ struct CardDriver {
     version: String,
     date: Option<String>,
     gsp: Option<u32>,
+    rtd3: Option<u32>,
+}
+
+/// Verdict wording shared by the --inventory line and the POWER-block line
+/// (issue #266): the display-adapter DWORD EnableRuntimePowerManagement is
+/// the Windows-side RTD3 policy - 0 keeps the driver from parking the card,
+/// which is the unlock-retaining shape.
+fn rtd3_verdict(v: Option<u32>) -> String {
+    match v {
+        Some(0) => "0 (suppressed) - the driver will not park this card; the unlock-retaining shape (#254/#266)".to_string(),
+        Some(n) => format!("{n} - the driver may initiate runtime D3; a cleared canary after the handoff is the expected rail-off signature"),
+        None => "absent (driver default: runtime D3 allowed) - a cleared canary pairs with this line; fix = FAQ #relock-winrtd3 / tools/disable-rtd3.ps1".to_string(),
+    }
 }
 
 fn card_driver(instance: &str, devinst: u32) -> Option<CardDriver> {
@@ -950,6 +1034,7 @@ fn card_driver(instance: &str, devinst: u32) -> Option<CardDriver> {
         version,
         date: hklm_string(&key, "DriverDate"),
         gsp: hklm_dword(&key, "EnableGpuFirmware"),
+        rtd3: hklm_dword(&key, "EnableRuntimePowerManagement"),
     })
 }
 
@@ -1816,6 +1901,7 @@ fn inventory_header(gpus: &[Gpu], skipped: &[String]) -> InventorySummary {
                 None => "EnableGpuFirmware unset (LEGACY mode)".to_string(),
             };
             println!("GPU {n} driver: {}{mkt}{date}; {gsp}", cd.version);
+            println!("GPU {n} RTD3: EnableRuntimePowerManagement = {}", rtd3_verdict(cd.rtd3));
         } else {
             println!(
                 "GPU {n} driver: no bound NVIDIA class key (driver not installed / never started this boot?)"
@@ -1992,6 +2078,16 @@ fn trim_decode(v: u32) -> (i32, i32) {
     let hi4 = (v >> 6) & 0xf;
     let volt = if hi4 & 0x8 != 0 { (hi4 | 0xffff_fff0) as i32 } else { hi4 as i32 };
     (temp, volt)
+}
+
+/// IFF_RECORD (0x820050) row-range decode per the ga100-ff-tools map,
+/// widened to 10-bit fields: START [9:0], inclusive LAST [25:16].
+/// ff-tools documents [8:0]/[24:16] for the 512-row GA100 (LAST <= 511
+/// fits 9 bits); our consumer captures need the 10-bit width - GA106/GA102
+/// read LAST=575 and AD107 LAST=831, and FUSE_ADDR agrees exactly with
+/// the 10-bit LAST on all three (0x23f/0x23f/0x33f), pinning the width.
+fn iff_decode(v: u32) -> (u32, u32) {
+    (v & 0x3ff, (v >> 16) & 0x3ff)
 }
 
 /// Offset column for `name = value` rows, house style: yellow 0x + cyan
@@ -3465,6 +3561,30 @@ fn print_power_state(drv: &PmxDrv, devinst: u32, instance: &str, bdf: Option<(u3
 
 // ---------------------------------------------------------------- register dump
 
+/// RTD3 policy read (v0.8.3, read-only, pairs with the POWER block): the
+/// per-adapter Windows power-policy DWORD `EnableRuntimePowerManagement`
+/// under the NVIDIA display adapter's driver key (issue #266). 0 = the
+/// driver will not initiate runtime D3 for this card - the unlock-retaining
+/// shape; absent or nonzero = the driver may park it, and a cleared canary +
+/// factory SS after the handoff is the expected rail-off signature
+/// (#37/#262) until the key is set (docs/faq.md#relock-winrtd3,
+/// tools/disable-rtd3.ps1). Pure registry read, unelevated; the key index
+/// under Control\Class changes whenever a driver is installed, so it is
+/// resolved through the Enum key at run time, never hardcoded.
+fn print_rtd3_key(instance: &str, devinst: u32) {
+    match card_driver(instance, devinst) {
+        Some(cd) => println!(
+            "POWER: RTD3 policy = {} - EnableRuntimePowerManagement on the adapter driver key",
+            rtd3_verdict(cd.rtd3)
+        ),
+        None => println!(
+            "POWER: RTD3 policy: driver key unresolvable (device not started / driver never installed this boot?)"
+        ),
+    }
+}
+
+// ---------------------------------------------------------------- register dump
+
 const SS0_UNLOCK: u32 = 0x8888_8888;
 const SS1_UNLOCK: u32 = 0x8;
 
@@ -3610,13 +3730,15 @@ const ADA_FUSE_ROWS: [(&str, u32); 9] = [
     ("CTRL_OPT_9C8", 0x0082_09C8),
 ];
 /// Per-GPC TPC floorsweep surface. STATUS at 0x820c38+4g is the effective
-/// fused mask (bit n = TPC n of GPC g), CTRL at 0x820838+4g the writable
-/// override — exactly the pair nvgpu drives in tpc_gv11b.c (write CTRL, poll
-/// STATUS until equal), so the semantics are driver-sourced, not inferred.
-/// The OPT/DEFECT banks are printed raw: 0x820350/0x8205c4 are documented
-/// GPC-level masks (gpcprobe/Consensus-Protocol, 15-card validation), while
-/// a per-GPC assignment inside the banks is still probe-derived
-/// (KohakUnlock#16) — see docs/open-questions.md #13.
+/// fused mask — bit n SET = TPC n of GPC g fused OFF (five-die SM-count
+/// verified 2026-11-21: GA102 82SM/GA106 28SM/AD107 24SM/AD102 128SM exact;
+/// the verdict lines always counted it this way). CTRL at 0x820838+4g is the
+/// writable override — exactly the pair nvgpu drives in tpc_gv11b.c (write
+/// CTRL, poll STATUS until equal), so the pair semantics are driver-sourced,
+/// not inferred. The OPT/DEFECT banks are printed raw: 0x820350/0x8205c4 are
+/// documented GPC-level masks (gpcprobe/Consensus-Protocol, 15-card
+/// validation), while a per-GPC assignment inside the banks is still
+/// probe-derived (KohakUnlock#16) — see docs/open-questions.md #13.
 const TPC_CTRL_BASE: u32 = 0x0082_0838;
 const TPC_STATUS_BASE: u32 = 0x0082_0C38;
 const TPC_BANK_A: u32 = 0x0082_03A0;
@@ -3727,15 +3849,14 @@ const GA100_FUSECTL_ROWS: [(&str, u32); 13] = [
 /// state (glitch-loop/EXAMPLES.md) plus the two words the write route needs
 /// (SECURE_FUSE_WDATA_WR_SECURE is the last PLM the GA100VFI chain clears;
 /// DEVID_SW_OVERRIDE_DIS gates the PCI ID override). FEATURE_FUSES_OVERRIDE
-/// _DISABLE is already probed as PRIV_ROWS FUSE_OPT_FEATURE_OVR (0x8203f0,
-/// the identity that started this round).
-const GA100_SEC_ALIAS_ROWS: [(&str, u32); 20] = [
+/// _DISABLE (0x8203f0) is NOT listed here: it is already probed as PRIV_ROWS
+/// FUSE_OPT_FEATURE_OVR and used to print twice (#237 round-4 dedupe).
+const GA100_SEC_ALIAS_ROWS: [(&str, u32); 19] = [
     ("DEBUG_FEAT_SW_OVR_EN", 0x0082_0148),
     ("IST_DEBUG_FA", 0x0082_0158),
     ("PRIV_SEC_EN", 0x0082_0434),
     ("SECURE_PRI_SRC_ISO_EN", 0x0082_0410),
     ("PRIVKEY_ACC_DIS", 0x0082_0324),
-    ("FEATURE_FUSES_OVR_DIS", 0x0082_03F0),
     ("SFK_ACC_DIS", 0x0082_05A8),
     ("SECURE_PMU_DEBUG_DIS", 0x0082_0640),
     ("SECURE_SECENG_DEBUG_DIS", 0x0082_063C),
@@ -3826,6 +3947,71 @@ const PLM_PL2_WE: [u32; 2] = [0x0082_3B24, 0x0082_3B28]; // bit6 = PL2 write ena
 /// only - which is exactly why our GB206 sweeps read all-badf there.
 const GB20X_PES_STATUS_BASE: u32 = 0x0082_2A78;
 const GB20X_OFA_DISABLE: u32 = 0x0082_2A68;
+
+/// #237 round 3 (2026-11-16): the 4090 L2-slice cut is FLAT BAR0 after all
+/// - the "mapped aperture +0x2c" record path resolves to NV_LTC_PRI_BASE
+/// 0x00140000 + 0x2000*K, so the per-LTC 4-bit LTS (L2 slice) mask is
+/// (~(val >> 10)) & 0xf at 0x0014002c + 0x2000*K (K = LTC index, 0..11 on
+/// AD102 / 0..7 on AD103), broadcast word at 0x0017e02c (NV_PLTCG_LTCS).
+/// Other HAL readers on the same register: bits 9:8, complemented bits
+/// 15:10 & 0x3f. No writers found in app01/07/08 or GSP - boot-static.
+const LTS_LTC0_SLICE: u32 = 0x0014_002C;
+const LTS_LTC_STRIDE: u32 = 0x2000;
+const LTS_LTC_SLOTS: u32 = 12;
+const LTS_BROADCAST: u32 = 0x0017_E02C;
+
+/// #237 round 4 (2026-11-20, AD102 4090 first live LTS readout): the per-FBP
+/// L2 arrays on Ada are the (LTC[2f+1]<<4)|LTC[2f] packing of the per-LTC
+/// disable nibbles at 0x14002c+0x2000*K bits[13:10] - the 4090 proves the
+/// identity (nibbles 1/8/2/4... pack to 0x81/0x42/0x24/0x18 = the words at
+/// 0x821200/0x822900). MemorySystem +0x940 (0x4ab728 on AD102/AD103) builds
+/// exactly this byte; GH100/GB20x (0x4ac6ec) read 0x822900+4*fbp directly.
+/// sw/eff sit +0x880 apart - the Page-2 rule (same as per-GPC ROP
+/// 0x822000 -> 0x822880). GA100 dict's 0x8202c4/0x8205e8 moved on Ada.
+const AD10X_L2_CAND_FBP: u32 = 0x0082_1200; // OPT_ROP_L2_DISABLE_FBP[0..5] (stage-1 fuse)
+const AD10X_L2_SW_FBP: u32 = 0x0082_2080; // CTRL_OPT_ROP_L2_FBP[0..5] (RPR 37-42, OBJFUSE +0x228)
+const AD10X_L2_EFF_FBP: u32 = 0x0082_2900; // STATUS_OPT_ROP_L2_FBP[0..5] (OBJFUSE +0x270)
+/// Round-5 solve (was mislabeled the OPT_ROP_L2_DEFECTIVE_FBP hunt): the
+/// nonzero core 0x8211e8..0x8211fc is per-FBPA memory/PHY trim fuse data -
+/// JeusChrit's app08 consumer copy (PC 0x3e00..0x3ffb) merges into
+/// NV_PFB_FBPA_n + 0x3d50. Word counts scale 0/2/4 with populated FBPAs
+/// (per-card data, not a floorsweep mask); the 4090's six words
+/// f1/20/00/10/e1/10 are the AD102 reference row. DEFective-FBP hunting
+/// returns to OBJFUSE +0x248 only.
+const AD10X_FBPA_TRIM_BASE: u32 = 0x0082_11C0;
+const AD10X_FBPA_TRIM_WORDS: u32 = 33;
+/// app08 0x6ae4 source tables (what it WOULD write if the four gates pass):
+/// 0x821480..0x821584 and 0x822a48..0x822c44 - do they carry the 4090 slice
+/// pattern [0x0444/0x2044/0x0844/0x1044] or stay at the AD103 values?
+const APP08_SRC_A_BASE: u32 = 0x0082_1480;
+const APP08_SRC_A_WORDS: u32 = 66; // 0x821480..0x821584 inclusive, the reporter's stated end
+const APP08_SRC_B_BASE: u32 = 0x0082_2A48;
+const APP08_SRC_B_WORDS: u32 = 128; // 0x822a48..0x822c44 inclusive
+/// The two OBJFUSE query words helper 0x944c tests: pass iff
+/// (q1 & 1) != 0 || (q5 & 1) == 0. Retail: q1 (query 0xff000001) = 0,
+/// q5 (query 0xff000005) = 1 -> helper BLOCKS unless overridden.
+const APP08_GATE_Q1: u32 = 0x0082_03F4;
+const APP08_GATE_Q5: u32 = 0x0082_04E4;
+/// app08 65b1..6647 copies 0x12006c low 5 bits (active LTC count) into both
+/// LTC broadcast words; GSP MemorySystem +0x740/+0x638 also read/write
+/// bits[4:0] of 0x17e27c.
+const LTS_BCAST_LOW: u32 = 0x0017_E000;
+const LTS_BCAST_HIGH: u32 = 0x0017_E27C;
+const RING_LTC_COUNT: u32 = 0x0012_006C;
+
+/// Per-LTC RAW disable nibble (bits[13:10] as stored - NOT complemented;
+/// the complement is the active-slice mask the LTS_L2SLICE face prints) +
+/// the per-FBP byte packing (round-4 identity): the 0x821200/0x822900
+/// disable masks pack the raw nibbles directly, 0xff = all 8 disabled
+/// (absent FBP).
+fn lts_disable_nibble(v: u32) -> u32 {
+    (v >> 10) & 0xf
+}
+fn l2_pack_fbp(nibs: &[u32]) -> Vec<u32> {
+    (0..nibs.len() / 2)
+        .map(|f| (nibs[2 * f + 1] << 4) | nibs[2 * f])
+        .collect()
+}
 
 /// Turing mirror probe (open-questions #13 Turing arm + reading-notes §10).
 /// TU104 field data (#187) put the option-status bank at 0x021xxx
@@ -4072,7 +4258,7 @@ fn decode_tpc_bits(v: u32) -> String {
 /// are fused off per GPC, and whether the affected GPC carries a defect bit.
 /// Nothing is written; the CTRL override path is out of scope.
 fn dump_tpc(rd: &dyn Fn(u32) -> u32) {
-    println!("--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---");
+    println!("--- tpc (per-GPC floorsweep; STATUS bit set = TPC fused OFF; SM-count verified 5-die 2026-11-21) ---");
     let mut off_total = 0u32;
     let mut off_mask = 0u32;
     let mut statuses = [0u32; TPC_MAX_GPC as usize];
@@ -4283,8 +4469,17 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     }
     // GA100 PR#55 SM banks: 8 dwords per row, badf values colored red (no
     // per-cell bucket text - columns stay aligned). On consumer dies the
-    // whole row is the per-die existence answer.
-    println!("  GA100_SM_OVR {}", off_h(GA100_SM_OVR_BASE));
+    // whole row is the per-die existence answer. #237 round 4: on Ada the
+    // CTRL_OPT_TPC_GPC bank lives at 0x820838+4g (already in the TPC
+    // section below), so the GA100 0x820a40 sweep is labeled as such.
+    if fam == "ada" {
+        println!(
+            "  GA100_SM_OVR {} (GA100 bank; on Ada CTRL_OPT_TPC_GPC = 0x00820838+4g, see TPC section)",
+            off_h(GA100_SM_OVR_BASE)
+        );
+    } else {
+        println!("  GA100_SM_OVR {}", off_h(GA100_SM_OVR_BASE));
+    }
     for gpc in 0..8u32 {
         print!(" {}", cell_val(rd(GA100_SM_OVR_BASE + gpc * 4)));
     }
@@ -4347,7 +4542,21 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     None => String::new(),
                 }
             };
-            println!("  {label:<10} {name:<26} {}= {}{note}", off_h(*off), hx32(v));
+            // #237 round 4 stale-GA100-label fixes: on Ada 0x8203a0..0x8203bc
+            // is the TPC-disable fuse bank A (not SYS_PIPE), and the GPC7
+            // defective/CP pair is a GA100-only layout (badf on Ada).
+            let ada_note = if fam == "ada" {
+                if (0x0082_03A0..=0x0082_03B8).contains(off) {
+                    " [Ada: TPC disable bank A]"
+                } else if *name == "TPC_GPC7_DEFECTIVE" || *name == "TPC_GPC7_DISABLE_CP" {
+                    " [GA100-only]"
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            };
+            println!("  {label:<10} {name:<26} {}= {}{note}{ada_note}", off_h(*off), hx32(v));
         }
     }
     // STATUS_OPT arrays, 8 dwords per line, badf-bucketed inline (GA100_SM
@@ -4357,7 +4566,9 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
         ("LTC_FBP", GA100_LTC_FBP_STATUS_BASE, 16u32),
         ("TPC_GPC", GA100_TPC_STATUS_BASE, 32u32),
         ("TPC_DIS", GA100_TPC_DISABLE_BASE, 12u32),
-        ("TPC_RECFG", GA100_TPC_RECONFIG_BASE, 12u32),
+        // #237 round 4 label: GA100-layout base; on Ada this reads badf and
+        // the real RECONFIG RAM is the TPC_RECFG_ADA row right below.
+        ("TPC_RECFG_G100", GA100_TPC_RECONFIG_BASE, 12u32),
         // #237: the Ada/595 TPC RECONFIG RAM base (0x822800+4g) - our old
         // table carried the GA100-layout guess at 0x820788.
         ("TPC_RECFG_ADA", AD10X_TPC_RECONFIG_BASE, 12u32),
@@ -4416,6 +4627,74 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                 println!();
             }
         }
+        // #237 round 4: the per-FBP L2 arrays on Ada + the packing identity.
+        // cand 0x821200+4f = OPT_ROP_L2_DISABLE_FBP (stage-1 fuse), sw
+        // 0x822080+4f = CTRL_OPT_ROP_L2_FBP (RPR 37-42, OBJFUSE +0x228), eff
+        // 0x822900+4f = STATUS_OPT_ROP_L2_FBP (OBJFUSE +0x270); pred =
+        // (LTC[2f+1]<<4)|LTC[2f] from the LTS_L2SLICE face below - the 4090
+        // capture predicts 0x81/0x42/0x24/0x18/0x81/0x42 for cand+eff.
+        println!("  L2_FBP (fbp=0..5; cand 0x821200+4f / sw 0x822080+4f / eff 0x822900+4f; pred=(LTC[2f+1]<<4)|LTC[2f])");
+        for f in 0..6u32 {
+            let (c, s, e) = (
+                rd(AD10X_L2_CAND_FBP + f * 4),
+                rd(AD10X_L2_SW_FBP + f * 4),
+                rd(AD10X_L2_EFF_FBP + f * 4),
+            );
+            let (lo, hi) = (
+                rd(LTS_LTC0_SLICE + (2 * f) * LTS_LTC_STRIDE),
+                rd(LTS_LTC0_SLICE + (2 * f + 1) * LTS_LTC_STRIDE),
+            );
+            let (pred_s, marks) = if badf_bucket(lo).is_none() && badf_bucket(hi).is_none() {
+                let p = l2_pack_fbp(&[lts_disable_nibble(lo), lts_disable_nibble(hi)])[0];
+                let mut m = String::new();
+                for (nm, w) in [("cand", c), ("eff", e)] {
+                    if badf_bucket(w).is_none() {
+                        let tag = if w == p { "pack".to_string() } else { format!("!=pack({p:#04x})") };
+                        m.push_str(&format!(" {nm}={tag}"));
+                    }
+                }
+                (format!("{p:#04x}"), m)
+            } else {
+                ("n/a".to_string(), String::new())
+            };
+            println!(
+                "    FBP[{f}] {} cand={} sw={} eff={} pred={pred_s}{marks}",
+                off_h(AD10X_L2_CAND_FBP + f * 4),
+                cell_val(c),
+                cell_val(s),
+                cell_val(e)
+            );
+        }
+        // Round-5 solve: FBPA_TRIM - the nonzero core 0x8211e8..0x8211fc is
+        // per-FBPA mem/PHY trim fuses (app08 consumer copy merges into
+        // NV_PFB_FBPA_n + 0x3d50), NOT the DEFective array - that stays
+        // hunted at OBJFUSE +0x248. Trim words are per-card data; compare
+        // same-die captures only.
+        println!("  FBPA_TRIM (0x8211c0..0x821240; per-FBPA mem/PHY trim fuses, ex-L2_DEF_SCAN; DEF hunt stays at OBJFUSE +0x248)");
+        for chunk in (0..AD10X_FBPA_TRIM_WORDS).step_by(8) {
+            print!("    {}", off_h(AD10X_FBPA_TRIM_BASE + chunk * 4));
+            for i in chunk..(chunk + 8).min(AD10X_FBPA_TRIM_WORDS) {
+                print!(" {}", cell_val(rd(AD10X_FBPA_TRIM_BASE + i * 4)));
+            }
+            println!();
+        }
+        // #237 round 4 sweep: the app08 0x6ae4 SOURCE tables (what it would
+        // write if the four gates pass) - do they carry the 4090 slice
+        // pattern [0x0444/0x2044/0x0844/0x1044] or the AD103 values
+        // [0x0044/0x0840/0x0080]?
+        for (name, base, words) in [
+            ("APP08_SRC_A", APP08_SRC_A_BASE, APP08_SRC_A_WORDS),
+            ("APP08_SRC_B", APP08_SRC_B_BASE, APP08_SRC_B_WORDS),
+        ] {
+            println!("  {name} ({}..{}, {} words)", off_h(base), off_h(base + (words - 1) * 4), words);
+            for chunk in (0..words).step_by(8) {
+                print!("    {}", off_h(base + chunk * 4));
+                for i in chunk..(chunk + 8).min(words) {
+                    print!(" {}", cell_val(rd(base + i * 4)));
+                }
+                println!();
+            }
+        }
         // PLM write-enable bits (disassembly-proven semantics): FUSECTRL_PLM
         // bit4 = PL0 write enable (checked by the TU102/TU116 OBJBSP writer),
         // 0x823b24/28 bit6 = PL2 (checked by VBIOS app08 before its 64 pairs).
@@ -4426,9 +4705,107 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             hx32(pl0we),
             (pl0we >> 4) & 1
         );
-        for p in PLM_PL2_WE {
+        // #237 round 4: the complete app08 0x6ae4 write gate. Helper 0x944c
+        // tests two OBJFUSE query words: pass iff (q1&1)!=0 || (q5&1)==0
+        // (retail q1=0, q5=1 -> BLOCK unless overridden); plus both PL2
+        // write-enable bits. DMEM8[0x646]/[0x64d] are ROM-internal.
+        let q1 = rd(APP08_GATE_Q1);
+        let q5 = rd(APP08_GATE_Q5);
+        println!(
+            "  APP08_GATE_Q1 {} = {} bit0={} (OBJFUSE query 0xff000001; retail 0)",
+            off_h(APP08_GATE_Q1),
+            hx32(q1),
+            q1 & 1
+        );
+        println!(
+            "  APP08_GATE_Q5 {} = {} bit0={} (OBJFUSE query 0xff000005; retail 1)",
+            off_h(APP08_GATE_Q5),
+            hx32(q5),
+            q5 & 1
+        );
+        // bit6 read from a badf word is the POISON's bit, not the register's
+        // (0xbadf5040 bit6 = 1 - caught on the 2026-11-20 stock TU106 dump):
+        // degrade to "?" and never let a poison bit decide the gate.
+        let pl2_bits = PLM_PL2_WE.map(|p| {
             let v = rd(p);
-            println!("  PLM_PL2_WE {} = {} bit6={} (VBIOS app08 gate)", off_h(p), hx32(v), (v >> 6) & 1);
+            if badf_bucket(v).is_none() { Some((v >> 6) & 1) } else { None }
+        });
+        let (helper, gate) = if badf_bucket(q1).is_some() || badf_bucket(q5).is_some() {
+            ("?", "?")
+        } else {
+            let h = (q1 & 1) != 0 || (q5 & 1) == 0;
+            if !h {
+                ("BLOCK", "CLOSED")
+            } else if pl2_bits == [Some(1), Some(1)] {
+                ("PASS", "OPEN")
+            } else if pl2_bits.iter().any(|b| b.is_none()) {
+                ("PASS", "?")
+            } else {
+                ("PASS", "CLOSED")
+            }
+        };
+        println!("  APP08_HELPER_944C = {helper} ((q1&1)!=0 || (q5&1)==0)");
+        for (p, b) in PLM_PL2_WE.iter().zip(pl2_bits.iter()) {
+            let v = rd(*p);
+            let b6 = b.map(|x| x.to_string()).unwrap_or_else(|| "?".into());
+            println!("  PLM_PL2_WE {} = {} bit6={} (VBIOS app08 gate)", off_h(*p), hx32(v), b6);
+        }
+        println!(
+            "  APP08_WRITE_GATE = {gate} (PL2 pair bit6=1/1 + helper 0x944c; DMEM8[0x646]/[0x64d] are ROM-internal)"
+        );
+    }
+    println!("  --- ga100-ff-tools cross round (kprinssu map; read-only) ---");
+    {
+        // IFF_RECORD (0x820050): writable current FF execution range,
+        // START [8:0] / inclusive LAST [24:16] (GA100 domain 222..511).
+        // Consumer dies extend: our captures decode LAST=575 (GA106/GA102)
+        // and LAST=831 (AD107), with FUSE_ADDR agreeing exactly - the row
+        // address space is per-die configured (reading-notes 6l).
+        let iff = rd(0x0082_0050);
+        match badf_bucket(iff) {
+            Some(b) => println!(
+                "  IFF_RECORD {} = {} [{}] (row-range decode needs a plain word; TU106 PL0-blocks it)",
+                off_h(0x0082_0050),
+                hx32(iff),
+                red(b)
+            ),
+            None => {
+                let (start, last) = iff_decode(iff);
+                let fa = rd(0x0082_0004);
+                let agree = if badf_bucket(fa).is_none() && fa == last {
+                    " ; == FUSE_ADDR"
+                } else {
+                    ""
+                };
+                println!(
+                    "  IFF_RECORD {} = {} rows={}..{} ({} rows; GA100 domain 222..511 - consumer dies extend{agree})",
+                    off_h(0x0082_0050),
+                    hx32(iff),
+                    start,
+                    last,
+                    last + 1
+                );
+            }
+        }
+        // PCIE_MAGIC_D (0x820520) dual-bit display: bit21 = the word VBIOS
+        // app08 0x73a4 writes when DEBUG_FEAT_SW_OVR_EN&1 (#237), bit25 =
+        // the Gen4 restriction bit (ga100-ff-tools: chain2 blk47 bit3; A100
+        // vBIOS checks the whole word, 0x14680000 reported live).
+        let magic = rd(0x0082_0520);
+        match badf_bucket(magic) {
+            Some(b) => println!(
+                "  MAGIC_D_BITS {} = {} [{}] (bit decode needs a plain word)",
+                off_h(0x0082_0520),
+                hx32(magic),
+                red(b)
+            ),
+            None => println!(
+                "  MAGIC_D_BITS {} = {} bit21(app08 target)={} bit25(gen4 restriction)={}",
+                off_h(0x0082_0520),
+                hx32(magic),
+                (magic >> 21) & 1,
+                (magic >> 25) & 1
+            ),
         }
     }
     if fam.starts_with("blackwell") {
@@ -4449,6 +4826,55 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
             print!(" {}", cell_val(rd(0x0082_2900 + fbp * 4)));
         }
         println!();
+    }
+    // #237 round 3: per-LTC LTS (L2 slice) masks - flat BAR0, every family.
+    println!("  LTS_L2SLICE (per-LTC 4-bit slice mask = (~val>>10)&0xf; flat 0x14002c + 0x2000*K)");
+    for k in 0..LTS_LTC_SLOTS {
+        let a = LTS_LTC0_SLICE + k * LTS_LTC_STRIDE;
+        let v = rd(a);
+        match badf_bucket(v) {
+            Some(b) => println!("    LTC[{k:>2}] {} = {} [{b}]", off_h(a), hx32(v)),
+            None => {
+                let active = (!(v >> 10)) & 0xf;
+                println!(
+                    "    LTC[{k:>2}] {} = {} slices={:04b} ({}/4)",
+                    off_h(a),
+                    hx32(v),
+                    active,
+                    active.count_ones()
+                );
+            }
+        }
+    }
+    {
+        let v = rd(LTS_BROADCAST);
+        match badf_bucket(v) {
+            Some(b) => println!("    BCAST     {} = {} [{b}]", off_h(LTS_BROADCAST), hx32(v)),
+            None => {
+                let active = (!(v >> 10)) & 0xf;
+                println!(
+                    "    BCAST     {} = {} slices={:04b} ({}/4)",
+                    off_h(LTS_BROADCAST),
+                    hx32(v),
+                    active,
+                    active.count_ones()
+                );
+            }
+        }
+    }
+    // #237 round 4: the other two LTC broadcast words - app08 65b1..6647
+    // copies 0x12006c low 5 bits (active LTC count) into both; GSP
+    // MemorySystem +0x740/+0x638 also read/write bits[4:0] of 0x17e27c.
+    for (name, off) in [
+        ("LTCNT_LO", LTS_BCAST_LOW),
+        ("LTCNT_HI", LTS_BCAST_HIGH),
+        ("LTCNT_SRC", RING_LTC_COUNT),
+    ] {
+        let v = rd(off);
+        match badf_bucket(v) {
+            Some(b) => println!("    {name:<9} {} = {} [{b}]", off_h(off), hx32(v)),
+            None => println!("    {name:<9} {} = {} ltcnt={}", off_h(off), hx32(v), v & 0x1f),
+        }
     }
     println!("  note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,");
     println!("  plain value = read it with GA100 semantics, ffffffff/badf1100 = not decoded here (AD10x fuse-PLM relocation precedent)");
@@ -4647,6 +5073,8 @@ WHAT IT DOES:
          (LnkSta is the only trustworthy link-speed criterion)
        - POWER: card and upstream root-port PMCSR / D-state - the
          register-side witness of the platform _PR3/_OFF rail path
+       - POWER: RTD3 policy - the per-adapter EnableRuntimePowerManagement
+         driver-key DWORD (0 = the driver will not park this card)
   4. unlock verdict: FEAT SS0/SS1 == 0x88888888/0x8 => UNLOCKED
      (field-proven to persist in Windows on the Turing relock chain)
 
@@ -4837,6 +5265,7 @@ SSDIAG_COLOR=force pins on.",
         // D0/MEM decode) - hence before the BAR0 walk, not after
         print_config_rebar(&drv, &g.id, g.bdf);
         print_power_state(&drv, g.devinst, &g.id, g.bdf);
+        print_rtd3_key(&g.id, g.devinst);
         let mut picked = walk_candidates(&drv, g);
         // degenerate reads (GC6/GCOFF park, D3, MEM decode off) -> one NVAPI
         // driver-mediated wake, then a single re-walk
@@ -5080,6 +5509,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn secure_pci_gate_matrix() {
+        // 预期拒绝结果依次对应 SystemGuard 为 true、false 和未知。
+        let cases = [
+            (Some(true), Some(2), [true; 3]),
+            (Some(true), None, [true; 3]), // #244：VBS 运行中，注册表状态仍缺失
+            (Some(true), Some(0), [false; 3]),
+            (Some(true), Some(1), [false; 3]),
+            (Some(false), None, [false; 3]),
+            (Some(false), Some(2), [true, false, false]),
+            // 既有盲点：SDEV 状态未知时，仅凭此项不会触发拒绝。
+            (None, Some(2), [true, false, false]),
+        ];
+        for (sdev, vbs, expected) in cases {
+            for (guard, refuse) in [Some(true), Some(false), None].into_iter().zip(expected) {
+                assert_eq!(
+                    secure_pci_armed_with(|| vbs, || sdev, || guard),
+                    refuse,
+                    "SDEV={sdev:?}, registry VBS={vbs:?}, SystemGuard={guard:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn secure_pci_sdev_table() {
+        assert_eq!(sdev_table_present(0, b""), Some(false));
+        assert_eq!(sdev_table_present(8, b""), None);
+        assert_eq!(sdev_table_present(8, b"SDE"), None);
+        assert_eq!(sdev_table_present(4, b"MCFG"), None);
+        assert_eq!(sdev_table_present(4, b"SDEV"), Some(true));
+        assert_eq!(sdev_table_present(8, b"SDEVdata"), Some(true));
+    }
+
+    #[test]
+    fn secure_pci_refusal_guidance() {
+        let message = SECURE_PCI_REFUSAL
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for required in [
+            "SECURE_PCI_CONFIG_SPACE_ACCESS_VIOLATION",
+            "SDEV (Secure Devices) ACPI table plus VBS RUNNING",
+            "fail-closed",
+            r"Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard | Select-Object VirtualizationBasedSecurityStatus, SecurityServicesRunning",
+            "off-switch is FIRMWARE",
+            "UEFI option that publishes the SDEV table",
+        ] {
+            assert!(message.contains(required), "missing {required:?}");
+        }
+    }
+
+    #[test]
     fn readout1_uses_the_gapped_offsets() {
         // GB206/GB202/GB203M stock word: imla0 fmla16 fmla32 ffma imla1
         // imla2 imla3 imla4 DP = 0 0 3 0 3 3 0 3 0. A contiguous 3-bit
@@ -5130,6 +5611,44 @@ mod tests {
     }
 
     #[test]
+    fn ada_dump_renders_with_4090_capture() {
+        // #237 round 4: walks every ada-gated section with the reporter's
+        // 4090 values - the new L2_FBP face must pack the LTS nibbles to the
+        // predicted per-FBP words, the DEF scan / app08 source tables render
+        // multi-column, and the stale-GA100 annotations print.
+        let lts = [
+            0x0444u32, 0x2044, 0x0844, 0x1044, 0x1044, 0x0844, 0x2044, 0x0444, 0x0444, 0x2044,
+            0x0844, 0x1044,
+        ];
+        let rd = |off: u32| match off {
+            o if (0x0014_0000..0x0016_0000).contains(&o) && (o - 0x0014_0000) % 0x2000 == 0x2C => {
+                lts[((o - 0x0014_0000) / 0x2000) as usize]
+            }
+            0x0017_E02C => 0x0444,
+            0x0017_E000 | 0x0017_E27C => 0x000C,
+            0x0012_006C => 0x000C,
+            0x0082_1200 => 0x81,
+            0x0082_1204 => 0x42,
+            0x0082_1208 => 0x24,
+            0x0082_120C => 0x18,
+            0x0082_1210 => 0x81,
+            0x0082_1214 => 0x42,
+            0x0082_2900 => 0x81,
+            0x0082_2904 => 0x42,
+            0x0082_2908 => 0x24,
+            0x0082_290C => 0x18,
+            0x0082_2910 => 0x81,
+            0x0082_2914 => 0x42,
+            0x0082_2080..=0x0082_2094 => 0,
+            0x0082_3B24 | 0x0082_3B28 => 0xFFFF_FBFF,
+            0x0082_03F4 => 0,
+            0x0082_04E4 => 1,
+            _ => 0,
+        };
+        dump_debug(&rd, "ada");
+    }
+
+    #[test]
     fn turing_dump_renders_without_panicking() {
         // Walks every turing-gated section: the FEAT cluster, the GA100
         // dictionary, the -0x7FF000 shifted bank and the mirror probe. The
@@ -5156,6 +5675,45 @@ mod tests {
         assert_eq!(trim_decode(0x007e), (-2, 1));
         assert_eq!(trim_decode(0x0000), (0, 0));
         assert_eq!(trim_decode(0x003e), (-2, 0));
+    }
+
+    #[test]
+    fn iff_decode_matches_real_captures() {
+        // 10-bit fields (START[9:0]/LAST[25:16]) against our own stock
+        // captures: GA106/GA102 read 0x023f021e (rows 0..575 = 576 rows,
+        // beyond GA100's 512) and AD107 reads 0x033f02ff (0x33f = 831, so
+        // rows 0..831 = 832 rows). FUSE_ADDR agrees with LAST on all three
+        // (0x23f/0x23f/0x33f) - the 9-bit ff-tools GA100 reading would give
+        // (30,63), refuted.
+        assert_eq!(iff_decode(0x023f_021e), (0x21e, 0x23f));
+        assert_eq!(iff_decode(0x023f_021e), (542, 575));
+        assert_eq!(iff_decode(0x033f_02ff), (0x2ff, 0x33f));
+        assert_eq!(iff_decode(0x033f_02ff), (767, 831));
+        // a GA100-domain word stays inside the 222..511 window
+        let (s, l) = iff_decode(0x0000_0122_00de);
+        assert!(s <= l);
+    }
+
+    #[test]
+    fn l2_pack_matches_ad102_4090_capture() {
+        // #237 round 4 (AD102 4090, 12 LTCs all 3/4): the raw LTS_L2SLICE
+        // words' disable nibbles (bits[13:10]) pack per FBP as
+        // (LTC[2f+1]<<4)|LTC[2f] and reproduce the reporter's prediction
+        // 0x81/0x42/0x24/0x18/0x81/0x42 - the identity behind the words at
+        // 0x821200/0x822900.
+        let raw = [
+            0x0444u32, 0x2044, 0x0844, 0x1044, 0x1044, 0x0844, 0x2044, 0x0444, 0x0444, 0x2044,
+            0x0844, 0x1044,
+        ];
+        let nibs: Vec<u32> = raw.iter().map(|&v| lts_disable_nibble(v)).collect();
+        assert_eq!(
+            nibs,
+            vec![1, 8, 2, 4, 4, 2, 8, 1, 1, 8, 2, 4],
+            "disabled slice per LTC = [0,3,1,2 | 2,1,3,0 | 0,3,1,2]"
+        );
+        assert_eq!(l2_pack_fbp(&nibs), vec![0x81, 0x42, 0x24, 0x18, 0x81, 0x42]);
+        // and the single-pair form used by the live print face
+        assert_eq!(l2_pack_fbp(&[lts_disable_nibble(0x0444), lts_disable_nibble(0x2044)])[0], 0x81);
     }
 
     #[test]

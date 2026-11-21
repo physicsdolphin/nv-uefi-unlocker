@@ -20,7 +20,11 @@ For read-back verdicts, Turing behavior, Linux checks and handoff diagnosis, use
   DriverVersion (with the WDDM→marketing conversion `32.0.15.6094 → 560.94`)
   and the `EnableGpuFirmware` GSP switch - resolved through the driver's own
   bound-instance list (`Services\nvlddmkm\Enum`, the maker's ghost-free
-  source) so a card-swap ghost cannot name the wrong class slot.
+  source) so a card-swap ghost cannot name the wrong class slot. 0.8.3 adds
+  the `GPU n RTD3:` line - the `EnableRuntimePowerManagement` policy DWORD
+  from the same class key (0 = the driver will not park this card, the
+  unlock-retaining shape; absent/nonzero = runtime D3 allowed, so a cleared
+  canary pairs with this line as the #37/#262 rail-off signature).
   Each card gets a device-id family verdict (IN-SCOPE/OUT-OF-SCOPE, the same
   ranges the loader admission table carries), and the block ends in
   advisories: Secure Boot on ("may not load" - field reports show the probe

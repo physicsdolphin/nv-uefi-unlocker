@@ -17,10 +17,6 @@
 //! coupling that remains is on-silicon booter/FWSEC acceptance, not in
 //! our state machine.
 
-use crate::layout::layout_from_registers;
-use crate::radix::{self, Radix, RADIX_PAGE};
-use crate::transaction::{Faults, PayloadShape, Transaction};
-use crate::FakeGpu;
 
 /// Pinned 610.43.03 GA10x `.fwimage` span (the constant the rest of the
 /// suite uses).
@@ -32,6 +28,7 @@ pub const BOOT_GA102: u64 = 24_576;
 
 /// The eight register scenarios from the C main() harness (verbatim from
 /// layout.rs tests) — re-run with the swapped image size.
+#[cfg(test)]
 fn c_main_scenarios(image: u64) -> Vec<(&'static str, u32, u32, u32, u32, u32)> {
     let vga_top = ((((24u64 << 30) - (1 << 20)) >> 16) as u32) << 8 | 8;
     vec![
@@ -48,6 +45,11 @@ fn c_main_scenarios(image: u64) -> Vec<(&'static str, u32, u32, u32, u32, u32)> 
 
 #[cfg(test)]
 mod tests {
+    use crate::layout::layout_from_registers;
+    use crate::radix::{self, Radix, RADIX_PAGE};
+    use crate::transaction::{Faults, PayloadShape, Transaction};
+    use crate::FakeGpu;
+
     use super::*;
 
     fn invariants(name: &str, r: &Result<(crate::layout::LayoutIn, crate::layout::LayoutOut), crate::layout::LayoutError>) {

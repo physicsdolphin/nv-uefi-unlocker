@@ -787,6 +787,295 @@ TPC_RECFG GA100 布局 0x820788 在 GB206 尾部有活值（0x10301@6）——
 "GA100 布局猜错"的结论要再细分：0x822800 是 Ada 布局，但 0x820788 在
 GB206 非全 badf。
 
+### 6i. #237 三轮：L2 切片位置修正——平面 BAR0 可达（2026-11-17）
+
+JeusChrit 追溯了 MemorySystem+0x87a0 记录区的构造器：所谓"per-LTC 映射孔径
++0x2c"实为**平面 BAR0 地址**——记录 K 的读 thunk 就是根 BAR0 映射加
+`NV_LTC_PRI_BASE 0x00140000 + 0x2000*K + 0x2c`（stride=NV_LTC_PRI_STRIDE
+0x2000；广播字 `0x0017e02c` = NV_PLTCG_LTCS）。即 4090 的 3/4 LTS L2 切片
+切口可直接只读探得：**切片掩码 = (~(val>>10)) & 0xf**（4 切片/LTC）。同寄
+存器另有 readers 读 bits 9:8 与 bits 15:10&0x3f；app01/07/08 与 595/610
+GSP 全扫描**零写者**（boot-static；app08 只写 0x1417e000/0x1417e27c 的
+广播对）。ssdiag/py 0.7.9 已加 `LTS_L2SLICE` 面（12 LTC 槽逐槽解码
+active slices N/4 + 广播行）。此前"映射孔径路径不可达"的口头结论作废。
+
+### 6j. #237 四轮：AD102 4090 首采 LTS + per-FBP packing 恒等式定谳（2026-11-20）
+
+JeusChrit 用 0.8.2 跑出 **AD102 4090（2684/19da:4675）首份 LTS_L2SLICE 实测**：
+12 LTC 全 3/4（72MiB/96MiB），disabled 切片索引呈回文模板
+`[0,3,1,2 | 2,1,3,0 | 0,3,1,2]`（每条 slice lane 恰关 3/12，48 片关 12）。
+**并钉死 packing 恒等式**：MemorySystem+0x940 在 AD102/AD103（0x4ab728）逐
+FBP 打包 `(LTC[2f+1]<<4)|LTC[2f]` 的**原始 disable nibble**（bits[13:10] 原值，
+补码才是 active 掩码）→ 正是 `0x821200`/`0x822900` 上的字节（FBP0=(8<<4)|1=
+0x81 ✓）；GH100/GB20x（0x4ac6ec）则直读 `0x822900+4*fbp`。由此三组 per-FBP
+数组定谳（sw/eff 相距 +0x880 = **Page-2 偏移规则**，平行 Page-0 的 +0x400）：
+
+- `0x821200+4f`（f=0..5）= OPT_ROP_L2_DISABLE_FBP[0..5]（stage-1 熔丝禁用；
+  GA100 词典的 0x8202c4 在 Ada 搬到这里）
+- `0x822080+4f` = CTRL_OPT_ROP_L2_FBP[0..5]（stage-2 SW/RPR 控制掩码，RPR
+  记录 37-42；OBJFUSE +0x228 = 0x557b54）
+- `0x822900+4f` = STATUS_OPT_ROP_L2_FBP[0..5]（生效 8-bit disable；OBJFUSE
+  +0x270 = 0x557c5c；**缺席 FBP 读 0xff = 8 片全关**——AD103/GB203 256-bit
+  的 0xff 对由此得解）
+
+预测 4090 全序列 `0x81,0x42,0x24,0x18,0x81,0x42`（=单测锚
+`l2_pack_matches_ad102_4090_capture`）。per-GPC ROP 同规则：0x822000+4g →
+0x822880+4g（GPC0 禁 → ROP_GPC_ADA[0]=0x3，176/192 ROP 活）。
+
+**ssdiag/py 0.8.2 同名轮新增面**：`L2_FBP`（三数组 6 词 + packing 交叉验证
+`cand=pack`/`!=pack` 标记）、`L2_DEF_SCAN`（0x8211c0..0x821240——Ada 的
+OPT_ROP_L2_DEFECTIVE_FBP 猎场：595 caller 0x6c7334 读 OBJFUSE +0x228 后紧读
++0x248 取伴掩码 AND 入）、`APP08_SRC_A/B`（0x821480-584/0x822a48-2c44，
+app08 0x6ae4 的源表——验证带不带 4090 切片模式还是 AD103 值）、app08 完整
+写门（helper 0x944c：`(0x8203f4&1)!=0 || (0x8204e4&1)==0`，retail q1=0/q5=1
+→ BLOCK；加 PL2 对 bit6 → `APP08_WRITE_GATE`；DMEM 0x646/0x64d ROM 内部）、
+`LTCNT_LO/HI/SRC`（0x17e000/0x17e27c 广播对 + 0x12006c 低 5 位源——app08
+65b1..6647 拷贝；GSP MS+0x740/+0x638 亦读写 0x17e27c bits[4:0]）、以及
+**Ada 老 GA100 标签修正**（SM_OVR/STAT 注记 0x820838、TPC_RECFG_G100 更名、
+SYS_PIPE 行注记 TPC disable bank A 0x8203a0-bc、GPC7 对 GA100-only、
+0x8203f0 双印去重）。app08 四门补充：0x6ae4 写 64 对前还查
+`DMEM8[0x64d]!=0` + 0x944c + 两处 PL2 bit6，并先写 0x820040=1
+（EN_SW_OVERRIDE）与 0x820410=1（SECURE_PRI_SRC_ISO_EN）；0x73a4 XVE 例程在
+`0x820148&1`（DEBUG_FEAT_SW_OVR_EN）时写 0x820520 bit21。
+
+### 6k. #237 四轮首验：0.8.2 双 die stock 轮——packing 恒等式第二 die 实证 + app08 门预测命中（2026-11-20）
+
+2070（1f07 stock）+ 3060（2504 stock）先跑（`ssdiag-082-round4-stock-*.log`；
+exe sha f8f4291a）：
+
+- **GA106 packing 恒等式现场验证（第二 die）**：LTS_L2SLICE 6 活 LTC
+  （0444/2044/0844/1044/1044/0844，切口 [0,3,1,2,2,1]，LTC6..11 badf2036-3b），
+  L2_FBP 三活 FBP 全 `cand=pack eff=pack`（0x81/0x42/0x24）——**OQ#19 ③ 旧模型
+  作废**：`L2_CANDIDATE=0x81` 不是"8×512KB 片关 2 片"，而是 FBP0 两 LTC 各关
+  一片（LTC0 切片 0、LTC1 切片 3 → (8<<4)|1）；GA106 = 3 活 FBP × 2 LTC ×
+  3 切片。FBP[3..5] cand=0x00 而 eff=0xff → **eff ≠ cand|sw，缺席 FBP 有
+  强制项**（新模型细节，待 0x4ab728 侧核对）。
+- **app08 门 retail 预测逐位命中**：GA106 `Q1=0x00000000`（bit0=0）、
+  `Q5=0x00000001`（bit0=1）→ `HELPER=BLOCK` → `WRITE_GATE=CLOSED`——
+  0x8203f4/0x8204e4 的 query 映射与 retail 值在 Ampere 上实证（此前是
+  〔JC-反汇编〕单源推断）。
+- **LTCNT 恒等式跨族实证**：GA106 ltcnt=6（LO/HI/SRC 三源一致 = 6 活 LTC 槽）、
+  TU106 ltcnt=8（8 槽全 4/4）。
+- TU106 stock：round-4 全窗口（per-FBP L2 数组、DEF 扫描、SRC 表、gate query）
+  **全部 badf5040 = PL0 挡**（存在性答案：Turing 上这些词在锁态不可读）；
+  SS0=0x00021000（冷态不稳词第三次独立复现，READOUT 仍 0x00400080）。
+- GA106 L2_DEF_SCAN **非零词**：0x8211d4/d8=0x1、0x8211e0=0x800、
+  0x8211e8=0x1、0x8211ec/f0=0x41×2——语义未定（窗口内相邻 option 词），
+  已录数待 4090 对照；窗口内 badf 岛 0x821218-1c / 0x821238-3c（**逐词 PLM
+  粒度**，非整段）。
+- 工具勘误（本轮抓到）：`PLM_PL2_WE` 行在 badf 词上印的 bit6=1 是毒值
+  0xbadf5040 自己的位；gate 逻辑改为 badf→bit6=?、毒值永不参与 OPEN 判定
+  （exe 换 sha 37afb795，同名 0.8.2）。
+
+**AD107 4060L（28e0，G614JV stock）补跑**（`ssdiag-082-round4-stock-4060l.log`）：
+
+- **packing 恒等式第三 die**：4 活 LTC 全 4/4（raw 0x44，槽 4..11 badf2034-3b），
+  FBP[0]/[1] 全零掩码 `cand=pack eff=pack`（两 LTC 无切口）；FBP[2..5]
+  cand=0x00 而 eff=0xff——**缺席 FBP 强制项第二 die 确认**（AD107 = 2 FBP）。
+- **app08 门第三族（Ada）预测命中**：Q1=0/Q5=1 → BLOCK → CLOSED；且
+  **PLM_PL2_WE 两词在 AD107 可读真值**（0xffffff0f/0xffffff8f，bit6=0）——
+  毒值 bit6 修复后首个真值样本，gate CLOSED 由真 bit6=0 判出（非毒值）。
+  完整链条自洽：app08 跑了前奏（EN_SW_OVERRIDE=1 + SECURE_PRI_SRC_ISO_EN=1）
+  但 helper 0x944c 拦下 64 对写入——retail 上 OVR_PAIRS 目标区从未被写的
+  原因链闭合。
+- **APP08_SRC_A 在 AD107 可读且结构化**（GA106 全 badf 的同一区域）：
+  66 词 = 8×0x100、8×0x8、~34×0x80、8×0x8 的**8 词一组**结构，值词表
+  {0x100, 0x8, 0x80}；组内两个孤立 badf 岛（0x8214e8、0x821544）。
+- **APP08_SRC_B 可读且呈 data/badf 交替**：128 词 = 64 对（Data 可读、
+  Control PL0 挡）——data 序列 0x100×8、0x80×8、0x8×8、0x80×32、0x8×8，
+  词表与 SRC_A 同。0x6ae4 的"读源对→写目标对"链路第一次有了可读侧样本；
+  与 AD103 的 0x822148 值（0x0044/0x0840/0x0080）及 4090 切片模式
+  （0444/2044/0844/1044）均不同——逐 die 表内容。
+- **DEF 扫描共 trio**：0x8211d4=1、0x8211d8=1、0x8211e0=0x800 在两块 Ada die
+  （无 L2 缺陷）都出现 → 非 OPT_ROP_L2_DEFECTIVE（常量性相邻 option 词）；
+  GA106 独有 0x41×2。AD107 窗口无 badf 岛（GA106 有）——逐 die PLM 粒度。
+- LTCNT=4（第三族）；GR_TOPO **第五锚 0x04020003**（4 FBIO 槽/2 ROP 分区
+  ×16=32 ROP/3 活 GPC）；STAT_GPC=0xff8（bits3..11=GPC3..11 关）——
+  **STAT_GPC=禁用 GPC 位掩码三 die 自洽**（TU106 0x38/GA106 0x78/AD107 0xff8）；
+  FBIO≡FBP 词相等第二例（0x3c/0x3c，bits2-5 → 2 活 FBIO + 2 活 FBP 双 ✓）；
+  NVDEC=0x0e（同 AD103，LITTER 编码悬案维持）；NVJPG=0xf、PERLINK=0x5
+  （新值入档）。
+
+**GA102 3090（2204，解锁态，Ubuntu 22.04 + diag-unlock.py 最新版）Linux 侧补跑**
+（`diag-unlock-082-round4-unlocked-3090.log`）——py twin 新面首次实机验证：
+
+- **四族恒等式 4/4**：packing 恒等式第四 die（GA102 全 6 FBP 在位，六行
+  `cand=pack eff=pack` 全零掩码——首个全 FBP 活的 die）；LTS 12 LTC 全 4/4
+  （48 切片全活 = 6MB ✓ 128KB/片）；LTCNT=12（三源一致）；app08 门
+  Q1=0/Q5=1 → BLOCK → CLOSED（第四族）。**py 侧毒值修复实机生效**：
+  PLM_PL2_WE 两词 badf → `bit6=?` 印出、gate CLOSED 由 helper BLOCK 判出
+  （不碰毒值位）。
+- **解锁态不影响 boot-static 面**：LTS/L2_FBP/DEF/gate 与 stock die 同形
+  （零写者结论第四次自洽）；FEAT 开 + SS 活 + READOUT=0；WPR2 LO/HI 双非零
+  （GSP in-OS 持窗，解锁态已知形态）；canary partial（A=0x0164c0de 活、
+  B=0x04d963ef 死——B 被扰，SS 对仍在故解锁判定不变）。
+- **DEF 扫描新离散**：共 trio（d4=1/d8=1/e0=0x800）第四 die 复现；
+  **0x8211e8 第三种值**（GA102=0x40；GA106=0x1、AD107=0x0）；**0x41 词数
+  逐 die**（GA102×4、GA106×2、AD107×0）——未识别词有了逐 die 离散度，
+  4090 对照价值上升。
+- **SRC_A/B 在 GA102 全 badf**（AD107 可读）——逐 die 可读性差异再添一例。
+- STAT_GPC=0x0（GA102 7 槽全活，禁用掩码语义**四 die 自洽**）；NVDEC=0x2
+  （Ampere 已知值）；TPC_RECFG_G100 idx6=0x10301（与 GA106 同词同位）；
+  0x82380c=0x00888888 **四 die 恒值**（SS0 复位默认影子，非活 SS0 镜像）。
+
+**容量级闭合（2026-11-20，事实锚定）**：AD102 满血（RTX 6000 Ada）96MB、
+4090 砍 72MB 是已知真实——LTS 读数 12 LTC × 3/4 = 36/48 活 → **48×2MB=96MB ✓、
+36×2MB=72MB ✓、12×2MB=24MB 切口 ✓** 三处算术精确咬合，AD102 slice=2MB 定谳。
+推论：①回文模板 = 工厂"每 LTC 均匀关一片"的**产能分割切**（非坏件——4090
+全部 DEFECTIVE 位为 0）；②4090 上 cand==eff 且 sw=0 → 24MB 切口烧在熔丝层
+（OPT_ROP_L2_DISABLE_FBP），三层角色分工获容量级佐证；③aajax 512KB 假说
+正式作废，slice 尺寸逐 die 设计。**逐 die 容量核算全闭合（2026-11-20，CUDA L2 属性=驱动主源实测收口，
+GPU-Z CUDA 页读取）**：
+
+- **TU106 2070**：属性报 **4096KB** = 32 片 × 128KB 精确（驱动证实，此前
+  仅 spec 推算）
+- **GA106 3060**：属性报 **2304KB** = 18/24 × 128KB 精确——**GA106
+  slice=128KB 与 GA102 同代同尺寸定谳**；TPU/Wiki 的 3MB（3072KB）是
+  **die 容量**（24×128KB），非 SKU 容量——GA106 的 L2 切割此前无人知晓，
+  公开 spec 对 3060 失真 25%（768KB=恰好 6 个被切切片）
+- **AD107 4060L**：属性报 **32768KB** = 16 片 × **2MB** 精确——**Ada 代内
+  slice 均匀（AD102/AD107 同 2MB）**；4060L 切 SM（36→24）但 L2 16/16 全活
+  （无 L2 切口）——分割策略逐 die/SKU 不同（对照：AD102 4090 SM+L2 双切、
+  GA106 3060 双切、AD107 只切 SM）
+- **AD102 4090**：2MB × 36/48 = 72MB（96→72MB 已知 spec 事实锚定）
+- **GA102 3090 ×4**：属性报 **6291456B** ×4 卡全部精确 = 48 × 128KB
+  （无切，`l2probe-4x3090-linux.log`；SMs 82 亦同值——GA102 容量行从 spec
+  升格为驱动实测 n=4；方法=ctypes cuDeviceGetAttribute 38，免 torch）
+
+同代 slice 均匀性成立：**Ampere/Turing 128KB/片 vs Ada 2MB/片（代际跳变
+16×）**；每一 die 的 LTS 读数 × slice 尺寸 = 驱动实测或 spec 已知容量，
+**无一例外——寄存器侧与驱动侧双源收口**（TU106/GA106/GA102×4/AD107 四行
+驱动实测，AD102 spec 事实锚定）。
+**待采预测**：GB206 5060 Ti（若 4 LTC 槽活全 4/4 → 16×2MB=32MB=5060 Ti
+spec，X99 补 LTS 首采即验）；AD103 4080（4 FBP × 8 LTC × 4 × 2MB = 64MB；
+JeusChrit 的 AD103 捕获系 0.7.4 无 LTS 面，补跑即验）；4090 同探针应报
+73728KB（AD102 侧唯一待补的驱动读数）。
+
+### 6l. GA100 熔丝工具生态入库 + IFF_RECORD 反推消费级 die 熔丝行数（2026-11-20）
+
+五仓入库（ga100-fuse-re 快进 74dfb16 / ga100-ff-tools / pico-ga100vfi /
+rp2040-glitch-tool / cmp170hx-ffcalc；详 peer-landscape §2.7）。两条交叉发现：
+
+**① IFF_RECORD（0x820050）行数解码**（ff-tools 语义 GA100 域：START[8:0] /
+LAST[24:16] 含尾，222..511；**消费级捕获要求 10-bit 字段**
+START[9:0]/LAST[25:16]——9-bit 读法给 GA106 (30,63)，被 FUSE_ADDR 证伪）：
+回查我方已有捕获——GA106/GA102 的 FUSE_REG_50=0x023f021e →
+START=542/LAST=**575**；AD107 的 0x033f02ff → START=767/LAST=**831**。
+**消费级 die 的熔丝行数 > GA100 的 512 且逐 die 不同**（GA10x ≥576 行、
+AD107 =832 行）。FUSE_ADDR 独立佐证：
+GA106/GA102=0x23f、AD107=0x33f——与 LAST 字段精确同值（=最后行地址；
+TU106 的 0x820050 是 badf/PL0 挡、FUSE_ADDR=0，Turing 读数不参与）。
+GA100 行数 512 来自 kate-land 512 行 dump 与 fuse-re 的 row222..488 FF 域——
+**行地址空间逐 die 配置**，未来任何行级操作/解码必须按 die 取行界。
+（语义推断按 GA100 布局外推，LAST==FUSE_ADDR 三 die 一致是强旁证；
+TU106 挡读防验证。）**已实现**（0.8.3：IFF_RECORD 解码行 +
+MAGIC_D_BITS bit21/bit25 双位行，ssdiag+py 双 twin，单测
+iff_decode_matches_real_captures 锁定两组实捕获值）。
+**0.8.3 双 twin 实机首验**（ssdiag-083-stock-3060.log /
+diag-unlock-083-unlocked-3090.log）：GA106（Win ssdiag）与 GA102（Linux
+py）的 IFF_RECORD 均解出 rows=542..575 且 == FUSE_ADDR 标记器命中——两 die
+共享 Ampere 行空间；MAGIC_D bit21=1/bit25=0 双 die 一致（并带 0.8.3 的
+RTD3 policy 行：3060 = absent/driver default）。
+**TU106 2070 补跑（ssdiag-083-stock-2070.log）**：扁平 0x820050/0x820520
+双 badf（PL0 挡，如面内提示）——但 **-0x7FF000 移位库 MAGIC_D 可读：
+PCIE_MAGIC_D(0x21520)=0x16480000 → bit25=1、bit21=0**。跨代对照：
+bit25（ff-tools Gen4 限制位）Turing 出厂=1、有 Gen4 控制器的 die（GA10x/
+Ada/A100）全 0——命名获跨代佐证；bit21 与 bit23/25 的分布逐代异。又一
+旁证：TU106 的 XP3G_STATUS3=0x16480000 == MAGIC_D（XP3G_STATUS3 镜像
+MAGIC_D 跨族成立，GA10x 已见）。TU106 移位 FUSE_ADDR=0x000000ff——
+若 FUSE_ADDR==LAST 行则 TU106 行空间 256 行（无 IFF_RECORD 可交叉，
+存疑标注；扁平 FUSE_ADDR=0 与移位 255 再添双面差异例）。SS0=0x00401100
+（TU106 冷态不稳词又一样本，READOUT 恒 0x00400080）。
+
+**② MAGIC_D 的两个不同位**：ff-tools/ffcalc 线：bit25（0x02000000）=
+PCIe Gen4 限制位（GA100 chain2 blk47 bit3；A100 vBIOS 校验整字，
+0x14680000 亦有实report）；JeusChrit 线（#237）：app08 0x73a4 在
+DEBUG_FEAT_SW_OVR_EN 时写 0x00200000=**bit21**。两位不同、均涉 PCIe ——
+ssdiag 的 OPT_MAGIC/PCIE_MAGIC_D 行（0x820520）读数时两个位都值得看
+**【11-20 0.8.3 实测修正】GA102 0x10a80000 的 bit21=1（初稿算错为 0——
+0x00200000 位在词内）。bit21=1 是消费级出厂态**（GA106/GA102/AD107 三 die
+全 1；A100 报告值 0x14680000 亦含 bit21）——app08 0x73a4 写 0x00200000 的
+语义改为「确保位」（出厂已 1）而非解锁置位；consumer bits{28,23,21,19} vs
+A100 bits{28,26,22,21,19}，bit23↔(bit26+22) 差异、bit25 两侧全 0。
+
+**生态状态**：fuse-re 的 NO-GO 判定被 Kate VFI 第三方烧写证据取代
+（执行风险非证据风险）；GA100 熔丝写入域现有**三个独立工具实现**
+（ga100-ff-tools / cmp170hx-ffcalc / 170hx-rir-tool）+ 两个 glitch 开源
+形态（pico-ga100vfi I2C-only 四线 / rp2040-glitch-tool 通用基底）。
+宪法 §1.6（永不烧写）立场不变；本仓只读消费级 die 不入此域。
+
+### 6m. #237 五轮：4090 0.8.3 全量收口——DEF 窗破案 + SRC 表定谳 + Ada 行域（2026-11-20）
+
+JeusChrit 的 4090 0.8.3 dump（`ad102-2704/ssdiag-083-4090-unlocked.txt`，
+解锁态）把四轮的三条悬案一次收口：
+
+1. **L2_DEF_SCAN 窗口身份破案**：`0x8211e8..0x8211fc` = **per-FBPA 内存/
+   PHY trim 熔丝**（app08 AD103 反汇编 PC 0x3e00..0x3ffb：循环 i=0..5，以
+   `~0x820c14` 的活 FBIO 位 i 门控，读 `0x8211e8+4i` 合并进
+   `0x903d50+0x4000*i` = NV_PFB_FBPA_n+0x3d50）。4090 六词 = f1/20/00/10/
+   e1/10——**此前 0x41 词数逐 die（0/2/4）之谜由此解**：trim 值本就逐卡。
+   OPT_ROP_L2_DEFECTIVE_FBP 仍未定位（窗口排除该区；0x8211d4/d8=1、
+   0x8211e0=0x800 的常量 trio 也不是 DEF——DEF 猎场退回 OBJFUSE +0x248
+   指针）。L2_FBP 六 FBP 全 `cand=pack eff=pack`（AD102 3/4 切 die 的
+   packing 恒等式现场确认，sw=0 同 4090）。4090 切口在熔丝层的结论不变。
+2. **APP08 源表定谳**：AD102 与 AD103 **逐字节相同**（8×0x80, 8×0x44,
+   8×0x840, 32×0x840, 8×0x44，同样 0x8214e8/0x821544 两个 badf 岛）——
+   **app08 的 64 对是按子族常量表**（AD102/AD103 一张、AD107 一张
+   {0x100,0x80,0x8}），**不带 4090 的 L2 切片**。SRC 表=B 的 Data 可读/
+   Control 挡在 AD102 上也成立（AD107 唯一可读样本地位解除）。
+3. **Ada 行域**：IFF_RECORD AD102=`0x033f02e5` → 741..831（832 行
+   == FUSE_ADDR）；AD103（JeusChrit 转述）=`0x033f02e3` → 739..831。
+   **Ada 三 die 共享 832 行、START 逐 die**（741/739/767）——START 即 FF
+   记录池首行（GA100=222，ga100-fuse-re 域），行界+池首均逐 die 配置。
+4. 小项收口：4090 gate Q1=0/Q5=1→BLOCK→CLOSED（第五族）；LTCNT=12；
+   MAGIC_D=0x00a0000c bit21=1/bit25=0（预测命中，见 6l 跨代表）。
+   TU106 移位 FUSE_ADDR=0xff 的 256 行假设仍挂（Turing 无 IFF 可验）。
+
+**同轮新参与者 Willian-Zhang（专业 AD102）**：FEAT_OVR_PLM 写 nibble[7:4]
+出厂=0（消费=0x8=L3-write only）——**连 heavy-secure L3 写位都关**：V67
+载具第四写（FEAT=0xffffffff）被丢 → 载具照常 HALT 但门不开，结构性死锁
+（其 payload HALT 形态+门保持闭合与此完全自洽）。GSP 镜像内无 0x823804
+store = 预期（FWSEC 在 VBIOS BIT token 0x85，不在 GSP ELF；kate-land
+Goldilocks——故障注入让 fuse-sense 窗口读空后 PLM 全开——证明 PLM 态来自
+早期 boot 模板路径）。bit25=1 恰在无 Gen4 的 TU106、SS0 冷/热 boot 两 bit
+漂移=我方 TU106 冷态不稳词第五回响。详见 #237 Willian-Zhang 11-20 帖。
+
+**同轮兑现（0.8.4）**：双胞胎的 `L2_DEF_SCAN` 面已改名 **`FBPA_TRIM`**，
+头部印破案结论（per-FBPA mem/PHY trim fuses、ex-L2_DEF_SCAN、DEF 猎场
+=OBJFUSE +0x248），const 注释带消费链（app08 PC 0x3e00..0x3ffb →
+NV_PFB_FBPA_n+0x3d50）。老历史日志里的 `L2_DEF_SCAN` 行按此对照。
+
+### 6n. TPC 层组合公式五 die 验证：STATUS=OPT|(RECONF&~OVR)（2026-11-21）
+
+CMP 90HX TUI 工具（0.8.3 note 里的候选公式）在五 die 归档日志上逐 GPC
+验算。**先决发现是语义勘误**：tpc 面头原注"bit n = TPC n"（位=存在）与
+同一屏的 verdict 计数（位=熔断）矛盾，SM 数核算判死——**STATUS 位置 1 =
+TPC 被熔断（disabled）**：GA102 3090=82SM（GPC6=0x04 恰切 1 TPC）、
+GA106 3060=28SM（8+10+10）、AD107 4060L=24SM（3 GPC×(6-2)×2）、AD102
+4090=128SM（GPC0 全灭 + GPC1/2 各切 1 + GPC3-11 全供=64 TPC×2）四族全部
+精确吻合；verdict 的 fused-off 计数（8/28/36/1）本就按此读法且五 die 全
+对——**只有面头标签和 const 注释写反**，0.8.5 修正（verdict/判读指南不
+动）。验证主体：
+
+1. **AD102 4090：公式非平凡成立**。STATUS(GPC0..7) = OPT(0x820760+4g) |
+   RECONF(0x820788+4g)，OVR(CTRL 0x820838+4g)=0 逐 GPC 全对：GPC0=
+   0x3f|0、**GPC1/2=0|0x1——切位纯来自 RECONF 层（OPT=0），公式的非平凡
+   形式被真卡现场行使**；GPC3-7=0|0。旁证链：OPT_GPC_DISABLE(0x820350)
+   bit0=1 ↔ TPC_DIS GPC0=0x3f（整 GPC 灭）↔ 128 SM 精确。
+2. **GA102 3090（公式源族，CMP 90HX 同 die）：平凡成立**。STATUS=OPT
+   逐 GPC 全对（GPC6=0x04）；RECONF 两布局（G100/ADA）现役槽全 0——
+   GA10x 上 RECONF/OVR 现役读 0，公式退化为 STATUS=OPT。
+3. **GA106/AD107：公式不可判（缺层）**。3060 GPC0 STATUS=0x28 但 OPT=
+   0x8（TPC5 的 0x20 位在所有已印 face 无源）；4060L OPT 数组全零而
+   STATUS GPC0-2=0x30——**两族的禁用源寄存器不在现有 face 集**（GA100
+   布局 0x820760 在 GA106/AD107 上不承担 OPT 角色）。待定向补扫
+   0x8207xx-0x8208xx 找它们的真 OPT/RECONF 层。
+4. **尾槽纪律（新）**：GPC 数组槽位超出 die 真实 GPC 域时读的是**别的
+   寄存器类**——0x8207a0 槽（槽 6）五 die 恒 0x10301（非 GPC 数据）；
+   AD102 TPC_DIS 槽 11=0x1 而 STATUS 槽 11=0（128 SM 核算证实槽 11 是
+   尾槽杂音，若当真则 126≠128）。判读 GPC 数组先定 die 的 GPC 域再逐槽。
+5. TU106 2070：四层全 badf，N/A（Turing fuse block 异址，FEAT 谱系）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

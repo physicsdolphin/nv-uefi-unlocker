@@ -3,6 +3,7 @@
 > 2026-11-02。ssdiag 0.6.3+ 的平台门与 denied-map 前置分类清单经过两例实机闭环（#118 卡巴斯基/B650M、B 站 5060/Win10），本文是该机制的权威说明。
 > 2026-11-15 增补（#244 轮）：HVCI 措辞勘误（§2）+ tier-2「secure PCI」0x1EA 整机蓝屏分层（§2a）+ 平台门两新行（§3）+ **§3 Secure Boot 行勘误**（旧行"ON=无法加载+工具先行拒绝"两处皆错，见该行）。
 > 2026-11-15 第二轮查证更正：tier-2 的**文档化触发 = SDEV ACPI 表 + VBS running**（§2a 重写）；此前"SystemGuard 键 = 使能旋钮"无公开文档支持，**降级为保守二级信号**；ssdiag 0.8.1 同步改判据。
+> 2026-11-15 第三轮（#244 ASSESSMENT 在役闭环）：`DeviceGuard\VirtualizationBasedSecurityStatus` 注册表值在 VBS-running 机器上**可能缺席**（T14s 实测），0.8.0/0.8.1 的 `Some(2)` 正判据在该机上静默失效——0.8.2 改 **fail-closed**（SDEV 在场 + VBS 不可验证 → 拒）。
 
 ## 1. 两个实机案例（同签名、同根因、不同杀软形态）
 
@@ -39,9 +40,9 @@
 - 触发对 = **SDEV 表在场 + VBS running**；公开案例都是普通装机、非 OEM 镜像专属：Framework+Speccy、LG Gram+Speccy（cpuz149_x64.sys，CCleaner 论坛）、AMD Ryzen Master driver、Vanguard vgk——0x1EA 发生 ⇒ 按排障页条件反推，这些机器固件必带 SDEV；
 - 我方自有观察：**2024+ 部分华硕 OEM 镜像（天选6 实测）上 Intel FPTW64 读 SPI-flash MMIO 同样直接蓝屏**——SDEV 限制是否覆盖 MCFG 之外的 MMIO（SPI 区），公开文档未写明（该例 bugcheck 码未验证）。
 
-ssdiag 0.8.1 起的行为：`GetSystemFirmwareTable('ACPI','SDEV')` 在场 **且** `DeviceGuard\VirtualizationBasedSecurityStatus==2`（内核开机回写）→ 部署前拒绝（含借用路径，无覆盖旗标——借用路径同走一条 ECAM 读）；SystemGuard/SecureLaunch 注册表键**保留为保守二级信号**（无文档关联，但同栈机器常齐——误拒无害、漏拒危险）；`--inventory` 与 `--dry-run` 不受影响（不碰驱动）。SDEV 探测是只读固件表查询，本身不会触发蓝屏。
+ssdiag 0.8.2 起的行为（0.8.1 的注册表正判据被 #244 在役闭环推翻后的 fail-closed 重写）：SDEV 表在场时按 VBS 读取结果分支——`==2`（RUNNING）或 SystemGuard 键在场 → 拒绝；**注册表值缺席（unverified）→ 也拒绝（fail-closed）**：#244 的 T14s 实测 WMI 报 2 而该注册表值**根本不存在**，0.8.0/0.8.1 都要求 `Some(2)` 正判据，在那台机器上闸门静默失效——"值缺席"不能当"VBS 关"读；仅 `==0`（off）/`==1`（configured-not-running）放行（无 hypervisor 即无强制面）。拒绝含借用路径、无覆盖旗标；`--inventory` 与 `--dry-run` 不受影响。SDEV 探测是只读固件表查询，本身不会触发蓝屏。**在役发现三条（#244 ASSESSMENT，2026-11-15）**：① 该注册表值在 26300 VBS-running 机器上缺席（见上）；② `GetSystemFirmwareTable` sizing 调用（buffer=NULL）返回所需大小的同时 LastError 可能残留 122——是 sizing 语义不是读取失败；③ 该机 `SystemCodeIntegrityInformation` 报 HVCI clear 而 WMI `SecurityServicesRunning` 含 2（HVCI running）——两接口结论相反，机理待查（fail-closed 门不依赖 HVCI 位，不阻塞）。
 
-**为什么"重装后消失"（更正：SDEV 在固件里，重装不动它）**：消失必然出自 VBS 侧或固件选项侧，按可查性排序：① 重装后 VBS 实际没跑（看 `VirtualizationBasedSecurityStatus==2`，不是看设置里开关）；② BIOS ESS 类选项被重置/刷 BIOS 改动（关闭该选项即撤 SDEV 限制，排障页明示 workaround）；③ OS 侧未公开前置（ESS provisioning/生物识别 trustlet 等——纯假设）；④ OEM 镜像与重装 build 不同。待天选6 双态采样判别（配方见 FAQ 蓝屏节）。
+**为什么"重装后消失"（更正：SDEV 在固件里，重装不动它）**：消失必然出自 VBS 侧或固件选项侧，按可查性排序：① 重装后 VBS 实际没跑（**WMI `VirtualizationBasedSecurityStatus==2` 或 msinfo32 为准——注册表值在部分 VBS-running 机器上缺席，不能当反证**）；② BIOS ESS 类选项被重置/刷 BIOS 改动（关闭该选项即撤 SDEV 限制，排障页明示 workaround）；③ OS 侧未公开前置（ESS provisioning/生物识别 trustlet 等——纯假设）；④ OEM 镜像与重装 build 不同。待天选6 双态采样判别（配方见 FAQ 蓝屏节）。
 
 ## 3. 平台门行语义
 
@@ -50,9 +51,9 @@ ssdiag 0.8.1 起的行为：`GetSystemFirmwareTable('ACPI','SDEV')` 在场 **且
 | `vulnerable-driver blocklist` | registry `CI\Config\VulnerableDriverBlocklistEnable` | 配置态；本工具 hash 不在名单（已核对） |
 | `core isolation (HVCI)` | registry `HVCI\Scenario\Enabled` | **配置态**——Win11 默认启用的机器常缺省（打印 unknown） |
 | `HVCI runtime (CodeIntegrity)` | `NtQuerySystemInformation(103)` 0x10 位 | **运行态权威**；RUNNING=代码完整性门已升——HVCI 本身不拒 probe（在役反证见 §2 勘误），硬门看下两行 / CLEAR=无此层 / unknown=查询被拒（非判决） |
-| `VBS status (kernel readback)` | registry `DeviceGuard\VirtualizationBasedSecurityStatus` | 内核开机回写（2=RUNNING）；=0 时 tier-2 无强制面 |
-| `Secure Launch (SystemGuard)` | registry `Scenarios\SystemGuard`（±`SecureLaunch` 别名）`Enabled` | **配置态二级信号（保守保留）**——与 secure PCI 无公开文档关联，同栈机器常齐；与 VBS RUNNING 同时在场也判 armed（误拒无害、漏拒危险） |
-| `SDEV table (ACPI)` | `GetSystemFirmwareTable('ACPI','SDEV')` | **文档化触发的固件半**（secure kernel 解析强制，0x1EA）；与 VBS RUNNING 同时在场 = tier-2 armed，probe 部署前拒绝（#244）；关闭 = BIOS ESS 类选项 |
+| `VBS status (kernel readback)` | registry `DeviceGuard\VirtualizationBasedSecurityStatus` | 2=RUNNING / 1=configured-not-running / 0=off；**缺席≠off**（#244 T14s 实测 WMI 报 2 而值不存在）——unverified + SDEV 在场 = fail-closed 拒绝 |
+| `Secure Launch (SystemGuard)` | registry `Scenarios\SystemGuard`（±`SecureLaunch` 别名）`Enabled` | **配置态二级信号（保守保留）**——与 secure PCI 无公开文档关联，同栈机器常齐；仅 VBS==2 正读时参与 armed（SDEV 缺席+VBS 未知不拒，否则误伤普通机器） |
+| `SDEV table (ACPI)` | `GetSystemFirmwareTable('ACPI','SDEV')` | **文档化触发的固件半**（secure kernel 解析强制，0x1EA）；在场 + VBS==2（或 VBS 不可验证）= tier-2 armed，probe 部署前拒绝（#244）；关闭 = BIOS ESS 类选项 |
 | `Secure Boot` | registry `SecureBoot\State` | **配置态软门**（0.7.1 起措辞，2026-11-08 依在役数据软化）——ON 时 pinned pmxdrv **可能**拒载（#40 分析背景：Intel/COMODO 交叉签名、无 Microsoft 根、叶证书晚于 2015-07-29 切线，不符 DSE 豁免），但 SB-ON 全量 probe 载入运行已有在役实证（bailu974 记录：`28a0`/MEOW R15，警告照打、驱动实载、完整 MMIO 读数 + `VERDICT UNLOCKED`；机理未知，拒载仍是默认预期）——工具**只打黄字 "may not load, just try"，从不先行拒绝**；真拒载时查 CodeIntegrity 3077/3089，免驱动路径 = EFI 只读采样；0.8.0 起唯一的部署前硬拒是 tier-2（上行） |
 
 ## 4. 解锁判读的旁证增量（B 站例首证）
@@ -63,4 +64,5 @@ ssdiag 0.8.1 起的行为：`GetSystemFirmwareTable('ACPI','SDEV')` 在场 **且
 
 - `nvapi.dll not loadable` 在 0.6.4 前是 x64 加载名 bug（裸名只在 SysWOW64），GC6 wake 从不生效——0.6.4 起 `nvapi64.dll` 优先，parked 态卡才能真正拉出 D3 诊断；
 - 非 0.6.4 用户遇到 MAP error 5 时，升级本身可能就是修复（0.4.8 发现层的 17 MiB 合并候选是另一类假阳性，#118）。
-- 0.8.1 的 tier-2 判据 = **SDEV 表**（文档化触发的固件半，`GetSystemFirmwareTable` 只读探测）+ SystemGuard/SecureLaunch 键（保守二级），两者都要求 VBS 回写 `==2`；WMI `SecurityServicesRunning` [3]/[4] 降为背景判别位。「tier 在跑但两项检测都阴性」的漏检形态待样本（拒绝文案带确认命令）。
+- 0.8.2 的 tier-2 判据 = **SDEV 表**（文档化触发的固件半，`GetSystemFirmwareTable` 只读探测）按 VBS 读取结果分支：`==2` 或 SystemGuard 键在场 → 拒；**unverified（注册表值缺席）+ SDEV 在场 → 拒（fail-closed，#244 ASSESSMENT 闭环）**；`==0/==1` → 放行。WMI `SecurityServicesRunning` [3]/[4] 是背景判别位；[2]（HVCI running）与 `SystemCodeIntegrityInformation` 0x10 位在该机结论相反，两接口差异待查。残余漏检形态 = 「tier 在跑 + SDEV 探测阴性」——SDEV 探测签名校验失败会报 unknown 而非阴性，只有 `need==0` 才判 absent；待样本（拒绝文案带确认命令）。
+- **tier-2 判据目前无故障注入测试**（`secure_pci_armed()` 直连 registry/固件表调用，`#[cfg(test)]` 无覆盖）：0.8.1 的静默失效正属"否定路径从未被观察"一类，矩阵（SDEV 在场/注册表缺席/SystemGuard 组合）+ 解析分支 + 拒绝文案断言已立 [#265](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/265) 跟踪，落地前本门的行为证据仍以在役样本为准。

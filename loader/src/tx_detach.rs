@@ -233,6 +233,13 @@ pub fn pm_preflight(pci: &PciIo) -> Result<PmEntry, &'static str> {
 pub struct Claim {
     pub baseline: alloc::vec::Vec<u32>,
     pub initial_attrs: Option<u64>,
+    /// True when at least one GOP handle belonged to the target during the
+    /// detach (and was therefore disconnected), or the forced
+    /// `\tx-gop-disconnect.txt` path tore down every GOP handle. False means
+    /// the target never owned a console child this boot, so the native-GOP
+    /// rebuild has nothing to restore (issue #261: hybrid-display laptops
+    /// where the firmware console lives on the iGPU).
+    pub target_gop_seen: bool,
 }
 
 /// Staged detach + exclusive claim. Returns the config-space baseline
@@ -290,6 +297,7 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     if force_gop_disconnect {
         info!("DETACH: \\tx-gop-disconnect.txt present - disconnecting every GOP handle (v0.2.0 behavior)");
     }
+    let mut target_gop_seen = false;
     if let Ok(h) = gop_handles {
         for i in 0..h.len() {
             let gop = h[i];
@@ -297,6 +305,12 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
                 info!("DETACH: GOP handle {:?} is not on the target GPU (multi-GPU) - left untouched, its console stays alive", gop);
                 continue;
             }
+            // Issue #261: record that a target-owned (or forced-everything)
+            // console child existed. tx's console rebuild uses this to skip
+            // the native-GOP attempt when the firmware console lived on
+            // another GPU - there is nothing to restore, and the target's
+            // ROM GOP driver would only no-op (Start=SUCCESS, no child).
+            target_gop_seen = true;
             let before = open_count(gop);
             info!("DETACH: stage GOP handle {:?} protocols {}", gop, before);
             // #170 diag (D): from here until the reconnect the console stack
@@ -380,7 +394,7 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     if baseline[1] & 0x2 == 0 {
         return Err("PCI command MEMORY bit did not stick after both enable paths");
     }
-    Ok(Claim { baseline, initial_attrs })
+    Ok(Claim { baseline, initial_attrs, target_gop_seen })
 
 }
 
