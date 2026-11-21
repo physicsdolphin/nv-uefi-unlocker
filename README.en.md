@@ -167,7 +167,7 @@ After restarting, confirm that GSP firmware is running before making the stick. 
 
 ### 2. Prepare the bootable USB stick
 
-Run from the extracted package directory. With no `-Family` the script detects this machine's cards and builds exactly the families it finds. Building on another host: `40` for the 40 series, `30` for the 30 series, `20` for the 20 / 16 series. **When one machine holds cards from several generations, comma-list them** (`-Family 30,40` builds exactly those two without dragging unrelated assets); `-Family all` puts all three generations on one stick. A generation left off the stick is skipped at boot and named in `loader.log`.
+Run from the extracted package directory. With no `-Family` the script detects this machine's cards and builds exactly the families it finds. Building on another host: `40` for the 40 series, `30` for the 30 series, `20` for the 20 / 16 series. **When one machine holds cards from several generations, comma-list them** (`-Family 30,40` builds exactly those two without dragging unrelated assets); `-Family all` puts all three generations on one stick. A generation left off the stick is skipped at boot and named in `loader.log`. The maker probes for `BOOTX64.EFI` both next to itself and under its `EFI/BOOT/` subdirectory (release zips ship the latter layout, a repo checkout the former; if neither exists the error names both candidates).
 
 Windows PowerShell:
 

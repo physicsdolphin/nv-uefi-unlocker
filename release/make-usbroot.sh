@@ -596,19 +596,27 @@ means the driver is too old or NVreg_EnableGpuFirmware=0 is forced somewhere
 
 # ---------- main ----------
 resolve_assets
-if [ -z "$BOOT_EFI" ]; then BOOT_EFI="$SCRIPT_DIR/BOOTX64.EFI"; fi
-[ -f "$BOOT_EFI" ] || die "BOOTX64.EFI not found: $BOOT_EFI
+# BOOTX64.EFI ships in two layouts: flat next to this script (repo release/,
+# standalone loader copies) and under EFI/BOOT (the release zip since 2.1.12
+# - issue #270: the zip's maker must run as-is per the README). Probe both.
+if [ -z "$BOOT_EFI" ]; then
+    for cand in "$SCRIPT_DIR/BOOTX64.EFI" "$SCRIPT_DIR/EFI/BOOT/BOOTX64.EFI"; do
+        [ -f "$cand" ] && { BOOT_EFI="$cand"; break; }
+    done
+fi
+[ -f "$BOOT_EFI" ] || die "BOOTX64.EFI not found (tried $SCRIPT_DIR/BOOTX64.EFI and $SCRIPT_DIR/EFI/BOOT/BOOTX64.EFI)
 Build it from the repo (see README: 'cargo efi-tx' gated transaction build)
 or pass --boot-efi."
+log "[assets] loader: $BOOT_EFI"
 
 # Staleness guard (2026-11-20): the default resolution points at the
 # release/ copies, which only change when the release packaging refreshes
 # them - a repo checkout that just built has NEWER binaries under target/.
 # Warn (do not auto-switch: the release/ copies are the shipped, field-tested
 # set) and name the flags.
-$repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
-$t_assets="$repo_root/target/release/assets"
-$t_efi="$repo_root/target/x86_64-unknown-uefi/release/loader.efi"
+repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
+t_assets="$repo_root/target/release/assets"
+t_efi="$repo_root/target/x86_64-unknown-uefi/release/loader.efi"
 if [ "${ASSETS_BIN#$SCRIPT_DIR}" = "$ASSETS_BIN" ] && [ -x "$t_assets" ] &&    [ "$t_assets" -nt "$ASSETS_BIN" ]; then
     logwarn "[stale] target/release/assets is NEWER than $ASSETS_BIN - you are about to run an older assets build. Re-run with: --assets $t_assets"
 fi

@@ -668,9 +668,21 @@ If it persists, the driver may be too old for GSP."
 }
 
 if (-not $AssetsExe) { $AssetsExe = Join-Path $PSScriptRoot "assets-x86_64-windows.exe" }
-if (-not $BootEfi)   { $BootEfi   = Join-Path $PSScriptRoot "BOOTX64.EFI" }
+# BOOTX64.EFI ships in two layouts: flat next to this script (repo release/,
+# standalone loader copies) and under EFI\BOOT (the release zip since 2.1.12
+# - issue #270: the zip's maker must run as-is per the README). Probe both.
+if (-not $BootEfi) {
+    foreach ($cand in @((Join-Path $PSScriptRoot "BOOTX64.EFI"),
+                        (Join-Path $PSScriptRoot "EFI\BOOT\BOOTX64.EFI"))) {
+        if (Test-Path -LiteralPath $cand) { $BootEfi = $cand; break }
+    }
+}
 if (-not (Test-Path $AssetsExe)) { throw "assets tool not found: $AssetsExe" }
-if (-not (Test-Path $BootEfi))   { throw "BOOTX64.EFI not found: $BootEfi" }
+if (-not (Test-Path -LiteralPath $BootEfi)) {
+    throw ("BOOTX64.EFI not found (tried {0} and {1}) - pass -BootEfi with the explicit path." -f
+        (Join-Path $PSScriptRoot "BOOTX64.EFI"), (Join-Path $PSScriptRoot "EFI\BOOT\BOOTX64.EFI"))
+}
+Write-Step "[assets] loader: $BootEfi"
 
 # Staleness guard (2026-11-20): the default resolution points at the
 # release/ copies, which only change when the release packaging refreshes
@@ -897,9 +909,15 @@ $SrcTar = Join-Path $Work $Sources[0].Name
 
 # Remove assets from an earlier run so a root cannot end up as a half-old,
 # half-new mix (e.g. a 40-series v67 payload next to a 20-series booter).
+# Best-effort (issue #271): some sessions hook Remove-Item (recycle-bin
+# "safe delete" wrappers, EDR filters) and fail closed; a file that survives
+# here is refreshed by the Copy-Item -Force steps below anyway.
 Get-ChildItem $Out -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match '^(booter_load_|gsp_boot|gsp_|fwimage_|fwsignature_|sec2_bl_|scrubber_|v67-|gsp-gate\.txt$|BOOTX64\.EFI$)' } |
-    ForEach-Object { Remove-Item $_.FullName -Force }
+    ForEach-Object {
+        try { Remove-Item $_.FullName -Force -ErrorAction Stop }
+        catch { Write-WarnY "[clean] stale $($_.Name) not removed: $($_.Exception.Message.Trim())" }
+    }
 
 # ---------- shared extraction (one pass for the whole build) ----------
 # fw / fw-run always extract BOTH GSP ELFs (gsp_ga10x.bin + gsp_tu10x.bin)
@@ -1207,9 +1225,16 @@ foreach ($fam in $Families) {
 # fwimage_*/fwsignature_*/booter_load_*/... from the volume root - the ELF
 # files (84 + 29 MB) would be pure dead weight on the stick. The makers
 # delete them here instead of asking users to skip "extra .bin files".
+# Best-effort (issue #271): these are OUR OWN extraction inputs - failing to
+# remove one is dead weight on the stick, never a correctness problem, so a
+# delete-interception layer that fails closed (recycle-bin "safe delete"
+# wrappers, EDR filters) must not abort a build that is otherwise complete.
 foreach ($elf in @("gsp_ga10x.bin", "gsp_tu10x.bin")) {
     $elfPath = Join-Path $Out $elf
-    if (Test-Path $elfPath) { Remove-Item $elfPath -Force }
+    if (Test-Path -LiteralPath $elfPath) {
+        try { Remove-Item -LiteralPath $elfPath -Force -ErrorAction Stop }
+        catch { Write-WarnY "[clean] $elf not removed: $($_.Exception.Message.Trim()) - it ships as dead weight; delete by hand for the space" }
+    }
 }
 # The 10x-named gsp-sections exports are the SAME class of intermediate: they
 # carry the ELF's SECTION family names (ga10x/ad10x), but the loader resolves
@@ -1222,7 +1247,10 @@ foreach ($elf in @("gsp_ga10x.bin", "gsp_tu10x.bin")) {
 foreach ($sec in @("fwimage_ga10x.bin", "fwsignature_ga10x.bin",
                    "fwimage_ad10x.bin", "fwsignature_ad10x.bin")) {
     $secPath = Join-Path $Out $sec
-    if (Test-Path $secPath) { Remove-Item $secPath -Force }
+    if (Test-Path -LiteralPath $secPath) {
+        try { Remove-Item -LiteralPath $secPath -Force -ErrorAction Stop }
+        catch { Write-WarnY "[clean] $sec not removed: $($_.Exception.Message.Trim()) - it ships as dead weight; delete by hand for the space" }
+    }
 }
 
 $expected += "BOOTX64.EFI"
