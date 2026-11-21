@@ -1045,6 +1045,37 @@ Goldilocks——故障注入让 fuse-sense 窗口读空后 PLM 全开——证�
 =OBJFUSE +0x248），const 注释带消费链（app08 PC 0x3e00..0x3ffb →
 NV_PFB_FBPA_n+0x3d50）。老历史日志里的 `L2_DEF_SCAN` 行按此对照。
 
+### 6n. TPC 层组合公式五 die 验证：STATUS=OPT|(RECONF&~OVR)（2026-11-21）
+
+CMP 90HX TUI 工具（0.8.3 note 里的候选公式）在五 die 归档日志上逐 GPC
+验算。**先决发现是语义勘误**：tpc 面头原注"bit n = TPC n"（位=存在）与
+同一屏的 verdict 计数（位=熔断）矛盾，SM 数核算判死——**STATUS 位置 1 =
+TPC 被熔断（disabled）**：GA102 3090=82SM（GPC6=0x04 恰切 1 TPC）、
+GA106 3060=28SM（8+10+10）、AD107 4060L=24SM（3 GPC×(6-2)×2）、AD102
+4090=128SM（GPC0 全灭 + GPC1/2 各切 1 + GPC3-11 全供=64 TPC×2）四族全部
+精确吻合；verdict 的 fused-off 计数（8/28/36/1）本就按此读法且五 die 全
+对——**只有面头标签和 const 注释写反**，0.8.5 修正（verdict/判读指南不
+动）。验证主体：
+
+1. **AD102 4090：公式非平凡成立**。STATUS(GPC0..7) = OPT(0x820760+4g) |
+   RECONF(0x820788+4g)，OVR(CTRL 0x820838+4g)=0 逐 GPC 全对：GPC0=
+   0x3f|0、**GPC1/2=0|0x1——切位纯来自 RECONF 层（OPT=0），公式的非平凡
+   形式被真卡现场行使**；GPC3-7=0|0。旁证链：OPT_GPC_DISABLE(0x820350)
+   bit0=1 ↔ TPC_DIS GPC0=0x3f（整 GPC 灭）↔ 128 SM 精确。
+2. **GA102 3090（公式源族，CMP 90HX 同 die）：平凡成立**。STATUS=OPT
+   逐 GPC 全对（GPC6=0x04）；RECONF 两布局（G100/ADA）现役槽全 0——
+   GA10x 上 RECONF/OVR 现役读 0，公式退化为 STATUS=OPT。
+3. **GA106/AD107：公式不可判（缺层）**。3060 GPC0 STATUS=0x28 但 OPT=
+   0x8（TPC5 的 0x20 位在所有已印 face 无源）；4060L OPT 数组全零而
+   STATUS GPC0-2=0x30——**两族的禁用源寄存器不在现有 face 集**（GA100
+   布局 0x820760 在 GA106/AD107 上不承担 OPT 角色）。待定向补扫
+   0x8207xx-0x8208xx 找它们的真 OPT/RECONF 层。
+4. **尾槽纪律（新）**：GPC 数组槽位超出 die 真实 GPC 域时读的是**别的
+   寄存器类**——0x8207a0 槽（槽 6）五 die 恒 0x10301（非 GPC 数据）；
+   AD102 TPC_DIS 槽 11=0x1 而 STATUS 槽 11=0（128 SM 核算证实槽 11 是
+   尾槽杂音，若当真则 126≠128）。判读 GPC 数组先定 die 的 GPC 域再逐槽。
+5. TU106 2070：四层全 badf，N/A（Turing fuse block 异址，FEAT 谱系）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

@@ -1,4 +1,9 @@
-//! ssdiag v0.8.4 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.5 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.5 fixes the tpc face semantics label (five-die SM-count check,
+//! #237 formula verification 2026-11-21): STATUS bit SET = TPC fused OFF,
+//! not present. The verdict lines already counted it this way (and matched
+//! GA102 82SM / GA106 28SM / AD107 24SM / AD102 128SM exactly); only the
+//! header and the const doc said the opposite.
 //! v0.8.4 renames the ex-L2_DEF_SCAN face to FBPA_TRIM with the round-5
 //! identity in the header (#237): 0x8211e8..0x8211fc is per-FBPA memory/PHY
 //! trim fuse data (consumer chain: app08 PC 0x3e00..0x3ffb merges into
@@ -3725,13 +3730,15 @@ const ADA_FUSE_ROWS: [(&str, u32); 9] = [
     ("CTRL_OPT_9C8", 0x0082_09C8),
 ];
 /// Per-GPC TPC floorsweep surface. STATUS at 0x820c38+4g is the effective
-/// fused mask (bit n = TPC n of GPC g), CTRL at 0x820838+4g the writable
-/// override — exactly the pair nvgpu drives in tpc_gv11b.c (write CTRL, poll
-/// STATUS until equal), so the semantics are driver-sourced, not inferred.
-/// The OPT/DEFECT banks are printed raw: 0x820350/0x8205c4 are documented
-/// GPC-level masks (gpcprobe/Consensus-Protocol, 15-card validation), while
-/// a per-GPC assignment inside the banks is still probe-derived
-/// (KohakUnlock#16) — see docs/open-questions.md #13.
+/// fused mask — bit n SET = TPC n of GPC g fused OFF (five-die SM-count
+/// verified 2026-11-21: GA102 82SM/GA106 28SM/AD107 24SM/AD102 128SM exact;
+/// the verdict lines always counted it this way). CTRL at 0x820838+4g is the
+/// writable override — exactly the pair nvgpu drives in tpc_gv11b.c (write
+/// CTRL, poll STATUS until equal), so the pair semantics are driver-sourced,
+/// not inferred. The OPT/DEFECT banks are printed raw: 0x820350/0x8205c4 are
+/// documented GPC-level masks (gpcprobe/Consensus-Protocol, 15-card
+/// validation), while a per-GPC assignment inside the banks is still
+/// probe-derived (KohakUnlock#16) — see docs/open-questions.md #13.
 const TPC_CTRL_BASE: u32 = 0x0082_0838;
 const TPC_STATUS_BASE: u32 = 0x0082_0C38;
 const TPC_BANK_A: u32 = 0x0082_03A0;
@@ -4251,7 +4258,7 @@ fn decode_tpc_bits(v: u32) -> String {
 /// are fused off per GPC, and whether the affected GPC carries a defect bit.
 /// Nothing is written; the CTRL override path is out of scope.
 fn dump_tpc(rd: &dyn Fn(u32) -> u32) {
-    println!("--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---");
+    println!("--- tpc (per-GPC floorsweep; STATUS bit set = TPC fused OFF; SM-count verified 5-die 2026-11-21) ---");
     let mut off_total = 0u32;
     let mut off_mask = 0u32;
     let mut statuses = [0u32; TPC_MAX_GPC as usize];

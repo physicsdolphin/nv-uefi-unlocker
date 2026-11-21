@@ -802,7 +802,7 @@ def decode_tpc_bits(v):
 
 def dump_tpc(bar):
     """Read-only per-GPC TPC floorsweep survey (open question #13)."""
-    print("  --- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---")
+    print("  --- tpc (per-GPC floorsweep; STATUS bit set = TPC fused OFF; SM-count verified 5-die 2026-11-21) ---")
     off_total = 0
     off_mask = 0
     statuses = []
