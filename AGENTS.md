@@ -176,4 +176,15 @@ BIT 头 `FF B8 "BIT\0"`+校验和（size@+8/stride@+9/tokens@+10）→ token 0x7
 4. `docs/`：里程碑证据、寄存器冷值表（按族分文件）、开放问题清单（TU106 FEAT 簇答案置顶）；
 5. README：安全宪法副本+回滚手册（黑屏/STOP/驱动不认卡三种场景的恢复步骤）。
 
+## 12. 开发工具链现状（2026-11-22 增补）
+
+本任务书的 §4–§7 规划已落地并超出快照：`tools/falcgen/`——第一性原理 V67 payload
+生成器（位置无关 fuc5 解码器 + 窄解释器 + gadget 扫描器 + synth 合成器；脱离
+workspace 独立版本 0.1.0，与 ssdiag 同车道；`--gate ss`/`--gate bar1` 门控预设 +
+逐 die 机械帧预算校验 + 钉 SHA 金标自测）已并入主线；TU102/GA102/AD102 三金标
+逐字节复现，TU116 为首个全第一性原理 die。横向扩展总账（除 SS0/SS1 外哪些 PLM
+门可砸、收益与砸烂边界八条）见 [docs/gate-inventory.md](docs/gate-inventory.md)，
+操作手册 [docs/falcgen-manual.md](docs/falcgen-manual.md)。宪法与门控规则不变：
+工具产物只到 payload 文件为止，实机点火仍走里程碑门控 + 用户显式确认。
+
 ——任务书完。第一动作：环境自检（§8）→ clone 参考仓（§4）→ 必读清单（§4 序）→ 向用户复述 M0 验收判据 → 开工。

@@ -248,6 +248,21 @@ bash release/make-usbroot.sh --family 40 \
 
 之后按上面的布局复制到 U 盘。[只读诊断、测试与开发说明](docs/faq.md#layout)。
 
+## falcgen：第一性原理 payload 生成器（开发向工具）
+
+[tools/falcgen](tools/falcgen/README.md) 是本仓库解锁载荷的研究/生成工具链：位置无关
+fuc5 解码器 + 窄解释器 + gadget 扫描器 + payload 合成器——只吃解密 booter 明文、
+自动推导栈几何，合成逐字节可验证的 V67 载荷（写链是 payload 唯一的政策输入）。
+TU102/GA102/AD102 三张金标逐字节复现；GTX 16 系（TU116）是第一个没有上游表、完全
+第一性原理产出的 die。各族 SS 解锁链与 AD102 BAR1（2^n 尺寸表）已做成门控预设
+（产物被钉 SHA 逐字节自测），逐 die 写数预算（TU102/TU11x=2、GA102=1、AD102=4）
+是机械边界，超链硬拒。
+
+**全离线、零 GPU 接触**：synth 不需要任何 NVIDIA 资产；产物与金标不入库；普通解锁
+用户不需要这个工具——实机执行始终是独立门控决策。深入阅读：
+[falcgen README](tools/falcgen/README.md) · [操作手册](docs/falcgen-manual.md) ·
+[门清单与砸烂边界总账](docs/gate-inventory.md)。
+
 ## 与 nvoc 配合
 
 本工具解除 Tensor 计算性能限制；[nvoc](https://github.com/Skyworks-Neo/nvoc) 在系统内提供功耗、电压和超频控制，两者可以叠加。

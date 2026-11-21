@@ -243,6 +243,28 @@ bash release/make-usbroot.sh --family 40 \
 
 Then copy to the USB stick using the layout above. [Read-only diagnosis, tests and development notes](docs/faq.en.md#layout).
 
+## falcgen: the first-principles payload generator (development tool)
+
+[tools/falcgen](tools/falcgen/README.en.md) is this repo's research/generation
+toolchain for unlock payloads: a position-independent fuc5 decoder + narrow
+interpreter + gadget scanner + payload synthesizer — it consumes only a
+decrypted booter plaintext, derives the stack geometry automatically, and
+synthesizes a byte-verifiable V67 payload (the write chain is the payload's
+only policy input). The three golden tables (TU102/GA102/AD102) are
+reproduced byte-for-byte; the GTX 16 series (TU116) is the first die produced
+entirely first-principles with no upstream table. The per-family SS unlock
+chains and the AD102 BAR1 (2^n size table) ship as gate presets (outputs
+pinned byte-for-byte to the pinned SHAs); the per-die write budget
+(TU102/TU11x=2, GA102=1, AD102=4) is a mechanical boundary — over-budget
+chains are refused.
+
+**Fully offline, zero GPU contact**: synth needs no NVIDIA assets; payloads
+and goldens never enter git; regular unlock users do not need this tool —
+hardware execution is always a separately gated decision. Read more:
+[falcgen README](tools/falcgen/README.en.md) ·
+[manual](docs/falcgen-manual.md) ·
+[gate inventory and smashing-boundary ledger](docs/gate-inventory.md).
+
 ## Combine with nvoc
 
 This tool unlocks Tensor compute performance. [nvoc](https://github.com/Skyworks-Neo/nvoc) provides in-OS power, voltage and overclocking controls; the two can be combined.
