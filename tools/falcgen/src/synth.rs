@@ -254,9 +254,12 @@ pub fn synth_ga102(writes: &[(u32, u32)]) -> Vec<u8> {
 }
 
 /// AD102: the four-PLM chain ((0x1fa7cc, 0xfffff0ff), (0x9a0148, 0xffffffff),
-/// (0x1fa7c4, 0xffffffff), (0x823804, 0xffffffff)), marker 0x67b00001,
-/// the 0x31b5/0x771e close-out pair. Reproduces 44c36b2d… byte-for-byte.
-pub fn synth_ad102(writes: &[(u32, u32)]) -> Vec<u8> {
+/// (0x1fa7c4, 0xffffffff), (0x823804, 0xffffffff)), mailbox `marker`,
+/// the 0x31b5/0x771e close-out pair. With the stock marker (0x67b00001)
+/// reproduces 44c36b2d… byte-for-byte; with the bar1 marker (0x67b00004)
+/// and the bar1-64g write list reproduces cf3566d0… (the gpu-unlock-bar1
+/// eight-card artifact).
+pub fn synth_ad102(writes: &[(u32, u32)], marker: u32) -> Vec<u8> {
     assert!(writes.len() == 4, "the Ada chain is exactly four writes");
     let mut p = vec![0u8; V67_SIZE];
     let fill = AD_FILL.to_le_bytes();
@@ -289,7 +292,7 @@ pub fn synth_ad102(writes: &[(u32, u32)]) -> Vec<u8> {
         (0xFFC8, 0x7A02),
         (0xFFCC, writes[3].0),
         (0xFFD4, 0x33FC),
-        (0xFFE0, 0x67B0_0001), // the marker
+        (0xFFE0, marker), // the mailbox marker
         (0xFFE8, 0x256F),
         (0xFFEC, 0x7A02),
         (0xFFF8, 0x31B5),
@@ -299,4 +302,208 @@ pub fn synth_ad102(writes: &[(u32, u32)]) -> Vec<u8> {
         put(dmem, v);
     }
     p
+}
+
+/// All supported families (single source for CLI validation and tests).
+pub const FAMILIES: [&str; 4] = ["tu102", "tu11x", "ga102", "ad102"];
+
+/// Stock AD102 mailbox marker (the Ada four-write payload verdict).
+pub const MARKER_AD102: u32 = 0x67B0_0001;
+/// AD102 bar1 marker (gpu-unlock-bar1; the eight-card 64G artifact).
+pub const MARKER_AD102_BAR1: u32 = 0x67B0_0004;
+
+/// Mechanical write-chain budget per family — how many chained writes the
+/// die's frame grammar carries. For the Turing grammar it falls out of the
+/// geometry: the chain frames must fit between chain_base (0xff50) and
+/// tail_base (0xff80), stride 0x18 → two frames; a third collides with the
+/// mutex-release tail (the documented CMP-Gen2 third-write blocker). For
+/// the GA/Ada put-list templates the budget is the template's write-slot
+/// capacity. This turns the frame-arithmetic boundary into a mechanical
+/// check instead of a documented number.
+pub fn write_budget(family: &str) -> usize {
+    match family {
+        "tu102" | "tu11x" => {
+            let g = Geometry::tu102();
+            ((g.tail_base - g.chain_base) / g.stride) as usize
+        }
+        "ga102" => 1, // the 19-word put-list carries exactly one write
+        "ad102" => 4, // the 25-word put-list carries exactly four writes
+        _ => 0,
+    }
+}
+
+/// Human-readable per-die budget table (printed on budget refusal).
+pub fn budget_table() -> String {
+    FAMILIES
+        .iter()
+        .map(|f| {
+            let n = write_budget(f);
+            format!("  {f}: {} {}", n, if n == 1 { "write" } else { "writes" })
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Gate preset "ss": the stock per-family unlock write chains. Each list
+/// reproduces its pinned payload table byte-for-byte (tests/goldens.rs):
+/// tu102 → b0ec9029…, tu11x → c79208ac…, ga102 → 2a0aa1f8…, ad102 → 44c36b2d….
+/// Turing: open the FEAT PLM (0x409650) then clear WPR2_HI (0x1fa828).
+/// GA10x: open FEAT_OVR_PLM (0x823804); SS0/SS1 are host-side writes after.
+/// Ada: the WPR_CFG → FBPA → WPR → FEAT four-write chain.
+pub fn preset_ss(family: &str) -> Option<Vec<(u32, u32)>> {
+    match family {
+        "tu102" | "tu11x" => Some(vec![(0x0040_9650, 0xffff_ffff), (0x001f_a828, 0)]),
+        "ga102" => Some(vec![(0x0082_3804, 0xffff_ffff)]),
+        "ad102" => Some(vec![
+            (0x001f_a7cc, 0xffff_f0ff),
+            (0x009a_0148, 0xffff_ffff),
+            (0x001f_a7c4, 0xffff_ffff),
+            (0x0082_3804, 0xffff_ffff),
+        ]),
+        _ => None,
+    }
+}
+
+/// Gate preset "bar1": the AD102 BAR1-size construction (gpu-unlock-bar1).
+/// The size field is the 64MiB<<i table, cross-checked on three stock
+/// readbacks: TU106 CFG 0x02 = 256MiB (i=2), AD102 stock CFG 0x9 = 32GiB
+/// (i=9 — the FLR "restore to 32 GiB" note), 64GiB = 0xa (i=10, proven).
+/// CYA fits `(index-4)<<3` on both observed AD102 points (0x28@32G,
+/// 0x30@64G), so any size other than 64GiB is an UNPROVEN 2^n construction
+/// (simulation-validated only). Returns None outside the table domain.
+pub fn preset_bar1(size_gib: u32) -> Option<(Vec<(u32, u32)>, bool)> {
+    if size_gib < 16 || size_gib > 1024 || !size_gib.is_power_of_two() {
+        return None;
+    }
+    let index: u32 = size_gib.trailing_zeros() + 4; // 64MiB << index == size
+    let cya = (index - 4) << 3;
+    let cfg = 0x8000_0000 | index;
+    let writes = vec![
+        (0x0008_8724, cya),         // CYA
+        (0x0008_8dcc, cfg),         // CFG size index
+        (0x0008_8ff4, 0xffff_ffff), // XVE PLM open
+        (0x0082_3804, 0xffff_ffff), // FEAT PLM open (keeps the tensor unlock)
+    ];
+    Some((writes, size_gib == 64))
+}
+
+/// Minimal SHA-256 (FIPS 180-4 transcription; the crate stays zero-dep so
+/// the digest is hand-rolled — pinned by the known-answer tests below and,
+/// indirectly, by the golden payload SHAs in tests/goldens.rs).
+pub fn sha256_hex(data: &[u8]) -> String {
+    let mut h = [0u32; 8];
+    h.copy_from_slice(&[
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ]);
+    let k: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut msg = data.to_vec();
+    let bitlen = (data.len() as u64) * 8;
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bitlen.to_be_bytes());
+    for block in msg.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes(block[i * 4..i * 4 + 4].try_into().unwrap());
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
+        }
+        let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh) =
+            (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ (!e & g);
+            let t1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(k[i])
+                .wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let t2 = s0.wrapping_add(maj);
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(t1);
+            d = c;
+            c = b;
+            b = a;
+            a = t1.wrapping_add(t2);
+        }
+        for (hi, v) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
+            *hi = hi.wrapping_add(v);
+        }
+    }
+    h.iter().map(|x| format!("{x:08x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha256_known_answers() {
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        // > one block: 56-byte input forces padding into a second block
+        assert_eq!(
+            sha256_hex(&[b'a'; 56]),
+            "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a"
+        );
+    }
+
+    #[test]
+    fn budgets_match_the_frame_arithmetic() {
+        assert_eq!(write_budget("tu102"), 2);
+        assert_eq!(write_budget("tu11x"), 2);
+        assert_eq!(write_budget("ga102"), 1);
+        assert_eq!(write_budget("ad102"), 4);
+        assert_eq!(write_budget("gb20x"), 0); // no SEC2 carrier, not a family
+    }
+
+    #[test]
+    fn bar1_table_is_two_to_the_n() {
+        let (w, proven) = preset_bar1(64).unwrap();
+        assert!(proven);
+        assert_eq!(w[0], (0x88724, 0x30));
+        assert_eq!(w[1], (0x88dcc, 0x8000_000a));
+        // the observed stock words reproduce under the same rule
+        let (w, _) = preset_bar1(32).unwrap();
+        assert_eq!(w[0], (0x88724, 0x28));
+        assert_eq!(w[1], (0x88dcc, 0x8000_0009));
+        // 128GiB: constructible, UNPROVEN (beyond the documented table end)
+        let (w, proven) = preset_bar1(128).unwrap();
+        assert!(!proven);
+        assert_eq!(w[0], (0x88724, 0x38));
+        assert_eq!(w[1], (0x88dcc, 0x8000_000b));
+        assert!(preset_bar1(48).is_none()); // not 2^n
+        assert!(preset_bar1(8).is_none()); // below the CYA rule domain
+        assert!(preset_bar1(2048).is_none()); // beyond the 4-bit index
+    }
 }

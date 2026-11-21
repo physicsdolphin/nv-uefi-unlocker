@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "falcgen"
-version = "2.1.11-diag2"
+version = "2.1.12-rc4"
 
 [[package]]
 name = "filetime"

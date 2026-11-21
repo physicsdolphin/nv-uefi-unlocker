@@ -4,8 +4,7 @@ use std::process::ExitCode;
 
 fn usage() -> ! {
     eprintln!(
-        "usage: falcgen dis <file> [--base <va>] [--crypt] [--all-offsets]\n       falcgen scan <file> --base <va> [--crypt] [--check <va>,<va>,...]\n       falcgen lst-compare <file> <reference.lst> --base <va>
-       falcgen run <file> --base <va> [--trace] [--steps N] [--sig-len N] [--sig-hex XX..]"
+        "usage: falcgen dis <file> [--base <va>] [--crypt] [--all-offsets]\n       falcgen scan <file> --base <va> [--crypt] [--check <va>,<va>,...]\n       falcgen lst-compare <file> <reference.lst> --base <va>\n       falcgen run <file> --base <va> [--trace] [--steps N] [--sig-len N] [--sig-hex XX..] [--break <pc>] [--no-stop-after-dma]\n       falcgen synth [--family tu102|tu11x|ga102|ad102] (--writes <addr>=<val>,... | --gate ss | --gate bar1 --bar1-size <GiB>) [--marker <hex>] [--golden <file>] [--out <file>]"
     );
     std::process::exit(2);
 }
@@ -39,53 +38,161 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Synthesize the V67 payload for a write chain and optionally compare
-/// byte-for-byte against a golden image:
+/// Synthesize the V67 payload for a write chain (raw, or a named gate
+/// preset) and optionally compare byte-for-byte against a golden image:
+///   falcgen synth --family tu11x --gate ss
+///   falcgen synth --family ad102 --gate bar1 --bar1-size 64
 ///   falcgen synth --writes 0x409650=0xffffffff,0x1fa828=0 --golden <file>
-/// Writes without '=' are treated as addr=0. The golden file never enters
-/// git (the payload stays out of the repo per the asset discipline).
+/// Writes without '=' are treated as addr=0. The golden file and the
+/// payload never enter git (the asset discipline). With --out, a manifest
+/// sidecar (<out>.manifest.txt) records the chain, preconditions and any
+/// UNPROVEN flags; execution on hardware is a separately gated decision.
 fn cmd_synth(args: &[String]) {
-    let mut writes_s = String::new();
+    let mut writes_s: Option<String> = None;
+    let mut gate: Option<String> = None;
+    let mut bar1_size: Option<u32> = None;
+    let mut marker_arg: Option<u32> = None;
     let mut golden: Option<String> = None;
     let mut out: Option<String> = None;
     let mut family = "tu102".to_string();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--writes" => writes_s = it.next().expect("--writes value").to_string(),
+            "--writes" => writes_s = Some(it.next().expect("--writes value").to_string()),
+            "--gate" => gate = Some(it.next().expect("--gate value").to_string()),
+            "--bar1-size" => {
+                bar1_size = Some(parse_gib(it.next().expect("--bar1-size value")))
+            }
+            "--marker" => {
+                marker_arg = Some(parse_num(it.next().expect("--marker value")) as u32)
+            }
             "--golden" => golden = Some(it.next().expect("--golden value").to_string()),
             "--out" => out = Some(it.next().expect("--out value").to_string()),
             "--family" => family = it.next().expect("--family value").to_string(),
-            _ => {}
+            other => {
+                eprintln!("falcgen synth: unknown argument '{other}'");
+                std::process::exit(2);
+            }
         }
     }
-    let mut writes: Vec<(u32, u32)> = Vec::new();
-    for w in writes_s.split(',').filter(|s| !s.is_empty()) {
-        let (a, v) = w.split_once('=').unwrap_or((w, "0"));
-        writes.push((
-            u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).expect("addr"),
-            u32::from_str_radix(v.trim().trim_start_matches("0x"), 16).unwrap_or(0),
-        ));
+    if !falcgen::synth::FAMILIES.contains(&family.as_str()) {
+        eprintln!(
+            "falcgen synth: unknown family '{family}' ({})",
+            falcgen::synth::FAMILIES.join("|")
+        );
+        std::process::exit(2);
     }
+    if gate.is_some() && writes_s.is_some() {
+        eprintln!("falcgen synth: --gate and --writes are mutually exclusive");
+        std::process::exit(2);
+    }
+
+    // Resolve the write chain: a named gate preset or the raw --writes list.
+    // `proven` tracks the evidence level reported in the manifest: presets
+    // reproduce pinned tables; a raw chain is novel until hardware-proven.
+    let mut proven = gate.is_some();
+    let gate_desc: String;
+    let writes: Vec<(u32, u32)> = match gate.as_deref() {
+        Some("ss") => {
+            gate_desc = "ss (stock per-family unlock chain)".to_string();
+            falcgen::synth::preset_ss(&family).expect("ss preset exists for every family")
+        }
+        Some("bar1") => {
+            if family != "ad102" {
+                eprintln!("falcgen synth: the bar1 gate is AD102-only (the CYA/CFG SEC2 construction has no other-family evidence)");
+                std::process::exit(2);
+            }
+            let gib = bar1_size.unwrap_or_else(|| {
+                eprintln!("falcgen synth: --gate bar1 requires --bar1-size <GiB> (2^n, 16..1024)");
+                std::process::exit(2);
+            });
+            let (w, is_proven) = falcgen::synth::preset_bar1(gib).unwrap_or_else(|| {
+                eprintln!(
+                    "falcgen synth: --bar1-size {gib} is not a 2^n GiB size in 16..1024 (the 64MiB<<i size-table domain)"
+                );
+                std::process::exit(2);
+            });
+            proven = is_proven;
+            gate_desc = format!(
+                "bar1 size {gib} GiB ({})",
+                if is_proven {
+                    "PROVEN — byte-verified against the gpu-unlock-bar1 eight-card artifact"
+                } else {
+                    "UNPROVEN — 2^n-table construction, simulation-validated only"
+                }
+            );
+            w
+        }
+        Some(other) => {
+            eprintln!("falcgen synth: unknown gate '{other}' (ss|bar1)");
+            std::process::exit(2);
+        }
+        None => {
+            gate_desc = "custom write chain (operands unproven on hardware)".to_string();
+            proven = false;
+            writes_s
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(|w| {
+                    let (a, v) = w.split_once('=').unwrap_or((w, "0"));
+                    (
+                        u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).expect("addr"),
+                        u32::from_str_radix(v.trim().trim_start_matches("0x"), 16).unwrap_or(0),
+                    )
+                })
+                .collect()
+        }
+    };
+
+    // Marker: only the AD102 payload carries a mailbox marker; the other
+    // families' verdicts are PLM-flip / readback-only. The bar1 gate
+    // defaults to its own marker (0x67b00004, the eight-card artifact).
+    let marker = match (marker_arg, family.as_str()) {
+        (Some(m), "ad102") => m,
+        (Some(_), _) => {
+            eprintln!("falcgen synth: --marker only applies to ad102 (the only payload with a mailbox marker)");
+            std::process::exit(2);
+        }
+        (None, "ad102") if gate.as_deref() == Some("bar1") => falcgen::synth::MARKER_AD102_BAR1,
+        (None, "ad102") => falcgen::synth::MARKER_AD102,
+        (None, _) => 0,
+    };
+
+    if writes.is_empty() {
+        eprintln!("falcgen synth: the write chain must not be empty");
+        std::process::exit(2);
+    }
+    let budget = falcgen::synth::write_budget(&family);
+    if writes.len() > budget {
+        eprintln!(
+            "falcgen synth: {} writes exceed the {family} budget of {budget}\nper-family frame budget (chain frames between chain_base and tail_base / put-list capacity):\n{}\na larger chain needs frame relocation (pivot, cmp50hx stockflow style) — see docs/gate-inventory.md",
+            writes.len(),
+            falcgen::synth::budget_table()
+        );
+        std::process::exit(2);
+    }
+
     let geo = falcgen::synth::Geometry::tu102();
     let payload = match family.as_str() {
         "tu102" => falcgen::synth::synth(&writes, &geo),
         "tu11x" => falcgen::synth::synth(&writes, &falcgen::synth::Geometry::tu11x()),
         "ga102" => falcgen::synth::synth_ga102(&writes),
-        "ad102" => falcgen::synth::synth_ad102(&writes),
-        other => {
-            eprintln!("falcgen synth: unknown family '{other}' (tu102|ga102|ad102)");
-            std::process::exit(2);
-        }
+        "ad102" => falcgen::synth::synth_ad102(&writes, marker),
+        _ => unreachable!("family validated above"),
     };
-    let got = sha256_hex(&payload);
+    let got = falcgen::synth::sha256_hex(&payload);
     println!("payload: {} bytes, sha256 {}", payload.len(), got);
     if let Some(path) = out {
-        std::fs::write(path, &payload).expect("write payload");
+        std::fs::write(&path, &payload).expect("write payload");
+        let manifest = manifest_text(&family, &gate_desc, &writes, marker, proven, &got);
+        let manifest_path = format!("{path}.manifest.txt");
+        std::fs::write(&manifest_path, &manifest).expect("write manifest");
+        println!("manifest: {manifest_path}");
     }
     if let Some(path) = golden {
         let want = std::fs::read(&path).expect("read golden");
-        let want_hex = sha256_hex(&want);
+        let want_hex = falcgen::synth::sha256_hex(&want);
         println!("golden:  {} bytes, sha256 {}", want.len(), want_hex);
         if payload.len() == want.len() && payload == want {
             println!("BYTE-IDENTICAL ✓");
@@ -106,72 +213,61 @@ fn cmd_synth(args: &[String]) {
     }
 }
 
-fn sha256_hex(data: &[u8]) -> String {
-    // minimal SHA-256 (no external deps in this crate)
-    let mut h = [0u32; 8];
-    h.copy_from_slice(&[
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ]);
-    let k: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
-    ];
-    let mut msg = data.to_vec();
-    let bitlen = (data.len() as u64) * 8;
-    msg.push(0x80);
-    while msg.len() % 64 != 56 {
-        msg.push(0);
+fn parse_gib(s: &str) -> u32 {
+    let t = s
+        .trim()
+        .trim_end_matches("iB")
+        .trim_end_matches("ib")
+        .trim_end_matches(['G', 'g']);
+    parse_num(t) as u32
+}
+
+/// The manifest sidecar: write chain, verdict preconditions and evidence
+/// level. English only (the runtime-output convention).
+fn manifest_text(
+    family: &str,
+    gate_desc: &str,
+    writes: &[(u32, u32)],
+    marker: u32,
+    proven: bool,
+    sha: &str,
+) -> String {
+    let wl = writes
+        .iter()
+        .map(|(a, v)| format!("{a:#x}={v:#x}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut m = String::new();
+    m.push_str("payload manifest (offline artifact; hardware execution is a separately gated decision)\n");
+    m.push_str(&format!("  family:  {family}\n"));
+    m.push_str(&format!("  gate:    {gate_desc}\n"));
+    m.push_str(&format!("  writes:  {wl}\n"));
+    if family == "ad102" {
+        m.push_str(&format!("  marker:  {marker:#x}\n"));
     }
-    msg.extend_from_slice(&bitlen.to_be_bytes());
-    for block in msg.chunks_exact(64) {
-        let mut w = [0u32; 64];
-        for i in 0..16 {
-            w[i] = u32::from_be_bytes(block[i * 4..i * 4 + 4].try_into().unwrap());
+    m.push_str(&format!("  sha256:  {sha}\n"));
+    m.push_str("  preconditions:\n");
+    m.push_str("    - cold FEAT PLM write-enable nibble [7:4] must read 8 (0 = professional template: the payload write cannot latch, issue #237)\n");
+    match (family, gate_desc.starts_with("bar1")) {
+        ("tu102", _) | ("tu11x", _) => {
+            m.push_str("    - Turing handoff: PLM-open handoff is refused by 580.x GSP-RM (issue #246); the proven shape is the relock tail plm=0xffffffef with SS0/SS1 intact\n");
         }
-        for i in 16..64 {
-            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
-            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[i - 7])
-                .wrapping_add(s1);
+        ("ga102", _) => {
+            m.push_str("    - GA10x verdict is the wait-PLM flip; SS0=0x88888888 / SS1 low nibble 8 are HOST-side writes after the flip\n");
         }
-        let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh) =
-            (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
-        for i in 0..64 {
-            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-            let ch = (e & f) ^ (!e & g);
-            let t1 = hh
-                .wrapping_add(s1)
-                .wrapping_add(ch)
-                .wrapping_add(k[i])
-                .wrapping_add(w[i]);
-            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-            let maj = (a & b) ^ (a & c) ^ (b & c);
-            let t2 = s0.wrapping_add(maj);
-            hh = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
+        ("ad102", true) => {
+            m.push_str("    - AD102 BAR1: host CYA/CFG writes are dropped even with the PLMs open; the SEC2 payload writes are the only proven path (eight-card evidence)\n");
+            m.push_str("    - verify post-FLR: the four target readbacks plus ReBAR-capability consistency\n");
         }
-        for (hi, v) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
-            *hi = hi.wrapping_add(v);
+        ("ad102", false) => {
+            m.push_str("    - Ada verdict is the marker/HALT/readback triad; FBPA reading 0xffffff0f is non-fatal\n");
         }
+        _ => {}
     }
-    h.iter().map(|x| format!("{x:08x}")).collect()
+    if !proven {
+        m.push_str("    - UNPROVEN: simulation-validated only; no hardware evidence exists for this construction\n");
+    }
+    m
 }
 
 fn variant(crypt: bool) -> isa::Variant {
@@ -312,6 +408,7 @@ fn cmd_run(args: &[String]) {
     let mut sig_len = 0x10u32;
     let mut sig_hex = String::new();
     let mut brk: Option<u32> = None;
+    let mut no_stop_after_dma = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -321,6 +418,7 @@ fn cmd_run(args: &[String]) {
             "--sig-len" => sig_len = parse_num(it.next().expect("--sig-len value")) as u32,
             "--sig-hex" => sig_hex = it.next().expect("--sig-hex value").to_string(),
             "--break" => brk = Some(parse_num(it.next().expect("--break value")) as u32),
+            "--no-stop-after-dma" => no_stop_after_dma = true,
             _ => file = Some(a.clone()),
         }
     }
@@ -329,6 +427,7 @@ fn cmd_run(args: &[String]) {
     ip.max_steps = steps;
     ip.trace = trace;
     ip.break_pc = brk;
+    ip.stop_after_dma = !no_stop_after_dma;
     ip.seed_meta_sig_len(sig_len);
     if !sig_hex.is_empty() {
         let bytes: Vec<u8> = (0..sig_hex.len() / 2)
@@ -354,7 +453,7 @@ fn cmd_run(args: &[String]) {
         }
     } else {
         let n = ip.io_writes.len();
-        println!("io writes: {} total; last 12: {:?}", n,
+        println!("io writes: {} total; last 40: {:?}", n,
             ip.io_writes.iter().rev().take(40).rev().map(|(a, v)| (format!("{a:#x}"), format!("{v:#x}"))).collect::<Vec<_>>());
         // stack-tail dump (the validator frames live at 0xff00+)
         let mut a = 0xff00usize;
