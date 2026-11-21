@@ -88,14 +88,25 @@ falcgen 是一个**离线研究工具**（Rust，workspace 成员 `tools/falcgen
 ## 3. 构建与前置
 
 ```bash
-# 工具本身（workspace 成员，零依赖）
-cargo build --release -p falcgen
-cargo test -p falcgen          # 单元测试（无条件跑）
+# falcgen：脱离 workspace 的独立 crate（与 ssdiag 同车道——独立版本/独立锁/
+# 独立 tools/falcgen/target/，为独立 release 而设计）
+cargo build --release
+cargo test                # 单元 + 金标测试（无条件跑）
+# 产物：tools/falcgen/target/release/falcgen.exe
+```
 
+**tools/ 车道规则**：`tools/` 下的 crate 一律脱离根 workspace（Cargo.toml 里空
+`[workspace]` 表显式脱离 + 自带 `/target` gitignore）——ssdiag（随发诊断 exe，
+`opt-level=z`+`panic=abort`、Cargo.lock 冻结）与 falcgen（payload 生成器，release
+模式同 ssdiag）都走交付件节奏，版本与锁独立；根 workspace 只收与事务耦合的成员
+（loader/assets/sim/romcore），所以根 `cargo test` **不覆盖** falcgen——全绿请显式
+跑上面那条 test。
+
+```bash
 # oracle 对拍（可选，env 门控；需要 RE 工作区与 WSL envydis）
 export FALCGEN_SEC_DIR=D:/git-repo/nv-uefi-re          # 五 die 解密明文 + .lst
 export FALCGEN_ENVYDIS="wsl -e /mnt/d/.../envydis"     # WSL 命令前缀
-cargo test -p falcgen                                   # oracle 测试自动启用
+cargo test                # oracle 测试自动启用（金标/oracle 全在这条命令里）
 ```
 
 **输入资产**（永不入库）：

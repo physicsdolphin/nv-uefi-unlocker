@@ -1,8 +1,15 @@
 [package]
 name = "falcgen"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-only"
 description = "Position-independent fuc5 disassembler and first-principles V67 ROP payload generator"
 
+# Detached from the repo-root workspace on purpose (the ssdiag lane: own
+# version, Cargo.lock and target dir; slated for standalone release).
+[workspace]
+
 [dependencies]
+
+[profile.release]
+lto = true

@@ -46,8 +46,9 @@ Hard boundary: a die without a broken debug key has no generator input
   operand kinds, unknown-tolerant. Acceptance **17/17** known code-entry
   sites — TU102 6/6 (incl. the mid-entry `0x10b9`/`0xc95` the python
   prototype missed), GA102 5/5, AD102 6/6.
-- `falcgen dis|scan|lst-compare` CLI; `cargo test -p falcgen` green;
-  `cargo xt` green.
+- `falcgen dis|scan|lst-compare` CLI; `cargo test` green (run inside
+  `tools/falcgen/` — the crate is detached from the repo workspace, same
+  lane as ssdiag); `cargo xt` green.
 
 **CORRECTED G0 finding (2026-11-05, crypt discovery)**: the "unknown
 bytes" were **crypt-gated instructions, not a table gap** — envydis's
@@ -77,7 +78,7 @@ G0–G2 are fully offline, zero GPU contact (constitution §1.8: sim first).
 
 ## In this directory
 
-- `src/` — the decoder, scanner and CLI (`cargo run -p falcgen -- dis
+- `src/` — the decoder, scanner and CLI (`cargo run -- dis
   <file> --base 0x100 [--all-offsets] | scan <file> --base <va>
   --check <va>,... | lst-compare <plain> <lst> --base 0x100`).
 - `tests/oracle.rs` — envydis ground-truth tests (env-gated):

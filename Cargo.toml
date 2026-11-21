@@ -1,10 +1,16 @@
 [workspace]
 resolver = "2"
-members = ["loader", "assets", "sim", "romcore", "tools/falcgen"]
+members = ["loader", "assets", "sim", "romcore"]
 # loader is an x86_64-unknown-uefi binary and cannot build for the host
 # triple; plain `cargo build` therefore only covers the host-side crates.
 # Build the EFI app with `cargo efi` (see .cargo/config.toml).
-default-members = ["assets", "sim", "romcore", "tools/falcgen"]
+default-members = ["assets", "sim", "romcore"]
+# tools/ crates (ssdiag, falcgen) are DETACHED on purpose: they ship on
+# their own release cadence with their own version, Cargo.lock and target
+# dir (empty [workspace] table + local /target gitignore in each crate).
+# Build them explicitly, e.g.:
+#   cargo build --release --manifest-path tools/ssdiag/Cargo.toml
+#   cargo build --release --manifest-path tools/falcgen/Cargo.toml
 
 [workspace.package]
 version = "2.1.12-rc4"

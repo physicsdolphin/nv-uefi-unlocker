@@ -109,10 +109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "falcgen"
-version = "2.1.12-rc4"
-
-[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
