@@ -151,9 +151,12 @@ fi
 # Tagged stage lines color ONLY the [tag], not the content (2026-11-20,
 # user preference - matches the PowerShell twin).
 lok()  { printf '%s\n' "${C_G}[ok]${C_0} $*"; }
-lwarn(){ local line="$*" tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
+# NB the two local declarations must be SEPARATE statements: in a single
+# `local a=x b=$a` bash expands every argument word before assigning any,
+# so the self-reference dies under `set -u` ("a: unbound variable").
+lwarn(){ local line="$*"; local tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
     printf '%s\n' "${C_Y}${tag}${C_0} ${line#* }" >&2; else printf '%s\n' "${C_Y}${line}${C_0}" >&2; fi; }
-lstep(){ local line="$1" tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
+lstep(){ local line="$1"; local tag="${line%% *}"; if [ "${line:0:1}" = "[" ] && [ "${tag:0:1}" = "[" ] && [ "${tag: -1}" = "]" ]; then
     printf '%s\n' "${C_C}${tag}${C_0} ${line#* }"; else printf '%s\n' "${C_C}${line}${C_0}"; fi; }
 # JSON string-or-null for the fw_source manifest record (issue #263): every
 # value interpolated into nvuu-stick.json comes from a fixed route id, a
@@ -613,15 +616,17 @@ log "[assets] loader: $BOOT_EFI"
 # release/ copies, which only change when the release packaging refreshes
 # them - a repo checkout that just built has NEWER binaries under target/.
 # Warn (do not auto-switch: the release/ copies are the shipped, field-tested
-# set) and name the flags.
+# set) and name the flags. Compares the RESOLVED binary whichever way it was
+# resolved - the default bundled-copies case is the primary documented one
+# (the earlier SCRIPT_DIR-prefix exclusion skipped exactly that, PR #272).
 repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
 t_assets="$repo_root/target/release/assets"
 t_efi="$repo_root/target/x86_64-unknown-uefi/release/loader.efi"
-if [ "${ASSETS_BIN#$SCRIPT_DIR}" = "$ASSETS_BIN" ] && [ -x "$t_assets" ] &&    [ "$t_assets" -nt "$ASSETS_BIN" ]; then
-    logwarn "[stale] target/release/assets is NEWER than $ASSETS_BIN - you are about to run an older assets build. Re-run with: --assets $t_assets"
+if [ -x "$t_assets" ] && [ "$t_assets" -nt "$ASSETS_BIN" ]; then
+    lwarn "[stale] target/release/assets is NEWER than $ASSETS_BIN - you are about to run an older assets build. Re-run with: --assets $t_assets"
 fi
-if [ "${BOOT_EFI#$SCRIPT_DIR}" = "$BOOT_EFI" ] && [ -f "$t_efi" ] &&    [ "$t_efi" -nt "$BOOT_EFI" ]; then
-    logwarn "[stale] target/x86_64-unknown-uefi/release/loader.efi is NEWER than $BOOT_EFI - re-run with: --boot-efi $t_efi"
+if [ -f "$t_efi" ] && [ "$t_efi" -nt "$BOOT_EFI" ]; then
+    lwarn "[stale] target/x86_64-unknown-uefi/release/loader.efi is NEWER than $BOOT_EFI - re-run with: --boot-efi $t_efi"
 fi
 
 mkdir -p "$OUT" "$WORK"

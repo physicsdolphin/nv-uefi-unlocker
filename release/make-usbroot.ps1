@@ -689,15 +689,18 @@ Write-Step "[assets] loader: $BootEfi"
 # them - a repo checkout that just ran `cargo build --release` + `cargo
 # efi-tx` has NEWER binaries under target/. Warn (do not auto-switch: the
 # release/ copies are the shipped, field-tested set) and name the flags.
+# Compares the RESOLVED binary whichever way it was resolved - the default
+# bundled-copies case is the primary documented one (the earlier
+# start-under-PSScriptRoot exclusion skipped exactly that case, PR #272).
 $targetAssets = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\assets.exe"
 $targetEfi    = Join-Path (Split-Path $PSScriptRoot -Parent) "target\x86_64-unknown-uefi\release\loader.efi"
-if (-not $AssetsExe.StartsWith($PSScriptRoot) -and (Test-Path $targetAssets) -and
+if ((Test-Path $targetAssets) -and
     ((Get-Item $targetAssets).LastWriteTime -gt (Get-Item $AssetsExe).LastWriteTime)) {
     Write-WarnY "[stale] target\release\assets.exe is NEWER than $AssetsExe -"
     Write-WarnY "[stale]   you are about to run an older assets build. Re-run with:"
     Write-WarnY "[stale]   -AssetsExe .\target\release\assets.exe"
 }
-if (-not $BootEfi.StartsWith($PSScriptRoot) -and (Test-Path $targetEfi) -and
+if ((Test-Path $targetEfi) -and
     ((Get-Item $targetEfi).LastWriteTime -gt (Get-Item $BootEfi).LastWriteTime)) {
     Write-WarnY "[stale] target\x86_64-unknown-uefi\release\loader.efi is NEWER than $BootEfi -"
     Write-WarnY "[stale]   re-run with: -BootEfi .\target\x86_64-unknown-uefi\release\loader.efi"
