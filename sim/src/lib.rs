@@ -284,6 +284,62 @@ pub fn write_verified(gpu: &mut FakeGpu, off: u32, v: u32) -> Result<u32, &'stat
     Ok(back)
 }
 
+/// Apply a synthesized payload write chain (a falcgen `synth` policy list)
+/// through the behavior model. Payload writes execute in heavy-secure —
+/// they land regardless of the host PLM filter, which only guards host
+/// (L0) writes — so the chain is applied with force_write and checked by
+/// readback; the caller then asserts the gate verdicts and may follow up
+/// with host-side writes (constitution §1: readback only). The chain
+/// literals in the test below mirror falcgen's preset_ss / preset_bar1 —
+/// keep in sync (falcgen pins the payload bytes; this pins the behavior).
+pub fn run_payload_chain(gpu: &mut FakeGpu, writes: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    let mut rb = Vec::with_capacity(writes.len());
+    for &(off, v) in writes {
+        gpu.force_write(off, v);
+        rb.push((off, gpu.read(off)));
+    }
+    rb
+}
+
+#[cfg(test)]
+mod payload_chain {
+    use super::*;
+
+    /// The falcgen preset_ss("ad102") / preset_bar1(64) chain (pinned to
+    /// 44c36b2d… / cf3566d0… on the falcgen side): must open the FEAT PLM
+    /// and hold every construction value on readback; the host SS pair
+    /// then lands only through the opened gate.
+    #[test]
+    fn ad102_bar1_chain_opens_both_plm_gates() {
+        let mut gpu = FakeGpu::new_locked_cold(None);
+        let bar1: [(u32, u32); 4] = [
+            (0x001f_a7cc, 0xffff_f0ff), // WPR_CFG
+            (0x009a_0148, 0xffff_ffff), // FBPA
+            (0x001f_a7c4, 0xffff_ffff), // WPR
+            (0x0082_3804, 0xffff_ffff), // FEAT PLM
+        ];
+        let rb = run_payload_chain(&mut gpu, &bar1);
+        assert_eq!(rb[3], (0x0082_3804, 0xffff_ffff));
+        assert_eq!(gpu.read(regs::FEAT_PLM), 0xffff_ffff);
+        assert_eq!(gpu.read(regs::WPRCFG_PLM), 0xffff_f0ff);
+        assert_eq!(gpu.read(regs::FBPA_PLM), 0xffff_ffff);
+        assert_eq!(gpu.read(regs::WPR_PLM), 0xffff_ffff);
+        write_verified(&mut gpu, regs::FEAT_SS0, 0x8888_8888).expect("SS0 after PLM open");
+        write_verified(&mut gpu, regs::FEAT_SS1, 0x8).expect("SS1 after PLM open");
+    }
+
+    /// The payload opens the gate; the host harvests it. Before the chain,
+    /// the same host write is silently dropped (the privilege model).
+    #[test]
+    fn host_ss_write_dropped_before_chain_lands_after() {
+        let mut gpu = FakeGpu::new_locked_cold(None);
+        assert!(write_verified(&mut gpu, regs::FEAT_SS0, 0x8888_8888).is_err());
+        let ss: [(u32, u32); 1] = [(0x0082_3804, 0xffff_ffff)]; // ga102 preset_ss
+        run_payload_chain(&mut gpu, &ss);
+        write_verified(&mut gpu, regs::FEAT_SS0, 0x8888_8888).expect("SS0 after PLM open");
+    }
+}
+
 #[cfg(test)]
 mod scenarios;
 #[cfg(test)]
