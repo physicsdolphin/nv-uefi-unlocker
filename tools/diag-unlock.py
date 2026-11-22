@@ -234,8 +234,25 @@ OPT_FUSE_ROWS = [
 ]
 # cmpunlocker PR#55's GA100 per-GPC SM override/status banks. On 20-40
 # series expect badf - the existence/nonexistence answer per die, read-only.
-GA100_SM_OVR_BASE = 0x0082_0A40
+# Round 6 (JeusChrit 11-21): OVR role in `RECONF & ~OVR` = 0x820a40+4g
+# (cmpunlocker PR#55/#58), NOT the CTRL 0x820838 pair; AD102/AD103 6-page
+# dumps show a live decoded island 0x820a40..0x820abc (32 words, zero)
+# between badf5040 strips - sweep the full region so boundaries map per die.
+GA100_SM_OVR_BASE = 0x0082_0A00
+GA100_SM_OVR_ISLAND = 0x0082_0A40
+GA100_SM_OVR_REGION_WORDS = 72  # 0x820a00..0x820b1c inclusive
 GA100_SM_STATUS_BASE = 0x0082_0C38
+# #237 round 6: OBJFUSE +0x248 companion words (0x557bd4, dispatched on
+# fbp) - all 0 on the AD103 capture; swept so cut-L2 captures classify them.
+OBJFUSE_248_ROWS = (
+    ("OBJ248_821224", 0x0082_1224),
+    ("OBJ248_FBP0", 0x0082_20C0),
+    ("OBJ248_FBP1", 0x0082_20C4),
+    ("OBJ248_FBP2", 0x0082_2100),
+    ("OBJ248_FBP3", 0x0082_2104),
+    ("OBJ248_FBP4", 0x0082_2108),
+    ("OBJ248_FBP5", 0x0082_210C),
+)
 GA100_GPCS = 8
 
 # ---------------------------------------------------------------------------
@@ -987,10 +1004,17 @@ def report(bar, tag="", devpath=None):
         dump_tpc(bar)
         rrow(bar, OPT_FUSE_ROWS)
         print("  --- GA100-style per-GPC SM banks (badf elsewhere = absent) ---")
-        ovr = "  ".join(f"{bar.rd(GA100_SM_OVR_BASE + 4 * g):#010x}" for g in range(GA100_GPCS))
+        # Round 6: full OVR region sweep (guard/island/tail). The island IS
+        # the OVR layer of `STATUS = OPT | (RECONF & ~OVR)` (cmpunlocker
+        # #55/#58 wrote 0x820a40+4g to cancel RECONF cuts on GA100, +4 SM).
+        print(f"  GA100_SM_OVR_RGN {GA100_SM_OVR_BASE:#010x}..{GA100_SM_OVR_BASE + 4 * (GA100_SM_OVR_REGION_WORDS - 1):#010x} (island 0x820a40+4g = RECONF-cancel OVR per cmpunlocker#55/#58)")
+        for chunk in range(0, GA100_SM_OVR_REGION_WORDS, 8):
+            start = GA100_SM_OVR_BASE + 4 * chunk
+            zone = "guard" if start < GA100_SM_OVR_ISLAND else ("island" if start < GA100_SM_OVR_ISLAND + 32 * 4 else "tail")
+            cells = " ".join(f"{bar.rd(GA100_SM_OVR_BASE + 4 * i):#010x}"
+                             for i in range(chunk, min(chunk + 8, GA100_SM_OVR_REGION_WORDS)))
+            print(f"    [{zone}] {start:#010x} {cells}")
         stat = "  ".join(f"{bar.rd(GA100_SM_STATUS_BASE + 4 * g):#010x}" for g in range(GA100_GPCS))
-        sm_note = " (GA100 bank; on Ada CTRL_OPT_TPC_GPC = 0x00820838+4g, see TPC section)" if fam == "ada" else ""
-        print(f"  GA100_SM_OVR{sm_note}  {ovr}")
         print(f"  GA100_SM_STAT {stat}")
         print("  --- PCIe link block (XVE shadows; consumer dies read stock/benign) ---")
         rrow(bar, PCIE_LINK_ROWS)
@@ -1012,13 +1036,14 @@ def report(bar, tag="", devpath=None):
             note = f" ({decode_plm(v)})" if name.endswith("PLM") else ""
             b = badf_bucket(v)
             tag = f" [{b}]" if b else ""
-            # #237 round 4 stale-GA100-label fixes: on Ada 0x8203a0..0x8203bc
-            # is the TPC-disable fuse bank A (not SYS_PIPE), and the GPC7
-            # defective/CP pair is a GA100-only layout (badf on Ada).
+            # Round 4 label, corrected round 6: bank A is NOT the GPC0
+            # disable mask - 4090/4080 read identical 1,0,1,0 despite
+            # different GPC0 masks (0x3f vs 0x01), a proven coincidence -
+            # it is die-constant data of unknown role.
             ada_note = ""
             if fam == "ada":
                 if 0x0082_03A0 <= off <= 0x0082_03B8:
-                    ada_note = " [Ada: TPC disable bank A]"
+                    ada_note = " [Ada bank A: die-constant, NOT GPC0 disable]"
                 elif name in ("TPC_GPC7_DEFECTIVE", "TPC_GPC7_DISABLE_CP"):
                     ada_note = " [GA100-only]"
             print(f"  {label:<10} {name:<26} = {v:#010x}{note}{tag}{ada_note}")
@@ -1146,6 +1171,15 @@ def report(bar, tag="", devpath=None):
         else:
             pred_s, marks = "n/a", ""
         print(f"    FBP[{f}] {AD10X_L2_CAND_FBP + 4 * f:#010x} cand={c:#010x} sw={s:#010x} eff={e:#010x} pred={pred_s}{marks}")
+    # #237 round 6: OBJFUSE +0x248 companion words (0x557bd4 dispatch on
+    # fbp) - nonzero on the 4090/3060 would make them the DEF-array
+    # candidate that round 4 failed to find at the DEF window.
+    print("  OBJFUSE_248 (0x557bd4 paths: 0x821224; fbp<2 0x8220c0/c4; fbp>=2 0x822100+4f)")
+    for name, off in OBJFUSE_248_ROWS:
+        v = bar.rd(off)
+        b = badf_bucket(v)
+        tag = f" [{b}]" if b else ""
+        print(f"    {name:<14} {off:#010x} = {v:#010x}{tag}")
     # Round-5 solve: FBPA_TRIM - the nonzero core 0x8211e8..0x8211fc is
     # per-FBPA mem/PHY trim fuses (app08 consumer copy merges into
     # NV_PFB_FBPA_n + 0x3d50), NOT the DEFective array - that stays hunted

@@ -1,4 +1,11 @@
-//! ssdiag v0.8.5 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.6 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.6 (#237 round 6, JeusChrit 11-21): GA100_SM_OVR face widened to the
+//! full 0x820a00..0x820b1c region (the live decoded island 0x820a40..0x820abc
+//! on AD102/AD103 - the RECONF-cancel layer per cmpunlocker PR#55/#58); new
+//! OBJFUSE_248 face sweeps the +0x248 companion words (0x821224, 0x8220c0/c4,
+//! 0x822100..0x82210c) so cut-L2 captures classify them; bank A relabeled
+//! die-constant (NOT GPC0 disable - 4090/4080 identical despite different
+//! GPC0 masks, coincidence proven).
 //! v0.8.5 fixes the tpc face semantics label (five-die SM-count check,
 //! #237 formula verification 2026-11-21): STATUS bit SET = TPC fused OFF,
 //! not present. The verdict lines already counted it this way (and matched
@@ -3816,9 +3823,28 @@ const OPT_FUSE_ROWS: [(&str, u32); 7] = [
 ];
 /// cmpunlocker PR#55's GA100 per-GPC SM override/status banks (0xff to
 /// 0x820a40+4*gpc, status at 0x820c38+4*gpc). On 20-40 series expect badf -
-/// the existence/nonexistence answer per die, read-only.
-const GA100_SM_OVR_BASE: u32 = 0x0082_0A40;
+/// the existence/nonexistence answer per die, read-only. Round 6 (JeusChrit
+/// 11-21): the OVR role in `RECONF & ~OVR` is THIS bank (0x820a40+4g),
+/// not the CTRL 0x820838 pair - and AD102/AD103 6-page dumps show a live
+/// decoded island 0x820a40..0x820abc (32 words, zero) between badf5040
+/// strips, so the face sweeps the full 0x820a00..0x820b1c region.
+const GA100_SM_OVR_BASE: u32 = 0x0082_0A00;
+const GA100_SM_OVR_ISLAND: u32 = 0x0082_0A40; // live decoded strip on Ada
+const GA100_SM_OVR_REGION_WORDS: u32 = 72; // 0x820a00..0x820b1c inclusive
 const GA100_SM_STATUS_BASE: u32 = 0x0082_0C38;
+/// #237 round 6: OBJFUSE +0x248 companion words (0x557bd4, called right
+/// after OBJFUSE +0x228 in 0x6c7334) - dispatch on fbp: 0x821224 one path,
+/// 0x8220c0/c4 for fbp<2, 0x822100+4*fbp for fbp>=2. All 0 on the AD103
+/// capture; swept here so cut-L2 captures (4090/3060) classify them.
+const OBJFUSE_248_ROWS: [(&str, u32); 7] = [
+    ("OBJ248_821224", 0x0082_1224),
+    ("OBJ248_FBP0", 0x0082_20C0),
+    ("OBJ248_FBP1", 0x0082_20C4),
+    ("OBJ248_FBP2", 0x0082_2100),
+    ("OBJ248_FBP3", 0x0082_2104),
+    ("OBJ248_FBP4", 0x0082_2108),
+    ("OBJ248_FBP5", 0x0082_210C),
+];
 
 /// GA100 VFI dictionary round (docs/reading-notes.md "GA100 电压故障注入
 /// (VFI) 考据", 2026-11-11). kate-land/ga100vfi published the GA100
@@ -4470,20 +4496,31 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
     // GA100 PR#55 SM banks: 8 dwords per row, badf values colored red (no
     // per-cell bucket text - columns stay aligned). On consumer dies the
     // whole row is the per-die existence answer. #237 round 4: on Ada the
-    // CTRL_OPT_TPC_GPC bank lives at 0x820838+4g (already in the TPC
-    // section below), so the GA100 0x820a40 sweep is labeled as such.
-    if fam == "ada" {
-        println!(
-            "  GA100_SM_OVR {} (GA100 bank; on Ada CTRL_OPT_TPC_GPC = 0x00820838+4g, see TPC section)",
-            off_h(GA100_SM_OVR_BASE)
-        );
-    } else {
-        println!("  GA100_SM_OVR {}", off_h(GA100_SM_OVR_BASE));
+    // Round 6: full OVR region sweep - guard strip / live island / tail
+    // strip, so the per-die island boundary maps itself. The island IS the
+    // OVR layer of `STATUS = OPT | (RECONF & ~OVR)` (cmpunlocker PR#55/#58
+    // wrote 0x820a40+4g to cancel RECONF cuts on GA100, +4 SM); the CTRL
+    // 0x820838 pair ORs disables and is not the OVR role.
+    println!(
+        "  GA100_SM_OVR_RGN {}..{} (guard/island/tail; island 0x820a40+4g = RECONF-cancel OVR per cmpunlocker#55/#58)",
+        off_h(GA100_SM_OVR_BASE),
+        off_h(GA100_SM_OVR_BASE + (GA100_SM_OVR_REGION_WORDS - 1) * 4)
+    );
+    for chunk in (0..GA100_SM_OVR_REGION_WORDS).step_by(8) {
+        let start = GA100_SM_OVR_BASE + chunk as u32 * 4;
+        let zone = if start < GA100_SM_OVR_ISLAND {
+            "guard"
+        } else if start < GA100_SM_OVR_ISLAND + 32 * 4 {
+            "island"
+        } else {
+            "tail"
+        };
+        print!("    [{zone}] {}", off_h(start));
+        for i in chunk..(chunk + 8).min(GA100_SM_OVR_REGION_WORDS) {
+            print!(" {}", cell_val(rd(GA100_SM_OVR_BASE + i as u32 * 4)));
+        }
+        println!();
     }
-    for gpc in 0..8u32 {
-        print!(" {}", cell_val(rd(GA100_SM_OVR_BASE + gpc * 4)));
-    }
-    println!();
     println!("  GA100_SM_STAT {}", off_h(GA100_SM_STATUS_BASE));
     for gpc in 0..8u32 {
         print!(" {}", cell_val(rd(GA100_SM_STATUS_BASE + gpc * 4)));
@@ -4542,12 +4579,14 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                     None => String::new(),
                 }
             };
-            // #237 round 4 stale-GA100-label fixes: on Ada 0x8203a0..0x8203bc
-            // is the TPC-disable fuse bank A (not SYS_PIPE), and the GPC7
+            // #237 round 4 stale-GA100-label fixes, corrected round 6: bank A
+            // is NOT the GPC0 disable mask - 4090/4080 read identical
+            // 1,0,1,0 despite different GPC0 masks (0x3f vs 0x01), a proven
+            // coincidence - it is die-constant data of unknown role. The GPC7
             // defective/CP pair is a GA100-only layout (badf on Ada).
             let ada_note = if fam == "ada" {
                 if (0x0082_03A0..=0x0082_03B8).contains(off) {
-                    " [Ada: TPC disable bank A]"
+                    " [Ada bank A: die-constant, NOT GPC0 disable]"
                 } else if *name == "TPC_GPC7_DEFECTIVE" || *name == "TPC_GPC7_DISABLE_CP" {
                     " [GA100-only]"
                 } else {
@@ -4664,6 +4703,14 @@ fn dump_debug(rd: &dyn Fn(u32) -> u32, fam: &str) {
                 cell_val(s),
                 cell_val(e)
             );
+        }
+        // #237 round 6: OBJFUSE +0x248 companion words (0x557bd4 dispatch on
+        // fbp) - swept so cut-L2 captures classify them (all 0 on the AD103
+        // reference; nonzero on the 4090/3060 would make them the DEF-array
+        // candidate that round 4 failed to find at the DEF window).
+        println!("  OBJFUSE_248 (0x557bd4 paths: 0x821224; fbp<2 0x8220c0/c4; fbp>=2 0x822100+4f)");
+        for (name, off) in OBJFUSE_248_ROWS {
+            println!("    {name:<14} {}= {}", off_h(off), cell_val(rd(off)));
         }
         // Round-5 solve: FBPA_TRIM - the nonzero core 0x8211e8..0x8211fc is
         // per-FBPA mem/PHY trim fuses (app08 consumer copy merges into

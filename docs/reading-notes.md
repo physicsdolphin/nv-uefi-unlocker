@@ -1076,6 +1076,49 @@ GA106 3060=28SM（8+10+10）、AD107 4060L=24SM（3 GPC×(6-2)×2）、AD102
    尾槽杂音，若当真则 126≠128）。判读 GPC 数组先定 die 的 GPC 域再逐槽。
 5. TU106 2070：四层全 badf，N/A（Turing fuse block 异址，FEAT 谱系）。
 
+### 6o. #237 六轮：AD103 公式非平凡成立 + SM_OVR 现役岛 + app08 零 store 收口（2026-11-21）
+
+JeusChrit 三连（VBIOS app01/07/08 全 55,522 条指令 byte-check + AD103 6-page
+对账 + OBJFUSE +0x248 拆解）：
+
+1. **公式矩阵更新：AD103（4080）非平凡成立**。GPC0 OPT(0x820760)=0x01→
+   STATUS=0x01；**GPC1 RECONF(0x82078c)=0x01→STATUS=0x01（OPT=0）**；
+   GPC2 全 0→0。GPC3 STATUS=0x30 而 OPT/RECONF=0 = 物理 4-TPC GPC 的高位
+   读 off——bit=disabled 语义在非满配 GPC 的自然读法（0.8.5 勘误互证）。
+   矩阵：AD102+AD103 非平凡、GA102 平凡、GA106/AD107 缺层、TU106 N/A。
+2. **bank A ≠ GPC0 disable（我方旧标签证伪）**：4090 GPC0=0x3f vs 4080
+   GPC0=0x01，而 bank A 两卡同读 `1,0,1,0`——0x8203a0 撞 0x01 纯巧合。
+   0.8.6 起 opt-dis 面标签改 **`[Ada bank A: die-constant, NOT GPC0
+   disable]`**。
+3. **OVR 角色修正**：`RECONF & ~OVR` 的 OVR = **0x820a40+4g（GA100_SM_OVR）**
+   per cmpunlocker PR#55/#58（GA100 写它撤 RECONF 切，+4 SM 软解锁先例），
+   非 CTRL 0x820838（那是 RPR 写禁用对，OR 进 STATUS）。AD102/AD103
+   6-page dump：**0x820a40..0x820abc 32 词现役解码岛（全 0）**夹在
+   badf5040 带中（0x820a00..a3c 与 0x820ac0..b1c 全 badf）。0.8.6
+   `GA100_SM_OVR_RGN` 面全区扫 0x820a00..0x820b1c（guard/island/tail 分
+   区）。**either/or 悬案**：0x82078c/0x820790 是可被 OVR 撤销的真 RECONF
+   熔丝，还是 Ada 把 OPT_TPC_DISABLE 拆在 0x820760+0x82078c 两处——只读
+   数据到此为止，分辨需门控写实验（开 PLM 后写 0x820a44/0x820a48 撤切）。
+   我方 0.8.5 验算用 OVR=CTRL=0，结论不变（两处 OVR 候选现读数全 0）。
+4. **Willian-Zhang 案镜像侧收口**：app01/07/08 + 595/610 两代 GSP 镜像
+   **零 store 到 0x00823804**（app08 写的是邻位 0x82380c/10/2c/3c）；且
+   FBPA_PLM 0x9a0148 冷态即 0xffffff0f（写 nibble=0）、v67 第四写被丢而
+   SEC2 照常 HALT（marker 0x67b00001）——与 FEAT 0xffffff0f 形态 1:1 同
+   构。PLM 门由熔丝态/早期 GFW/BROM 在 app08/GSP 之前设（kate-land
+   fuse-sense 窗图景一致）。专业模板 nibble=0 死锁从"载具侧推断"升级为
+   "镜像+真卡双向证据"。
+5. **OBJFUSE +0x248 拆解（0x557bd4）**：fbp 分派——一路 0x821224；fbp<2
+   走 0x8220c0/c4；fbp≥2 走 0x822100+4f。AD103 全读 0。0.8.6 新
+   `OBJFUSE_248` 面扫全七词，等 4090/3060 切 L2 卡分类（非零即 DEF 数组
+   候补——四轮在 DEF 窗没找到的那块）。
+6. **新参与者 rison1337**（桌面 4060, 10de:2882, 24MB L2）：IFF_RECORD
+   `0x033f02ff` = AD107 家族表 767..831/832 行预测命中（我方 4060L 同
+   die）。请求我方 4060L 行级 dump（0x2ff..0x33f 65 词）——**档案里
+   4060L 三份日志全部 0.8.3 以前**（无 IFF 面），且行级读取需 fuse
+   controller CMD_READ 序列（ff-tools read_rows 协议：IDLE+CRC_STATUS
+   0x55+FUSEDEBUG 0 前置、FUSEADDR 保存/恢复、双 pass 比对）=**新写类**
+   （宪法 §1.7 门控），ssdiag 未实现；已如实回复并索其两 pass 数据。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读
