@@ -18,6 +18,7 @@ pub const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "RESULT", "FINAL", "TX:", "CHAIN", "QUIET", // verdicts
     "INPUT-SETTLE", // phantom-key suppression notice (stuck-key class)
     "KEYS:", // \tx-ignore-key.txt load result (phantom-key ignore list)
+    "SLOT-REVIVE", // #276 revival ladder: operator-facing lever/verdict lines
 ];
 
 pub fn console_visible(line: &str) -> bool {
@@ -104,6 +105,19 @@ mod tests {
         assert!(!console_visible("DIAG GOP-TOPOLOGY: no GOP handles"));
         assert!(console_visible(
             "[9999999ms] INFO : PHASE: CONFIRM"
+        ));
+    }
+
+    #[test]
+    fn slot_revive_lines_stay_visible() {
+        // #276 revival ladder: the lever and verdict lines are operator-
+        // facing (the console may be the card's own GOP and goes dark at
+        // the SBR - everything before it must print).
+        assert!(console_visible(
+            "[  6100ms] INFO : SLOT-REVIVE: 0000:02:00.0 dead under port 0000:00:01.0 (sec=0x02 sub=0x02) - pmcsr=Ok(0x0000) lever=SecondaryBusReset"
+        ));
+        assert!(console_visible(
+            "[  6900ms] INFO : SLOT-REVIVE: vendor read back 0x10de - slot is ALIVE (via SBR - its config space was reset, BARs unassigned)"
         ));
     }
 

@@ -19,6 +19,8 @@ mod gop;
 mod keywait;
 mod logging;
 mod pci;
+#[cfg(feature = "tx")]
+mod revive;
 mod sample;
 mod identity;
 mod identity_core;
@@ -463,7 +465,11 @@ enum CardOutcome {
 /// caller (`main`) must not chain-load Windows.
 #[cfg(feature = "tx")]
 fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
-    let targets = pci::select_tx_targets(gpus);
+    // SLOT-REVIVE pre-pass (marker-gated, see revive.rs): revive dead
+    // downstream slots through their root ports before target selection.
+    // Inert without \tx-revive-dead-slot.txt (returns the input unchanged).
+    let gpus = revive::revive_dead_slots(gpus);
+    let targets = pci::select_tx_targets(&gpus);
     if targets.is_empty() {
         info!("TX: no transaction target (selection marker refused, or no supported GPU) - chain-loading unchanged Windows");
         return false;

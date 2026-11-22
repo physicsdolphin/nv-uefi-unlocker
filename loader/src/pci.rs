@@ -664,6 +664,126 @@ impl DmaBuffer {
     }
 }
 
+/// Root-port/bridge register snapshot for the "#276 dead slot" families: a
+/// downstream slot whose functions read vendor 0xffff while the card itself
+/// is demonstrably alive (its GOP drives the console - scanout is autonomous
+/// once the display pipeline is programmed). The discriminators (D-state,
+/// Link Disable, Link Active, and the CURRENT secondary bus number vs. the
+/// one the dead function's handle was created under) all live on the PORT,
+/// not on the dead function.
+#[cfg(feature = "tx")]
+pub struct PortDiagRaw {
+    /// 0x18: primary/secondary/subordinate bus numbers, as programmed NOW.
+    pub buses: u32,
+    pub pmcsr: Option<u16>,
+    pub lnkcap: Option<u16>,
+    pub lnkctl: Option<u16>,
+    pub lnksta: Option<u16>,
+    pub bcr: Option<u16>,
+}
+
+/// Read-only snapshot off a bridge/root-port's own PciIo handle. Every
+/// lookup walks the capability list instead of assuming standard offsets.
+#[cfg(feature = "tx")]
+pub fn read_port_diag(pci: &PciIo) -> PortDiagRaw {
+    let buses = pci.config_read_u32(0x18);
+    let pmcsr = pci.pm_cap().map(|c| pci.pmcsr(c));
+    let (lnkcap, lnkctl, lnksta) = match pci.pcie_cap() {
+        Some(c) => (
+            Some(pci.config_read_u16(c as u32 + 0x0c)),
+            Some(pci.config_read_u16(c as u32 + 0x10)),
+            Some(pci.config_read_u16(c as u32 + 0x12)),
+        ),
+        None => (None, None, None),
+    };
+    let bcr = Some(pci.config_read_u16(0x3e));
+    PortDiagRaw { buses, pmcsr, lnkcap, lnkctl, lnksta, bcr }
+}
+
+/// Ladder choice for a bridge whose downstream function(s) read vendor
+/// 0xffff. Pure function: sim/src/port_diag.rs mirrors this body verbatim
+/// and unit-tests the ordering (the loader is UEFI-target-only and cannot
+/// run host tests).
+#[cfg(feature = "tx")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviveLever {
+    /// Link up, D0, and the dead fn's recorded bus matches the port's current
+    /// secondary bus - a genuinely paradoxical capture; log the anomaly, take
+    /// no lever.
+    NoneHealthy,
+    /// Link up AND the port's secondary bus no longer matches the bus the
+    /// dead function's handle was created under - the device was RELOCATED by
+    /// firmware renumbering, not powered down. Memory TLPs route by window and
+    /// still land (the console keeps updating); config TLPs route by bus
+    /// number and master-abort (exactly "console alive, config 0xffff"). No
+    /// revival applies - a living device is never "revived"; relocation-aware
+    /// discovery is the follow-up.
+    NoneRelocated,
+    /// PMCSR power state != D0 - park the port back at D0 first. A parked
+    /// port stops its LTSSM, so the other levers are meaningless under it.
+    PmcsrD0,
+    /// Link Control "Link Disable" (bit 4) set - clear it; the LTSSM
+    /// retrains. A secondary bus reset also clears this bit.
+    ClearLinkDisable,
+    /// Software-visible state is clean but the link is not active - force it:
+    /// Secondary Bus Reset (Bridge Control bit 6) drives a hot reset that
+    /// clears Link Disable and kicks the LTSSM out of a stuck L2/L3-Ready
+    /// (a PME_Turn_Off handshake whose power-removal step never came - the
+    /// #276 board has no ACPI rail resource to finish it).
+    SecondaryBusReset,
+}
+
+/// Raw capture plus the decoded fields and the chosen lever.
+#[cfg(feature = "tx")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PortState {
+    pub d_state: u8,
+    pub link_disable: bool,
+    pub link_active: bool,
+    pub speed: u8,
+    pub width: u8,
+    pub sec_bus: u8,
+    pub relocated: bool,
+    pub lever: ReviveLever,
+}
+
+/// Ladder ordering: D-state first (a parked port stops its LTSSM, so the
+/// other levers are meaningless under it), then Link Disable (software-
+/// commanded down), then the SBR hammer. "Link up" with a stale recorded bus
+/// is relocation, not death - never "revive" a living device. `None` in the
+/// capability slots means the walk found nothing; treated as healthy defaults
+/// (D0 / not disabled / link assumed ACTIVE) so a port whose state cannot be
+/// read never triggers a lever on its own.
+///
+/// sim/src/port_diag.rs mirrors this body verbatim - keep them identical.
+#[cfg(feature = "tx")]
+pub fn decode_port_state(
+    pmcsr: Option<u16>,
+    lnkctl: Option<u16>,
+    lnksta: Option<u16>,
+    sec_bus: u8,
+    dead_recorded_bus: Option<u8>,
+) -> PortState {
+    let d_state = (pmcsr.unwrap_or(0) & 0x3) as u8;
+    let link_disable = lnkctl.map(|v| v & 0x10 != 0).unwrap_or(false);
+    let link_active = lnksta.map(|v| v & 0x2000 != 0).unwrap_or(true);
+    let speed = (lnksta.unwrap_or(0) & 0xf) as u8;
+    let width = ((lnksta.unwrap_or(0) >> 4) & 0x3f) as u8;
+    let relocated = link_active && dead_recorded_bus.map(|b| b != sec_bus).unwrap_or(false);
+    let lever = if d_state != 0 {
+        ReviveLever::PmcsrD0
+    } else if link_disable {
+        ReviveLever::ClearLinkDisable
+    } else if !link_active {
+        ReviveLever::SecondaryBusReset
+    } else if relocated {
+        ReviveLever::NoneRelocated
+    } else {
+        ReviveLever::NoneHealthy
+    };
+    PortState { d_state, link_disable, link_active, speed, width, sec_bus, relocated, lever }
+}
+
 /// One NVIDIA display adapter found by [`enumerate`] (function 0 only).
 #[derive(Clone, Copy)]
 pub struct FoundGpu {
@@ -739,6 +859,30 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
             info!(
                 "PCI {:04x}:{:02x}:{:02x}.{} {:04x}:{:04x} class {:06x}",
                 seg, bus, dev, fun, vendor, device, class
+            );
+        }
+
+        // PORT-DIAG: unconditional register snapshot of every PCI-to-PCI
+        // bridge/root port - deliberately NOT ultrafast-gated, because it is
+        // the discriminator for the "#276 dead slot" families (link down vs
+        // bus renumbering) and costs one config pass per bridge. The dead
+        // function itself has nothing to read (its config space is what
+        // returns 0xffff); the state that explains it lives up here.
+        #[cfg(feature = "tx")]
+        if class >> 8 == 0x06 && class & 0xff == 0x04 {
+            let d = read_port_diag(&pci);
+            let st = decode_port_state(
+                d.pmcsr,
+                d.lnkctl,
+                d.lnksta,
+                ((d.buses >> 8) & 0xff) as u8,
+                None,
+            );
+            info!(
+                "PORT-DIAG: {seg:04x}:{bus:02x}:{dev:02x}.{fun} buses={:#010x} pmcsr={:?} lnkctl={:?} lnksta={:?} lnkcap={:?} bcr={:?} | D{} ldis={} LA={} spd=x{} w=x{} secbus=0x{:02x}",
+                d.buses, d.pmcsr, d.lnkctl, d.lnksta, d.lnkcap, d.bcr,
+                st.d_state, st.link_disable as u8, st.link_active as u8, st.speed, st.width,
+                st.sec_bus
             );
         }
 

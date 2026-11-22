@@ -367,3 +367,4 @@ pub mod gsp_version_swap;
 pub mod booter_diag;
 pub mod gop_order;
 pub mod ebswatch_gate;
+pub mod port_diag;
