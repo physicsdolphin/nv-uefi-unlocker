@@ -363,86 +363,54 @@ fn sbr_cycle(port: &PciIo) {
     boot::stall(Duration::from_millis(2000));
 }
 
-/// GPU-SBR (marker `\tx-sbr-gpu.txt`): bench diagnostic - force a Secondary
-/// Bus Reset on the TARGET GPU's own parent port BEFORE the transaction,
-/// with full config save/restore. Proves on a healthy machine that (a) an
-/// SBR on a live slot is recoverable and (b) BAR save/restore re-arms the
-/// device for MMIO - exactly the capability an SBR-revived dead slot would
-/// need to run a transaction same-boot (today's arm skips the transaction
-/// after an SBR because it lacks this restore; this experiment is the
-/// stepping stone to lifting that).
+/// GPU-SBR (marker `\tx-sbr-gpu.txt`): a forced Secondary Bus Reset on the
+/// TARGET GPU's own parent port, executed INSIDE the transaction's
+/// disciplined window - after detach+claim (no firmware drivers bound, the
+/// console mirror is muted, the card is exclusively claimed) and before
+/// FWSEC ignition (nothing unlocked, nothing to destroy).
 ///
-/// The save/restore precondition matters: it works ONLY where the device's
-/// config space is readable BEFORE the reset (the bench's live GPU). On a
-/// #276-class slot that already reads 0xffff there is no state to save -
-/// the post-SBR device comes up at defaults and this loader has no BAR
-/// re-assignment source, which is why the revival ladder keeps skipping
-/// the transaction after an SBR. The one possible source for such a slot's
-/// BAR state is the firmware's own bookkeeping (the PCI bus driver
-/// programmed the BARs at POST, when the device was still alive, and the
-/// stale PciIo handle may hand them back via GetBarAttributes) - that is
-/// the future capability to probe, not a property of this experiment.
+/// The first attempt (bench 2026-11-22) ran PRE-transaction - firmware GOP
+/// still bound, console still printing through the card - and soft-locked
+/// the machine between "TX: BEGIN" and the next flush line (keyboard alive,
+/// CAD rebootable, screen black; the transaction's first GPU write was
+/// never reached, so the pre-flush forensics point at the firmware layer,
+/// not at a GPU write). Pre-transaction position REMOVED: nothing else in
+/// the codebase touches a card while firmware drivers are bound to it -
+/// the DETACH-first discipline exists precisely because that state is
+/// unexplored. The reset + config save/restore itself was proven sound in
+/// that round: the card answered config after the reset, the BAR restore
+/// read back clean, and BAR0 read the chip identity (MMIO alive) - the
+/// wedge was in the firmware-driver layer, which is what this placement
+/// avoids.
 ///
-/// Returns true when the caller should proceed with the transaction
-/// (marker absent = silent no-op, or reset + restore + MMIO sanity all
-/// verified); false when the marker is present and the post-reset device
-/// could not be verified alive with working MMIO (a reset device without
-/// verified life must not be transacted - readback is the only success
-/// criterion).
-pub fn gpu_pre_sbr(gpu: &FoundGpu) -> bool {
+/// BAR restore comes from the claim's config baseline (captured while the
+/// device was alive pre-claim) - the asymmetry recorded on the SBR-skip
+/// still holds for DEAD slots: a #276-class slot that reads 0xffff has no
+/// readable state, and its only future source is GetBarAttributes on the
+/// stale handle (implemented in `restore_bars_from_bookkeeping`).
+///
+/// Returns true when the caller should continue the chain (marker absent =
+/// silent no-op, or reset + restore + MMIO sanity all verified); false when
+/// the post-reset device could not be verified alive with working MMIO (a
+/// reset device without verified life must not be transacted - readback is
+/// the only success criterion). On false the transaction aborts with the
+/// card freshly reset and nothing unlocked.
+pub fn sbr_gpu_in_transaction(gpu: &crate::tx::TxGpu, baseline: &[u32]) -> bool {
     if !crate::tx::probe_file("\\tx-sbr-gpu.txt") {
         return true;
     }
     info!(
-        "GPU-SBR: \\tx-sbr-gpu.txt present - forced pre-transaction Secondary Bus Reset experiment on this card's parent port"
+        "GPU-SBR: \\tx-sbr-gpu.txt present - forced Secondary Bus Reset on this card's parent port (disciplined window: drivers detached, console muted, nothing unlocked)"
     );
-    // Safety: GetProtocol performs no driver binding (same as enumerate()).
-    let Ok(g) = (unsafe {
-        boot::open_protocol::<PciIo>(
-            OpenProtocolParams { handle: gpu.handle, agent: boot::image_handle(), controller: None },
-            OpenProtocolAttributes::GetProtocol,
-        )
-    }) else {
-        info!("GPU-SBR: open PciIo failed - skipping the experiment, transaction proceeds");
+    // Location first (the card's PciIo is exclusively claimed here).
+    let Some((seg, gpu_bus, _, _)) = gpu.pci.get_location() else {
+        info!("GPU-SBR: card location unavailable - skipping the experiment, chain continues");
         return true;
     };
-    // Save the firmware-assigned config: command + every base-address
-    // register + the expansion-ROM BAR. After the hot reset the device's
-    // config space reads defaults (BARs zeroed, decode off) - restoring
-    // these is what re-arms MMIO. The values are deterministic (the
-    // firmware programmed them at POST), so save-before/restore-after is a
-    // faithful reconstruction, and every restore is readback-verified.
-    let command = g.config_read_u16(0x04);
-    let mut bars = [0u32; 6];
-    for (i, b) in bars.iter_mut().enumerate() {
-        *b = g.config_read_u32(0x10 + (i as u32) * 4);
-    }
-    let rom = g.config_read_u32(0x30);
-    info!(
-        "GPU-SBR: saved command={command:#06x} bars=[{:02x?}] rom={rom:#010x}",
-        bars
-    );
-    // Cross-check the firmware bookkeeping against the live config: this is
-    // the field validation of GetBarAttributes-as-BAR-source, on the same
-    // boot where the config-space save provides ground truth. Any mismatch
-    // here calibrates how much to trust the dead-slot restore path.
-    for i in 0..6u8 {
-        match g.get_bar_attributes(i) {
-            Some((res_type, base, len, gran)) => {
-                let live = bars[i as usize];
-                let matches = base as u32 == live;
-                info!(
-                    "GPU-SBR: bookkeeping BAR{i}: base={base:#x} len={len:#x} type={res_type} gran={gran} vs config {live:#010x}{}",
-                    if matches { " MATCH" } else { " MISMATCH" }
-                );
-            }
-            None => info!("GPU-SBR: bookkeeping BAR{i}: none (unassigned/unsupported)"),
-        }
-    }
     // Find the parent port by secondary/subordinate containment (same walk
-    // as BridgeMaster).
+    // as BridgeMaster). All device-side access goes through `gpu`.
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
-        info!("GPU-SBR: locate_handle_buffer failed - skipping the experiment, transaction proceeds");
+        info!("GPU-SBR: locate_handle_buffer failed - skipping the experiment, chain continues");
         return true;
     };
     let mut parent: Option<Handle> = None;
@@ -460,12 +428,12 @@ pub fn gpu_pre_sbr(gpu: &FoundGpu) -> bool {
             continue;
         }
         let Some(loc) = p.get_location() else { continue };
-        if loc.0 != gpu.seg {
+        if loc.0 != seg {
             continue;
         }
         let buses = p.config_read_u32(0x18);
-        let (sec, sub) = ((buses >> 8) & 0xff, (buses >> 16) & 0xff);
-        if (gpu.bus as u32) < sec || (gpu.bus as u32) > sub {
+        let (sec, sub) = ((buses >> 8 & 0xff) as usize, (buses >> 16 & 0xff) as usize);
+        if gpu_bus < sec || gpu_bus > sub {
             continue;
         }
         parent = Some(*handle);
@@ -476,7 +444,7 @@ pub fn gpu_pre_sbr(gpu: &FoundGpu) -> bool {
         break;
     }
     let Some(ph) = parent else {
-        info!("GPU-SBR: no parent bridge found - skipping the experiment, transaction proceeds");
+        info!("GPU-SBR: no parent bridge found - skipping the experiment, chain continues");
         return true;
     };
     // Safety: GetProtocol, same as enumerate().
@@ -486,7 +454,7 @@ pub fn gpu_pre_sbr(gpu: &FoundGpu) -> bool {
             OpenProtocolAttributes::GetProtocol,
         )
     }) else {
-        info!("GPU-SBR: open parent port failed - skipping the experiment, transaction proceeds");
+        info!("GPU-SBR: open parent port failed - skipping the experiment, chain continues");
         return true;
     };
     let diag = pci::read_port_diag(&port);
@@ -501,39 +469,49 @@ pub fn gpu_pre_sbr(gpu: &FoundGpu) -> bool {
         (diag.lnksta.unwrap_or(0) & 0xf) as u8,
         ((diag.lnksta.unwrap_or(0) >> 4) & 0x3f) as u8,
     );
-    info!(
-        "GPU-SBR: the console goes down from here if this card owns it (loader.log is the only readback until the transaction's NATIVE-GOP rebuild)"
-    );
     sbr_cycle(&port);
-    // Reprobe: the device must answer config with its own vendor ID.
-    let vendor = open_dead_vendor(gpu.handle);
+    // Reprobe through the claimed card: the device must answer config with
+    // its own vendor ID.
+    let vendor = gpu.pci.config_read_u16(0x00);
     if vendor != crate::pci::NVIDIA_VENDOR_ID {
         info!(
-            "GPU-SBR: post-reset vendor read {vendor:#06x} (want 10de) - the device did not come back; SKIPPING the transaction for this card (a reset device without verified life must not be transacted)"
+            "GPU-SBR: post-reset vendor read {vendor:#06x} (want 10de) - the device did not come back; aborting the chain (a reset device without verified life must not be transacted)"
         );
         return false;
     }
-    info!("GPU-SBR: vendor read back 0x10de - device is alive; restoring firmware-assigned config");
-    for (i, b) in bars.iter().enumerate() {
-        let off = 0x10 + (i as u32) * 4;
-        g.cfg_write_u32(off, *b);
-        let rb = g.config_read_u32(off);
+    info!("GPU-SBR: vendor read back 0x10de - device is alive; restoring the claim-baseline config");
+    // Restore BARs (baseline dwords 4..9 = offsets 0x10..0x24) + the ROM BAR
+    // (baseline[12] = 0x30) + the command (baseline[1] = the claim's own
+    // 0x0007). Every write readback-verified.
+    for i in 4..10usize {
+        let off = (i as u32) * 4;
+        let v = baseline[i];
+        gpu.pci.cfg_write_u32(off, v);
+        let rb = gpu.pci.config_read_u32(off);
         info!(
-            "GPU-SBR: BAR{i} restored {b:#010x} (readback {rb:#010x}){}",
-            if rb == *b { "" } else { " MISMATCH" }
+            "GPU-SBR: cfg[{off:#04x}] restored {v:#010x} (readback {rb:#010x}){}",
+            if rb == v { "" } else { " MISMATCH" }
         );
+        if rb != v {
+            return false;
+        }
     }
-    g.cfg_write_u32(0x30, rom);
-    g.cfg_write_u16(0x04, command);
-    let cmd_rb = g.config_read_u16(0x04);
-    info!("GPU-SBR: command restored {command:#06x} (readback {cmd_rb:#06x})");
+    gpu.pci.cfg_write_u32(0x30, baseline[12]);
+    gpu.pci.cfg_write_u16(0x04, baseline[1] as u16);
+    let cmd_rb = gpu.pci.config_read_u16(0x04);
+    info!(
+        "GPU-SBR: command restored {:#06x} (readback {cmd_rb:#06x})",
+        baseline[1] as u16
+    );
     boot::stall(Duration::from_millis(100));
     // The MMIO proof: BAR0 offset 0 must read the chip identity.
-    let boot0 = g.bar_read_u32(0, 0);
-    let mmio_ok = boot0 != 0xffff_ffff && boot0 != 0x0000_0000;
+    let boot0 = gpu.read32(0);
+    let mmio_ok = matches!(boot0, Ok(v) if v != 0xffff_ffff && v != 0x0000_0000);
     info!(
-        "GPU-SBR: BAR0[0] read {boot0:#010x} (PMC_BOOT_0 chip identity) - MMIO {}",
+        "GPU-SBR: BAR0[0] read {:#010x} (PMC_BOOT_0 chip identity) - MMIO {}",
+        boot0.unwrap_or(0xffff_ffff),
         if mmio_ok { "alive" } else { "NOT DECODING" }
     );
     mmio_ok
 }
+

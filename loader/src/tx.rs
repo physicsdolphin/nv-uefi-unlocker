@@ -1098,6 +1098,19 @@ pub fn run_transaction(
     };
     info!("TX: detach+claim ok");
 
+    // GPU-SBR experiment (marker \tx-sbr-gpu.txt, see revive.rs): forced
+    // Secondary Bus Reset on the card's parent port, executed INSIDE the
+    // disciplined window - drivers detached, console muted, nothing
+    // unlocked. BAR restore comes from the claim's config baseline. The
+    // first attempt ran PRE-transaction with the firmware GOP still bound
+    // and soft-locked the machine (bench 2026-11-22) - that placement is
+    // removed; this window matches the Ampere chain's own FLR discipline.
+    // On false the chain aborts: the card is freshly reset and nothing
+    // unlocked, so no unwinding is due.
+    if !crate::revive::sbr_gpu_in_transaction(gpu, &claim.baseline) {
+        return Err(TxError::EIO);
+    }
+
     // PRE-FLR (reference never does this, but it also never runs in a
     // firmware window with BSI handoff=1): force the card through a full
     // function reset. The FLR triggers the GPU's own re-boot (GFW restarts,
