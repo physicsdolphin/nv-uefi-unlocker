@@ -1,0 +1,221 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261123010733
+Username: DESKTOP-AWES763\samlg
+RunAs User: DESKTOP-AWES763\samlg
+Configuration Name: 
+Machine: DESKTOP-AWES763 (Microsoft Windows NT 10.0.26300.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\samlg\GPU-Unlock\ssdiag-verdict.ps1
+Process ID: 18088
+PSVersion: 5.1.26100.10068
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.10068
+BuildVersion: 10.0.26100.10068
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is C:\Users\samlg\GPU-Unlock\pre-state-backup\ssdiag-verdict-20261122.txt
+===== ssdiag inventory v0.7.1 (read-only; no admin, no driver) =====
+OS:      Windows 11 26H2 build 26300.10075
+CPU:     11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz (family 6 model 0xa7 stepping 1, 8 cores / 16 threads)
+BOARD:   Dell Inc. XPS 8940 (board: Dell Inc. 0427JK)
+BIOS:    2.19.1 (04/17/2024)
+CHASSIS: desktop/tower (SMBIOS chassis type 3)
+RAM: 48790 MiB physical, 4 SMBIOS slots
+RAM SLOT: DIMM1 8192 MiB @ 3200 MT/s (802C0000802C 4ATF1G64AZ-3G2E1)
+RAM SLOT: DIMM2 16384 MiB @ 2400 MT/s (0198000080AD KF3200C16D4/16GX)
+RAM SLOT: DIMM3 8192 MiB @ 3200 MT/s (802C0000802C 4ATF1G64AZ-3G2E1)
+RAM SLOT: DIMM4 16384 MiB @ 2400 MT/s (0198000080AD KF3200C16D4/16GX)
+DISK: #0 CL1-3D512-Q11 NVMe SSSTC 512GB - 476.9 GiB
+DISK: #1 Generic- SD/MMC USB Device - 29.7 GiB
+PART: disk 0 @ 1 MiB size 106 MiB (no letter) FAT32 free 16 MiB / 105 MiB
+PART: disk 0 @ 123 MiB size 475.3 GiB C: NTFS free 275.9 GiB / 475.3 GiB
+PART: disk 0 @ 475.5 GiB size 919 MiB (no letter) NTFS free 152 MiB / 918 MiB
+PART: disk 1 @ 4 MiB size 29.7 GiB D: FAT32 "CNY SONG" free 29.3 GiB / 29.7 GiB
+PCI DEV: High Definition Audio Controller (10de:228b)
+PCI DEV: High Definition Audio Controller (8086:f1c8)
+PCI DEV: Intel(R) 400 Series Chipset Family SATA AHCI Controller (8086:06d2)
+PCI DEV: Intel(R) Dynamic Tuning Processor Participant (8086:4c03)
+PCI DEV: Intel(R) GNA - 4C11 (8086:4c11)
+PCI DEV: Intel(R) Host Bridge/DRAM Registers - 4C43 (8086:4c43)
+PCI DEV: Intel(R) LPC Controller (H470) - 0684 (8086:0684)
+PCI DEV: Intel(R) Management Engine Interface #1 (8086:06e0)
+PCI DEV: Intel(R) PCI Express Root Port #21 - 06AC (8086:06ac)
+PCI DEV: Intel(R) PCI Express Root Port #5 - 06BC (8086:06bc)
+PCI DEV: Intel(R) PEG10 - 4C01 (8086:4c01)
+PCI DEV: Intel(R) SMBus - 06A3 (8086:06a3)
+PCI DEV: Intel(R) SPI (flash) Controller - 06A4 (8086:06a4)
+PCI DEV: Intel(R) Serial IO I2C Host Controller - 06E8 (8086:06e8)
+PCI DEV: Intel(R) Shared SRAM - 06EF (8086:06ef)
+PCI DEV: Intel(R) Thermal Subsystem - 06F9 (8086:06f9)
+PCI DEV: Intel(R) UHD Graphics 750 (8086:4c8a)
+PCI DEV: Killer E2600 Gigabit Ethernet Controller (10ec:2600)
+PCI DEV: Killer(R) Wi-Fi 6 AX1650i 160MHz Wireless Network Adapter (201NGW) (8086:06f0)
+PCI DEV: NVIDIA GeForce RTX 3060 Ti (10de:2486)
+PCI DEV: Standard NVM Express Controller (1e95:9100)
+PCI DEV: USB xHCI Compliant Host Controller (8086:06ed)
+GPU 1: NVIDIA GeForce RTX 3060 Ti
+GPU 1 PCI: 10de:2486 SUBSYS 39711028 BDF 02:00.0
+GPU 1 family: ga10x (Ampere GA103/104/106/107) - IN-SCOPE (unlock transaction family)
+GPU 1 VBIOS: 94.04.38.80.9f (nvapi)
+GPU 1 driver: 32.0.16.1060 (610.60), dated 6-9-2026; EnableGpuFirmware unset (LEGACY mode)
+===== end inventory =====
+PLATFORM: vulnerable-driver blocklist = ON
+PLATFORM: core isolation (HVCI)       = ON
+PLATFORM: HVCI runtime (CodeIntegrity) = clear
+PLATFORM: Secure Boot                 = OFF
+PLATFORM: blocklist/HVCI gate is ON, but that alone refuses nothing here.
+  The pinned pmxdrv hash is NOT on the current Microsoft blocklist (checked
+  2026-11 against the OS-delivered and downloadable policies); it loads or
+  fails on the signature gate above, not on this one.
+NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs
+      a driver install (event 7045) and managed/EDR machines may alert on it.
+USB4: Usb4HostRouter Start = 3 (Manual)
+USB4: Usb4DeviceRouter Start = 3 (Manual)
+USB4: no USB4 devnodes enumerated
+USB4: device-router driver ENABLED - the takeover will reset the tunnel at bind; a cleared canary is expected
+ADVISORY: none of the known pre-flight cautions apply
+1 NVIDIA GPU function(s) discovered
+===== GPU 1/1: PCI\VEN_10DE&DEV_2486&SUBSYS_39711028&REV_A1\4&b36f5c3&0&0008 =====
+ranges:
+  0xb0000000-0xbfffffff (256 MiB)
+  0xc0000000-0xc1ffffff (32 MiB)
+  0xc3000000-0xc3ffffff (16 MiB)
+config-space ReBAR (bus 2 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [8G/4G/2G/1G/512M/256M/128M/64M] current 256 MiB (size_idx 8)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+config-space link caps (bus 2 dev 0 fn 0): LnkCap max Gen3 x16 | LnkSta Gen1 x16 | LnkCap2 [Gen1,Gen2,Gen3,Gen4] | LnkCt
+l2 TLS Gen3
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:01.0 VEN_8086&DEV_4C01 PMCSR = D0 (0x0000) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: 0xc3000000
+--- core/debug block ---
+PMC_BOOT_0             = 0xb74000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0x00002000
+GFW_PLM                = 0x00008b8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x621001bf
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x1ffffe00
+WPR2_HI                = 0x00000000
+MMU_PLM                = 0x0045cb8f
+MMU_LOCK_LO            = 0x1ffffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000020
+GSP_EXCI               = 0x00002911
+SEC2_CPUCTL            = 0x00000020
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00008811
+FUSE_VER_DECODE        = 0x00000003
+CANARY_A/B (loader-written)  = 0x0164c0de/0x0165cafe -> intact
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xbadf5040 (closed (non-standard))
+  turing 0x4096xx      SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  turing 0x4096xx      READOUT   = 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  PLM       = 0xffffffff (OPEN)
+  0x823xxx amp/ada/gb  SS0       = 0x88888888 [0* 0* 0* 0* 0* 0* 0* 0*]
+  0x823xxx amp/ada/gb  SS1       = 0x00000008 [0*]
+  0x823xxx amp/ada/gb  READOUT_1 = 0x00000000 [full speed]
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0x0004cb8f (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0x0004cb8f (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0xffffff0f (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0x00000028
+  ad1x 64g-bar1   AD1X_CFG               = 0x80000007
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0xffffff8f (closed (stock))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0x0003fc00
+  ada fuse/tpc    FUSE_CTRL              = 0xe0040000
+  ada fuse/tpc    FUSE_ADDR              = 0x0000023f
+  ada fuse/tpc    FUSE_REG_50            = 0x023f021e
+  ada fuse/tpc    FUSE_REG_54            = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    FUSE_DEBUGCTRL         = 0x00000000
+  ada fuse/tpc    DISABLE_FUSE_PROG      = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    OPT_GPC_DISABLE        = 0x00000008
+  ada fuse/tpc    OPT_GPC_DEFECTIVE      = 0x00000008
+  ada fuse/tpc    CTRL_OPT_9C8           = 0x00000000
+--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---
+  GPC0 CTRL=0x00000000 STATUS=0x00000031 [TPC0 TPC4 TPC5]
+  GPC1 CTRL=0x00000000 STATUS=0x00000030 [TPC4 TPC5]
+  GPC2 CTRL=0x00000000 STATUS=0x00000030 [TPC4 TPC5]
+  GPC3 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC4 CTRL=0x00000000 STATUS=0x00000030 [TPC4 TPC5]
+  GPC5 CTRL=0x00000000 STATUS=0x00000030 [TPC4 TPC5]
+  GPC6 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC7 CTRL=0x00000000 STATUS=0x00000000 []
+  OPT_GPC_DISABLE=0x00000008 (bit per GPC)  OPT_GPC_DEFECTIVE=0x00000008 (bit per GPC)
+  bank A 0x008203a0..: 0x00000001 0x00000000 0x00000001 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000600
+  bank B 0x008205c0.. (+4 = OPT_GPC_DEFECTIVE above): 0x00000001 0x00000008 0x00000000 0x00000000 0xbadf5040 0x00000000
+0x00000000 0x00000000
+  verdict: 23 TPC(s) fused off; affected GPCs also carry defect bits (mask 0x8)
+--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---
+  LNKCAP             = 0x00453d03
+  LNKCTL_LNKSTA      = 0x11010140
+  LNKCAP2            = 0x0180001e
+  LNKCTL2_LNKSTA2    = 0x001e0003
+  PRIV_MISC_1        = 0x20b60500
+  VSEC_DEVICE        = 0x00001801
+  VSEC_HIERARCHY     = 0x00001001
+  XVE_OVR_LTSSM      = 0x00000000
+  XVE_B_PLM          = 0xffffff8f (closed (stock))
+  XVE_D0_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D4_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D8_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_C_PLM          = 0xffffff8f (closed (stock))
+  LINK_CONFIG_0      = 0x800c5800
+  PL_LINK_RATE       = 0x00130000
+  CYA_0_DISG2        = 0x00002000
+  XP3G_STATUS0       = 0x00000001
+  XP3G_STATUS3       = 0x10a80000
+  XP3G_OVR0          = 0x00000000
+  XP3G_OVR3          = 0x00000000
+  XP3G_VAL0          = 0x00000000
+  XP3G_VAL3          = 0x00000000
+  XP3G_PLM0          = 0xffffff8f (closed (stock))
+  XP3G_PLM4          = 0xffffffcf
+  XP3G_PLM8          = 0xffffffcf
+  XP3G_PLMC          = 0xffffffcf
+  OPT_GPC_DISABLE    = 0x00000008
+  OPT_MAGIC          = 0x10a80000
+  OPT_GEN23          = 0x00000000
+  OPT_GEN3           = 0x00000000
+  L2_CANDIDATE       = 0x00000081
+  L2_SW_MASK         = 0x00000000
+  L2_EFF_MASK        = 0x00000081
+      GA100_SM_OVR 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+     GA100_SM_STAT 0x00000031 0x00000030 0x00000030 0x0000003f 0x00000030 0x00000030 0x0000003f 0x00000000
+--- ampere/ada FEAT sweep (M1 cluster) ---
+                         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823
+b00
+                   value 0xffffff8f 0x01000283 0x00888888 0x002aaaaa 0x00000233 0x00000000 0x00000000 0x00000008 0x00004
+b8f
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0xffffff8f  0x008200d4=0xfffffffc
+  0x008200d8=0xffffff8f  0x008200dc=0xffffff8f
+  0x008200e0=0xffffff8f  0x008200e4=0xffffff8f
+  0x008200e8=0xfffffffc  0x008200ec=0xfffffffc
+  0x008200f0=0xfffffffc  0x008200f4=0xffffff8f
+  0x008200fc=0xffffffff [OPEN]  0x00823800=0xffffff8f
+  0x00823804=0xffffffff [OPEN]  0x00823b00=0x00004b8f
+  0x009a0008=0xbadf5040 [PRIV_VIOLATION]  0x009a000c=0x00004b8f
+  0x009a0148=0xffffff0f  0x009a014c=0xffffff8f
+  0x009a0168=0xffffffcf  0x009a03f0=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0554=0xffffffcf  0x009a0bfc=0x23081d1d
+  0x00100b10=0xffffff8f  0x00100b38=0xffffff8f
+  0x00100b84=0xffffff88  0x00100b9c=0xffffffcf
+FUSE_OPT_FEATURE_OVR   = 0x00000000
+FUSE_VER               = 0x00000003
+VERDICT [ampere]: UNLOCKED (override values live)
+CANARY: intact + SS live - no reset, nothing rewrote the state after handoff
+driver service removed (remove-when-done)
+**********************
+Windows PowerShell transcript end
+End time: 20261123010734
+**********************
