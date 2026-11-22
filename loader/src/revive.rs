@@ -402,6 +402,63 @@ pub fn sbr_gpu_in_transaction(gpu: &crate::tx::TxGpu, baseline: &[u32]) -> bool 
     info!(
         "GPU-SBR: \\tx-sbr-gpu.txt present - forced Secondary Bus Reset on this card's parent port (disciplined window: drivers detached, console muted, nothing unlocked)"
     );
+    // GetBarAttributes cross-check, taken while the device is alive: the
+    // bookkeeping is host-side POST state, the claim baseline is the live
+    // config. Element-wise agreement validates the bookkeeping as a BAR
+    // source for the dead-slot restore path (the #276-class upgrade) - the
+    // round that mattered, since a 0xffff slot cannot be read directly.
+    // Note the bookkeeping is LOGICAL-BAR indexed: a 64-bit MEM pair is one
+    // entry (gran=64) consuming two config dwords, and IO descriptors carry
+    // no granularity (gran=0) - the config walk below mirrors both.
+    {
+        let mut cfg_entries: alloc::vec::Vec<(u64, u64)> = alloc::vec::Vec::new();
+        let mut d = 4usize; // baseline dword 4 = config offset 0x10 (BAR0)
+        while d <= 9 {
+            let v = baseline[d];
+            if v == 0 {
+                d += 1;
+                continue;
+            }
+            if v & 0x1 == 0x1 {
+                cfg_entries.push(((v & 0xfffc) as u64, 0)); // IO: gran unset
+                d += 1;
+            } else if v & 0x2 != 0 && d < 9 {
+                let hi = baseline[d + 1];
+                cfg_entries.push((((hi as u64) << 32) | (v & 0xffff_fff0) as u64, 64));
+                d += 2;
+            } else {
+                cfg_entries.push(((v & 0xffff_fff0) as u64, 32));
+                d += 1;
+            }
+        }
+        let mut bk_entries: alloc::vec::Vec<(u64, u64)> = alloc::vec::Vec::new();
+        for i in 0..6u8 {
+            if let Some((_, base, _len, gran)) = gpu.pci.get_bar_attributes(i) {
+                if base != 0 {
+                    bk_entries.push((base, gran));
+                }
+            }
+        }
+        info!(
+            "GPU-SBR: bookkeeping cross-check - config {} logical BAR(s), bookkeeping {} entry(ies)",
+            cfg_entries.len(),
+            bk_entries.len()
+        );
+        for (i, (cb, cg)) in cfg_entries.iter().enumerate() {
+            match bk_entries.get(i) {
+                Some((bb, bg)) => info!(
+                    "GPU-SBR: bookkeeping BAR{i}: base={bb:#x} gran={bg} vs config base={cb:#x} gran={cg}{}",
+                    if bb == *cb && bg == *cg { " MATCH" } else { " MISMATCH" }
+                ),
+                None => info!(
+                    "GPU-SBR: bookkeeping BAR{i}: missing (config has base={cb:#x} gran={cg})"
+                ),
+            }
+        }
+        for (i, (bb, bg)) in bk_entries.iter().enumerate().skip(cfg_entries.len()) {
+            info!("GPU-SBR: bookkeeping BAR{i}: extra entry base={bb:#x} gran={bg}");
+        }
+    }
     // Location first (the card's PciIo is exclusively claimed here).
     let Some((seg, gpu_bus, _, _)) = gpu.pci.get_location() else {
         info!("GPU-SBR: card location unavailable - skipping the experiment, chain continues");
