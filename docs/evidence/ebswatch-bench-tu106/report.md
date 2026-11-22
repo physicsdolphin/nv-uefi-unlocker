@@ -18,7 +18,7 @@ EBS-ENTER n=1 key=0x4868 gmm=22/11 lastkey=0x4868 distinct=11
 
 ## 两个真机发现
 
-1. **这台 AMI（Z170 代 edk2 衍生）不发 BeforeEBS 事件组**：BEFORE+EBS 都 create_event_ex 成功（loader.log `checkpoints=BEFORE+EBS armed`），但 before_notify 未执行（无蓝行、无 BEFORE 文件行），而 NOTIFY/RETURN 正常。OVMF（edk2-stable202408）有发。**判读协议修正：蓝行缺失≠诊断信号**（至少 AMI 家族如此）；ENTER→NOTIFY→RETURN 三点仍是全诊断面。报告者三机（Biostar/MSI/Lenovo）全 AMI——预期同样无蓝。
+1. **这台 AMI（Z170 代 edk2 衍生）不发 BeforeEBS 事件组**：BEFORE+EBS 都 create_event_ex 成功（loader.log `checkpoints=BEFORE+EBS armed`），但 before_notify 未执行（无蓝行、无 BEFORE 文件行），而 NOTIFY/RETURN 正常。OVMF（edk2-stable202408）有发。**判读协议修正：该 AMI 构建上蓝行缺失≠诊断信号**；ENTER→NOTIFY→RETURN 三点仍是全诊断面。报告者三机固件阵营：Biostar H510M=AMI、MSI X399=AMI（PciBus GUID 同族实证）——蓝缺失可同理视为不诊断；**Lenovo #242=Insyde H2O**（更新包带 H2OFFT-W.exe、.fd dump 全 Insyde/H2O 字符串）——Insyde 是否发 BeforeEBS 未测，蓝缺失在该机=不定而非预期。
 2. **预算内自扰没有发生**：ENTER 行的 Close/reopen 在真机上**没有**触发 INVALID_PARAMETER 重试（OVMF selftest 制造过一次）。机理推测：edk2 的 pool 实现按类型持页——本次引导早已开过 BS-data pool 页，watch 提交的小分配落在同页内不产生新描述符 → MapKey 不变 → winload 的 key 干净。OVMF selftest 的 4096B 整页 alloc 才动图。预算按最坏情况设计，真机表现好于设计。
 
 ## 其它校验点（全过）
