@@ -1,0 +1,57 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:02.0-1" from PciRoot(0x0)/Pci(0x2,0x0)/USB(0x0,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:02.0-1" from PciRoot(0x0)/Pci(0x2,0x0)/USB(0x0,0x0)
+[    103ms] INFO : loader::logging: log file \loader.log opened on boot volume
+[    112ms] INFO : loader::logging: nv-uefi-unlocker v2.1.12-rc5 (tx builds carry the gated transaction; readonly = console output only)
+[    115ms] INFO : loader: BOOT: logger init returned, main continuing
+[    117ms] INFO : loader: BOOT: diag7 log-commit=0 (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)
+[    121ms] INFO : loader: WATCHDOG: disabled
+[    123ms] INFO : loader::banner: ==================================================
+[    125ms] INFO : loader::banner:  nv-uefi-unlocker v2.1.12-rc5 (built Sun 2026-11-22 12:32:03 +08:00)
+[    128ms] INFO : loader::banner:  read-only build: enumerate + sample + chain-load
+[    130ms] INFO : loader::banner:  console output only; no GPU writes by design
+[    132ms] INFO : loader::banner: ==================================================
+[    133ms] INFO : loader::banner: PHASE: CONFIRM
+[    135ms] INFO : loader::pci: DIAG-CONSOLE-OUT: handle Handle(0x1e7a7418) has no device path
+[    139ms] INFO : loader::pci: DIAG-CONSOLE-IN: handle Handle(0x1e7a8a98) has no device path
+[    143ms] INFO : loader::pci: DIAG-BOOTVOL: device Handle(0x1e5b6b98) uart=false anchor=0000:00:02.0 = 1b36:000d dp=02010c00d041030a000000000101060000020305060000007fff0400
+[    147ms] INFO : loader::chainload: EARLY: reconnect pass over 6 PciIo handles (NVIDIA display skipped)
+[    169ms] INFO : loader::chainload: EARLY: reconnect pass done
+[    172ms] INFO : loader::keywait: INPUT-SETTLE: ConIn reset ok
+[    174ms] INFO : loader::keywait: INPUT-SETTLE: drained 0 buffered key(s)
+[    476ms] INFO : loader::keywait: INPUT-SETTLE: settle done after 300 ms, discarded 0 key(s), quiet 300 ms, 0 swallowed after suppression
+[    481ms] INFO : loader: CONFIRM: no armed marker - Space/Enter/30s confirm semantics
+[  30493ms] INFO : loader::keywait: CONFIRM: timeout, proceeding (read-only default)
+[  30499ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[  30503ms] INFO : loader::pci: ENUMERATE: 6 PciIo handles
+[  30506ms] INFO : loader::pci: PCI 0000:00:00.0 8086:29c0 class 000600
+[  30510ms] INFO : loader::pci: PCI 0000:00:01.0 1234:1111 class 000300
+[  30514ms] INFO : loader::pci: PCI 0000:00:02.0 1b36:000d class 000c03
+[  30516ms] INFO : loader::pci: PCI 0000:00:1f.0 8086:2918 class 000601
+[  30518ms] INFO : loader::pci: PCI 0000:00:1f.2 8086:2922 class 000106
+[  30521ms] INFO : loader::pci: PCI 0000:00:1f.3 8086:2930 class 000c05
+[  30523ms] INFO : loader::gop: PHASE: GOP-PROBE (read-only)
+[  30528ms] INFO : loader::gop: GOP-PROBE: 2 GOP handles
+[  30531ms] INFO : loader::gop: GOP handle Handle(0x1e663a98): 1280x800 Bgr
+[  30537ms] INFO : loader::gop: GOP handle Handle(0x1e7a7418): 1280x800 Bgr
+[  30541ms] INFO : loader: SAMPLE: no NVIDIA GPU selected or present, skipped (negative control path)
+[  30546ms] INFO : loader::chainload: CHAIN-PRE: no \tx-preload.txt - preload is opt-in since #198, legacy chain path
+[  30552ms] INFO : loader::ebswatch: EBS-WATCH: framebuffer captured 0x80000000 1280x800 stride=1280 fmt=bgr (rows: blue=BEFORE yellow=NOTIFY green=RETURN)
+[  30561ms] INFO : loader::ebswatch: EBS-WATCH: commit pos0=0 write=ok pos1=99 flush=ok
+[  30568ms] INFO : loader::ebswatch: EBS-WATCH: \tx-ebs-watch.txt + \tx-ebs-selftest.txt present - gBS wrapped (ExitBootServices+GetMemoryMap, header CRC recomputed) patch=ok checkpoints=BEFORE+EBS armed
+[  30575ms] INFO : loader::ebswatch: EBS-WATCH: readouts - \ebs-watch.log (committed lines, budgeted) + framebuffer rows (blue=BEFORE yellow=NOTIFY green=RETURN) + POST 0x80 (0xC1/0xC2/0xD0/0xD1/0xE0|n) + 0xE9 + UART 0x3F8; no file/console writes after a successful EBS (table zeroed)
+[  30583ms] INFO : loader::ebswatch: EBS-SELFTEST: \tx-ebs-selftest.txt present - the loader will call GetMemoryMap+ExitBootServices ITSELF at the chain point, then park (power-cycle afterwards; no OS boot)
+[  30591ms] INFO : loader::ebswatch: EBS-SELFTEST: beginning self-call of the wrapped ExitBootServices (the log/screen show the ENTER/BEFORE/NOTIFY/RETURN sequence live)
+EBS-SELFTEST: calling ExitBootServices (attempt 1) now
+[  30602ms] INFO : loader::ebswatch: EBS-WATCH: commit pos0=99 write=ok pos1=157 flush=ok
+EBS-ENTER n=1 key=0x6ca gmm=2/1 lastkey=0x6ca distinct=1
+[  30606ms] INFO : loader::ebswatch: EBS-WATCH: commit pos0=157 write=ok pos1=267 flush=ok
+BEFORE-EBS notify reached (fanout stage 1; services alive; this line's write may cause a one-time EBS retry)
+[  30610ms] INFO : loader::ebswatch: EBS-WATCH: commit pos0=267 write=ok pos1=370 flush=ok
+EBS-RETURN n=1 status=0x8000000000000002 (services still alive - the caller retries with a fresh map)
+[  30617ms] INFO : loader::ebswatch: EBS-SELFTEST: ExitBootServices attempt 1 returned 0x8000000000000002 (services alive) - see the EBS-RETURN line in \ebs-watch.log
+EBS-SELFTEST: calling ExitBootServices (attempt 2) now
+EBS-ENTER n=2 key=0x6f2 gmm=4/2 lastkey=0x6f2 distinct=2
+BEFORE-EBS notify reached (fanout stage 1; services alive; this line's write may cause a one-time EBS retry)
+EBS-NOTIFY reached (fanout mid-point; memory map terminated - nothing but raw channels from here)
+EBS-RETURN ok (boot services terminated)
+EBS-SELFTEST: RETURN ok - instrument verified end to end (ENTER/BEFORE/NOTIFY/RETURN all visible above); PARKING - power-cycle to end the session

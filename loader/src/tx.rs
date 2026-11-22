@@ -1886,6 +1886,193 @@ pub fn run_transaction(
     Ok(())
 }
 
+/// Full-surgery ZERO-GPU-write negative control (`\tx-agitate-only.txt`,
+/// soft-lock family cross-review 2026-11-22, issues #242/#278/#279).
+///
+/// Why it exists: every "zero-write" control the field has measured so far
+/// (readonly build, ESC abort, `\tx-dry-run.txt`) skips the whole surgical
+/// flow - detach, EXCLUSIVE claim, COMMAND writes, DMA alloc/free, bridge
+/// BME, native-GOP rebuild, reconnect. The surviving "zero-write" rounds
+/// therefore cannot separate "the unlocked GPU's live state poisons the
+/// handoff" from "our UEFI-side surgery poisons it" - and the latter is the
+/// only suspect that is identical across three unrelated boards. This
+/// control exercises the ENTIRE surgery (same order, same sizes, same
+/// console dance) while touching nothing on the GPU itself:
+///
+/// - no BAR0 MMIO write of any kind (reads stay legal and are logged);
+/// - no falcon reset, no FWSEC, no booter, no selectors, no canary;
+/// - no FLR, no pre-FLR experiment, no claim guards (guards only classify);
+/// - NO emergency FLR on the error path either - an FLR here would violate
+///   the control's own contract (config-space surgery still runs: that is
+///   the point, it is part of the surgery).
+///
+/// Readbacks at handoff (`handoff_out`) close it out. A freeze under this
+/// marker indicts the loader's UEFI surgery; a clean boot under it leaves
+/// the live unlocked GPU state as the remaining suspect.
+pub fn run_agitate_only(
+    gpu: &TxGpu,
+    assets: &TxAssets,
+    pci_handle: uefi::Handle,
+    bridge_slot: &mut Option<crate::pci::BridgeMaster>,
+) -> Result<(), TxError> {
+    info!("TX-AGITATE: BEGIN (surgery stages: preflight detach claim layout-read dma bridge handoff-dump gop-rebuild vga unwind; ZERO BAR0 writes by contract)");
+
+    // Staging-band parity: make the same allocation-band decision the real
+    // transaction makes (the DMA allocations below must land in the same
+    // band the transaction would use).
+    let high_staging = family_is_turing(assets.family) && !probe_file("\\tx-low-staging.txt");
+    crate::pci::set_high_staging(high_staging);
+    info!("TX-AGITATE: >4GB staging gate: {high_staging} (allocation-band parity)");
+
+    // PM preflight parity (read-only on a cold POST; a warm entry may get a
+    // PMCSR force-D0 config write - config space is part of the surgery).
+    if probe_file("\\tx-no-pm-preflight.txt") {
+        info!("TX-AGITATE: PM preflight skipped (marker)");
+    } else {
+        crate::tx_detach::pm_preflight(gpu.pci).map_err(|e| {
+            info!("TX-AGITATE: PM preflight: {e}");
+            TxError::EWarm
+        })?;
+    }
+
+    // The surgery proper: console + vendor drivers off the device, EXCLUSIVE
+    // claim, IO|MEM|BME via COMMAND, config baseline captured.
+    let claim = match crate::tx_detach::detach_and_claim(pci_handle) {
+        Ok(c) => c,
+        Err(e) => {
+            info!("TX-AGITATE: detach+claim FAILED: {e}");
+            return Err(TxError::ENodev);
+        }
+    };
+    info!("TX-AGITATE: detach+claim ok (DisconnectController + EXCLUSIVE claim + COMMAND IO|MEM|BME exercised; screen dark by design)");
+
+    let mut live: alloc::vec::Vec<crate::pci::DmaBuffer> = alloc::vec![];
+    let inner = agitate_stages(gpu, assets, pci_handle, bridge_slot, &claim, &mut live);
+
+    // Unconditional cleanup, success or not. No FLR in either arm.
+    for mut b in live {
+        let _ = b.release(gpu.pci);
+    }
+    if let Some(bm) = bridge_slot.as_mut() {
+        bm.release();
+        info!("TX-AGITATE: bridge BME restored");
+    }
+    crate::logging::unmute_console();
+    match inner {
+        Ok(()) => {
+            info!("TX-AGITATE: FINAL: surgery complete, all DMA released, bridge BME restored - ZERO BAR0 writes performed (contract)");
+            Ok(())
+        }
+        Err(e) => {
+            info!("TX-AGITATE: aborted ({e:?}) - DMA released, bridge restored, NO FLR (an FLR here would violate the zero-write contract)");
+            Err(e)
+        }
+    }
+}
+
+/// The post-claim stages, mirroring `run_transaction`'s order and read/write
+/// surface. GPU MMIO reads stay legal (read-back is evidence, not state
+/// change); every write below is config space (surgery) or host memory.
+fn agitate_stages(
+    gpu: &TxGpu,
+    assets: &TxAssets,
+    pci_handle: uefi::Handle,
+    bridge_slot: &mut Option<crate::pci::BridgeMaster>,
+    claim: &crate::tx_detach::Claim,
+    live: &mut alloc::vec::Vec<crate::pci::DmaBuffer>,
+) -> Result<(), TxError> {
+    // Entry-state record (read-only).
+    let gfw = gpu.read32_raw(regs::GFW_BOOT);
+    let wpr_hi = gpu.read32_raw(regs::WPR2_HI);
+    info!("TX-AGITATE: entry readback GFW_BOOT={gfw:#x} WPR2_HI={wpr_hi:#x} (read-only, not classified - guards are out of the control's scope)");
+
+    // Layout-read parity: the same register reads the transaction does for
+    // its layout calculation. Read-only, best effort - a read failure is a
+    // finding to log, never a reason to abort the control.
+    match crate::tx_fwsec::layout_from_registers(
+        gpu,
+        assets.family,
+        assets.gsp_image.len() as u64,
+        assets.gsp_boot.len() as u64,
+    ) {
+        Ok(l) => info!("TX-AGITATE: layout reads ok (frts={:#x}) - read-only parity", l.frts_offset),
+        Err(e) => info!("TX-AGITATE: layout reads failed ({e:?}) - read-only, control continues"),
+    }
+
+    // DMA parity: the same five allocations at the transaction's sizes (from
+    // the asset files; the parsed booter geometry differs but the alloc
+    // machinery is what is under test), plus the radix block (the largest
+    // allocation). All released unwritten.
+    let alloc_one = |live: &mut alloc::vec::Vec<crate::pci::DmaBuffer>,
+                     len: usize,
+                     what: &str|
+     -> Result<(), TxError> {
+        match gpu.pci.dma_alloc(len) {
+            Ok(b) => {
+                info!("TX-AGITATE: DMA alloc {what} ({len} B) ok");
+                live.push(b);
+                Ok(())
+            }
+            Err(s) => {
+                info!("TX-AGITATE: DMA alloc {what} ({len} B) FAILED {s:?}");
+                Err(TxError::ENodev)
+            }
+        }
+    };
+    alloc_one(live, assets.booter.len(), "booter")?;
+    alloc_one(live, assets.stock_sig.len().max(4096), "sig")?;
+    alloc_one(live, crate::tx_booter::WPR_META_SIZE, "meta")?;
+    alloc_one(live, 4096, "stock")?;
+    alloc_one(live, assets.gsp_boot.len(), "boot")?;
+    match crate::tx_booter::radix_build(gpu, &assets.gsp_image) {
+        Ok(r) => {
+            info!("TX-AGITATE: radix block allocated ({} pages)", r.pages);
+            live.push(r.dma);
+        }
+        Err(e) => {
+            info!("TX-AGITATE: radix alloc failed ({e:?})");
+            return Err(TxError::ENodev);
+        }
+    }
+
+    // Bridge bus-master parity (config-space writes on the bridges - part of
+    // the surgery; the same markers honored).
+    crate::pci::log_dma_path("before-bridge-bme", gpu.pci);
+    if probe_file("\\tx-no-bridge-master.txt") {
+        info!("TX-AGITATE: \\tx-no-bridge-master.txt present - BridgeMaster::enable skipped");
+        *bridge_slot = None;
+    } else {
+        *bridge_slot = Some(crate::pci::BridgeMaster::enable(gpu.pci));
+    }
+    crate::pci::log_dma_path("after-bridge-bme", gpu.pci);
+
+    // Read-only handoff PCI snapshot (same gate as the transaction).
+    if !crate::ultrafast() {
+        crate::pci::diag_handoff_pci(gpu.pci);
+    }
+
+    // Console rebuild parity: the exact block from run_transaction
+    // (default native-GOP rebuild from the card's own shadowed ROM; the
+    // legacy reconnect and the Turing skip keep their markers).
+    if family_is_turing(assets.family) && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
+        info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
+    } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
+        info!("TX-AGITATE: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
+        crate::tx_detach::reconnect_all(pci_handle);
+    } else if !claim.target_gop_seen {
+        info!("TX-AGITATE: native-GOP rebuild skipped - the target had no GOP child at detach (console lives on another GPU, or none was bound)");
+    } else if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
+        info!("TX-AGITATE: native-GOP recovery failed: {e} - console left to bootmgfw (a wrong reconnect is worse than none)");
+    }
+    crate::tx_detach::restore_vga(gpu.pci, claim.initial_attrs);
+    if !crate::ultrafast() {
+        crate::pci::diag_bridge_routing("HANDOFF-VGA-FINAL");
+    }
+    crate::logging::unmute_console();
+    info!("CONSOLE: mirror re-enabled after reconnect (agitate)");
+    Ok(())
+}
+
 /// Save PMCSR and pin the function to D0 before an FLR (PCIe: FLR is only
 /// defined in D0; Linux's pci_reset_function also forces D0 first).
 pub fn pm_flr_pre(pci: &crate::pci::PciIo) -> Option<(u8, u16)> {

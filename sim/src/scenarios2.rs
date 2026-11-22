@@ -625,6 +625,61 @@ fn t43_vram_retry_also_fails_single_shot_terminal() {
 }
 
 #[test]
+fn t_agitate_only_zero_write_control() {
+    // Loader analog of \tx-agitate-only.txt (run_agitate_only, soft-lock
+    // family cross-review 2026-11-22): the full surgery - detach+claim, DMA
+    // allocations at the transaction's sizes, bridge BME, console rebuild -
+    // with ZERO host writes to the GPU. Contract: the FakeGpu::writes ledger
+    // (every attempted write, PLM-dropped ones included) stays EMPTY, the
+    // unwind is clean, and no unlock phase (fwsec/booter/selectors/flr)
+    // fired.
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.agitate_only = true;
+    let report = tx.run().expect("agitate-only happy path");
+    assert!(
+        !report.fwsec_fired && !report.booter_fired && !report.selectors_written && !report.flr_done,
+        "no unlock phase may fire in the control: {report:?}"
+    );
+    assert!(
+        report.unwind_clean && report.bme_restored,
+        "the surgery must unwind clean: {report:?}"
+    );
+    assert_eq!(
+        report.dma_pages_allocated, report.dma_pages_freed,
+        "allocation parity: everything allocated must be released"
+    );
+    assert!(
+        report.dma_pages_allocated >= 6,
+        "allocation parity: 5 transaction buffers + the radix block, got {}",
+        report.dma_pages_allocated
+    );
+    let claim_line_seen = tx.log().iter().any(|l| l.contains("agitate: detach+claim ok"));
+    drop(tx); // tx borrows gpu mutably; the ledger is read after the drop
+    assert!(
+        gpu.writes.is_empty(),
+        "the control must not write the GPU (host-write ledger): {:?}",
+        gpu.writes
+    );
+    assert!(claim_line_seen, "the detach+claim stage must be in the phase log");
+}
+
+#[test]
+fn t_agitate_only_alloc_fail_unwinds_no_writes() {
+    // The control's failure path: a DMA allocation failure aborts the run,
+    // the unwind drains what landed, and the GPU-write ledger STILL stays
+    // empty (no emergency FLR on this path - an FLR would violate the
+    // control's zero-write contract; loader analog: run_agitate_only's
+    // error arm).
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults { fail_alloc_at: Some(3), ..Default::default() });
+    tx.agitate_only = true;
+    let err = tx.run().unwrap_err();
+    assert_eq!(err.phase, "dma");
+    assert!(gpu.writes.is_empty(), "failure path must not write the GPU: {:?}", gpu.writes);
+}
+
+#[test]
 fn t_no_flr_ada_ablation() {
     // Loader analog of the loader-side no-flr skip: the FLR is state
     // cleanup on Ada/GA10x (unlock read back; AON holds it across any

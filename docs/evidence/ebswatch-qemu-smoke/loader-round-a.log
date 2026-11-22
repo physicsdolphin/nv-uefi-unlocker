@@ -1,0 +1,35 @@
+[    103ms] INFO : loader::logging: log file \loader.log opened on boot volume
+[    112ms] INFO : loader::logging: nv-uefi-unlocker v2.1.12-rc5 (tx builds carry the gated transaction; readonly = console output only)
+[    115ms] INFO : loader: BOOT: logger init returned, main continuing
+[    117ms] INFO : loader: BOOT: diag7 log-commit=0 (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)
+[    121ms] INFO : loader: WATCHDOG: disabled
+[    123ms] INFO : loader::banner: ==================================================
+[    125ms] INFO : loader::banner:  nv-uefi-unlocker v2.1.12-rc5 (built Sun 2026-11-22 12:32:03 +08:00)
+[    128ms] INFO : loader::banner:  read-only build: enumerate + sample + chain-load
+[    130ms] INFO : loader::banner:  console output only; no GPU writes by design
+[    132ms] INFO : loader::banner: ==================================================
+[    133ms] INFO : loader::banner: PHASE: CONFIRM
+[    135ms] INFO : loader::pci: DIAG-CONSOLE-OUT: handle Handle(0x1e7a7418) has no device path
+[    139ms] INFO : loader::pci: DIAG-CONSOLE-IN: handle Handle(0x1e7a8a98) has no device path
+[    143ms] INFO : loader::pci: DIAG-BOOTVOL: device Handle(0x1e5b6b98) uart=false anchor=0000:00:02.0 = 1b36:000d dp=02010c00d041030a000000000101060000020305060000007fff0400
+[    147ms] INFO : loader::chainload: EARLY: reconnect pass over 6 PciIo handles (NVIDIA display skipped)
+[    169ms] INFO : loader::chainload: EARLY: reconnect pass done
+[    172ms] INFO : loader::keywait: INPUT-SETTLE: ConIn reset ok
+[    174ms] INFO : loader::keywait: INPUT-SETTLE: drained 0 buffered key(s)
+[    476ms] INFO : loader::keywait: INPUT-SETTLE: settle done after 300 ms, discarded 0 key(s), quiet 300 ms, 0 swallowed after suppression
+[    481ms] INFO : loader: CONFIRM: no armed marker - Space/Enter/30s confirm semantics
+[  30493ms] INFO : loader::keywait: CONFIRM: timeout, proceeding (read-only default)
+[  30499ms] INFO : loader::pci: PHASE: ENUMERATE (read-only)
+[  30503ms] INFO : loader::pci: ENUMERATE: 6 PciIo handles
+[  30506ms] INFO : loader::pci: PCI 0000:00:00.0 8086:29c0 class 000600
+[  30510ms] INFO : loader::pci: PCI 0000:00:01.0 1234:1111 class 000300
+[  30514ms] INFO : loader::pci: PCI 0000:00:02.0 1b36:000d class 000c03
+[  30516ms] INFO : loader::pci: PCI 0000:00:1f.0 8086:2918 class 000601
+[  30518ms] INFO : loader::pci: PCI 0000:00:1f.2 8086:2922 class 000106
+[  30521ms] INFO : loader::pci: PCI 0000:00:1f.3 8086:2930 class 000c05
+[  30523ms] INFO : loader::gop: PHASE: GOP-PROBE (read-only)
+[  30528ms] INFO : loader::gop: GOP-PROBE: 2 GOP handles
+[  30531ms] INFO : loader::gop: GOP handle Handle(0x1e663a98): 1280x800 Bgr
+[  30537ms] INFO : loader::gop: GOP handle Handle(0x1e7a7418): 1280x800 Bgr
+[  30541ms] INFO : loader: SAMPLE: no NVIDIA GPU selected or present, skipped (negative control path)
+[  30546ms] INFO : loader::chainload: CHAIN-PRE: no \tx-preload.txt - preload is opt-in since #198, legacy chain path

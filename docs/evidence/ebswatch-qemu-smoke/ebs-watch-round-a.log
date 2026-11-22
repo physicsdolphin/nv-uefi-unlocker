@@ -1,0 +1,4 @@
+EBS-WATCH installed (gBS patched: ExitBootServices + GetMemoryMap wrapped, header CRC recomputed)
+EBS-ENTER n=1 key=0x6ca gmm=2/1 lastkey=0x6ca distinct=1
+BEFORE-EBS notify reached (fanout stage 1; services alive; this line's write may cause a one-time EBS retry)
+EBS-RETURN n=1 status=0x8000000000000002 (services still alive - the caller retries with a fresh map)

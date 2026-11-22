@@ -83,6 +83,12 @@ pub enum BootMode {
 #[derive(Default)]
 pub struct FakeGpu {
     pub regs: Vec<u32>,
+    /// Host-write ledger: EVERY attempted `write()` lands here, including
+    /// writes the PLM privilege model silently drops - the zero-write
+    /// contracts (agitate control, readonly rounds) assert against
+    /// attempts, not effects. `force_write` stays out: it models the
+    /// device's own (heavy-secure / fixture) writes, not host attempts.
+    pub writes: Vec<(u32, u32)>,
     /// Resets: writes take effect only after `reset_delay` reads.
     pub reset_delay: u32,
     reset_pending: [Option<(usize, u32)>; 2], // (reg index, reads so far)
@@ -171,6 +177,9 @@ impl FakeGpu {
     }
 
     pub fn write(&mut self, off: u32, v: u32) {
+        // Ledger FIRST: the zero-write contracts measure attempts, so even a
+        // PLM-dropped write must show up here.
+        self.writes.push((off, v));
         // Privilege model (AGENTS §2 / task brief §3.2): a host write to a
         // PLM-protected register is SILENTLY DROPPED while the block's mask
         // reads locked. This has to cover the mask register itself and every
@@ -357,3 +366,4 @@ pub mod transaction;
 pub mod gsp_version_swap;
 pub mod booter_diag;
 pub mod gop_order;
+pub mod ebswatch_gate;

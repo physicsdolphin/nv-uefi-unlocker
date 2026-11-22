@@ -143,6 +143,12 @@ pub struct Transaction<'a> {
     /// \tx-low-staging.txt forces LOW). The STAGING-FALLBACK retry flips it
     /// false; the phase log carries the evidence.
     pub staging_high: bool,
+    /// Loader analog of \tx-agitate-only.txt (run_agitate_only, soft-lock
+    /// family cross-review): the full surgery - detach+claim, DMA allocations
+    /// at the transaction's sizes, bridge BME, console rebuild - with ZERO
+    /// host writes to the GPU. The zero-write contract is asserted by the
+    /// tests against FakeGpu::writes (the host-write ledger).
+    pub agitate_only: bool,
     staging_fallback_used: bool,
     fwsec_fallback_used: bool,
     fwsec_vram_staged: bool,
@@ -178,6 +184,7 @@ impl<'a> Transaction<'a> {
             tu10x_entry: false,
             warm_wpr2_marker: false,
             no_flr: false,
+            agitate_only: false,
             staging_high: false,
             staging_fallback_used: false,
             fwsec_fallback_used: false,
@@ -651,6 +658,9 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn run(&mut self) -> Result<Report, PhaseError> {
+        if self.agitate_only {
+            return self.run_agitate();
+        }
         let result = (|| {
             self.claim()?;
             self.gfw_wait()?;
@@ -709,6 +719,49 @@ impl<'a> Transaction<'a> {
             bme_restored: !self.bme_set,
             flr_done: !self.faults.fail_flr && !self.no_flr,
             signature_restored: !self.payload || !self.faults.signature_restore_fail,
+            unwind_clean: self.dma_live == 0 && !self.bme_set,
+        })
+    }
+}
+
+impl<'a> Transaction<'a> {
+    /// \tx-agitate-only.txt model (loader/src/tx.rs run_agitate_only): the
+    /// full-surgery ZERO-GPU-write negative control. Config-space surgery
+    /// runs (claim's bus-master analog, DMA allocs at the transaction's
+    /// sizes, bridge BME, console rebuild); nothing writes the GPU - the
+    /// guard classification and every unlock phase are out of the control's
+    /// scope by contract.
+    fn run_agitate(&mut self) -> Result<Report, PhaseError> {
+        // detach+claim analog: COMMAND IO|MEM|BME is config space (not
+        // MMIO) - the model has no config space, so it is the bme_set flag.
+        // claim()'s guards are deliberately skipped: they classify GPU
+        // state; the control is surgery-only.
+        self.bme_was_dirty = true;
+        self.bme_set = true;
+        self.note("agitate: detach+claim ok (COMMAND IO|MEM|BME - config space, not BAR0)");
+        // Allocation parity: the transaction's five buffers + the radix
+        // block, at the same stage, all released unwritten.
+        for _ in 0..6 {
+            self.alloc_dma_page()?;
+        }
+        self.note("agitate: DMA allocs ok (5 buffers + radix block, parity with run_transaction)");
+        self.note("agitate: bridge BME enabled (config space, parity)");
+        self.note("agitate: native-GOP rebuild + reconnect (UEFI driver-model surgery, parity)");
+        // The unwind must be the transaction's own: free everything, restore
+        // BME - a control that leaks would not be comparable to the real run.
+        let unwound = self.unwind(Ok(()));
+        unwound.map(|_| Report {
+            dma_pages_allocated: self.dma_allocs,
+            dma_pages_freed: self.dma_frees,
+            fwsec_fired: self.fwsec_done,
+            booter_fired: self.booter_done,
+            marker_seen: false,
+            halt_seen: false,
+            plm_open_verified: false,
+            selectors_written: false,
+            bme_restored: !self.bme_set,
+            flr_done: false,
+            signature_restored: true, // no payload ran - nothing to restore
             unwind_clean: self.dma_live == 0 && !self.bme_set,
         })
     }

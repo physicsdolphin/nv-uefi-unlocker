@@ -892,17 +892,29 @@ fn start_loader(handle: uefi::Handle, path: &CStr16) -> Result<()> {
     // Safety: `full` outlives the load_image call; firmware parses it.
     let full_dp = unsafe { DevicePath::from_ffi_ptr(full.as_ptr().cast()) };
     info!("CHAIN: LoadImage (FromDevicePath)");
-    // Flush and close the USB log before handing control away; lines
-    // logged after this point go to console only.
-    crate::logging::finish();
-    let loaded = boot::load_image(
+    // Boundary observability (soft-lock family cross-review 2026-11-22):
+    // the finish() used to run BEFORE LoadImage, so LoadImage's return
+    // status and the StartImage-enter record never reached the durable log
+    // - on the #278/#279 machines the last durable line predated the one
+    // call whose boundary mattered. Now: LoadImage's status is logged on
+    // BOTH arms, the StartImage-enter line lands in the file, and only THEN
+    // the log closes (Close = dirent commit even on Flush-no-op firmware).
+    let loaded = match boot::load_image(
         boot::image_handle(),
         LoadImageSource::FromDevicePath {
             device_path: full_dp,
             boot_policy: BootPolicy::ExactMatch,
         },
-    )?;
-    info!("CHAIN: StartImage -> handing control to the OS loader");
+    ) {
+        Ok(img) => img,
+        Err(e) => {
+            info!("CHAIN-BOUNDARY: LoadImage FAILED: {:?} - the OS loader was never loaded, control stays here", e.status());
+            return Err(e);
+        }
+    };
+    info!("CHAIN-BOUNDARY: LoadImage ok - OS loader image resident");
+    info!("CHAIN-BOUNDARY: StartImage enter - control passes to the OS loader; the next durable record (if any) comes from \\ebs-watch.log with \\tx-ebs-watch.txt armed, or from a later boot");
+    crate::logging::finish();
     let r = boot::start_image(loaded);
     info!("CHAIN: loader returned: {:?}", r);
     Ok(())
@@ -1770,6 +1782,9 @@ fn start_preloaded(pre: &PreloadedOsLoader) -> Result<()> {
                 "CHAIN-PRE: start-time PE header probe ok - StartImage the preloaded '{}'",
                 pre.path.label()
             );
+            // Boundary line BEFORE the close (see start_loader): the
+            // StartImage-enter record must be in the durable log.
+            info!("CHAIN-BOUNDARY: StartImage enter (preloaded) - control passes to the OS loader; the next durable record (if any) comes from \\ebs-watch.log with \\tx-ebs-watch.txt armed, or from a later boot");
             // Flush and close the USB log before handing control away.
             crate::logging::finish();
             let r = boot::start_image(pre.handle);
