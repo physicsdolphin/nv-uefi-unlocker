@@ -122,7 +122,7 @@ const FLUSH_MARKERS: &[&str] = &[
     // (D-state / Link Disable / Link Active / current secondary bus) and
     // SLOT-REVIVE is the marker-gated revival ladder - both must survive a
     // mid-run freeze with their evidence on the stick.
-    "PORT-DIAG", "SLOT-REVIVE",
+    "PORT-DIAG", "SLOT-REVIVE", "GPU-SBR",
 ];
 
 /// Ultrafast speed profile (`\tx-ultrafast.txt`): marker flushes are the
@@ -154,6 +154,7 @@ const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "INPUT-SETTLE", // phantom-key suppression notice (stuck-key class)
     "KEYS:", // \tx-ignore-key.txt load result (phantom-key ignore list)
     "SLOT-REVIVE", // #276 revival ladder: operator-facing lever/verdict lines
+    "GPU-SBR", // bench experiment: pre-transaction forced SBR with BAR restore
 ];
 
 /// Pure matcher for [`CONSOLE_QUIET_MARKERS`]; the sim mirror

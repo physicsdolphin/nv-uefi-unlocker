@@ -19,6 +19,7 @@ pub const CONSOLE_QUIET_MARKERS: &[&str] = &[
     "INPUT-SETTLE", // phantom-key suppression notice (stuck-key class)
     "KEYS:", // \tx-ignore-key.txt load result (phantom-key ignore list)
     "SLOT-REVIVE", // #276 revival ladder: operator-facing lever/verdict lines
+    "GPU-SBR", // bench experiment: pre-transaction forced SBR with BAR restore
 ];
 
 pub fn console_visible(line: &str) -> bool {
@@ -118,6 +119,18 @@ mod tests {
         ));
         assert!(console_visible(
             "[  6900ms] INFO : SLOT-REVIVE: vendor read back 0x10de - slot is ALIVE (via SBR - its config space was reset, BARs unassigned)"
+        ));
+    }
+
+    #[test]
+    fn gpu_sbr_lines_stay_visible() {
+        // The bench experiment's lines are operator-facing too: the screen
+        // is already down during the reset, so the log is the only channel.
+        assert!(console_visible(
+            "[  1100ms] INFO : GPU-SBR: saved command=0x0007 bars=[...]] rom=0xffe00000"
+        ));
+        assert!(console_visible(
+            "[  3400ms] INFO : GPU-SBR: BAR0[0] read 0x166000a1 (PMC_BOOT_0 chip identity) - MMIO alive"
         ));
     }
 

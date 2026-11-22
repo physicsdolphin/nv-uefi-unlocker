@@ -707,6 +707,16 @@ so no transaction was attempted and nothing was written"
         return CardOutcome::Attempted;
     }
 
+    // GPU-SBR bench experiment (marker \tx-sbr-gpu.txt, see revive.rs):
+    // forced pre-transaction Secondary Bus Reset on this card's parent port
+    // with config save/restore. Placed AFTER the agitate-only arm so the
+    // zero-write control stays zero-write, and BEFORE run_transaction so a
+    // freshly-reset card is what the chain sees.
+    if !revive::gpu_pre_sbr(g) {
+        info!("GPU-SBR: experiment failed - this card is not transacted this boot (verified-alive gate)");
+        return CardOutcome::NotAttempted;
+    }
+
     // BridgeMaster guard slot: run_transaction fills it mid-transaction (after
     // WprMeta publication) and releases it on the clean success tail. On a
     // failure return the guard comes back still armed and THIS caller releases

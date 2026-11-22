@@ -22,7 +22,11 @@
 //! SBR revival deliberately SKIPS the transaction this boot (Windows
 //! re-assigns and re-trains; the stick is re-run afterwards). A no-reset
 //! revival (PMCSR/Link Disable) leaves the device untouched and the boot
-//! continues normally with the revived card in the target list.
+//! continues normally with the revived card in the target list. Note the
+//! asymmetry: on a live device (GPU-SBR bench experiment) the BARs can be
+//! SAVED before the reset and restored after - on a slot that already
+//! reads 0xffff there is no state to save, and the only future source is
+//! the firmware's stale PciIo bookkeeping (GetBarAttributes).
 //!
 //! The console caveat: on a #276-shaped machine the console IS the card's
 //! GOP - a lever that disturbs the display pipeline (the SBR) takes the
@@ -41,10 +45,14 @@ use uefi::{Handle, Identify};
 /// brought a card back, and that list minus the SBR-reset slots otherwise
 /// (their config space was reset - the transaction is skipped this boot).
 pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
-    if !crate::tx::probe_file("\\tx-revive-dead-slot.txt") {
+    let force_sbr = crate::tx::probe_file("\\tx-revive-force-sbr.txt");
+    if !crate::tx::probe_file("\\tx-revive-dead-slot.txt") && !force_sbr {
         return gpus.to_vec();
     }
-    info!("SLOT-REVIVE: \\tx-revive-dead-slot.txt present - scanning for dead downstream slots");
+    info!(
+        "SLOT-REVIVE: armed (\\tx-revive-dead-slot.txt or \\tx-revive-force-sbr.txt{}) - scanning for dead downstream slots",
+        if force_sbr { ", FORCE-SBR override on" } else { "" }
+    );
     let handles = match boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) {
         Ok(h) => h,
         Err(e) => {
@@ -131,8 +139,15 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
             st.d_state, st.link_disable as u8, st.link_active as u8, st.speed, st.width, st.lever,
         );
         if st.lever == ReviveLever::NoneHealthy {
-            info!("SLOT-REVIVE: port looks healthy and the recorded bus matches - anomalous capture, no lever");
-            continue;
+            if force_sbr {
+                info!(
+                    "SLOT-REVIVE: FORCE-SBR: paradoxical port (port reads healthy, child reads 0xffff) - \\tx-revive-force-sbr.txt overrides the decline and forces the SBR lever"
+                );
+                st.lever = ReviveLever::SecondaryBusReset;
+            } else {
+                info!("SLOT-REVIVE: port looks healthy and the recorded bus matches - anomalous capture, no lever (\\tx-revive-force-sbr.txt overrides)");
+                continue;
+            }
         }
         if st.lever == ReviveLever::NoneRelocated {
             info!(
@@ -174,15 +189,7 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
                     info!(
                         "SLOT-REVIVE: lever 3 SECONDARY BUS RESET - if the card owns the console, the screen goes down from here (loader.log is the only readback); the transaction is skipped this boot by design"
                     );
-                    let before = port.config_read_u16(0x3e);
-                    port.cfg_write_u16(0x3e, before | 0x40);
-                    let mid = port.config_read_u16(0x3e);
-                    info!("SLOT-REVIVE: SBR asserted (bcr {before:#06x} -> {mid:#06x})");
-                    boot::stall(Duration::from_millis(100));
-                    port.cfg_write_u16(0x3e, before & !0x40);
-                    let after = port.config_read_u16(0x3e);
-                    info!("SLOT-REVIVE: SBR de-asserted (bcr -> {after:#06x}); waiting 2 s for the link to retrain");
-                    boot::stall(Duration::from_millis(2000));
+                    sbr_cycle(&port);
                 }
                 ReviveLever::NoneHealthy | ReviveLever::NoneRelocated => break,
             }
@@ -254,4 +261,178 @@ fn open_dead_vendor(handle: Handle) -> u16 {
         Ok(pci) => pci.config_read_u16(0x00),
         Err(_) => 0xffff,
     }
+}
+
+/// One Secondary Bus Reset cycle on `port`: assert Bridge Control bit 6,
+/// verify by readback, hold 100 ms, de-assert, wait 2 s for the retrain
+/// (PCIe/CEM convention). The LTSSM restarts from Detect - which also
+/// clears a Link Disable and kicks a stuck L2/L3-Ready.
+fn sbr_cycle(port: &PciIo) {
+    let before = port.config_read_u16(0x3e);
+    port.cfg_write_u16(0x3e, before | 0x40);
+    let mid = port.config_read_u16(0x3e);
+    info!("SLOT-REVIVE: SBR asserted (bcr {before:#06x} -> {mid:#06x})");
+    boot::stall(Duration::from_millis(100));
+    port.cfg_write_u16(0x3e, before & !0x40);
+    let after = port.config_read_u16(0x3e);
+    info!("SLOT-REVIVE: SBR de-asserted (bcr -> {after:#06x}); waiting 2 s for the link to retrain");
+    boot::stall(Duration::from_millis(2000));
+}
+
+/// GPU-SBR (marker `\tx-sbr-gpu.txt`): bench diagnostic - force a Secondary
+/// Bus Reset on the TARGET GPU's own parent port BEFORE the transaction,
+/// with full config save/restore. Proves on a healthy machine that (a) an
+/// SBR on a live slot is recoverable and (b) BAR save/restore re-arms the
+/// device for MMIO - exactly the capability an SBR-revived dead slot would
+/// need to run a transaction same-boot (today's arm skips the transaction
+/// after an SBR because it lacks this restore; this experiment is the
+/// stepping stone to lifting that).
+///
+/// The save/restore precondition matters: it works ONLY where the device's
+/// config space is readable BEFORE the reset (the bench's live GPU). On a
+/// #276-class slot that already reads 0xffff there is no state to save -
+/// the post-SBR device comes up at defaults and this loader has no BAR
+/// re-assignment source, which is why the revival ladder keeps skipping
+/// the transaction after an SBR. The one possible source for such a slot's
+/// BAR state is the firmware's own bookkeeping (the PCI bus driver
+/// programmed the BARs at POST, when the device was still alive, and the
+/// stale PciIo handle may hand them back via GetBarAttributes) - that is
+/// the future capability to probe, not a property of this experiment.
+///
+/// Returns true when the caller should proceed with the transaction
+/// (marker absent = silent no-op, or reset + restore + MMIO sanity all
+/// verified); false when the marker is present and the post-reset device
+/// could not be verified alive with working MMIO (a reset device without
+/// verified life must not be transacted - readback is the only success
+/// criterion).
+pub fn gpu_pre_sbr(gpu: &FoundGpu) -> bool {
+    if !crate::tx::probe_file("\\tx-sbr-gpu.txt") {
+        return true;
+    }
+    info!(
+        "GPU-SBR: \\tx-sbr-gpu.txt present - forced pre-transaction Secondary Bus Reset experiment on this card's parent port"
+    );
+    // Safety: GetProtocol performs no driver binding (same as enumerate()).
+    let Ok(g) = (unsafe {
+        boot::open_protocol::<PciIo>(
+            OpenProtocolParams { handle: gpu.handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        info!("GPU-SBR: open PciIo failed - skipping the experiment, transaction proceeds");
+        return true;
+    };
+    // Save the firmware-assigned config: command + every base-address
+    // register + the expansion-ROM BAR. After the hot reset the device's
+    // config space reads defaults (BARs zeroed, decode off) - restoring
+    // these is what re-arms MMIO. The values are deterministic (the
+    // firmware programmed them at POST), so save-before/restore-after is a
+    // faithful reconstruction, and every restore is readback-verified.
+    let command = g.config_read_u16(0x04);
+    let mut bars = [0u32; 6];
+    for (i, b) in bars.iter_mut().enumerate() {
+        *b = g.config_read_u32(0x10 + (i as u32) * 4);
+    }
+    let rom = g.config_read_u32(0x30);
+    info!(
+        "GPU-SBR: saved command={command:#06x} bars=[{:02x?}] rom={rom:#010x}",
+        bars
+    );
+    // Find the parent port by secondary/subordinate containment (same walk
+    // as BridgeMaster).
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
+        info!("GPU-SBR: locate_handle_buffer failed - skipping the experiment, transaction proceeds");
+        return true;
+    };
+    let mut parent: Option<Handle> = None;
+    for handle in handles.iter() {
+        // Safety: GetProtocol, same as enumerate().
+        let Ok(p) = (unsafe {
+            boot::open_protocol::<PciIo>(
+                OpenProtocolParams { handle: *handle, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        }) else {
+            continue;
+        };
+        if p.config_read_u16(0x00) == 0xffff || p.config_read_u8(0x0e) & 0x7f != 0x01 {
+            continue;
+        }
+        let Some(loc) = p.get_location() else { continue };
+        if loc.0 != gpu.seg {
+            continue;
+        }
+        let buses = p.config_read_u32(0x18);
+        let (sec, sub) = ((buses >> 8) & 0xff, (buses >> 16) & 0xff);
+        if (gpu.bus as u32) < sec || (gpu.bus as u32) > sub {
+            continue;
+        }
+        parent = Some(*handle);
+        info!(
+            "GPU-SBR: parent port {:04x}:{:02x}:{:02x}.{} (sec=0x{sec:02x} sub=0x{sub:02x})",
+            loc.0, loc.1, loc.2, loc.3
+        );
+        break;
+    }
+    let Some(ph) = parent else {
+        info!("GPU-SBR: no parent bridge found - skipping the experiment, transaction proceeds");
+        return true;
+    };
+    // Safety: GetProtocol, same as enumerate().
+    let Ok(port) = (unsafe {
+        boot::open_protocol::<PciIo>(
+            OpenProtocolParams { handle: ph, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        info!("GPU-SBR: open parent port failed - skipping the experiment, transaction proceeds");
+        return true;
+    };
+    let diag = pci::read_port_diag(&port);
+    info!(
+        "GPU-SBR: pre-SBR port state - pmcsr={:?} lnkctl={:?} lnksta={:?} (D{} ldis={} LA={} spd=x{} w=x{})",
+        diag.pmcsr,
+        diag.lnkctl,
+        diag.lnksta,
+        (diag.pmcsr.unwrap_or(0) & 3) as u8,
+        diag.lnkctl.map(|v| v & 0x10 != 0).unwrap_or(false),
+        diag.lnksta.map(|v| v & 0x4000 != 0).unwrap_or(false),
+        (diag.lnksta.unwrap_or(0) & 0xf) as u8,
+        ((diag.lnksta.unwrap_or(0) >> 4) & 0x3f) as u8,
+    );
+    info!(
+        "GPU-SBR: the console goes down from here if this card owns it (loader.log is the only readback until the transaction's NATIVE-GOP rebuild)"
+    );
+    sbr_cycle(&port);
+    // Reprobe: the device must answer config with its own vendor ID.
+    let vendor = open_dead_vendor(gpu.handle);
+    if vendor != crate::pci::NVIDIA_VENDOR_ID {
+        info!(
+            "GPU-SBR: post-reset vendor read {vendor:#06x} (want 10de) - the device did not come back; SKIPPING the transaction for this card (a reset device without verified life must not be transacted)"
+        );
+        return false;
+    }
+    info!("GPU-SBR: vendor read back 0x10de - device is alive; restoring firmware-assigned config");
+    for (i, b) in bars.iter().enumerate() {
+        let off = 0x10 + (i as u32) * 4;
+        g.cfg_write_u32(off, *b);
+        let rb = g.config_read_u32(off);
+        info!(
+            "GPU-SBR: BAR{i} restored {b:#010x} (readback {rb:#010x}){}",
+            if rb == *b { "" } else { " MISMATCH" }
+        );
+    }
+    g.cfg_write_u32(0x30, rom);
+    g.cfg_write_u16(0x04, command);
+    let cmd_rb = g.config_read_u16(0x04);
+    info!("GPU-SBR: command restored {command:#06x} (readback {cmd_rb:#06x})");
+    boot::stall(Duration::from_millis(100));
+    // The MMIO proof: BAR0 offset 0 must read the chip identity.
+    let boot0 = g.bar_read_u32(0, 0);
+    let mmio_ok = boot0 != 0xffff_ffff && boot0 != 0x0000_0000;
+    info!(
+        "GPU-SBR: BAR0[0] read {boot0:#010x} (PMC_BOOT_0 chip identity) - MMIO {}",
+        if mmio_ok { "alive" } else { "NOT DECODING" }
+    );
+    mmio_ok
 }
