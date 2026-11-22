@@ -156,7 +156,16 @@ pub struct PciIoRaw {
         unsafe extern "efiapi" fn(*mut PciIoRaw, *mut usize, *mut usize, *mut usize, *mut usize) -> Status,
     /// EfiPciIoAttributeOperation(Get/Enable/...), arg, arg, status out
     attributes: unsafe extern "efiapi" fn(*mut PciIoRaw, u32, u64, u64, *mut Status) -> Status,
-    _get_bar_attributes: *const c_void,
+    /// EDK2 PciIo.h EFI_PCI_IO_PROTOCOL_GET_BAR_ATTRIBUTES: (This,
+    /// BarIndex 0..=5, OUT u64 *Supports OPTIONAL, OUT VOID **Resources
+    /// OPTIONAL). Resources = an AllocateZeroPool'd buffer holding one
+    /// packed EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR (46 B) followed by an
+    /// EFI_ACPI_END_TAG_DESCRIPTOR (2 B); the caller frees it with
+    /// FreePool. AddrRangeMin (offset 14) carries the firmware-assigned
+    /// base address (translation-adjusted per UEFI 2.7 semantics), AddrLen
+    /// (offset 38) the BAR length.
+    get_bar_attributes:
+        unsafe extern "efiapi" fn(*mut PciIoRaw, u8, *mut u64, *mut *mut c_void) -> Status,
     _set_bar_attributes: *const c_void,
     rom_size: u64,
     rom_image: *const c_void,
@@ -166,6 +175,7 @@ pub struct PciIoRaw {
 const _: () = assert!(core::mem::offset_of!(PciIoRaw, pci) == 6 * 8); // slots: PollMem,PollIo,Mem{r,w},Io{r,w} -> Pci.Read
 const _: () = assert!(core::mem::offset_of!(PciIoRaw, get_location) == 14 * 8);
 const _: () = assert!(core::mem::offset_of!(PciIoRaw, attributes) == 15 * 8);
+const _: () = assert!(core::mem::offset_of!(PciIoRaw, get_bar_attributes) == 16 * 8);
 const _: () = assert!(core::mem::offset_of!(PciIoRaw, rom_size) == 18 * 8);
 const _: () = assert!(core::mem::size_of::<PciIoRaw>() == 20 * 8);
 
@@ -438,6 +448,56 @@ impl PciIo {
         self.pmcsr_write(cap, cur & !0x3);
         boot::stall(Duration::from_millis(20));
         self.pmcsr(cap) & 0x3 == 0
+    }
+
+    /// GetBarAttributes (slot 16) for one BAR index (0..=5): returns
+    /// (res_type, base, len, granularity) parsed from the protocol's
+    /// EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR. The base is the firmware-assigned
+    /// host address (translation-adjusted), i.e. exactly the value to write
+    /// back into the device's BAR after a reset. The protocol allocates the
+    /// buffer (AllocateZeroPool: descriptor 46 B + end tag 2 B) - freed here
+    /// with FreePool before returning. `None` = the call failed, the BAR is
+    /// unassigned, or the buffer did not parse.
+    ///
+    /// The bookkeeping lives host-side (built at POST enumeration), so this
+    /// works even when the DEVICE's config space has since gone dead - the
+    /// only BAR-assignment source for a slot that reads 0xffff.
+    #[cfg(feature = "tx")]
+    pub fn get_bar_attributes(&self, bar_index: u8) -> Option<(u8, u64, u64, u64)> {
+        type Fn = unsafe extern "efiapi" fn(
+            *mut PciIoRaw,
+            u8,
+            *mut u64,
+            *mut *mut c_void,
+        ) -> Status;
+        let f: Fn = unsafe { core::mem::transmute(self.0.get_bar_attributes) };
+        let mut resources: *mut c_void = core::ptr::null_mut();
+        let st = unsafe {
+            f(
+                &self.0 as *const _ as *mut _,
+                bar_index,
+                core::ptr::null_mut(), // Supports: not needed
+                &mut resources,
+            )
+        };
+        if st != Status::SUCCESS || resources.is_null() {
+            info!(
+                "BAR-BOOKKEEPING: GetBarAttributes({bar_index}) -> {st:?}{}",
+                if resources.is_null() { " (null buffer)" } else { "" }
+            );
+            return None;
+        }
+        // Safety: the protocol handed us an AllocateZeroPool'd buffer of
+        // descriptor + end tag (>= 48 bytes); we read only the first 46.
+        let parsed = {
+            let buf =
+                unsafe { core::slice::from_raw_parts(resources.cast::<u8>(), 46) };
+            parse_bar_descriptor(buf)
+        };
+        if let Some(p) = core::ptr::NonNull::new(resources.cast::<u8>()) {
+            let _ = unsafe { boot::free_pool(p) };
+        }
+        parsed
     }
 
     /// Coherent common-buffer DMA allocation (AllocateBuffer + Map).
@@ -788,6 +848,36 @@ pub fn decode_port_state(
         ReviveLever::NoneHealthy
     };
     PortState { d_state, link_disable, link_active, speed, width, sec_bus, relocated, lever }
+}
+
+/// Parse one ACPI address-space descriptor from a GetBarAttributes Resources
+/// buffer. Packed EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR (EDK2 Acpi10.h, 46 B):
+/// `Desc`@0 (large-item tag 0x8A QWord / 0x87 DWORD), `Len`@1 u16 (body
+/// length = sizeof-3), `ResType`@3 (0 = memory, 1 = I/O),
+/// `AddrSpaceGranularity`@6 u64, `AddrRangeMin`@14 u64 (the firmware-
+/// assigned base, translation-adjusted), `AddrRangeMax`@22 u64 (the BAR's
+/// alignment), `AddrTranslationOffset`@30 u64, `AddrLen`@38 u64 (the BAR
+/// length). Returns (res_type, base, len, granularity).
+///
+/// sim/src/port_diag.rs mirrors this body verbatim - keep them identical.
+#[cfg(feature = "tx")]
+pub fn parse_bar_descriptor(buf: &[u8]) -> Option<(u8, u64, u64, u64)> {
+    if buf.len() < 46 {
+        return None;
+    }
+    let tag = buf[0];
+    if tag != 0x8A && tag != 0x87 {
+        return None;
+    }
+    let res_type = buf[3];
+    let rd = |o: usize| -> Option<u64> {
+        let s = buf.get(o..o + 8)?;
+        Some(u64::from_le_bytes(s.try_into().ok()?))
+    };
+    let gran = rd(6)?;
+    let min = rd(14)?;
+    let len = rd(38)?;
+    Some((res_type, min, len, gran))
 }
 
 /// One NVIDIA display adapter found by [`enumerate`] (function 0 only).

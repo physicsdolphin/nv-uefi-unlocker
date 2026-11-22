@@ -73,6 +73,34 @@ pub fn decode_port_state(
     PortState { d_state, link_disable, link_active, speed, width, sec_bus, relocated, lever }
 }
 
+/// Parse one ACPI address-space descriptor from a GetBarAttributes Resources
+/// buffer. Packed EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR (EDK2 Acpi10.h, 46 B):
+/// `Desc`@0 (large-item tag 0x8A QWord / 0x87 DWORD), `Len`@1 u16, `ResType`@3
+/// (0 = memory, 1 = I/O), `AddrSpaceGranularity`@6 u64, `AddrRangeMin`@14 u64
+/// (the firmware-assigned base, translation-adjusted), `AddrLen`@38 u64.
+/// Returns (res_type, base, len, granularity).
+///
+/// sim/src/port_diag.rs mirrors this body verbatim - keep them identical
+/// to loader/src/pci.rs `parse_bar_descriptor`.
+pub fn parse_bar_descriptor(buf: &[u8]) -> Option<(u8, u64, u64, u64)> {
+    if buf.len() < 46 {
+        return None;
+    }
+    let tag = buf[0];
+    if tag != 0x8A && tag != 0x87 {
+        return None;
+    }
+    let res_type = buf[3];
+    let rd = |o: usize| -> Option<u64> {
+        let s = buf.get(o..o + 8)?;
+        Some(u64::from_le_bytes(s.try_into().ok()?))
+    };
+    let gran = rd(6)?;
+    let min = rd(14)?;
+    let len = rd(38)?;
+    Some((res_type, min, len, gran))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +184,68 @@ mod tests {
         assert!(st.link_active);
         assert!(!st.relocated);
         assert_eq!(st.lever, ReviveLever::NoneHealthy);
+    }
+
+    // --- parse_bar_descriptor (GetBarAttributes Resources buffer) ---
+
+    /// Build a 46-byte packed EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR + trailing
+    /// end tag, per EDK2 Acpi10.h: Desc@0, Len@1 u16, ResType@3, GenFlag@4,
+    /// SpecificFlag@5, Granularity@6 u64, AddrRangeMin@14, AddrRangeMax@22,
+    /// AddrTranslationOffset@30, AddrLen@38; then EndTag (0x79, 0x00).
+    fn make_desc(tag: u8, res_type: u8, gran: u64, base: u64, len: u64) -> Vec<u8> {
+        let mut b = vec![0u8; 48];
+        b[0] = tag;
+        b[1..3].copy_from_slice(&43u16.to_le_bytes()); // body length = 46-3
+        b[3] = res_type;
+        b[6..14].copy_from_slice(&gran.to_le_bytes());
+        b[14..22].copy_from_slice(&base.to_le_bytes());
+        b[22..30].copy_from_slice(&len.to_le_bytes());
+        b[38..46].copy_from_slice(&len.to_le_bytes());
+        b[46] = 0x79; // ACPI_END_TAG_DESCRIPTOR
+        b[47] = 0x00;
+        b
+    }
+
+    #[test]
+    fn qword_memory_descriptor_parses() {
+        // TU106 BAR0: 16 MiB MEM32 at 0x3a0c0000.
+        let buf = make_desc(0x8A, 0x00, 32, 0x0000_0000_3a0c_0000, 0x0100_0000);
+        let (rt, base, len, gran) = parse_bar_descriptor(&buf).expect("parses");
+        assert_eq!(rt, 0);
+        assert_eq!(base, 0x3a0c_0000);
+        assert_eq!(len, 0x0100_0000);
+        assert_eq!(gran, 32);
+    }
+
+    #[test]
+    fn dword_io_descriptor_parses() {
+        // IO BAR: DWORD tag 0x87, granularity 32.
+        let buf = make_desc(0x87, 0x01, 32, 0x0000_3000, 0x10);
+        let (rt, base, len, gran) = parse_bar_descriptor(&buf).expect("parses");
+        assert_eq!(rt, 1);
+        assert_eq!(base, 0x3000);
+        assert_eq!(len, 0x10);
+        assert_eq!(gran, 32);
+    }
+
+    #[test]
+    fn wrong_tag_and_short_buffer_reject() {
+        // End-tag-only or truncated buffers must not parse.
+        assert!(parse_bar_descriptor(&[0x79, 0x00, 0x00]).is_none());
+        assert!(parse_bar_descriptor(&vec![0u8; 45]).is_none());
+        let mut buf = make_desc(0x8A, 0x00, 64, 0x1_0000_0000, 0x1000);
+        buf[0] = 0x79; // wrong tag
+        assert!(parse_bar_descriptor(&buf).is_none());
+    }
+
+    #[test]
+    fn high_bar_base_survives_u64_parse() {
+        // A 64-bit aperture above 4 GiB (the TU106's HIGH staging band lives
+        // at 4 GiB+) - the u64 fields must not truncate.
+        let buf = make_desc(0x8A, 0x00, 64, 0x0000_0100_0000_0000, 0x1000);
+        let (_, base, _, gran) = parse_bar_descriptor(&buf).expect("parses");
+        assert_eq!(base, 0x0000_0100_0000_0000);
+        assert_eq!(gran, 64);
     }
 
     #[test]

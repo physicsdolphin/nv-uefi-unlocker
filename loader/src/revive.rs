@@ -212,7 +212,25 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
                     },
                 );
                 if sbr {
-                    sbr_slots.push(d.loc);
+                    // Upgrade attempt: the firmware's BAR bookkeeping
+                    // (GetBarAttributes on this handle - host-side state
+                    // built at POST enumeration, survives the device reset)
+                    // may let us re-arm MMIO, which would keep a revived GPU
+                    // candidate in this boot's transaction instead of the
+                    // skip. Non-candidates (bridges, other functions) gain
+                    // nothing but the evidence is free.
+                    let bars_ok = restore_bars_from_bookkeeping(d.handle);
+                    if bars_ok {
+                        info!(
+                            "SLOT-REVIVE: BARs restored from firmware bookkeeping - staying in the candidate list (transaction proceeds this boot)"
+                        );
+                        revived_no_reset = true;
+                    } else {
+                        sbr_slots.push(d.loc);
+                        info!(
+                            "SLOT-REVIVE: BAR bookkeeping unavailable or failed - excluding from this boot's transaction (chain-load Windows, re-run the stick afterwards)"
+                        );
+                    }
                 } else {
                     revived_no_reset = true;
                 }
@@ -261,6 +279,72 @@ fn open_dead_vendor(handle: Handle) -> u16 {
         Ok(pci) => pci.config_read_u16(0x00),
         Err(_) => 0xffff,
     }
+}
+
+/// Restore a revived device's BARs from the firmware's own bookkeeping
+/// (GetBarAttributes on the handle - host-side state built at POST
+/// enumeration, untouched by the device-side reset). Writes each returned
+/// base address back into the device's config space with readback, then
+/// arms command = IO|MEM|BME (the claim's own value). True only when at
+/// least one BAR was restored with verified readbacks AND the command
+/// stuck; false means no bookkeeping was available or nothing verified -
+/// the caller keeps its skip-transaction behavior in that case.
+fn restore_bars_from_bookkeeping(handle: Handle) -> bool {
+    // Safety: GetProtocol performs no driver binding (same as enumerate()).
+    let Ok(g) = (unsafe {
+        boot::open_protocol::<PciIo>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        info!("SLOT-REVIVE: BAR restore: open PciIo failed");
+        return false;
+    };
+    let mut restored = 0usize;
+    let mut i = 0u8;
+    while i < 6 {
+        match g.get_bar_attributes(i) {
+            Some((res_type, base, _len, gran)) if base != 0 => {
+                let off = 0x10 + (i as u32) * 4;
+                g.cfg_write_u32(off, base as u32);
+                let rb = g.config_read_u32(off);
+                info!(
+                    "SLOT-REVIVE: BAR{i} restored base={base:#x} len={_len:#x} type={res_type} gran={gran} (readback {rb:#010x}){}",
+                    if rb == base as u32 { "" } else { " MISMATCH" }
+                );
+                if rb != base as u32 {
+                    return false;
+                }
+                restored += 1;
+                // A 64-bit BAR consumes the next config dword as its upper
+                // half - write it (the descriptor's granularity says which)
+                // and skip the slot in this loop.
+                if gran == 64 {
+                    let hi = (base >> 32) as u32;
+                    g.cfg_write_u32(off + 4, hi);
+                    let rb_hi = g.config_read_u32(off + 4);
+                    info!(
+                        "SLOT-REVIVE: BAR{i} upper half {hi:#010x} (readback {rb_hi:#010x}){}",
+                        if rb_hi == hi { "" } else { " MISMATCH" }
+                    );
+                    if rb_hi != hi {
+                        return false;
+                    }
+                    i += 1; // the consumed upper slot
+                }
+            }
+            _ => info!("SLOT-REVIVE: BAR{i}: no bookkeeping (unassigned or unsupported)"),
+        }
+        i += 1;
+    }
+    if restored == 0 {
+        info!("SLOT-REVIVE: BAR restore: bookkeeping returned nothing usable");
+        return false;
+    }
+    g.cfg_write_u16(0x04, 0x0007); // IO|MEM|BME - the claim's own value
+    let cmd_rb = g.config_read_u16(0x04);
+    info!("SLOT-REVIVE: command armed 0x0007 (readback {cmd_rb:#06x})");
+    cmd_rb & 0x0007 == 0x0007 && restored > 0
 }
 
 /// One Secondary Bus Reset cycle on `port`: assert Bridge Control bit 6,
@@ -338,6 +422,23 @@ pub fn gpu_pre_sbr(gpu: &FoundGpu) -> bool {
         "GPU-SBR: saved command={command:#06x} bars=[{:02x?}] rom={rom:#010x}",
         bars
     );
+    // Cross-check the firmware bookkeeping against the live config: this is
+    // the field validation of GetBarAttributes-as-BAR-source, on the same
+    // boot where the config-space save provides ground truth. Any mismatch
+    // here calibrates how much to trust the dead-slot restore path.
+    for i in 0..6u8 {
+        match g.get_bar_attributes(i) {
+            Some((res_type, base, len, gran)) => {
+                let live = bars[i as usize];
+                let matches = base as u32 == live;
+                info!(
+                    "GPU-SBR: bookkeeping BAR{i}: base={base:#x} len={len:#x} type={res_type} gran={gran} vs config {live:#010x}{}",
+                    if matches { " MATCH" } else { " MISMATCH" }
+                );
+            }
+            None => info!("GPU-SBR: bookkeeping BAR{i}: none (unassigned/unsupported)"),
+        }
+    }
     // Find the parent port by secondary/subordinate containment (same walk
     // as BridgeMaster).
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
