@@ -1129,6 +1129,32 @@ cargo 21/21（mock 控制器 5 测：happy/range/precondition 零写/latch 失�
 0×CMD_READ/解析器）。等 4060L 实采（命令：`ssdiag --fuserows=0x2ff-0x33f`，
 先全量 `--fuserows` 亦可）回 rison1337 行对比。
 
+**6o 追记二（2026-11-22，首采日）**：0.8.7 首跑暴露守卫的 GA100 专属假设
+——GA106 实测 CRC_STATUS=`0x4555` 被全字相等拒（**全部消费 die 归档值同
+为 0x4555**：GA102/AD103/AD107/AD102；GA100 才读裸 0x55，ff-tools 从未
+出过 A100）；FUSEDEBUG 同理（**GA10x=0，Ada 族=0x400000 常量**，2860
+locked==unlocked 同值）。守卫改：CRC 低字节==0x55、FUSEDEBUG∈{0,
+0x400000}、其余不变（用户裁定不 bump、原地以 0.8.7 重发，终版
+991c4690）。**负控按设计工作**：TU106 2070 跑 `--fuserows` 在 CRC_STATUS
+badf 处中止、零写（`FUSEROWS ABORT: CRC_STATUS 0xbadf5040 != 0x55`）。
+**GA106 3060 首采成功**（`docs/evidence/ga106-2504/fuserows-087-3060.log`
+——项目第一份消费级物理行捕获；粘贴缺 banner，守卫行为指纹锁定修正版）：
+- **行域表被数据边界直接确认**：IFF_RECORD `0x023f021e` → START=542/
+  LAST=575（576 行）；行数据零区 `0x137..0x21d` 恰在 **0x21e=542** 截止、
+  池区 542..575 31/34 非零（3 零行内插 0x21f/0x223/0x227）；FUSE_ADDR
+  保存/恢复=575==LAST；**池首行 bit5=1（IFF 型记录签名，与 kate-land
+  ff_boundary 判据一致）**。§6m 的 "GA10x 542..575" 从寄存器推断升级为
+  数据证实。
+- **配对结构（新发现）**：行 0x00..0x2d = **23/23 完全相同的奇偶对**
+  （冗余方案？），0x2e 起配对终止——与 GA100 512 行无此形态不同，待
+  4060L/4090 对照后判读是 GA106 专属还是 Ampere 通用。
+- **区域图（初判，解码开放）**：0x34..0x4e 随机型（ECC/签名/密钥类）；
+  0x4f..0x52 = `ffffffff` 空白 OTP；0x65..0xba/0xe3..0xec 结构化选项型
+  （`0x00010001`/`0x00030003`/`0x00077fff`/`0x000fffff`）；0xed..0x136
+  疑似 trim/VF 序列（与 CLK_TRIMS 10-bit 字段形态吻合）；0x137..0x21d
+  全零。
+- 协议全绿：双 pass 576 行全对、地址恢复验证通过。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

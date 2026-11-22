@@ -1,10 +1,13 @@
 //! ssdiag v0.8.7 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
 //! v0.8.7 adds --fuserows[=A-B] (WRITE MODE, user-approved): physical
 //! fuse-row capture ported from ga100-ff-tools read_rows - FUSEADDR row
-//! select + FUSECTRL CMD_READ only, idle/CRC_STATUS 0x55/FUSEDEBUG 0 guards
-//! on every row, address latch verified, two passes compared, original
-//! address restored+verified on every path. Guard failure = diagnosed abort
-//! with zero writes; Turing self-refuses (FUSE_ADDR outside domain).
+//! select + FUSECTRL CMD_READ only, idle/CRC_STATUS/FUSEDEBUG guards on
+//! every row (consumer-die values: CRC low byte 0x55 - GA100 reads bare
+//! 0x55, every consumer die 0x4555; FUSEDEBUG 0 GA100/GA10x or 0x400000
+//! Ada - strict GA100 equality aborted GA106/AD10x on the first real run),
+//! address latch verified, two passes compared, original address
+//! restored+verified on every path. Guard failure = diagnosed abort with
+//! zero writes; Turing self-refuses (CRC_STATUS badf, IFF PL0-blocked).
 //! Purpose: rison1337's desktop-4060 vs our 4060L FF-record pool comparison
 //! (rows 0x2ff..0x33f).
 //! v0.8.6 (#237 round 6, JeusChrit 11-21): GA100_SM_OVR face widened to the
@@ -5101,12 +5104,23 @@ fn fuse_guard_ok(rd: &dyn Fn(u32) -> u32) -> Result<(), String> {
         ));
     }
     let crc = rd(FUSE_CRC_STATUS);
-    if crc != 0x55 {
-        return Err(format!("CRC_STATUS {crc:#010x} != 0x55"));
+    // GA100 reads bare 0x55 (ff-tools full-word check); EVERY consumer die
+    // observed reads 0x4555 (GA106 live 2026-11-22 user run + GA102/AD103/
+    // AD107/AD102 archived) - the low byte is the ready signature, upper
+    // bits carry die-dependent status. Strict equality was GA100-tuned and
+    // aborted GA10x/Ada before any row.
+    if crc & 0xff != 0x55 {
+        return Err(format!("CRC_STATUS {crc:#010x} - low byte != 0x55"));
     }
     let dbg = rd(FUSE_DEBUG);
-    if dbg != 0 {
-        return Err(format!("FUSEDEBUG {dbg:#010x} != 0 - debug mode would falsify row data"));
+    // Two observed-normal values: 0 on GA100/GA10x, 0x400000 on Ada
+    // (4060L/4090/2860, identical locked and unlocked). Anything else is an
+    // unknown debug state - ff-tools's concern stands: row data could be
+    // falsified, so abort rather than guess bit semantics we don't have.
+    if dbg != 0 && dbg != 0x0040_0000 {
+        return Err(format!(
+            "FUSEDEBUG {dbg:#010x} not a known-normal value (0 GA100/GA10x, 0x400000 Ada) - possible debug mode, row data could be falsified"
+        ));
     }
     Ok(())
 }
@@ -6152,5 +6166,33 @@ mod tests {
         assert_eq!(parse_row_range("9-3"), None);
         assert_eq!(parse_row_range("0x2ff"), None);
         assert_eq!(parse_row_range("x-y"), None);
+    }
+
+    #[test]
+    fn fuserows_consumer_die_guard_values_pass() {
+        // The observed consumer-die normal state: CRC_STATUS 0x4555 (GA106
+        // live run + GA102/AD103/AD107/AD102 archived), FUSEDEBUG 0x400000
+        // on Ada. 0.8.7's first real run aborted on GA106's 0x4555 because
+        // the equality was GA100-tuned.
+        let mut m = FuseMock::new(8, 9, 1);
+        m.mem.borrow_mut().insert(FUSE_CRC_STATUS, 0x0000_4555);
+        m.mem.borrow_mut().insert(FUSE_DEBUG, 0x0040_0000);
+        let rd = |off: u32| m.rd(off);
+        let wr = |off: u32, v: u32| m.wr(off, v);
+        let (rows, complete) = fuse_row_dump(&rd, &wr, None);
+        assert!(complete);
+        assert_eq!(rows.len(), 10);
+    }
+
+    #[test]
+    fn fuserows_unknown_debug_state_rejects_with_zero_writes() {
+        let mut m = FuseMock::new(8, 9, 1);
+        m.mem.borrow_mut().insert(FUSE_DEBUG, 0x1); // not 0, not the Ada constant
+        let rd = |off: u32| m.rd(off);
+        let wr = |off: u32, v: u32| m.wr(off, v);
+        let (rows, complete) = fuse_row_dump(&rd, &wr, None);
+        assert!(!complete);
+        assert!(rows.is_empty());
+        assert_eq!(m.writes.borrow().len(), 0);
     }
 }

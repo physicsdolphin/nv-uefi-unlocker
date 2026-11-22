@@ -1327,11 +1327,20 @@ def _fuse_guard_ok(bar):
     if (ctrl >> 16) & 31 != 4 or ctrl & FUSE_CMD_MASK != 0:
         return f"FUSECTRL {ctrl:#010x} not idle (state={(ctrl >> 16) & 31} cmd={ctrl & FUSE_CMD_MASK})"
     crc = bar.rd(FUSE_CRC_STATUS)
-    if crc != 0x55:
-        return f"CRC_STATUS {crc:#010x} != 0x55"
+    # GA100 reads bare 0x55 (ff-tools full-word check); EVERY consumer die
+    # observed reads 0x4555 (GA106 live 2026-11-22 user run + GA102/AD103/
+    # AD107/AD102 archived) - the low byte is the ready signature, upper
+    # bits carry die-dependent status. Strict equality was GA100-tuned and
+    # aborted GA10x/Ada before any row.
+    if crc & 0xFF != 0x55:
+        return f"CRC_STATUS {crc:#010x} - low byte != 0x55"
     dbg = bar.rd(FUSE_DEBUG)
-    if dbg != 0:
-        return f"FUSEDEBUG {dbg:#010x} != 0 - debug mode would falsify row data"
+    # Two observed-normal values: 0 on GA100/GA10x, 0x400000 on Ada
+    # (4060L/4090/2860, identical locked and unlocked). Anything else is an
+    # unknown debug state - row data could be falsified; abort rather than
+    # guess bit semantics we do not have.
+    if dbg != 0 and dbg != 0x0040_0000:
+        return f"FUSEDEBUG {dbg:#010x} not a known-normal value (0 GA100/GA10x, 0x400000 Ada) - possible debug mode, row data could be falsified"
     return None
 
 
