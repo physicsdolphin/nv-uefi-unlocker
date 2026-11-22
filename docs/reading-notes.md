@@ -1175,10 +1175,35 @@ IFF `0x033f02ff` START=767 与 rison1337 桌面 4060 同值）：
   长零区 0x1c3..0x2fe；池 0x2ff..0x33f 56/65 非零、首行 bit5=1。
 - **Turing 读法落地（0.8.8，9fb4969d）**：envytools pfuse 证实 PFUSE 阵列
   0x021000（G80+ 恒定），2070 实测 0x21000 块 CTRL idle 语义同构
-  （0xc0040000）、FUSEDEBUG=0、**块 PLM 0x210f8=OPEN**、CRC_STATUS 与
-  IFF badf。`--fusebase`（族自动 turing→0x21000）+ 降级守卫（CRC 不可读
-  →明示关闭；IFF 不可读→显式区间强制、512 帽）；cargo 25/25（新增
-  Turing 降级两测）、unittest 12/12。同写类（行号+CMD_READ）。
+  （0xc0040000）、FUSEDEBUG=0、**块 PLM 0x210f8=OPEN**、CRC_STATUS badf
+  （GA100 布局 0x820000 上 CRC/IFF 双 badf——2070 负控走此路）。
+  `--fusebase`（族自动 turing→0x21000）+ 降级守卫（CRC 不可读→明示关闭；
+  IFF 不可读→显式区间强制、512 帽）；cargo 25/25（新增 Turing 降级两测）、
+  unittest 12/12。同写类（行号+CMD_READ）。
+
+**6o 追记四（2026-11-22 下午，TU106 首采——三族行域全闭合）**：2070
+`--fuserows=0x0-0xff`（0.8.8，turing 自动基址 0x21000）成功：
+`docs/evidence/tu106-1f07/fuserows-088-2070.log`。**256 行域从 §6m 假设
+升格为数据事实**（双 pass 全对、FUSE_ADDR 保存/恢复=255==LAST）。
+**关键修正：Turing 移位基址的 IFF 可读**——0x21050 读纯词
+`0x00ff00b1` → START=177/LAST=255（被挡的只是 GA100 布局 0x820050）；
+实际降级只有 CRC 一项（明示后继续，锁存+双 pass+恢复全绿）。
+池区（177..255，79/79 非零，首行 bit5=1）与 GA10x/Ada 同构：
+- **PLM 模板 record 三代同值**：TU106 行 0xe2/0xe4 = **`0xffffff8f`**
+  （两份，带头 0x0118fefd/0x0118fffd）↔ AD107 0x300 同值——FEAT PLM
+  出厂默认烧在三代池区的同一 record 家族里；0x0122/0x0118 头部族
+  38 行=与 GA10x/Ada 相同的 record 格式。
+- **共享 record 内容逐词命中**：TU 0xfd/fe/ff = GA106 池 0x237/8/9
+  （`0x000020fc`/`0xdffffff3`/`0x2000000c`）；record 终结符
+  `0x00000008` ×6 ↔ GA106 0x18/9 ↔ AD107 0x302/0x32d；TU 0x32=
+  `0x00010301` ↔ AD107 0x6c——**0x10301 的来源（§6n 尾槽神秘值）首次
+  现身于真实 fuse 行**。
+- 配对 0x00..0x27（20 对）；签名/ECC 区 0x2a..0x57（含全 1 OTP
+  0x48..0x4a）；trim/VF 型 0x60..0x7f；零区 0x80..0xb0 恰在池首截断。
+- **行域总表收口（数据级）**：TU106 177..255/256、GA10x 542..575/576、
+  Ada 767..831/832——START 与 LAST 全部被行数据边界独立证实（零区
+  截断+池首 bit5），寄存器解码与物理数据零冲突。
+- **fuserow 三份全留档 evidence**（3060/4060L/2070，溯源头+守卫指纹）。
 
 ### 7. 判读指南（TU106/GA106 实验用）
 
