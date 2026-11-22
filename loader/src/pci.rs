@@ -766,7 +766,13 @@ pub fn decode_port_state(
 ) -> PortState {
     let d_state = (pmcsr.unwrap_or(0) & 0x3) as u8;
     let link_disable = lnkctl.map(|v| v & 0x10 != 0).unwrap_or(false);
-    let link_active = lnksta.map(|v| v & 0x2000 != 0).unwrap_or(true);
+    // DLLLA (Data Link Layer Link Active) is LnkSta bit 14 (0x4000) - the
+    // field round on 2026-11-22 (TU106 bench, loader.log of the SLOT-REVIVE
+    // build) caught the first draft reading bit 13 (0x2000, Link Bandwidth
+    // Management Status): the TU106's own PEG port 00:01.0 - link verifiably
+    // up, the transaction ran green on it - decoded LA=0 there while bit 14
+    // read 1 (lnksta=0xD101).
+    let link_active = lnksta.map(|v| v & 0x4000 != 0).unwrap_or(true);
     let speed = (lnksta.unwrap_or(0) & 0xf) as u8;
     let width = ((lnksta.unwrap_or(0) >> 4) & 0x3f) as u8;
     let relocated = link_active && dead_recorded_bus.map(|b| b != sec_bus).unwrap_or(false);

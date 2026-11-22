@@ -52,7 +52,10 @@ pub fn decode_port_state(
 ) -> PortState {
     let d_state = (pmcsr.unwrap_or(0) & 0x3) as u8;
     let link_disable = lnkctl.map(|v| v & 0x10 != 0).unwrap_or(false);
-    let link_active = lnksta.map(|v| v & 0x2000 != 0).unwrap_or(true);
+    // DLLLA = LnkSta bit 14 (0x4000); bit 13 is Link Bandwidth Management
+    // Status. Field-caught on the TU106 bench (00:01.0, lnksta=0xD101, link
+    // verifiably up) - see the loader copy for the full note.
+    let link_active = lnksta.map(|v| v & 0x4000 != 0).unwrap_or(true);
     let speed = (lnksta.unwrap_or(0) & 0xf) as u8;
     let width = ((lnksta.unwrap_or(0) >> 4) & 0x3f) as u8;
     let relocated = link_active && dead_recorded_bus.map(|b| b != sec_bus).unwrap_or(false);
@@ -78,8 +81,8 @@ mod tests {
     const D3HOT: Option<u16> = Some(0x0003);
     const LNKCTL_CLEAN: Option<u16> = Some(0x0040); // common clock, no disable
     const LNKCTL_DISABLED: Option<u16> = Some(0x0050); // + Link Disable (bit 4)
-    // Gen3 x16, link active: LA bit13 + width[9:4]=16 (0b010000 << 4) + speed 3.
-    const LNKSTA_UP_X16: Option<u16> = Some(0x2103);
+    // Gen3 x16, link active: DLLLA bit14 + width[9:4]=16 + speed 3.
+    const LNKSTA_UP_X16: Option<u16> = Some(0x4103);
     // LA clear, speed/width stale-looking zero.
     const LNKSTA_DOWN: Option<u16> = Some(0x0000);
 
@@ -153,5 +156,30 @@ mod tests {
         assert!(st.link_active);
         assert!(!st.relocated);
         assert_eq!(st.lever, ReviveLever::NoneHealthy);
+    }
+
+    #[test]
+    fn bench_capture_d101_is_link_active() {
+        // Field-pinned regression (TU106 bench, SLOT-REVIVE build round
+        // 2026-11-22): the TU106's own PEG port 00:01.0 read lnksta=0xD101
+        // with the link verifiably up (the transaction ran green on it).
+        // DLLLA is bit 14 - bit 13 is Link Bandwidth Management Status and
+        // reads 0 here, which the first draft misused and reported LA=0.
+        let st = decode_port_state(Some(0x0008), Some(0x0043), Some(0xD101), 0x01, None);
+        assert!(st.link_active, "0xD101 bit 14 is set: the link is active");
+        assert_eq!(st.d_state, 0);
+        assert!(!st.link_disable);
+        assert_eq!(st.speed, 1); // idle down-train, normal on Intel PEG
+        assert_eq!(st.width, 16);
+    }
+
+    #[test]
+    fn empty_port_fingerprint_is_la0_width0() {
+        // The natural negative control from the same bench round: 00:1b.0
+        // (no device downstream) read lnksta=0x1001 - LA clear, width x0.
+        let st = decode_port_state(D0, LNKCTL_CLEAN, Some(0x1001), 0x02, None);
+        assert!(!st.link_active);
+        assert_eq!(st.width, 0);
+        assert_eq!(st.lever, ReviveLever::SecondaryBusReset);
     }
 }
