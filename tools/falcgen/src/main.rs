@@ -250,7 +250,7 @@ fn manifest_text(
     m.push_str("    - cold FEAT PLM write-enable nibble [7:4] must read 8 (0 = professional template: the payload write cannot latch, issue #237)\n");
     match (family, gate_desc.starts_with("bar1")) {
         ("tu102", _) | ("tu11x", _) => {
-            m.push_str("    - Turing handoff: PLM-open handoff is refused by 580.x GSP-RM (issue #246); the proven shape is the relock tail plm=0xffffffef with SS0/SS1 intact\n");
+            m.push_str("    - Turing handoff: GSP-RM rejects the unlock state on TU11x in BOTH shapes (open #246; relocked 0xffffffef #280) - the relock tail is proven on TU102 only (#103/#240); the TU11x legacy-driver lane and a full-factory 0xffffff8f handoff are the open discriminators\n");
         }
         ("ga102", _) => {
             m.push_str("    - GA10x verdict is the wait-PLM flip; SS0=0x88888888 / SS1 low nibble 8 are HOST-side writes after the flip\n");
