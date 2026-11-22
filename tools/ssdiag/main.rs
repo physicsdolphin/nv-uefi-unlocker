@@ -5322,8 +5322,16 @@ fn fuse_row_dump(
     (passes[0].iter().enumerate().map(|(i, &v)| (first + i as u32, v)).collect(), complete)
 }
 
+fn validate_prom_bit_flags(prom_bit: bool, reapply: bool, fuserows: bool) -> Result<(), &'static str> {
+    if prom_bit && (reapply || fuserows) {
+        return Err("--prom-bit is strictly read-only and cannot be combined with --reapply or --fuserows");
+    }
+    Ok(())
+}
+
 fn run() -> i32 {
     let mut reapply = false;
+    let mut prom_bit = false;
     let mut dry = false;
     let mut inv_only = false;
     let mut sb_arm = false;
@@ -5338,6 +5346,7 @@ fn run() -> i32 {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--reapply" => reapply = true,
+            "--prom-bit" => prom_bit = true,
             "--fusebase" => {
                 let v = args.next().unwrap_or_else(|| {
                     eprintln!("--fusebase requires a hex offset, e.g. --fusebase 0x21000");
@@ -5370,12 +5379,18 @@ fn run() -> i32 {
                     "ssdiag {ver} - in-OS NVIDIA register diagnosis + separate-lock re-apply
 
 USAGE:
-  ssdiag [--reapply] [--select <substr>] [--safeboot-arm|--safeboot-disarm]
+  ssdiag [--reapply] [--prom-bit] [--select <substr>] [--safeboot-arm|--safeboot-disarm]
 
 OPTIONS:
   --reapply        per card with an OPEN FEAT gate: write SS0=0x88888888
                    SS1=0x8 and verify by read-back (separate-lock method -
                    restores an unlock the driver re-derived, no reboot)
+  --prom-bit       READ-ONLY per card: read BAR0+0x300000 (1 MiB NV_PROM)
+                   and walk PCI ROM headers -> BIT -> token 0x70 v2 ucode
+                   table; prints structural metadata only (app/target IDs,
+                   descriptor version/size/enc bit2, stored_size, empty/OOB
+                   counts; no firmware byte dumps). Cannot be combined with
+                   --reapply or --fuserows
   --fuserows[=A-B] WRITE MODE per card: physical fuse-row capture via the
                    guarded ga100-ff-tools read_rows protocol (FUSEADDR row
                    select + FUSECTRL CMD_READ only, latch checks, two
@@ -5467,10 +5482,15 @@ SSDIAG_COLOR=force pins on.",
                 std::process::exit(2);
             }
             other => {
-                eprintln!("unknown arg {other:?}; usage: ssdiag [--reapply] [--select <substr>] [--fuserows[=A-B]]");
+                eprintln!("unknown arg {other:?}; usage: ssdiag [--reapply] [--prom-bit] [--select <substr>] [--fuserows[=A-B]]");
                 return 2;
             }
         }
+    }
+
+    if let Err(msg) = validate_prom_bit_flags(prom_bit, reapply, fuserows.is_some()) {
+        eprintln!("{msg}");
+        return 2;
     }
 
     // safe-mode staging commands run before every other path - they touch
@@ -5698,6 +5718,9 @@ SSDIAG_COLOR=force pins on.",
         let Some((fam_name, regs)) = family_of(boot0) else {
             println!("PMC_BOOT_0={} - NVIDIA-class but unknown die; diagnosis-only pass (FEAT addresses unmapped for this family)", hx32(boot0));
             dump_debug(&rd, "unknown");
+            if prom_bit {
+                dump_prom_bit(&rd);
+            }
             drv.unmap_physical(va);
             rc = 1;
             continue;
@@ -5708,6 +5731,9 @@ SSDIAG_COLOR=force pins on.",
             println!(
                 "VERDICT [{fam_name}]: family recognized - FEAT addresses not mapped for this family (diagnosis only)"
             );
+            if prom_bit {
+                dump_prom_bit(&rd);
+            }
             drv.unmap_physical(va);
             continue;
         }
@@ -5781,10 +5807,491 @@ SSDIAG_COLOR=force pins on.",
                 rc = 1;
             }
         }
+        if prom_bit {
+            dump_prom_bit(&rd);
+        }
         drv.unmap_physical(va);
     }
     stage("probe complete");
     rc
+}
+
+// ---------------------------------------------------------------- PROM BIT table enumeration (read-only metadata)
+
+const PROM_BASE: u32 = 0x0030_0000;
+const PROM_SIZE: usize = 0x0010_0000; // 1 MiB NV_PROM aperture (0x300000..0x3ffffc)
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PromRomImage {
+    offset: usize,
+    tag: [u8; 4],
+    code_type: u8,
+    image_len: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PromDescMeta {
+    V2 {
+        imem_load: u32,
+        sec_base: u32,
+        sec_size: u32,
+        dmem_load: u32,
+    },
+    V3 {
+        pkc_off: u32,
+        engine_mask: u16,
+        ucode_id: u8,
+        sig_count: u8,
+        sig_versions: u16,
+    },
+    V6 {
+        image_start: usize,
+    },
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PromUcodeEntry {
+    Readable {
+        app_id: u8,
+        target_id: u8,
+        desc_off: usize,
+        desc_ver: u8,
+        desc_size: u16,
+        encrypted: bool,
+        stored_size: Option<u32>,
+        meta: PromDescMeta,
+    },
+    OutOfBounds {
+        app_id: u8,
+        target_id: u8,
+        desc_rel: u32,
+        abs_off: Option<usize>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PromUcodeTable {
+    table_off: usize,
+    ver: u8,
+    hdr_size: u8,
+    entry_size: u8,
+    slot_count: usize,
+    empty_slots: usize,
+    entries: Vec<PromUcodeEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PromBitReport {
+    first_word: u32,
+    rom_images: Vec<PromRomImage>,
+    bit_off: usize,
+    bit_hdr_size: u8,
+    bit_stride: u8,
+    bit_token_count: u8,
+    image_base: usize,
+    expansion_off: Option<usize>,
+    adjust: usize,
+    ucode_tables: Vec<PromUcodeTable>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PromBitError {
+    Unreadable(&'static str),
+    NoBitHeader,
+    UnsupportedStride(u8),
+    NoUcodeToken,
+}
+
+fn prom_app_name(app: u8) -> &'static str {
+    match app {
+        0x01 => "PRE_OS",
+        0x05 => "FIRMWARE_SEC_LIC",
+        0x08 => "LS_UDE",
+        0x23 => "APP_0x23",
+        0x45 => "FWSEC_DBG",
+        0x49 => "SCRUBBER",
+        0x85 => "FWSEC_PROD",
+        _ => "-",
+    }
+}
+
+fn prom_le16(d: &[u8], o: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(d.get(o..o + 2)?.try_into().ok()?))
+}
+
+fn prom_le32(d: &[u8], o: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(d.get(o..o + 4)?.try_into().ok()?))
+}
+
+fn prom_pcir_info(rom: &[u8], off: usize) -> Option<PromRomImage> {
+    if rom.get(off..off + 2) != Some(&[0x55, 0xAA]) {
+        return None;
+    }
+    let pcir_rel = prom_le16(rom, off + 0x18)? as usize;
+    let p = off.checked_add(pcir_rel)?;
+    let pci = rom.get(p..p + 0x16)?;
+    let tag: [u8; 4] = pci[0..4].try_into().ok()?;
+    match &tag {
+        b"PCIR" | b"NPDS" | b"RGIS" => {}
+        _ => return None,
+    }
+    let slen = prom_le16(pci, 0x0A)? as usize;
+    let mut sub = prom_le16(pci, 0x10)? as usize;
+    let code_type = pci[0x14];
+    let npde_at = (p.checked_add(slen)?.checked_add(0xF)?) & !0xF;
+    if rom.get(npde_at..npde_at + 4) == Some(b"NPDE".as_slice()) {
+        if let (Some(len), Some(sub_len)) = (prom_le16(rom, npde_at + 6), prom_le16(rom, npde_at + 8)) {
+            let len = len as usize;
+            if len >= 10 && npde_at.checked_add(len).map_or(false, |e| e <= rom.len()) {
+                sub = sub_len as usize;
+            }
+        }
+    }
+    Some(PromRomImage {
+        offset: off,
+        tag,
+        code_type,
+        image_len: sub.saturating_mul(512),
+    })
+}
+
+fn prom_find_expansion(image: &[u8]) -> Option<usize> {
+    let mut curr = 0usize;
+    let mut base_size: Option<usize> = None;
+    for _ in 0..16 {
+        let info = prom_pcir_info(image, curr)?;
+        if info.code_type == 0xE0 {
+            return curr.checked_sub(base_size?);
+        }
+        if info.code_type == 0x00 && base_size.is_none() {
+            base_size = Some(info.image_len);
+        }
+        if info.image_len == 0 {
+            return None;
+        }
+        let next = curr.checked_add(info.image_len)?;
+        if next >= image.len() {
+            return None;
+        }
+        curr = next;
+    }
+    None
+}
+
+fn parse_prom_bit(rom: &[u8]) -> Result<PromBitReport, PromBitError> {
+    if rom.len() < 4 {
+        return Err(PromBitError::Unreadable("aperture shorter than 4 bytes"));
+    }
+    let first_word = prom_le32(rom, 0).unwrap_or(0);
+    if (first_word >> 16) == 0xBADF {
+        return Err(PromBitError::Unreadable("PRI error (0xBADF) at PROM+0x0"));
+    }
+    let all_zero = rom.chunks_exact(4).all(|c| c == [0, 0, 0, 0]);
+    let all_ones = rom.chunks_exact(4).all(|c| c == [0xFF, 0xFF, 0xFF, 0xFF]);
+    if all_zero {
+        return Err(PromBitError::Unreadable("all-zero PROM aperture"));
+    }
+    if all_ones {
+        return Err(PromBitError::Unreadable("all-ones PROM aperture"));
+    }
+
+    // Verified PCI option-ROM headers only (PCIR/NPDS/RGIS), skipping bogus
+    // 0x55AA sequences such as Blackwell's 0x33c00 header with PCIR offset 0.
+    let mut rom_images = Vec::new();
+    let mut off = 0usize;
+    while off + 0x1A <= rom.len() {
+        if let Some(info) = prom_pcir_info(rom, off) {
+            rom_images.push(info);
+        }
+        off += 0x200;
+    }
+
+    // Checksum-validated BIT header scan (0xB8FF + "BIT\0").
+    let mut bit_off = None;
+    let mut a = 0usize;
+    while a + 12 <= rom.len() {
+        if prom_le16(rom, a) == Some(0xB8FF) && rom.get(a + 2..a + 6) == Some(b"BIT\0") {
+            let hs = rom[a + 8] as usize;
+            if hs >= 12 && a + hs <= rom.len() {
+                let sum: u32 = rom[a..a + hs].iter().map(|&b| b as u32).sum();
+                if sum & 0xFF == 0 {
+                    bit_off = Some(a);
+                    break;
+                }
+            }
+        }
+        a += 2;
+    }
+    let bit_off = bit_off.ok_or(PromBitError::NoBitHeader)?;
+    let bit_hdr_size = rom[bit_off + 8];
+    let bit_stride = rom[bit_off + 9];
+    let bit_token_count = rom[bit_off + 10];
+    if !(6..=8).contains(&bit_stride) {
+        return Err(PromBitError::UnsupportedStride(bit_stride));
+    }
+
+    // Containing verified option-ROM image for BIT token data pointers.
+    let image_base = rom_images
+        .iter()
+        .rev()
+        .find(|img| img.offset <= bit_off && img.code_type == 0x00)
+        .or_else(|| rom_images.iter().rev().find(|img| img.offset <= bit_off))
+        .map(|img| img.offset)
+        .unwrap_or(0);
+
+    let expansion_off = prom_find_expansion(&rom[image_base..]);
+    let adjust = match expansion_off {
+        Some(e) => image_base.saturating_add(e),
+        None => image_base,
+    };
+
+    let mut found_0x70 = false;
+    let mut ucode_tables = Vec::new();
+    for t in 0..bit_token_count as usize {
+        let tok = bit_off + bit_hdr_size as usize + t * bit_stride as usize;
+        if rom.get(tok..tok + 2) != Some(&[0x70, 0x02]) {
+            continue;
+        }
+        found_0x70 = true;
+        let raw_ptr = if bit_stride >= 8 {
+            prom_le32(rom, tok + 4).unwrap_or(0) as usize
+        } else {
+            prom_le16(rom, tok + 4).unwrap_or(0) as usize
+        };
+        let Some(data_ptr) = image_base.checked_add(raw_ptr) else {
+            continue;
+        };
+        let Some(table_rel) = prom_le32(rom, data_ptr) else {
+            continue;
+        };
+        let Some(table_off) = adjust.checked_add(table_rel as usize) else {
+            continue;
+        };
+        if table_off + 6 > rom.len() {
+            continue;
+        }
+        let ver = rom[table_off];
+        let hdr_size = rom[table_off + 1];
+        let entry_size = rom[table_off + 2];
+        let slot_count = rom[table_off + 3] as usize;
+        if ver != 1 || hdr_size < 6 || entry_size < 6 {
+            continue;
+        }
+
+        let mut empty_slots = 0usize;
+        let mut entries = Vec::new();
+        for e in 0..slot_count {
+            let at = table_off + hdr_size as usize + e * entry_size as usize;
+            if at + 6 > rom.len() {
+                break;
+            }
+            let app_id = rom[at];
+            let target_id = rom[at + 1];
+            let desc_rel = prom_le32(rom, at + 2).unwrap_or(0);
+            if app_id == 0 && target_id == 0 && desc_rel == 0 {
+                empty_slots += 1;
+                continue;
+            }
+            let abs_off = adjust.checked_add(desc_rel as usize);
+            let Some(desc_off) = abs_off.filter(|&d| d + 4 <= rom.len()) else {
+                entries.push(PromUcodeEntry::OutOfBounds {
+                    app_id,
+                    target_id,
+                    desc_rel,
+                    abs_off,
+                });
+                continue;
+            };
+            let vdesc = prom_le32(rom, desc_off).unwrap_or(0);
+            let desc_ver = ((vdesc >> 8) & 0xFF) as u8;
+            let desc_size = (vdesc >> 16) as u16;
+            let encrypted = (vdesc & (1 << 2)) != 0;
+            let stored_size = prom_le32(rom, desc_off + 4);
+            let meta = if desc_ver == 2 && desc_size >= 60 && desc_off + 52 <= rom.len() {
+                PromDescMeta::V2 {
+                    imem_load: prom_le32(rom, desc_off + 24).unwrap_or(0),
+                    sec_base: prom_le32(rom, desc_off + 32).unwrap_or(0),
+                    sec_size: prom_le32(rom, desc_off + 36).unwrap_or(0),
+                    dmem_load: prom_le32(rom, desc_off + 48).unwrap_or(0),
+                }
+            } else if desc_ver == 3 && desc_size >= 44 && desc_off + 42 <= rom.len() {
+                PromDescMeta::V3 {
+                    pkc_off: prom_le32(rom, desc_off + 8).unwrap_or(0),
+                    engine_mask: prom_le16(rom, desc_off + 36).unwrap_or(0),
+                    ucode_id: rom[desc_off + 38],
+                    sig_count: rom[desc_off + 39],
+                    sig_versions: prom_le16(rom, desc_off + 40).unwrap_or(0),
+                }
+            } else if desc_ver == 6 && desc_size >= 80 {
+                PromDescMeta::V6 {
+                    image_start: desc_off + desc_size as usize,
+                }
+            } else {
+                PromDescMeta::Other
+            };
+            entries.push(PromUcodeEntry::Readable {
+                app_id,
+                target_id,
+                desc_off,
+                desc_ver,
+                desc_size,
+                encrypted,
+                stored_size,
+                meta,
+            });
+        }
+        ucode_tables.push(PromUcodeTable {
+            table_off,
+            ver,
+            hdr_size,
+            entry_size,
+            slot_count,
+            empty_slots,
+            entries,
+        });
+    }
+
+    if !found_0x70 {
+        return Err(PromBitError::NoUcodeToken);
+    }
+
+    Ok(PromBitReport {
+        first_word,
+        rom_images,
+        bit_off,
+        bit_hdr_size,
+        bit_stride,
+        bit_token_count,
+        image_base,
+        expansion_off,
+        adjust,
+        ucode_tables,
+    })
+}
+
+fn dump_prom_bit(rd: &dyn Fn(u32) -> u32) {
+    println!("\n--- PROM BIT TABLE ENUMERATION (BAR0+0x300000, read-only metadata) ---");
+    let mut rom = vec![0u8; PROM_SIZE];
+    for i in 0..(PROM_SIZE / 4) {
+        let off = PROM_BASE + (i as u32) * 4;
+        rom[i * 4..i * 4 + 4].copy_from_slice(&rd(off).to_le_bytes());
+    }
+    match parse_prom_bit(&rom) {
+        Err(PromBitError::Unreadable(reason)) => {
+            println!("PROM unreadable: {reason} (device parked / no ROM shadow)");
+        }
+        Err(PromBitError::NoBitHeader) => {
+            println!("PROM-BIT: no checksum-valid BIT header found in 1 MiB aperture");
+        }
+        Err(PromBitError::UnsupportedStride(s)) => {
+            println!("PROM-BIT: BIT token stride {s} outside expected range 6..=8");
+        }
+        Err(PromBitError::NoUcodeToken) => {
+            println!("PROM-BIT: BIT header parsed, but token 0x70 v2 (falcon ucode table) is absent");
+        }
+        Ok(rep) => {
+            println!("PROM first word: {}", hx32(rep.first_word));
+            println!("verified PCI ROM images ({}):", rep.rom_images.len());
+            for img in &rep.rom_images {
+                let tag = std::str::from_utf8(&img.tag).unwrap_or("????");
+                println!(
+                    "  PROM+{:#07x}: tag=\"{}\" code_type={:#04x} len={:#x}",
+                    img.offset, tag, img.code_type, img.image_len
+                );
+            }
+            match rep.expansion_off {
+                Some(exp) => println!(
+                    "BIT at PROM+{:#07x} (hdr={} stride={} tokens={}) | image_base={:#x} expansion={:#x} adjust={:#x}",
+                    rep.bit_off, rep.bit_hdr_size, rep.bit_stride, rep.bit_token_count,
+                    rep.image_base, exp, rep.adjust
+                ),
+                None => println!(
+                    "BIT at PROM+{:#07x} (hdr={} stride={} tokens={}) | image_base={:#x} expansion=none adjust={:#x}",
+                    rep.bit_off, rep.bit_hdr_size, rep.bit_stride, rep.bit_token_count,
+                    rep.image_base, rep.adjust
+                ),
+            }
+            for tbl in &rep.ucode_tables {
+                println!(
+                    "ucode table at PROM+{:#07x}: ver={} hdr={} entry_size={} slots={}",
+                    tbl.table_off, tbl.ver, tbl.hdr_size, tbl.entry_size, tbl.slot_count
+                );
+                println!(
+                    "  {:>4}  {:>6}  {:>16}  {:>10}  {:>4}  {:>9}  {:>9}  {}",
+                    "APP", "TARGET", "NAME", "DESC_OFF", "VER", "ENC(bit2)", "DESC_SIZE", "STORED_SIZE"
+                );
+                println!("  {}", "-".repeat(82));
+                let mut readable = 0usize;
+                let mut oob = 0usize;
+                for entry in &tbl.entries {
+                    match entry {
+                        PromUcodeEntry::OutOfBounds { app_id, target_id, desc_rel, abs_off } => {
+                            oob += 1;
+                            let abs_s = abs_off
+                                .map(|v| format!("{v:#x}"))
+                                .unwrap_or_else(|| "overflow".to_string());
+                            println!(
+                                "  {:#04x}  {:#04x}  {:>16}  OOB(rel={:#x}, abs={})",
+                                app_id, target_id, prom_app_name(*app_id), desc_rel, abs_s
+                            );
+                        }
+                        PromUcodeEntry::Readable {
+                            app_id,
+                            target_id,
+                            desc_off,
+                            desc_ver,
+                            desc_size,
+                            encrypted,
+                            stored_size,
+                            meta,
+                        } => {
+                            readable += 1;
+                            let enc_str = if *encrypted { red("YES") } else { green("no") };
+                            let stored_s = stored_size
+                                .map(|s| format!("{s:#x} ({} KiB)", s / 1024))
+                                .unwrap_or_else(|| "-".to_string());
+                            println!(
+                                "  {:#04x}  {:#04x}  {:>16}  {:#010x}  v{:<3}  {:>9}  {:>6} B  {}",
+                                app_id, target_id, prom_app_name(*app_id), desc_off, desc_ver, enc_str, desc_size, stored_s
+                            );
+                            match meta {
+                                PromDescMeta::V2 { imem_load, sec_base, sec_size, dmem_load } if !encrypted => {
+                                    println!(
+                                        "    V2: imemLoad={:#x} secBase={:#x} secSize={:#x} dmemLoad={:#x}",
+                                        imem_load, sec_base, sec_size, dmem_load
+                                    );
+                                }
+                                PromDescMeta::V3 { pkc_off, engine_mask, ucode_id, sig_count, sig_versions } => {
+                                    println!(
+                                        "    V3: pkcOff={:#x} engineMask={:#x} ucodeId={} sigCount={} sigVersions={:#x}",
+                                        pkc_off, engine_mask, ucode_id, sig_count, sig_versions
+                                    );
+                                }
+                                PromDescMeta::V6 { image_start } => {
+                                    println!(
+                                        "    V6: desc_size={} image_start=PROM+{:#x}",
+                                        desc_size, image_start
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                println!(
+                    "  summary: {} slot(s) ({} non-empty: {} readable, {} out-of-aperture; {} empty)",
+                    tbl.slot_count,
+                    readable + oob,
+                    readable,
+                    oob,
+                    tbl.empty_slots
+                );
+            }
+            println!("note: metadata-only read-only scan; raw firmware bytes are intentionally omitted");
+        }
+    }
+    println!("--- END PROM BIT ---");
 }
 
 /// Walk the card's BAR0 candidates smallest-size first; the PMC sanity read
@@ -6121,7 +6628,7 @@ mod tests {
 
     #[test]
     fn blackwell_families_map_to_the_823_bank() {
-        for boot0 in [0x1B6_000A1u32, 0x1A0_000A1, 0x2112_0000, 0x1B2_000A1] {
+        for boot0 in [0x1B5_000A1u32, 0x1B6_000A1, 0x1A0_000A1, 0x2112_0000, 0x1B2_000A1] {
             let (_, regs) = family_of(boot0).unwrap();
             assert_eq!(regs.len(), 4);
             assert_eq!(regs[0].1, 0x0082_3804);
@@ -6319,5 +6826,218 @@ mod tests {
         assert!(!complete);
         assert!(rows.is_empty());
         assert_eq!(m.writes.borrow().len(), 0, "no range, no writes");
+    }
+
+    fn write_le16(buf: &mut [u8], off: usize, v: u16) {
+        buf[off..off + 2].copy_from_slice(&v.to_le_bytes());
+    }
+
+    fn write_le32(buf: &mut [u8], off: usize, v: u32) {
+        buf[off..off + 4].copy_from_slice(&v.to_le_bytes());
+    }
+
+    fn write_pci_rom(buf: &mut [u8], off: usize, tag: &[u8; 4], code_type: u8, blocks_512: u16) {
+        buf[off] = 0x55;
+        buf[off + 1] = 0xAA;
+        write_le16(buf, off + 0x18, 0x20);
+        let p = off + 0x20;
+        buf[p..p + 4].copy_from_slice(tag);
+        write_le16(buf, p + 0x0A, 0x18);
+        write_le16(buf, p + 0x10, blocks_512);
+        buf[p + 0x14] = code_type;
+    }
+
+    fn write_bit(buf: &mut [u8], bit_off: usize, token_data_raw_ptr: u16) {
+        write_le16(buf, bit_off, 0xB8FF);
+        buf[bit_off + 2..bit_off + 6].copy_from_slice(b"BIT\0");
+        write_le16(buf, bit_off + 6, 0x0100);
+        buf[bit_off + 8] = 12; // hdr_size
+        buf[bit_off + 9] = 6;  // stride
+        buf[bit_off + 10] = 1; // token_count
+        let sum: u32 = buf[bit_off..bit_off + 11].iter().map(|&b| b as u32).sum();
+        buf[bit_off + 11] = ((256 - (sum & 0xFF)) & 0xFF) as u8;
+        let tok = bit_off + 12;
+        buf[tok] = 0x70;
+        buf[tok + 1] = 0x02;
+        write_le16(buf, tok + 2, 4);
+        write_le16(buf, tok + 4, token_data_raw_ptr);
+    }
+
+    #[test]
+    fn prom_bit_flags_reject_write_modes() {
+        assert!(validate_prom_bit_flags(false, false, false).is_ok());
+        assert!(validate_prom_bit_flags(true, false, false).is_ok());
+        assert!(validate_prom_bit_flags(true, true, false).is_err());
+        assert!(validate_prom_bit_flags(true, false, true).is_err());
+    }
+
+    #[test]
+    fn prom_bit_parses_blackwell_v6_with_ff_padding_bogus_55aa_null_slots_and_oob() {
+        let mut rom = vec![0xFFu8; 0x4000];
+        // Bogus 0x55AA at 0x400 with PCIR ptr = 0 (like GB205's 0x33c00 header)
+        rom[0x400] = 0x55;
+        rom[0x401] = 0xAA;
+        write_le16(&mut rom, 0x418, 0);
+
+        // Main x86 image at 0x600 (len = 2 * 512 = 0x400)
+        write_pci_rom(&mut rom, 0x600, b"PCIR", 0x00, 2);
+        // EFI image at 0xA00 (len = 2 * 512 = 0x400)
+        write_pci_rom(&mut rom, 0xA00, b"PCIR", 0x03, 2);
+        // Expansion 0xE0 image at 0xE00 (len = 4 * 512 = 0x800)
+        // expansion_off = (0xE00 - 0x600) - 0x400 = 0x400 -> adjust = 0xA00
+        write_pci_rom(&mut rom, 0xE00, b"NPDS", 0xE0, 4);
+
+        // BIT header inside main image at 0x680; token 0x70 v2 raw_ptr = 0x100 -> 0x700
+        write_bit(&mut rom, 0x680, 0x0100);
+        // table_rel = 0x600 -> table_off = adjust(0xA00) + 0x600 = 0x1000
+        write_le32(&mut rom, 0x700, 0x0600);
+
+        // ucode table at 0x1000: ver=1, hdr=6, esz=6, count=4 (2 empty + 1 V6 + 1 OOB)
+        let tbl = 0x1000;
+        rom[tbl] = 1;
+        rom[tbl + 1] = 6;
+        rom[tbl + 2] = 6;
+        rom[tbl + 3] = 4;
+        // Slot 0: empty (0, 0, 0)
+        rom[tbl + 6..tbl + 12].fill(0);
+        // Slot 1: app 0x23 target 0x0e -> rel 0x1000 -> abs 0x1A00 (V6, 80B, enc=1)
+        rom[tbl + 12] = 0x23;
+        rom[tbl + 13] = 0x0E;
+        write_le32(&mut rom, tbl + 14, 0x1000);
+        // Slot 2: empty (0, 0, 0)
+        rom[tbl + 18..tbl + 24].fill(0);
+        // Slot 3: app 0x24 target 0x0f -> rel 0x5000 -> abs 0x5A00 (OOB > 0x4000)
+        rom[tbl + 24] = 0x24;
+        rom[tbl + 25] = 0x0F;
+        write_le32(&mut rom, tbl + 26, 0x5000);
+
+        // V6 descriptor at 0x1A00: desc_size=80 (0x50), desc_ver=6, enc bit2=1
+        let vdesc_v6: u32 = (80u32 << 16) | (6u32 << 8) | 0x1F;
+        write_le32(&mut rom, 0x1A00, vdesc_v6);
+        write_le32(&mut rom, 0x1A04, 0x0002_7000);
+
+        let rep = parse_prom_bit(&rom).expect("synthetic Blackwell PROM should parse");
+        assert_eq!(rep.rom_images.len(), 3, "bogus 0x400 55AA must be excluded");
+        assert_eq!(rep.image_base, 0x600);
+        assert_eq!(rep.expansion_off, Some(0x400));
+        assert_eq!(rep.adjust, 0xA00);
+        assert_eq!(rep.ucode_tables.len(), 1);
+        let t = &rep.ucode_tables[0];
+        assert_eq!(t.slot_count, 4);
+        assert_eq!(t.empty_slots, 2);
+        assert_eq!(t.entries.len(), 2);
+        assert_eq!(
+            t.entries[0],
+            PromUcodeEntry::Readable {
+                app_id: 0x23,
+                target_id: 0x0E,
+                desc_off: 0x1A00,
+                desc_ver: 6,
+                desc_size: 80,
+                encrypted: true,
+                stored_size: Some(0x27000),
+                meta: PromDescMeta::V6 { image_start: 0x1A50 },
+            }
+        );
+        assert_eq!(
+            t.entries[1],
+            PromUcodeEntry::OutOfBounds {
+                app_id: 0x24,
+                target_id: 0x0F,
+                desc_rel: 0x5000,
+                abs_off: Some(0x5A00),
+            }
+        );
+    }
+
+    #[test]
+    fn prom_bit_parses_v2_and_v3_descriptors() {
+        let mut rom = vec![0u8; 0x2000];
+        write_pci_rom(&mut rom, 0x000, b"PCIR", 0x00, 4);
+        write_bit(&mut rom, 0x100, 0x0200);
+        write_le32(&mut rom, 0x200, 0x0300);
+        let tbl = 0x300;
+        rom[tbl] = 1;
+        rom[tbl + 1] = 6;
+        rom[tbl + 2] = 6;
+        rom[tbl + 3] = 2;
+        // Slot 0: V2 plaintext FWSEC_PROD (0x85) at 0x400
+        rom[tbl + 6] = 0x85;
+        rom[tbl + 7] = 0x01;
+        write_le32(&mut rom, tbl + 8, 0x400);
+        write_le32(&mut rom, 0x400, (60u32 << 16) | (2u32 << 8));
+        write_le32(&mut rom, 0x404, 0x8000);
+        write_le32(&mut rom, 0x400 + 24, 0x1200);
+        write_le32(&mut rom, 0x400 + 32, 0x400);
+        write_le32(&mut rom, 0x400 + 36, 0xE00);
+        write_le32(&mut rom, 0x400 + 48, 0x600);
+        // Slot 1: V3 encrypted FWSEC_DBG (0x45) at 0x500
+        rom[tbl + 12] = 0x45;
+        rom[tbl + 13] = 0x01;
+        write_le32(&mut rom, tbl + 14, 0x500);
+        write_le32(&mut rom, 0x500, (44u32 << 16) | (3u32 << 8) | 0x04);
+        write_le32(&mut rom, 0x504, 0x9000);
+        write_le32(&mut rom, 0x508, 0x200);
+        write_le16(&mut rom, 0x500 + 36, 0x0400);
+        rom[0x500 + 38] = 5;
+        rom[0x500 + 39] = 2;
+        write_le16(&mut rom, 0x500 + 40, 0x0003);
+
+        let rep = parse_prom_bit(&rom).expect("V2/V3 PROM should parse");
+        assert_eq!(rep.expansion_off, None);
+        assert_eq!(rep.adjust, 0);
+        let t = &rep.ucode_tables[0];
+        assert_eq!(t.empty_slots, 0);
+        assert_eq!(
+            t.entries[0],
+            PromUcodeEntry::Readable {
+                app_id: 0x85,
+                target_id: 0x01,
+                desc_off: 0x400,
+                desc_ver: 2,
+                desc_size: 60,
+                encrypted: false,
+                stored_size: Some(0x8000),
+                meta: PromDescMeta::V2 {
+                    imem_load: 0x1200,
+                    sec_base: 0x400,
+                    sec_size: 0xE00,
+                    dmem_load: 0x600,
+                },
+            }
+        );
+        assert_eq!(
+            t.entries[1],
+            PromUcodeEntry::Readable {
+                app_id: 0x45,
+                target_id: 0x01,
+                desc_off: 0x500,
+                desc_ver: 3,
+                desc_size: 44,
+                encrypted: true,
+                stored_size: Some(0x9000),
+                meta: PromDescMeta::V3 {
+                    pkc_off: 0x200,
+                    engine_mask: 0x0400,
+                    ucode_id: 5,
+                    sig_count: 2,
+                    sig_versions: 0x0003,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn prom_bit_rejects_unreadable_and_bad_checksum() {
+        assert!(matches!(parse_prom_bit(&vec![0u8; 64]), Err(PromBitError::Unreadable(_))));
+        assert!(matches!(parse_prom_bit(&vec![0xFFu8; 64]), Err(PromBitError::Unreadable(_))));
+        let mut badf = vec![0u8; 64];
+        write_le32(&mut badf, 0, 0xBADF_5040);
+        assert!(matches!(parse_prom_bit(&badf), Err(PromBitError::Unreadable(_))));
+
+        let mut bad_cksum = vec![0u8; 0x200];
+        write_bit(&mut bad_cksum, 0x40, 0x80);
+        bad_cksum[0x40 + 11] ^= 0x01; // corrupt checksum
+        assert_eq!(parse_prom_bit(&bad_cksum), Err(PromBitError::NoBitHeader));
     }
 }
