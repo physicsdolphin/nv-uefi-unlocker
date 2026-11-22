@@ -30,7 +30,7 @@
 
 GB206 实测（`10de:2d04`，RTX 5060 Ti 16 GB，驱动 615.71.10，Linux 6.12.113，
 BAR0 `0xf8000000`，`nvidia` 绑定态，逐字 `ioread32`）；GB205 实测（`10de:2f18`，
-RTX 5070 Ti Laptop 12 GB，46 SM / 23 TPC，驱动 616.64，VBIOS `98.05.31.00.44`，
+RTX 5070 Ti Laptop 12 GB，46 SM / 23 TPC，驱动 621.01，VBIOS `98.05.31.00.44`，
 只读采样见 [GB205 实测档案](evidence/gb205-2f18/README.md)）：
 
 | 行 | 偏移 | GB206 | GB205（5070 Ti Laptop） | GB202（5090） | GB203M |
@@ -51,7 +51,8 @@ RTX 5070 Ti Laptop 12 GB，46 SM / 23 TPC，驱动 616.64，VBIOS `98.05.31.00.4
 | `FEAT_OVR_ECC` | `0x82380c` | `0x00888888` | `0x00888888` | `0x00888888` | — |
 | `FEAT_OVR_ECC_1` | `0x823810` | `0xaa2a2aaa` | `0xaa2a2aaa` | `0x002a2aaa` | — |
 | `SECURE_FEAT_OVR_QUADRO_WR_SEC` | `0x82038c` | 2 | 2 | 2 | — |
-| `SM_ISSUE_RATE_MODIFIER` | `0x504204` | 5 | — | 5 | — |
+| `SM_ISSUE_RATE_MODIFIER` | `0x504204` | 5 | 5 | 5 | — |
+| `SEC2_PLM` | `0x8403c4` | `0x00000b0f` | `0x00000b0f` | — | — |
 | GFW falcon CPUCTL | `0x110100` | `0xbadf5720` | `0xbadf5720` | `0xbadf4100` | — |
 
 写入梯（`SS0=0x88888888`、`SS1=0x8`、`PLM=0xffffffff`，每次读回后恢复原值）：
@@ -216,7 +217,7 @@ SAMPLE：
 | 速率熔丝 | `0x8207D4/D8/DC/E0/E4/E8/EC`、`0x82059C`、`0x820224` |
 | 覆盖总闸/使能 | `0x8203F0`、`0x820040`、`0x8200FC`（`FUSE_SS_PLM`，注意**不是**有效门） |
 | 旁证 | `0x82038C`（Quadro 安全写）、`0x504204`（inert 修改器）、`0x8403C4`（SEC2 PLM） |
-| PROM BIT 元数据（可选 `--prom-bit`） | `0x300000..0x3FFFFC`（1 MiB `NV_PROM`，`ssdiag` / `diag-unlock.py` 跨平台只读，仅输出结构元数据不转储固件字节，且禁止与 `--reapply` / `--fuserows` 并用） |
+| PROM BIT 元数据（可选 `--prom-bit`） | `0x300000..0x3FFFFC`（1 MiB `NV_PROM`，`ssdiag` / `diag-unlock.py` 跨平台只读，仅输出结构元数据不转储固件字节，且禁止与 `--reapply` / `--fuserows` 并用）；另注：Blackwell PROM 前 ~207 KiB 几乎全为 `0xFF`（GB205 仅 `PROM+0x0=0xffffc04c` 非全 1），`loader/src/sample.rs` 的前 64 KiB CRC32 现已对此类几乎全 `0xFF` 的前导填充发出提示，避免误当 VBIOS 指纹 |
 
 解读纪律：
 

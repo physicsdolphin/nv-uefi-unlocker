@@ -8,10 +8,10 @@
 
 | 数据集 | 采集日期 | 驱动 | VBIOS | 工具与来源 |
 |---|---|---|---|---|
-| BAR0 寄存器 + 拓扑 + PROM BIT 元数据 | 2026-11-22 | `616.64` | `98.05.31.00.44` | 提权只读 `ssdiag --prom-bit`；脱敏摘录见 [gb205-bar0-prom-metadata.txt](gb205-bar0-prom-metadata.txt) |
-| 多精度稳态 GEMM + 配对 FP16 累加 A/B | 2026-11-22 | `621.01` | `98.05.31.00.44` | `PyTorch 2.11.0+cu128` + [blackwell_clamp_eval.py](../../../tools/bench/blackwell_clamp_eval.py)；原始 JSON 见 [clamp-eval-621.01.json](clamp-eval-621.01.json) |
+| BAR0 寄存器 + 拓扑 + PROM BIT 元数据 | 2026-11-22 | `621.01`（并对照同机先前 `616.64` 样本） | `98.05.31.00.44` | 本 PR 新版提权只读 `ssdiag --prom-bit`；脱敏摘录见 [gb205-bar0-prom-metadata.txt](gb205-bar0-prom-metadata.txt) |
+| 多精度稳态 GEMM + 配对 FP16 累加 A/B（`N=8192` / `N=4096`） | 2026-11-22 | `621.01` | `98.05.31.00.44` | `PyTorch 2.11.0+cu128` + [blackwell_clamp_eval.py](../../../tools/bench/blackwell_clamp_eval.py)；原始 JSON 见 [clamp-eval-621.01.json](clamp-eval-621.01.json)（`N=8192`）与 [clamp-eval-621.01-n4096.json](clamp-eval-621.01-n4096.json)（`N=4096`，400 次，与 `bench_v2.py` 同规模） |
 
-注：BAR0 寄存器与 PROM BIT 元数据采自换驱动前的 `616.64`，两者反映的是硅片熔丝、特权门与 VBIOS（`98.05.31.00.44`，换驱动前后未变）的静态/硬连线结构；吞吐与精度误差则在升级到 `621.01` 后使用稳态采样重测。
+注：BAR0 寄存器、PROM BIT 元数据与稳态 GEMM 基准全部统一在同一台机器、同一套驱动 `621.01` 与 VBIOS `98.05.31.00.44` 上采集；与同日早先 `616.64` 采集对比，全部熔丝、PLM、拓扑与 PROM BIT 结构逐字节一致，而预驱动影子态 `SS0/SS1` 跨冷启动变化（`616.64`：`0x56027063` / `0x00032004` → `621.01`：`0x76027063` / `0x00030004`，enable bit 均清），`WPR2` 窗口随驱动版本微调（`0x02fa7e00..0x02fb0400` → `0x02fb8800..0x02fc1000`）。
 
 ## 2. BAR0 寄存器与拓扑核对（第四个 Blackwell 芯片样本：GB205）
 
@@ -31,8 +31,11 @@
 | `FUSE_EN_SW_OVERRIDE` | `0x820040` | `0` | 与跨卡一致 |
 | `FUSE_SS_PLM` | `0x8200fc` | `0xfffffbff` | 与跨卡一致（非有效 FEAT 写门） |
 | `SECURE_FEAT_OVR_QUADRO_WR` | `0x82038c` | `2` | 与 GB206 / GB202 一致 |
-| `FEAT_SS0` / `SS1` | `0x82381c` / `0x823820` | `0x56027063` / `0x00032004` | 预驱动影子态，enable bit 均清（非解锁） |
+| `SM_ISSUE_RATE_MODIFIER` | `0x504204` | `5` | 与 GB206 / GB202 一致 |
+| `SEC2_PLM` | `0x8403c4` | `0x00000b0f` | 与 GB206 一致（全读、零写） |
+| `FEAT_SS0` / `SS1` | `0x82381c` / `0x823820` | `0x76027063` / `0x00030004` | 预驱动影子态，enable bit 均清（非解锁；跨引导变化） |
 | `GSP_CPUCTL` / `SEC2_CPUCTL` / `SEC2_EXCI` | `0x110100` / `0x840100` / `0x8400d0` | `0xbadf5720` / `0x00000010` / `0xbadf5720` | 与 GB206 `ssdiag` 实测（`x99-f8d-gb206`）完全同形 |
+| `GA100_SM_OVR_RGN` | `0x820a00..0x820b1c` | `0x820a40..0x820abc` 32 字全 `0`，两侧全 `0xbadf5040` | 与 AD102/AD103 解码孤岛形态一致 |
 
 **Floorsweep 拓扑与 CUDA SM 数闭环验证：**
 
@@ -86,9 +89,12 @@
 
 - 正反两对高度一致：`off → on` 原始吞吐 **1.58×**（时钟归一化 **1.71×**）；`on → off` 原始吞吐 **1.55×**（时钟归一化 **1.68×**）。
 - 同一 140 W 功耗墙下，未钳制的 `fp16_fp16acc` 单位时钟算力密度更高，导致稳态频率下降约 180 MHz（`2085–2107` vs `2265–2280 MHz`），因此仅看原始 TFLOP/s 会低估硬件发射率差距，**时钟归一化 `FLOP/clk/SM` 才是区分功耗墙与硬件钳制的决定性指标**。
-- 数值代价：开启全 FP16 累加后，样本相对 L2 误差从 `0.000196` 升至 `0.003244`（约 16.6×），不能作为 FP32 累加的无条件替代。
+- 数值代价：在 `N=8192` 下开启全 FP16 累加后，样本相对 L2 误差从 `0.000196` 升至 `0.003244`（约 16.6×）；在 `N=4096`（400 次，[clamp-eval-621.01-n4096.json](clamp-eval-621.01-n4096.json)）下，四个 FP32 累加路径同样稳定落在半速（FP16 `0.49×`、BF16 `0.47×`、TF32 `0.49×`、FP8 `0.54×`），FP16 累加为 `0.80×`，相对 L2 误差从 `0.000205` 升至 `0.002123`（约 10.4×）。随着内积维度 `K` 翻倍，FP16 累加误差按预期继续放大，而 FP32 累加保持在 `~2e-4` 水平，不能将 FP16 累加作为无条件替代。
 
-## 5. 跨平台复现命令（Linux / Windows）
+## 5. 跨平台复现与测试验证（Linux / Windows）
+
+- **Windows 11（Python 3.13 + Rust MSVC）**：`cargo test`（`ssdiag` 29/29 + workspace 全绿）、`cargo efi` + `check_efi.py`（确认 read-only build）、`python -B -m unittest` 22/22，以及上述 `N=8192` / `N=4096` 实机基准。
+- **Linux（同机 WSL2 Ubuntu 26.04，内核 `6.6.114`，Python 3.14.4）**：原生运行 `tools/tests/` 全部 22/22 单元测试、`diag-unlock.py --inventory` 与 `blackwell_clamp_eval.py` 的 `nvidia-smi` 元数据探测全部通过（WSL2 未安装 PyTorch，CUDA 基准于 Windows 主机运行）。
 
 ```sh
 # 跨平台张量钳制与精度权衡评估（Linux / Windows 通用，无需内核驱动）
