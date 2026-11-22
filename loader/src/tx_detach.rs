@@ -76,7 +76,7 @@ pub fn path_belongs_to(parent: &[u8], child: &[u8]) -> bool {
 /// prefix match identifies ownership. A false "no" is safe: the stage-3
 /// recursive disconnect tears the target's own stack regardless - the
 /// check only decides whether we ALSO tear down other cards' GOPs.
-fn gop_belongs_to_target(gop: Handle, pci_handle: Handle) -> bool {
+pub(crate) fn gop_belongs_to_target(gop: Handle, pci_handle: Handle) -> bool {
     match (device_path_bytes(pci_handle), device_path_bytes(gop)) {
         (Some(p), Some(g)) => path_belongs_to(&p, &g),
         _ => false,
@@ -297,7 +297,12 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     if force_gop_disconnect {
         info!("DETACH: \\tx-gop-disconnect.txt present - disconnecting every GOP handle (v0.2.0 behavior)");
     }
-    let mut target_gop_seen = false;
+    // The SLOT-REVIVE arm may have disconnected a dead slot's console GOP
+    // before its own SBR (revive.rs): seed the flag from it so the
+    // transaction's NATIVE-GOP rebuild still runs for a slot the arm
+    // revived - without the seed the #261 skip logic would see "no console
+    // child this boot" and leave the revived card's console unrebuilt.
+    let mut target_gop_seen = crate::revive::revive_disconnected_gop();
     if let Ok(h) = gop_handles {
         for i in 0..h.len() {
             let gop = h[i];

@@ -34,10 +34,57 @@
 //! and the warning line prints BEFORE the SBR while the console still lives.
 
 use crate::pci::{self, FoundGpu, PciIo, ReviveLever};
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use log::info;
 use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, SearchType};
+use uefi::proto::console::gop::GraphicsOutput;
 use uefi::{Handle, Identify};
+
+/// Set when the revival ladder disconnected console GOP handles that
+/// belonged to a dead slot it went on to revive. The transaction's detach
+/// then finds no target-owned GOP and would skip the NATIVE-GOP rebuild
+/// (issue #261 logic) - but the slot WAS the console owner and is alive
+/// again post-revival, so the rebuild must run. Consumed by tx_detach.
+static REVIVE_GOP_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// True when the revival arm disconnected a dead slot's console GOP this
+/// boot (so the transaction's NATIVE-GOP rebuild must not be skipped).
+pub(crate) fn revive_disconnected_gop() -> bool {
+    REVIVE_GOP_SEEN.load(Ordering::Relaxed)
+}
+
+/// Identify a (possibly config-dead) device from its firmware-cached option
+/// ROM: the shadow is host-side state captured at POST, so it survives the
+/// device's config space going dead. Parses the first image's PCIR
+/// structure (signature "PCIR" at the offset in the ROM header's 0x18
+/// word; VendorID/DeviceID at +4/+6) and returns (vendor, device).
+/// `None` = no shadowed ROM or the structure did not parse.
+fn rom_identity(handle: Handle) -> Option<(u16, u16)> {
+    // Safety: GetProtocol performs no driver binding (same as enumerate()).
+    let Ok(g) = (unsafe {
+        boot::open_protocol::<PciIo>(
+            OpenProtocolParams { handle, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
+        return None;
+    };
+    let rom = g.rom_image()?;
+    if rom.len() < 0x1a || rom[0] != 0x55 || rom[1] != 0xAA {
+        return None;
+    }
+    let pcir = u16::from_le_bytes([rom[0x18], rom[0x19]]) as usize;
+    if pcir + 8 > rom.len() {
+        return None;
+    }
+    if &rom[pcir..pcir + 4] != b"PCIR" {
+        return None;
+    }
+    let vendor = u16::from_le_bytes([rom[pcir + 4], rom[pcir + 5]]);
+    let device = u16::from_le_bytes([rom[pcir + 6], rom[pcir + 7]]);
+    Some((vendor, device))
+}
 
 /// Marker-gated dead-slot revival. Returns the candidate list to use for
 /// target selection: the input unchanged when the marker is absent or
@@ -138,6 +185,33 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
             diag.pmcsr, diag.lnkctl, diag.lnksta, diag.bcr,
             st.d_state, st.link_disable as u8, st.link_active as u8, st.speed, st.width, st.lever,
         );
+        // The N-card gate: identify the dead slot from its firmware-cached
+        // option ROM (config space is dead; the ROM shadow is host-side POST
+        // state and survives). The ladder only disconnects consoles and
+        // resets slots it can name as ours - and the ROM identity doubles
+        // as the device identity of a slot whose config cannot be read.
+        match rom_identity(d.handle) {
+            Some((v, dev)) => {
+                info!(
+                    "SLOT-REVIVE: dead slot ROM identity: vendor={v:#06x} device={dev:#06x}{}",
+                    if v == crate::pci::NVIDIA_VENDOR_ID {
+                        " (NVIDIA)"
+                    } else {
+                        " - NOT an NVIDIA card"
+                    }
+                );
+                if v != crate::pci::NVIDIA_VENDOR_ID {
+                    info!("SLOT-REVIVE: ladder declines - the dead slot is not ours to reset");
+                    continue;
+                }
+            }
+            None => {
+                info!(
+                    "SLOT-REVIVE: dead slot has no readable ROM identity - ladder declines (never reset an unidentifiable device)"
+                );
+                continue;
+            }
+        }
         if st.lever == ReviveLever::NoneHealthy {
             if force_sbr {
                 info!(
@@ -186,8 +260,43 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
                 }
                 ReviveLever::SecondaryBusReset => {
                     sbr = true;
+                    // GOP disconnect BEFORE the reset. Bench lesson
+                    // (2026-11-22): an SBR on a card whose GOP is still
+                    // bound soft-locks the machine - the GPU SBR runs only
+                    // after the GOP is disconnected. A dead slot can still
+                    // own the console (#276: its GOP drives the display
+                    // while config reads 0xffff), and this slot is ours
+                    // (the ROM gate passed), so its console must go first.
+                    let owned: alloc::vec::Vec<Handle> =
+                        match boot::locate_handle_buffer(SearchType::ByProtocol(
+                            &GraphicsOutput::GUID,
+                        )) {
+                            Ok(h) => h
+                                .iter()
+                                .filter(|g| {
+                                    crate::tx_detach::gop_belongs_to_target(**g, d.handle)
+                                })
+                                .copied()
+                                .collect(),
+                            Err(_) => alloc::vec::Vec::new(),
+                        };
+                    if !owned.is_empty() {
+                        info!(
+                            "SLOT-REVIVE: {} console GOP handle(s) belong to the dead slot - disconnecting before the reset (the console dies here; loader.log is the only readback this boot)",
+                            owned.len()
+                        );
+                        crate::logging::mute_console();
+                        for gop in owned.iter() {
+                            let st = boot::disconnect_controller(*gop, None, None);
+                            info!(
+                                "SLOT-REVIVE: console GOP disconnect status {:?}",
+                                st.map(|_| ())
+                            );
+                        }
+                        REVIVE_GOP_SEEN.store(true, Ordering::Relaxed);
+                    }
                     info!(
-                        "SLOT-REVIVE: lever 3 SECONDARY BUS RESET - if the card owns the console, the screen goes down from here (loader.log is the only readback); the transaction is skipped this boot by design"
+                        "SLOT-REVIVE: lever 3 SECONDARY BUS RESET - the transaction proceeds this boot only if the BAR bookkeeping restores (see below)"
                     );
                     sbr_cycle(&port);
                 }
