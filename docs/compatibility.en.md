@@ -33,7 +33,8 @@ Routing uses chip families. Same-family IDs share Booter/payload assets; a route
 
 | Family | PCI device-ID ranges | Assets |
 | --- | --- | --- |
-| Turing | `0x1e02..=0x1fff`, `0x2182..=0x21d1` | `tu10x` |
+| Turing · RTX 20 (TU102/104/106; TITAN/Quadro RTX, CMP 40/50HX) | `0x1e02..=0x1f80` | `tu10x` |
+| Turing · GTX 16 (TU116/117; CMP 30HX) | `0x1f81..=0x1fff`, `0x2182..=0x21d1` | `tu11x` (die-keyed assets, the #151 route) |
 | Ampere GA10x | `0x2200..=0x22ff`, `0x2400..=0x25ff` | `ga102` |
 | Ada | `0x2600..=0x28ff` | `ad102` |
 
