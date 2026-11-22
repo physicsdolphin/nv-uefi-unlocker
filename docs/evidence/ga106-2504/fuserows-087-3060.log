@@ -6,14 +6,17 @@
 # (576 rows) - matches the reading-notes 6m table; FUSE_ADDR saved/restored
 # = 575 == LAST. Two passes match (576 rows), address restored.
 # Provenance: user paste (Windows, elevated probe-driver run).
-# KEY-MATERIAL DISCLOSURE NOTE (2026-11-22): rows 0x2a..0x4e carry device-unique
-# random material (byte entropy 89-100% of sample max after dedup; no decodable
-# structure; sizes do NOT match any known public format incl. HDCP 1.x 280B /
-# HDCP 2.2 RSA blocks, and differ per die). Entropy alone CANNOT distinguish
-# secret keys from public verification material (signatures / public-key hashes /
-# unique IDs are random-looking by design) - classification needs NVIDIA-side
-# decode, which does not exist publicly. Treat these words as device-unique
-# sensitive: do not clone, and redact before republishing raw dumps.
+# CLASSIFICATION: UNKNOWN PER-DEVICE FUSE MATERIAL (standing, 2026-11-22).
+# Rows 0x2a..0x4e are device-unique random material (byte entropy 89-100% of
+# sample max after dedup; no decodable structure; sizes do NOT match any
+# known public format incl. HDCP 1.x 280B / HDCP 2.2 RSA blocks, and differ
+# per die). Entropy cannot distinguish secret keys from public verification
+# material - both are random-looking by design - so the classification stays
+# OPEN until an NVIDIA-side decode exists; HDCP was hypothesized but has no
+# structural evidence. Anyone providing row dumps is informed of this
+# classification in advance; sharing is optional, and these ranges may be
+# redacted or withheld without losing analysis value (the fuse-pool records
+# are the analysis-relevant part).
 --- FUSE ROW DUMP (WRITE MODE) - writes: FUSEADDR row numbers + FUSECTRL CMD_READ only; no programming command; address restored after ---
   protocol: ga100-ff-tools read_rows (two passes, latch checks); a bound kernel driver is a concurrency risk - pass mismatches mark rows unreliable
   domain: rows 0..575 (IFF_RECORD 0x023f021e, saved FUSEADDR 575) - two passes
