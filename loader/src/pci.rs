@@ -855,6 +855,18 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
         let vendor = pci.config_read_u16(0x00);
         let device = pci.config_read_u16(0x02);
         if vendor == 0xffff || vendor == 0x0000 {
+            // Dead functions are the raw material of the #276 discrimination
+            // (a slot that reads 0xffff while the card itself is alive) - and
+            // they are exactly what the ultrafast profile would hide, since
+            // the stock empty-slot line is gated. The bench round of
+            // 2026-11-22 proved the blind spot is real: the ASMedia bridge
+            // 04:00.0 vanished from one boot's enumeration with no trace in
+            // the log. One unconditional line per dead function, so even an
+            // ultrafast round leaves the intermittent shape on the stick.
+            #[cfg(feature = "tx")]
+            info!(
+                "PORT-DIAG: {seg:04x}:{bus:02x}:{dev:02x}.{fun} DEAD (vendor {vendor:#06x}) - judged by SLOT-REVIVE only when \\tx-revive-dead-slot.txt is armed"
+            );
             if !crate::ultrafast() {
                 info!("PCI {:04x}:{:02x}:{:02x}.{} empty slot (vendor {:#06x})", seg, bus, dev, fun, vendor);
             }
