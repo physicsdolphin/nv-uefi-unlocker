@@ -1,0 +1,3 @@
+EBS-WATCH installed (gBS patched: ExitBootServices + GetMemoryMap wrapped, header CRC recomputed)
+EBS-ENTER n=1 key=0xf019 gmm=25/4 lastkey=0xf019 distinct=16
+EBS-RETURN n=1 status=0x8000000000000002 (services still alive - the caller retries with a fresh map)
