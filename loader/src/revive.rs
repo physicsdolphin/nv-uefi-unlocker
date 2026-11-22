@@ -117,6 +117,10 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
         loc: (usize, usize, usize, usize),
         sec: u8,
         sub: u8,
+        /// Firmware device path of the port (for numbering-independent
+        /// parent matching — the #276 renumbering family zeroes the port's
+        /// bus registers, so bus-range containment cannot find the parent).
+        path: Option<alloc::vec::Vec<u8>>,
     }
     let mut dead: alloc::vec::Vec<DeadFn> = alloc::vec::Vec::new();
     let mut ports: alloc::vec::Vec<Port> = alloc::vec::Vec::new();
@@ -143,6 +147,7 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
                 loc,
                 sec: ((buses >> 8) & 0xff) as u8,
                 sub: ((buses >> 16) & 0xff) as u8,
+                path: crate::tx_detach::device_path_bytes(*handle),
             });
         }
     }
@@ -152,14 +157,41 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
     let mut revived_no_reset = false;
 
     for d in dead.iter() {
-        let Some(p) = ports.iter().find(|p| {
-            p.loc.0 == d.loc.0 && d.loc.1 >= p.sec as usize && d.loc.1 <= p.sub as usize
-        }) else {
-            info!(
-                "SLOT-REVIVE: {:04x}:{:02x}:{:02x}.{} dead but no alive parent port - nothing to act on",
-                d.loc.0, d.loc.1, d.loc.2, d.loc.3
-            );
-            continue;
+        // Parent matching, numbering-independent first: the #276 family
+        // ZEROES the port's bus registers (bench-confirmed in the field:
+        // PEG port sec/sub read 0/0 while the dead function's handle was
+        // created under bus 2), so bus-range containment cannot find the
+        // parent. The firmware device path is stable - a port whose path
+        // is a prefix of the dead function's path IS the parent, whatever
+        // its current bus numbering says. Bus containment is the fallback
+        // for handles without readable paths.
+        let (p, _renumbered) = {
+            let mut found: Option<(&Port, bool)> = None;
+            for p in ports.iter() {
+                let path_match = match (&p.path, crate::tx_detach::device_path_bytes(d.handle)) {
+                    (Some(pp), Some(dp)) => crate::tx_detach::path_belongs_to(pp, &dp),
+                    _ => false,
+                };
+                let bus_match =
+                    p.loc.0 == d.loc.0 && d.loc.1 >= p.sec as usize && d.loc.1 <= p.sub as usize;
+                if path_match {
+                    found = Some((p, !bus_match));
+                    break;
+                }
+                if bus_match && found.is_none() {
+                    found = Some((p, false));
+                }
+            }
+            match found {
+                Some(pair) => pair,
+                None => {
+                    info!(
+                        "SLOT-REVIVE: {:04x}:{:02x}:{:02x}.{} dead but no alive parent port (path or bus containment) - nothing to act on",
+                        d.loc.0, d.loc.1, d.loc.2, d.loc.3
+                    );
+                    continue;
+                }
+            }
         };
         // Safety: GetProtocol performs no driver binding (same as enumerate()).
         let Ok(port) = (unsafe {
@@ -224,11 +256,58 @@ pub fn revive_dead_slots(gpus: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
             }
         }
         if st.lever == ReviveLever::NoneRelocated {
+            // The #276 family, upgraded from decline to action (field
+            // round 2026-11-22: the PEG port read sec/sub = 0/0 with the
+            // link trained Gen3 x16 - the firmware ZEROED the bus
+            // registers as a config-isolation gate; the device itself was
+            // never dead, its memory windows kept routing (the console
+            // kept painting), and its config space content - BARs
+            // included - survived intact behind the routing break).
+            // Restore = write the dead function's recorded bus back into
+            // the port's secondary/subordinate registers, readback, then
+            // reprobe. No reset is needed if the device was only
+            // routing-isolated; the SBR ladder below remains as the next
+            // lever when the reprobe still reads 0xffff.
             info!(
-                "SLOT-REVIVE: LINK IS UP and the port's secondary bus (0x{:02x}) no longer matches the recorded location bus (0x{:02x}) - the device was RELOCATED by firmware renumbering, not powered down (memory windows still route, which is why the console updates); no lever applies - relocation-aware discovery is the follow-up",
+                "SLOT-REVIVE: LINK IS UP and the port's current secondary bus (0x{:02x}) does not match the recorded location bus (0x{:02x}) - the config-isolation family (firmware zeroed/reassigned the port's bus routing; memory windows still route, which is why the console kept updating). Restoring the recorded bus numbering",
                 p.sec, d.loc.1
             );
-            continue;
+            let cur = port.config_read_u32(0x18);
+            let want = (cur & 0x0000_00ff)
+                | ((d.loc.1 as u32 & 0xff) << 8)
+                | ((d.loc.1 as u32 & 0xff) << 16);
+            port.cfg_write_u32(0x18, want);
+            let rb = port.config_read_u32(0x18);
+            info!(
+                "SLOT-REVIVE: bus registers restored {cur:#010x} -> {want:#010x} (readback {rb:#010x}){}",
+                if rb == want { "" } else { " MISMATCH" }
+            );
+            if rb != want {
+                info!("SLOT-REVIVE: bus restore did not stick - falling to the lever ladder");
+            } else {
+                let vendor = open_dead_vendor(d.handle);
+                if vendor != 0xffff && vendor != 0x0000 {
+                    info!(
+                        "SLOT-REVIVE: {:04x}:{:02x}:{:02x}.{} vendor reads {vendor:#06x} after the bus restore - the device was ROUTING-ISOLATED, never dead: its config space (BARs included) survived intact, no reset and no BAR restore needed. The slot stays in the candidate list and the transaction proceeds this boot.",
+                        d.loc.0, d.loc.1, d.loc.2, d.loc.3, vendor = vendor
+                    );
+                    revived_no_reset = true;
+                    continue;
+                }
+                info!(
+                    "SLOT-REVIVE: still 0xffff after the bus restore - the device needs a reset too; falling to the lever ladder (levers now reachable: config TLPs route again)"
+                );
+                // Re-decode with the restored numbering so the ladder sees
+                // the truthful port state (bus containment now holds).
+                let diag = pci::read_port_diag(&port);
+                st = pci::decode_port_state(
+                    diag.pmcsr,
+                    diag.lnkctl,
+                    diag.lnksta,
+                    ((diag.buses >> 8) & 0xff) as u8,
+                    Some(d.loc.1 as u8),
+                );
+            }
         }
 
         // The escalation ladder. Each lever: act on the port, verify the
