@@ -412,6 +412,7 @@ pub fn sbr_gpu_in_transaction(gpu: &crate::tx::TxGpu, baseline: &[u32]) -> bool 
     // no granularity (gran=0) - the config walk below mirrors both.
     {
         let mut cfg_entries: alloc::vec::Vec<(u64, u64)> = alloc::vec::Vec::new();
+        let is_io = |v: u32| v & 0x1 == 0x1;
         let mut d = 4usize; // baseline dword 4 = config offset 0x10 (BAR0)
         while d <= 9 {
             let v = baseline[d];
@@ -422,7 +423,12 @@ pub fn sbr_gpu_in_transaction(gpu: &crate::tx::TxGpu, baseline: &[u32]) -> bool 
             if v & 0x1 == 0x1 {
                 cfg_entries.push(((v & 0xfffc) as u64, 0)); // IO: gran unset
                 d += 1;
-            } else if v & 0x2 != 0 && d < 9 {
+            } else if !is_io(v) && (v & 0x6) == 0x4 && d < 9 {
+                // 64-bit MEM BAR: the type lives in bits[2:1] (10 = 64-bit),
+                // NOT bit 1 - the first draft tested bit 1 and misread every
+                // 64-bit prefetchable BAR (bits[2:1]=10, bit3=1) as 32-bit.
+                // Field-caught in the bookkeeping cross-check (bench round:
+                // BAR1/BAR2 gran=64 vs walk gran=32, bases matching).
                 let hi = baseline[d + 1];
                 cfg_entries.push((((hi as u64) << 32) | (v & 0xffff_fff0) as u64, 64));
                 d += 2;
