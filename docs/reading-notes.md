@@ -1119,6 +1119,16 @@ JeusChrit 三连（VBIOS app01/07/08 全 55,522 条指令 byte-check + AD103 6-p
    0x55+FUSEDEBUG 0 前置、FUSEADDR 保存/恢复、双 pass 比对）=**新写类**
    （宪法 §1.7 门控），ssdiag 未实现；已如实回复并索其两 pass 数据。
 
+**6o 追记（同日用户批准写类，0.8.7 340c8e3d）**：`--fuserows[=A-B]` 行级
+熔丝采集落地双胞胎——ff-tools read_rows 协议逐守卫移植（每行前 IDLE/
+CRC_STATUS 0x55/FUSEDEBUG 0 三验、FUSEADDR 锁存验证后才发 CMD_READ、
+FUSEDATA 拒 badf 留全 1=合法 OTP 词、双 pass 比对、原址恢复+验证永不静默），
+守卫失败=零写诊断中止，Turing（FUSE_ADDR=0xff 越域）自拒。写面仅两种：
+行号进 FUSEADDR、CMD_READ(0x1) 进 FUSECTRL——无编程命令路径。
+cargo 21/21（mock 控制器 5 测：happy/range/precondition 零写/latch 失败
+0×CMD_READ/解析器）。等 4060L 实采（命令：`ssdiag --fuserows=0x2ff-0x33f`，
+先全量 `--fuserows` 亦可）回 rison1337 行对比。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

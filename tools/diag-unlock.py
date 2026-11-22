@@ -1311,16 +1311,148 @@ def report(bar, tag="", devpath=None):
     return fam, regs, plm, unlocked
 
 
+# --- #237 round 6: --fuserows, WRITE MODE (user-approved) ---
+FUSE_CTRL, FUSE_ADDR, FUSE_DATA = 0x0082_0000, 0x0082_0004, 0x0082_0008
+FUSE_DEBUG, FUSE_CRC_STATUS, FUSE_IFF_RECORD = 0x0082_0060, 0x0082_0070, 0x0082_0050
+FUSE_CMD_READ, FUSE_CMD_MASK, FUSE_SPIN_LIMIT = 0x1, 0x3, 1 << 20
+
+
+def _fuse_guard_ok(bar):
+    """One ff-tools guard round; returns an error string or None."""
+    ctrl = bar.rd(FUSE_CTRL)
+    if ctrl & 0xFFFF0000 == 0xBADF0000:
+        return f"FUSECTRL reads {ctrl:#010x} (PRI error) - controller not accessible"
+    if ctrl == 0xFFFF_FFFF:
+        return "FUSECTRL reads all-ones - not decoded/accessible here"
+    if (ctrl >> 16) & 31 != 4 or ctrl & FUSE_CMD_MASK != 0:
+        return f"FUSECTRL {ctrl:#010x} not idle (state={(ctrl >> 16) & 31} cmd={ctrl & FUSE_CMD_MASK})"
+    crc = bar.rd(FUSE_CRC_STATUS)
+    if crc != 0x55:
+        return f"CRC_STATUS {crc:#010x} != 0x55"
+    dbg = bar.rd(FUSE_DEBUG)
+    if dbg != 0:
+        return f"FUSEDEBUG {dbg:#010x} != 0 - debug mode would falsify row data"
+    return None
+
+
+def _fuse_wait_idle(bar):
+    for _ in range(FUSE_SPIN_LIMIT):
+        ctrl = bar.rd(FUSE_CTRL)
+        if (ctrl >> 16) & 31 == 4 and ctrl & FUSE_CMD_MASK == 0:
+            return None
+    return "controller never returned to idle within the spin limit"
+
+
+def fuse_row_dump(bar, rng):
+    """Physical fuse-row capture, ported from ga100-ff-tools read_rows.
+
+    Writes are ONLY row numbers to FUSEADDR (latch-verified) and CMD_READ
+    to FUSECTRL - no programming command on this path; the original
+    FUSEADDR is restored+verified on every exit path. Returns complete.
+    """
+    print("--- FUSE ROW DUMP (WRITE MODE) - writes: FUSEADDR row numbers + FUSECTRL CMD_READ only; no programming command; address restored after ---")
+    print("  protocol: ga100-ff-tools read_rows (two passes, latch checks); a bound kernel driver is a concurrency risk - pass mismatches mark rows unreliable")
+    fail = None
+    err = _fuse_guard_ok(bar)
+    if err:
+        print(f"  FUSEROWS ABORT: {err} - no writes performed")
+        return False
+    saved = bar.rd(FUSE_ADDR)
+    if saved & 0xFFFF0000 == 0xBADF0000 or saved == 0xFFFF_FFFF:
+        print(f"  FUSEROWS ABORT: FUSEADDR {saved:#010x} unreadable - no writes performed")
+        return False
+    iff = bar.rd(FUSE_IFF_RECORD)
+    if iff & 0xFFFF0000 == 0xBADF0000 or iff == 0xFFFF_FFFF:
+        print(f"  FUSEROWS ABORT: IFF_RECORD {iff:#010x} unreadable - row domain unknown, no writes performed")
+        return False
+    _, last = iff_decode(iff)
+    if saved > last:
+        print(f"  FUSEROWS ABORT: FUSEADDR {saved} outside the IFF domain 0..{last} - no writes performed")
+        return False
+    if rng == "all":
+        first, last_row = 0, last
+    else:
+        ra, rb = rng
+        if rb > last:
+            print(f"  FUSEROWS ABORT: range {ra:#x}-{rb:#x} exceeds the IFF domain 0..{last}")
+            return False
+        first, last_row = ra, rb
+    print(f"  domain: rows {first}..{last_row} (IFF_RECORD {iff:#010x}, saved FUSEADDR {saved}) - two passes")
+    passes = [[], []]
+    for p in range(2):
+        buf = passes[p]
+        for row in range(first, last_row + 1):
+            err = _fuse_guard_ok(bar)
+            if err:
+                fail = f"pass {p + 1} row {row}: {err}"
+                break
+            bar.wr(FUSE_ADDR, row)
+            if bar.rd(FUSE_ADDR) != row:
+                fail = f"pass {p + 1} row {row}: FUSEADDR did not latch"
+                break
+            bar.wr(FUSE_CTRL, FUSE_CMD_READ)
+            err = _fuse_wait_idle(bar)
+            if err:
+                fail = f"pass {p + 1} row {row}: {err}"
+                break
+            v = bar.rd(FUSE_DATA)
+            if v & 0xFFFF0000 == 0xBADF0000:
+                fail = f"pass {p + 1} row {row}: FUSEDATA {v:#010x} (PRI error)"
+                break
+            buf.append(v)  # all-ones is a legal OTP word, kept verbatim
+        if fail:
+            break
+    bar.wr(FUSE_ADDR, saved)
+    restored = bar.rd(FUSE_ADDR) == saved
+    if not restored:
+        print(f"  FUSEROWS RESTORE FAILED: original FUSEADDR {saved} DID NOT RESTORE (reads {bar.rd(FUSE_ADDR):#010x}) - investigate before trusting anything else")
+    complete = fail is None and restored
+    if fail:
+        print(f"  FUSEROWS ABORT: {fail} - gathered prefix below, INCOMPLETE")
+    elif complete:
+        print("  FUSEROWS OK: both passes complete, address restored")
+    mismatches = [i for i in range(len(passes[0])) if passes[0][i] != passes[1][i]] if complete else []
+    if complete and not mismatches:
+        print(f"  two passes match ({len(passes[0])} rows)")
+    elif complete:
+        print(f"  PASS MISMATCH: {len(mismatches)} row(s) differ between passes - treat as unreliable")
+        for i in mismatches[:16]:
+            print(f"    row {first + i:#x}: pass1 {passes[0][i]:#010x} pass2 {passes[1][i]:#010x}")
+    for i, v in enumerate(passes[0]):
+        print(f"FUSEROW {first + i:#x} = {v:#010x}")
+    return complete
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bdf", help="only this PCI address, e.g. 0000:01:00.0")
     ap.add_argument("--reapply", action="store_true",
                     help="write SS0=0x88888888 SS1=0x8 where the PLM gate is open")
+    ap.add_argument("--fuserows", nargs="?", const="all", default=None, metavar="A-B",
+                    help="WRITE MODE: physical fuse-row capture (ga100-ff-tools read_rows"
+                         " protocol: FUSEADDR row select + FUSECTRL CMD_READ only, guarded,"
+                         " two passes, address restored). Range A-B hex/decimal;"
+                         " default = whole IFF domain")
     ap.add_argument("--inventory", action="store_true",
                     help="print the unelevated read-only hardware inventory "
                          "block (OS/CPU/board/BIOS/chassis/per-GPU family "
                          "verdict + advisories) and exit - no root needed")
     args = ap.parse_args()
+
+    fuserows = None
+    if args.fuserows is not None:
+        if args.fuserows == "all":
+            fuserows = "all"
+        else:
+            try:
+                ra, rb = args.fuserows.split("-", 1)
+                pa = int(ra, 16) if ra.strip().lower().startswith("0x") else int(ra)
+                pb = int(rb, 16) if rb.strip().lower().startswith("0x") else int(rb)
+                assert 0 <= pa <= pb
+                fuserows = (pa, pb)
+            except (ValueError, AssertionError):
+                print("bad range; use A-B, hex or decimal (e.g. --fuserows=0x2ff-0x33f)", file=sys.stderr)
+                return 2
 
     if args.inventory:
         return inventory()
@@ -1370,6 +1502,9 @@ def main():
                 print(f"  reapply: SS0={rb0:#010x} SS1={rb1:#010x} -> {'OK' if ok else 'READBACK MISMATCH'}"
                       " (read-back is the only success criterion)")
                 rc = 0 if ok else 1
+        if fuserows is not None:
+            if not fuse_row_dump(bar, fuserows):
+                rc = 1
     return rc
 
 
