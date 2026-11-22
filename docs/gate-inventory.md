@@ -167,9 +167,10 @@ PSTRAPS SET0[15:14]+SET1[22:20]（BAR0+0x101000/0x10100c，和值编码 0=64MiB�
    ①legacy 驱动格（TU11x×legacy 未测；TU106 四象限先验为负——门开×legacy=Code 43、
    relock 门关×legacy=TDR 洗回厂，rc4 定谳 → `EnableGpuFirmware=1` 是 20 系机理级硬前置）
    ②rc5 keep-open 重放（v2.1.11 tag 在 061aef8 之前；relock 写在 621.01/630.20 代有
-   #99 PF-FLR 反应家族，621.14 同代）③全厂回锁 `0xffffff8f` 消融（TU102 上
-   0x8f+SS live 已证好——"bits 5:6 sticky-open 非 die 普适"；loader knob 筹备中）
-   ④残差 diff/⑤RM 错误码解码/⑥驱动代际。
+   #99 PF-FLR 反应家族，621.14 同代）③~~全厂回锁消融~~ **撤销（2026-11-22 勘误）**：
+   relock 写值本来就是 `0xffffff8f`（tx.rs:1711），0xef 是写后读回=硅 sticky（开过门后
+   bits 5:6 抵抗主机清除，TU106/TU104 同款；TU102 22G 一次读回 0x8f 且 SS 保持=随板方差
+   #74）——PLM 位不是写值可控轴，无 knob 可做。④残差 diff/⑤RM 错误码解码/⑥驱动代际。
    GA10x = PLM-flip verdict；Ada = marker/HALT。manifest 按 family 打印对应提示。
    manifest 按 family 打印对应提示。
 8. **逐芯片几何**：booter 尺寸/gadget 地址/签名段名逐族不同——跨族移植=重抽取重审计
