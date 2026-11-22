@@ -1,0 +1,2 @@
+EBS-WATCH installed (gBS patched: ExitBootServices + GetMemoryMap wrapped, header CRC recomputed)
+EBS-ENTER n=1 key=0x4868 gmm=22/11 lastkey=0x4868 distinct=11
