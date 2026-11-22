@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import struct
 import subprocess
@@ -54,6 +56,33 @@ class DiagUnlockPromBitTests(unittest.TestCase):
             self.assertTrue(fam.startswith("blackwell"))
             self.assertEqual(regs["plm"], 0x0082_3804)
             self.assertEqual(regs["readout"], 0x0082_3818)
+
+    def test_blackwell_report_includes_aux_rows_and_tpc_ctrl_parity(self):
+        rows = dict(self.mod.BLACKWELL_ROWS)
+        self.assertEqual(rows["SM_ISSUE_RATE_MODIFIER"], 0x0050_4204)
+        self.assertEqual(rows["SEC2_PLM"], 0x0084_03C4)
+
+        class MockBar:
+            def rd(self, off):
+                return {
+                    0x0000_0000: 0x1B50_00A1,
+                    0x0082_3804: 0xFFFF_FB8F,
+                    0x0082_3818: 0x00C3_6180,
+                    0x0082_381C: 0x5602_7063,
+                    0x0082_3820: 0x0003_2004,
+                    0x0050_4204: 5,
+                    0x0084_03C4: 0x0000_0B0F,
+                }.get(off, 0)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            st = self.mod.report(MockBar())
+        text = out.getvalue()
+        self.assertEqual(st[0], "blackwell-gb2")
+        self.assertIn("TPC_CTRL (0x820838+4g, 12 GPCs):", text)
+        self.assertIn("SM_ISSUE_RATE_MODIFIER = 0x00000005", text)
+        self.assertIn("SEC2_PLM               = 0x00000b0f", text)
+        self.assertIn("fields 0 0 3 0 3 3 0 3 0 - not rates", text)
 
     def test_prom_bit_blackwell_v6_with_ff_padding_bogus_55aa_null_slots_and_oob(self):
         rom = bytearray(b"\xff" * 0x4000)

@@ -3642,7 +3642,7 @@ const FEAT_BLACKWELL: [(&str, u32); 4] = [
 /// override master switch, the Quadro secure-write word, the inert issue-rate
 /// modifier and the empty SEC2 PLM. On Ampere/Ada these read different (or are
 /// absent) values, so they are printed only for a blackwell die.
-const BLACKWELL_ROWS: [(&str, u32); 12] = [
+const BLACKWELL_ROWS: [(&str, u32); 14] = [
     ("FUSE_EN_SW_OVERRIDE", 0x0082_0040),
     ("FUSE_SS_PLM", 0x0082_00FC),
     ("SECURE_FEAT_OVR_QUADRO_WR", 0x0082_038C),
@@ -3655,6 +3655,8 @@ const BLACKWELL_ROWS: [(&str, u32); 12] = [
     ("FUSE_SS_IMLA2", 0x0082_07E4),
     ("FUSE_SS_IMLA3", 0x0082_07E8),
     ("FUSE_SS_IMLA4", 0x0082_07EC),
+    ("SM_ISSUE_RATE_MODIFIER", 0x0050_4204),
+    ("SEC2_PLM", 0x0084_03C4),
 ];
 /// `FEAT_READOUT_1` is NOT nine contiguous 3-bit fields: the fields sit at
 /// these bit offsets, with gaps at bit 6 and bits 27:25 (measured on GB202,
@@ -6458,13 +6460,22 @@ mod tests {
 
     #[test]
     fn blackwell_dump_renders_without_panicking() {
+        let mut seen_modifier = false;
+        let mut seen_sec2_plm = false;
         let rd = |off: u32| match off {
             0x0082_3800 | 0x0082_3804 => 0xFFFF_FB8F,
             0x0082_3818 => 0x00C3_6180,
             0x0082_381C => 0x0627_7073,
             0x0082_3820 => 0x0002_5005,
+            0x0050_4204 => 5,
+            0x0084_03C4 => 0x0000_0B0F,
             _ => 0,
         };
+        assert!(BLACKWELL_ROWS.iter().any(|&(n, o)| {
+            if n == "SM_ISSUE_RATE_MODIFIER" && o == 0x0050_4204 { seen_modifier = true; }
+            if n == "SEC2_PLM" && o == 0x0084_03C4 { seen_sec2_plm = true; }
+            false
+        }) || (seen_modifier && seen_sec2_plm));
         dump_debug(&rd, "blackwell-gb2");
     }
 

@@ -80,6 +80,8 @@ BLACKWELL_ROWS = [
     ("FUSE_SS_IMLA2", 0x0082_07E4),
     ("FUSE_SS_IMLA3", 0x0082_07E8),
     ("FUSE_SS_IMLA4", 0x0082_07EC),
+    ("SM_ISSUE_RATE_MODIFIER", 0x0050_4204),
+    ("SEC2_PLM", 0x0084_03C4),
 ]
 # FEAT_READOUT_1 is NOT nine contiguous 3-bit fields: offsets 0,3,7,10,13,
 # 16,19,22,28 (gaps at bit 6 and bits 27:25). Contiguous decode yields
@@ -983,6 +985,9 @@ def report(bar, tag="", devpath=None):
     rrow(bar, AD1X_ROWS)
     if blackwell:
         print("  --- blackwell fuse/aux block (read-only; selectors are fuse mirrors) ---")
+        # GB20x TPC CTRL overrides (0x820838+4g, 12 GPCs; ssdiag 0.7.7 parity, discussion #216).
+        tpc_ctrl = " ".join(f"{bar.rd(TPC_CTRL_BASE + 4 * g):#010x}" for g in range(12))
+        print(f"  TPC_CTRL (0x820838+4g, 12 GPCs): {tpc_ctrl}")
         rrow(bar, BLACKWELL_ROWS)
         print(f"  READOUT_1 fields (imla0 fmla16 fmla32 ffma imla1 imla2 imla3 imla4 DP) ="
               f" {decode_readout1(bar.rd(0x0082_3818))}")
