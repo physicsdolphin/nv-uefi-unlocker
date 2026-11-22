@@ -448,7 +448,7 @@ pub fn sbr_gpu_in_transaction(gpu: &crate::tx::TxGpu, baseline: &[u32]) -> bool 
             match bk_entries.get(i) {
                 Some((bb, bg)) => info!(
                     "GPU-SBR: bookkeeping BAR{i}: base={bb:#x} gran={bg} vs config base={cb:#x} gran={cg}{}",
-                    if bb == *cb && bg == *cg { " MATCH" } else { " MISMATCH" }
+                    if *bb == *cb && *bg == *cg { " MATCH" } else { " MISMATCH" }
                 ),
                 None => info!(
                     "GPU-SBR: bookkeeping BAR{i}: missing (config has base={cb:#x} gran={cg})"
