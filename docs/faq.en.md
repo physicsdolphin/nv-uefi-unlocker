@@ -526,6 +526,8 @@ Mechanism hypothesis: the Thunderbolt host controller (and its DXE/SMM agents) i
 
 Suggested order: capture evidence first as usual (`loader.log`; since rc5 add `\tx-ebs-watch.txt` to pin the hang to a specific fanout stage — reading table in the [v2.1.12-rc5 release notes](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/tag/v2.1.12-rc5)); after TB-off is confirmed to boot, one ebs-watch round with TB re-enabled, if the reporter is willing, is direct testimony of the Thunderbolt actor.
 
+**2026-11-22 mechanism-level update ([#239](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/239) ebs-watch A/B)**: rc5 `	x-ebs-watch.txt` pinned the hang's stage on real hardware — TB-on round color rows: yellow (NOTIFY, past the memory-map check, inside the fanout) present, green (RETURN) absent, blue (BEFORE) absent (Insyde, like AMI, does not emit the BeforeEBS group); the TB-off round walks the same path to yellow→green and returns. The two ebs-watch files are byte-identical (exactly one budgeted INVALID_PARAMETER self-perturbation each, identical gmm counters) → **"background TB activity invalidates the MapKey, repeated retries" class mechanisms are falsified**; the wedge = **the fanout tail (NOTIFY→RETURN gap), TB-on only**. Next discriminating round = `	x-agitate-only.txt`+`	x-ebs-watch.txt`+TB-on ("live unlocked GPU × Thunderbolt" vs "loader surgery × Thunderbolt"). Evidence: `docs/evidence/issue239-tb-hang-ebswatch/`.
+
 <a id="secureboot"></a>
 
 ## Does it work with Secure Boot on?

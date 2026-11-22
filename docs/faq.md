@@ -525,6 +525,8 @@ Turing 的交棒自 2026-11-08 起默认**门开**（与 Ampere/Ada 一致；TU1
 
 操作顺序建议：先按常规抓证据（`loader.log`；rc5 起加 `\tx-ebs-watch.txt` 可把挂死定位到具体扇出阶段——判读见 [v2.1.12-rc5 release notes](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/tag/v2.1.12-rc5)）；关雷电确认能引导后，若愿意回开雷电做一轮 ebs-watch 对照，挂死阶段的读数就是雷电 actor 的直接见证。
 
+**2026-11-22 机理级更新（[#239](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/239) ebs-watch A/B）**：rc5 `	x-ebs-watch.txt` 在该机拿到了**真机挂死的阶段定位**——TB-on 轮色块=黄（NOTIFY，已过内存图校验进入扇出）有、绿（RETURN）无、蓝（BEFORE）无（Insyde 与 AMI 一样不发 BeforeEBS 组）；TB-off 轮同路径黄→绿完整返回。两轮 ebs-watch 文件逐字节等价（各恰好一次预算内 INVALID_PARAMETER 自扰、gmm 计数逐位相同）→ **"雷电后台活动让 MapKey 失效、反复重试"类机理被证伪**；楔子=**扇出尾段（NOTIFY→RETURN 间隙），且仅 TB-on**。下一判别轮=`	x-agitate-only.txt`+`	x-ebs-watch.txt`+TB-on（区分"活态解锁 GPU×雷电" vs "loader 手术×雷电"）。证据：`docs/evidence/issue239-tb-hang-ebswatch/`。
+
 <a id="secureboot"></a>
 
 ## Secure Boot 开着能用吗？
