@@ -512,6 +512,17 @@ reg add HKLM\SYSTEM\CurrentControlSet\Services\Usb4DeviceRouter /v Start /t REG_
 
 Turing 的交棒自 2026-11-08 起默认**门开**（与 Ampere/Ada 一致；TU106 bench 端到端坐实：固件 GOP 重建与 Windows 驱动 init 都不重关它，系统内 PLM 仍 `0xffffffff`、金丝雀完好，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`；v2.1.11 及更早默认交棒前重锁，`\tx-relock.txt` 可恢复；旧重锁在部分驱动上会诱发 init 期 PF FLR 并清零 SS，[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B 定谳）。门开的附带收益是系统内写入面开放：`ssdiag --reapply` 的 Turing 只读限制具备解除条件（工具侧待跟进），SS0 各 4 位速率字段的编码语义也可在系统内实验。**marker 臂的回锁值本身不是失败**：`\tx-relock.txt` 在位时实测常为 `0xffffffef`（bits 5:6 置位），而冷态默认是 `0xffffff8f`；该值随板/驱动版本存在方差——`1e04` 22G 改装卡（[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)）实测过 `fully closed 0xffffff8f` 且 SS 仍持解锁值，`8f` 本身不作失败判读，看同一行的 `ss0/ss1`。`HANDOFF-OUT` 里 `tu10x: plm=0xffffffff`（默认）或 `tu10x: plm=0xffffffef`（marker 臂）配 `tu10x_unlock=true`、SS0/SS1 仍为 `0x88888888`/`0x8` 都是正常交棒形态（[冷态对照](cold-values.md)、[#102](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/102)、[#55](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/55)；#54/#74/#102 均已关闭 completed）。来源：[雷电平台记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/54)。
 
+### BIOS 里关闭雷电解决"U 盘启动后进不去系统"（链载交接挂死）——两例
+
+上面整节讲的是**进系统之后**解锁的保留（CM 拆建掉锁）；雷电还有另一个完全不同的角色：**引导交接本身挂死的参与者**。已知两例"事务全绿、卡在 OEM logo（链载交接挂死）、BIOS 关闭 Thunderbolt 后即可正常引导"：
+
+- [#239](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/239) Thinkbook 16 Pro G5 IRX（内置 4060）：带完整日志的对照——开雷电挂 logo（事务链全绿、日志止于 CHAIN 段），BIOS 关雷电后正常引导；判读细节（显示自建失败形态、雷电角色待三份数据判别）见该帖。
+- B 站评论区一例（2026-11-20，无机器细节无日志）：症状同为"U 盘启动后进不去系统"，关 BIOS 雷电解决——只有症状与解法，证据等级低于 #239，但"症状-解法"对与 #239 一致。
+
+机理假说：雷电 host 控制器（及其 DXE/SMM 代理）是交接扇出的参与者之一，活态解锁 GPU 摆在总线上时它先撞墙；BIOS 关雷电 = 把这个 actor 从扇出里摘掉。两个轴别混：**CM 拆建掉锁**（上文，进系统后的保留问题）≠ **交接挂死**（这条，引导本身过不去）。台式机没有雷电硬件，其同类挂死与此 actor 无关（[#278](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/278)/[#279](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/279) 主板即无雷电）。
+
+操作顺序建议：先按常规抓证据（`loader.log`；rc5 起加 `\tx-ebs-watch.txt` 可把挂死定位到具体扇出阶段——判读见 [v2.1.12-rc5 release notes](https://github.com/physicsdolphin/nv-uefi-unlocker/releases/tag/v2.1.12-rc5)）；关雷电确认能引导后，若愿意回开雷电做一轮 ebs-watch 对照，挂死阶段的读数就是雷电 actor 的直接见证。
+
 <a id="secureboot"></a>
 
 ## Secure Boot 开着能用吗？
