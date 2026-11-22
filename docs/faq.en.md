@@ -252,6 +252,8 @@ A third case is worth knowing beyond the rule: **the unlock is alive and the wor
 
 **Evidence level**: the table is one desktop machine (TB4 enclosure; setup in #54). The rule and its power criterion are what the numbers support; other architectures have different "full speed" baselines (`READOUT` semantics in the [read-back verdicts](#ssdiag)), so do not carry these multipliers to another card.
 
+**A reproducible decomposition ([#281](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/281), 2026-11-22)**: on one machine with the same seed for ComfyUI SDXL+LoRA, substituting the four end-to-end ratios into `r = 1/[(1−f)+f/1.86]` yields **compute shares of 44.6% (img2img 976×1248)/49.1%/52.3%/80.8% (txt2img+hires)** and a **fixed per-image overhead of 12.8-15.3 s** (VAE, text encode, staging, roughly resolution-independent). That explains why light workloads cap around 1.2-1.3x while heavy ones approach the GEMM ceiling; the same batch's 9 image pairs are pixel-identical (max\|d\|=0), so only speed changes, not results. **The 16 GB-host offload trap** belongs here too: ComfyUI's dynamic-VRAM default keeps the model in system RAM, and when memory is tight every prompt re-reads ~5 GB - 340/750/793 s single images (sampling itself still only 40-52 s; the 750 s case sat in VAE decode for 11 minutes), and forcing `--highvram` restores a stable 46 s. This is the shape most easily misread as "the unlock did not take".
+
 <a id="relock"></a>
 
 ## Why does an unlocked card get locked again once it reaches the OS?
@@ -644,7 +646,7 @@ The firmware verifies only the Microsoft-signed shim; your key takes effect past
    objdump -h BOOTX64.EFI | grep -i sbat
    ```
 
-   Output means the section is there - skip to step 4. The v2.1.10 artifact has none (checked here: `.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc`, five sections, no `.sbat`). #210 confirmed the consequence on real hardware: with the section missing, shim answers only `Verification failed: (0x1A) Security Violation`, never reaches MokManager, and explains nothing.
+   Output means the section is there - skip to step 4. The v2.1.10 artifact has none (checked here: `.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc`, five sections, no `.sbat`). **v2.1.11 has none either** ([#281](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/281) reporter-checked: the same five sections, `SizeOfImage=0x72000`). #210 confirmed the consequence on real hardware: with the section missing, shim answers only `Verification failed: (0x1A) Security Violation`, never reaches MokManager, and explains nothing.
 
 3. **If it is missing, add it.** shim >= 15.3 refuses a second stage without a valid `.sbat` ([Arch Wiki, Secure Boot](https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot), [Gentoo bug 925902](https://bugs.gentoo.org/show_bug.cgi?id=925902)); expect that refusal to be printed by shim rather than by us, and not to name the cause.
 
@@ -662,7 +664,7 @@ The firmware verifies only the Microsoft-signed shim; your key takes effect past
    objdump -h BOOTX64.grub.efi | grep -i sbat       # .sbat must be listed; SizeOfImage must grow
    ```
 
-   Order matters: add the section to the **unsigned** `BOOTX64.EFI`. If the file you have is already signed, you must re-sign after adding the section. What #210 actually produced on v2.1.10 matches this algorithm (`.sbat` 177 bytes, sections 5 -> 6, `SizeOfImage` `0x68000` -> `0x69000`); any of the three differing means the file you are working on is not that release artifact.
+   Order matters: add the section to the **unsigned** `BOOTX64.EFI`. If the file you have is already signed, you must re-sign after adding the section. What #210 actually produced on v2.1.10 matches this algorithm (`.sbat` 177 bytes, sections 5 -> 6, `SizeOfImage` `0x68000` -> `0x69000`); any of the three differing means the file you are working on is not that release artifact. **The v2.1.11 reference value is a new-section VMA of `0x72000`** ([#281](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/281) reporter-derived with the same algorithm; that build's `SizeOfImage=0x72000` and must grow).
 
 4. **Sign and verify** (name the result `grubx64.efi`; shim looks for that name next to itself):
 

@@ -252,6 +252,8 @@ sudo update-initramfs -u
 
 **证据等级**：上表是一台桌面机（TB4 坞、驱动与场景见 #54）的结果，规则与其中的功耗判据一致；不同架构（如 Turing）的"满速"基准不同（`READOUT` 语义见 [读回判定](#ssdiag)），不要把这里的倍率直接套到别的卡上。
 
+**一个可复算的分解（[#281](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/281)，2026-11-22）**：ComfyUI SDXL+LoRA 同机同种子，把四个工作负载的端到端比值代回 `r = 1/[(1−f)+f/1.86]`，解出**计算占比 44.6%（img2img 976×1248）/49.1%/52.3%/80.8%（txt2img+hires）**，以及**每图固定开销 12.8–15.3 s**（VAE、文本编码、搬运，基本与分辨率无关）。这解释了轻负载为何封顶 ~1.2–1.3×、重负载才接近 GEMM 上限；同批 9 对图像逐像素相同（max\|d\|=0）说明只改速度不改结果。**16 GB 主机的 offload 陷阱**也一并记下：ComfyUI 动态显存默认把模型放系统内存，内存紧张时每个提示重读 ~5 GB——340/750/793 s 单图（采样本身仍只有 40–52 s，750 s 一例卡在 VAE decode 11 分钟），强制 `--highvram` 回到稳定 46 s。这是最容易误判"解锁没生效"的形状。
+
 <a id="relock"></a>
 
 ## 为什么解锁过的卡一进系统又被锁回去？
@@ -643,7 +645,7 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
    objdump -h BOOTX64.EFI | grep -i sbat
    ```
 
-   有输出就跳到第 4 步。v2.1.10 的发布件**没有**这个节（本项目实测：`.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc` 五节，无 `.sbat`）。#210 在真机上确认了后果：缺节时 shim 只回 `Verification failed: (0x1A) Security Violation`，连 MokManager 都进不去，且不说明原因。
+   有输出就跳到第 4 步。v2.1.10 的发布件**没有**这个节（本项目实测：`.text` / `.rdata` / `.data` / `.eh_fram` / `.reloc` 五节，无 `.sbat`）；**v2.1.11 同样没有**（[#281](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/281) 报告者实测：同样五节、`SizeOfImage=0x72000`）。#210 在真机上确认了后果：缺节时 shim 只回 `Verification failed: (0x1A) Security Violation`，连 MokManager 都进不去，且不说明原因。
 
 3. **没有就加一个**。shim ≥ 15.3 会拒绝缺少合法 `.sbat` 的第二阶段（[Arch Wiki, Secure Boot](https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot)，[Gentoo bug 925902](https://bugs.gentoo.org/show_bug.cgi?id=925902)）；预期这条拒绝由 shim 打印，而不是由我们打印，且不会说明原因。
 
@@ -661,7 +663,7 @@ openssl x509 -in NVUEFI.crt -outform DER -out NVUEFI.cer
    objdump -h BOOTX64.grub.efi | grep -i sbat       # 必须列出 .sbat，SizeOfImage 应变大
    ```
 
-   顺序不能反：加节要针对**未签名**的 `BOOTX64.EFI`；若手上已经是签过名的文件，加完节必须重签。#210 在 v2.1.10 上实做的结果与此算法一致（`.sbat` 177 字节、节数 5→6、`SizeOfImage` `0x68000→0x69000`），可作为自查对照：三个数任一不符，说明动手的文件不是那版发布件。
+   顺序不能反：加节要针对**未签名**的 `BOOTX64.EFI`；若手上已经是签过名的文件，加完节必须重签。#210 在 v2.1.10 上实做的结果与此算法一致（`.sbat` 177 字节、节数 5→6、`SizeOfImage` `0x68000→0x69000`），可作为自查对照：三个数任一不符，说明动手的文件不是那版发布件。**v2.1.11 的对照值：新节 VMA `0x72000`**（[#281](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/281) 报告者按同一算法实测；该版 `SizeOfImage=0x72000`，加节后应增大）。
 
 4. **签名并验证**（产物名 `grubx64.efi`，shim 默认在自身目录找这个名字）：
 
