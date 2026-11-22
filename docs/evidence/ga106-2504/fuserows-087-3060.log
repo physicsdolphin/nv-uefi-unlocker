@@ -12,7 +12,8 @@
 # known public format incl. HDCP 1.x 280B / HDCP 2.2 RSA blocks, and differ
 # per die). Entropy cannot distinguish secret keys from public verification
 # material - both are random-looking by design - so the classification stays
-# OPEN until an NVIDIA-side decode exists; HDCP was hypothesized but has no
+# OPEN until an NVIDIA-side decode exists; HDCP was hypothesized by our
+# team’s security review but has no
 # structural evidence. Anyone providing row dumps is informed of this
 # classification in advance; sharing is optional, and these ranges may be
 # redacted or withheld without losing analysis value (the fuse-pool records
