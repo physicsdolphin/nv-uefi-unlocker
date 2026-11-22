@@ -1155,6 +1155,31 @@ badf 处中止、零写（`FUSEROWS ABORT: CRC_STATUS 0xbadf5040 != 0x55`）。
   全零。
 - 协议全绿：双 pass 576 行全对、地址恢复验证通过。
 
+**6o 追记三（2026-11-22 下午，AD107 首采+池区 PLM 破题+Turing 读法）**：
+4060L 全量 832 行两 pass 全对（`docs/evidence/ad107-28e0/fuserows-087-4060l.log`，
+IFF `0x033f02ff` START=767 与 rison1337 桌面 4060 同值）：
+- **池区记录就是 PLM 模板的物理载体（重大）**：池行 0x300=**`0xffffff8f`**
+  （FEAT_OVR_PLM 出厂默认！）、0x304=`0xffffffbf`、0x331=`0xffffffdf`——
+  三个完整 PLM 掩码字烧在 FF 记录池里。FWSEC/devinit 的 PLM 编程模板第
+  一次被看见实物；**Willian-Zhang 专业卡 nibble=0 案的终极答案方向**：专业
+  SKU 的差异就烧在这个池的对应记录里（其池区 65 行 = 直接比对目标）。
+- **跨族通用行**：行 0x1e/0x1f（`0x0be3071f`）与 0x20/0x21（`0xffe04f97`）
+  在 GA106 与 AD107 **同行号同值**——通用 OTP 字段；池尾记录序列
+  （0x33d/e/f ↔ GA106 0x234/5/6 的 `0x008c2c3c`/`0xff7fdffb`/`0x00802004`）
+  逐词同值而行号不同——共享记录内容、池起点逐 die。
+- **配对长度逐 die**：AD107 0x00..0x69（53 对）vs GA106 0x00..0x2d
+  （23 对）——奇偶全同配对是通用形态，长度按 die 配置。
+- 区域图：签名/ECC 型 0x6a..0xbb 与 0x8e..0xa7/0xac/0xb7..0xbb；选项型
+  0xbe..0x105（0x00010001/0x007f0001/0x07ff3fff/0x7fff7fff——与 GA106
+  同类）；trim/VF 型 0x144..0x1c2（比 GA106 的 0xed..0x136 长一倍）；
+  长零区 0x1c3..0x2fe；池 0x2ff..0x33f 56/65 非零、首行 bit5=1。
+- **Turing 读法落地（0.8.8，9fb4969d）**：envytools pfuse 证实 PFUSE 阵列
+  0x021000（G80+ 恒定），2070 实测 0x21000 块 CTRL idle 语义同构
+  （0xc0040000）、FUSEDEBUG=0、**块 PLM 0x210f8=OPEN**、CRC_STATUS 与
+  IFF badf。`--fusebase`（族自动 turing→0x21000）+ 降级守卫（CRC 不可读
+  →明示关闭；IFF 不可读→显式区间强制、512 帽）；cargo 25/25（新增
+  Turing 降级两测）、unittest 12/12。同写类（行号+CMD_READ）。
+
 ### 7. 判读指南（TU106/GA106 实验用）
 
 - `badf5040 [PRIV_VIOLATION]` → 词在**已证实解码的块内**时=存在、PLM 挡读

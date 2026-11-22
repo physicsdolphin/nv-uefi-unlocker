@@ -1312,29 +1312,62 @@ def report(bar, tag="", devpath=None):
 
 
 # --- #237 round 6: --fuserows, WRITE MODE (user-approved) ---
-FUSE_CTRL, FUSE_ADDR, FUSE_DATA = 0x0082_0000, 0x0082_0004, 0x0082_0008
-FUSE_DEBUG, FUSE_CRC_STATUS, FUSE_IFF_RECORD = 0x0082_0060, 0x0082_0070, 0x0082_0050
+# The same fuse-controller IP block lives at two bases: GA10x/Ada at
+# 0x820000, Turing at 0x21000 (envytools pfuse; both read plausible idle
+# CTRL on the 2070). Offsets inside the block are identical.
+FUSE_BASE_GA100_LAYOUT, FUSE_BASE_TURING = 0x0082_0000, 0x0002_1000
 FUSE_CMD_READ, FUSE_CMD_MASK, FUSE_SPIN_LIMIT = 0x1, 0x3, 1 << 20
+FUSE_MAX_ROWS = 512
 
 
-def _fuse_guard_ok(bar):
-    """One ff-tools guard round; returns an error string or None."""
-    ctrl = bar.rd(FUSE_CTRL)
+def fuse_ctrl(base):
+    return base
+
+
+def fuse_addr(base):
+    return base + 0x4
+
+
+def fuse_data(base):
+    return base + 0x8
+
+
+def fuse_iff(base):
+    return base + 0x50
+
+
+def fuse_debug(base):
+    return base + 0x60
+
+
+def fuse_crc(base):
+    return base + 0x70
+
+
+def _fuse_guard_ok(bar, base, crc_readable=True):
+    """One ff-tools guard round; returns an error string or None.
+
+    crc_readable=False (Turing: CRC_STATUS badf at PL0) skips the CRC
+    check - decided once before any write, announced in the header.
+    """
+    ctrl = bar.rd(fuse_ctrl(base))
     if ctrl & 0xFFFF0000 == 0xBADF0000:
         return f"FUSECTRL reads {ctrl:#010x} (PRI error) - controller not accessible"
     if ctrl == 0xFFFF_FFFF:
         return "FUSECTRL reads all-ones - not decoded/accessible here"
     if (ctrl >> 16) & 31 != 4 or ctrl & FUSE_CMD_MASK != 0:
         return f"FUSECTRL {ctrl:#010x} not idle (state={(ctrl >> 16) & 31} cmd={ctrl & FUSE_CMD_MASK})"
-    crc = bar.rd(FUSE_CRC_STATUS)
+    crc = bar.rd(fuse_crc(base))
     # GA100 reads bare 0x55 (ff-tools full-word check); EVERY consumer die
     # observed reads 0x4555 (GA106 live 2026-11-22 user run + GA102/AD103/
     # AD107/AD102 archived) - the low byte is the ready signature, upper
     # bits carry die-dependent status. Strict equality was GA100-tuned and
     # aborted GA10x/Ada before any row.
-    if crc & 0xFF != 0x55:
+    if crc_readable and crc & 0xFF != 0x55:
         return f"CRC_STATUS {crc:#010x} - low byte != 0x55"
-    dbg = bar.rd(FUSE_DEBUG)
+    dbg = bar.rd(fuse_debug(base))
+    if dbg & 0xFFFF0000 == 0xBADF0000 or dbg == 0xFFFF_FFFF:
+        return f"FUSEDEBUG {dbg:#010x} unreadable - debug state unknown"
     # Two observed-normal values: 0 on GA100/GA10x, 0x400000 on Ada
     # (4060L/4090/2860, identical locked and unlocked). Anything else is an
     # unknown debug state - row data could be falsified; abort rather than
@@ -1344,15 +1377,15 @@ def _fuse_guard_ok(bar):
     return None
 
 
-def _fuse_wait_idle(bar):
+def _fuse_wait_idle(bar, base):
     for _ in range(FUSE_SPIN_LIMIT):
-        ctrl = bar.rd(FUSE_CTRL)
+        ctrl = bar.rd(fuse_ctrl(base))
         if (ctrl >> 16) & 31 == 4 and ctrl & FUSE_CMD_MASK == 0:
             return None
     return "controller never returned to idle within the spin limit"
 
 
-def fuse_row_dump(bar, rng):
+def fuse_row_dump(bar, rng, base=FUSE_BASE_GA100_LAYOUT):
     """Physical fuse-row capture, ported from ga100-ff-tools read_rows.
 
     Writes are ONLY row numbers to FUSEADDR (latch-verified) and CMD_READ
@@ -1362,59 +1395,76 @@ def fuse_row_dump(bar, rng):
     print("--- FUSE ROW DUMP (WRITE MODE) - writes: FUSEADDR row numbers + FUSECTRL CMD_READ only; no programming command; address restored after ---")
     print("  protocol: ga100-ff-tools read_rows (two passes, latch checks); a bound kernel driver is a concurrency risk - pass mismatches mark rows unreliable")
     fail = None
-    err = _fuse_guard_ok(bar)
+    crc_word = bar.rd(fuse_crc(base))
+    crc_readable = not (crc_word & 0xFFFF0000 == 0xBADF0000 or crc_word == 0xFFFF_FFFF)
+    err = _fuse_guard_ok(bar, base, crc_readable)
     if err:
         print(f"  FUSEROWS ABORT: {err} - no writes performed")
         return False
-    saved = bar.rd(FUSE_ADDR)
+    if not crc_readable:
+        print(f"  FUSEROWS DEGRADED: CRC_STATUS {crc_word:#010x} unreadable at this base (Turing: undecoded/PLM-blocked at PL0) - proceeding WITHOUT the CRC guard; latch verification, two passes and address restore remain active")
+    saved = bar.rd(fuse_addr(base))
     if saved & 0xFFFF0000 == 0xBADF0000 or saved == 0xFFFF_FFFF:
         print(f"  FUSEROWS ABORT: FUSEADDR {saved:#010x} unreadable - no writes performed")
         return False
-    iff = bar.rd(FUSE_IFF_RECORD)
-    if iff & 0xFFFF0000 == 0xBADF0000 or iff == 0xFFFF_FFFF:
-        print(f"  FUSEROWS ABORT: IFF_RECORD {iff:#010x} unreadable - row domain unknown, no writes performed")
+    if saved >= FUSE_MAX_ROWS:
+        print(f"  FUSEROWS ABORT: FUSEADDR {saved} outside the {FUSE_MAX_ROWS}-row address field - no writes performed")
         return False
-    _, last = iff_decode(iff)
-    if saved > last:
-        print(f"  FUSEROWS ABORT: FUSEADDR {saved} outside the IFF domain 0..{last} - no writes performed")
-        return False
-    if rng == "all":
-        first, last_row = 0, last
-    else:
-        ra, rb = rng
-        if rb > last:
-            print(f"  FUSEROWS ABORT: range {ra:#x}-{rb:#x} exceeds the IFF domain 0..{last}")
+    iff = bar.rd(fuse_iff(base))
+    iff_readable = not (iff & 0xFFFF0000 == 0xBADF0000 or iff == 0xFFFF_FFFF)
+    if iff_readable:
+        _, last = iff_decode(iff)
+        if saved > last:
+            print(f"  FUSEROWS ABORT: FUSEADDR {saved} outside the IFF domain 0..{last} - no writes performed")
             return False
+        if rng == "all":
+            first, last_row = 0, last
+        else:
+            ra, rb = rng
+            if rb > last:
+                print(f"  FUSEROWS ABORT: range {ra:#x}-{rb:#x} exceeds the IFF domain 0..{last}")
+                return False
+            first, last_row = ra, rb
+    else:
+        # No IFF on this die: domain unverified; explicit range mandatory.
+        if rng == "all" or rng is None:
+            print(f"  FUSEROWS ABORT: IFF_RECORD {iff:#010x} unreadable and no explicit range given - pass --fuserows=A-B (capped at {FUSE_MAX_ROWS} rows); no writes performed")
+            return False
+        ra, rb = rng
+        if rb >= FUSE_MAX_ROWS:
+            print(f"  FUSEROWS ABORT: range {ra:#x}-{rb:#x} exceeds the {FUSE_MAX_ROWS}-row address cap")
+            return False
+        print(f"  FUSEROWS DEGRADED: IFF_RECORD {iff:#010x} unreadable - row domain UNVERIFIED, dumping the requested {ra:#x}..{rb:#x}; out-of-domain rows read junk, not harm")
         first, last_row = ra, rb
     print(f"  domain: rows {first}..{last_row} (IFF_RECORD {iff:#010x}, saved FUSEADDR {saved}) - two passes")
     passes = [[], []]
     for p in range(2):
         buf = passes[p]
         for row in range(first, last_row + 1):
-            err = _fuse_guard_ok(bar)
+            err = _fuse_guard_ok(bar, base, crc_readable)
             if err:
                 fail = f"pass {p + 1} row {row}: {err}"
                 break
-            bar.wr(FUSE_ADDR, row)
-            if bar.rd(FUSE_ADDR) != row:
+            bar.wr(fuse_addr(base), row)
+            if bar.rd(fuse_addr(base)) != row:
                 fail = f"pass {p + 1} row {row}: FUSEADDR did not latch"
                 break
-            bar.wr(FUSE_CTRL, FUSE_CMD_READ)
-            err = _fuse_wait_idle(bar)
+            bar.wr(fuse_ctrl(base), FUSE_CMD_READ)
+            err = _fuse_wait_idle(bar, base)
             if err:
                 fail = f"pass {p + 1} row {row}: {err}"
                 break
-            v = bar.rd(FUSE_DATA)
+            v = bar.rd(fuse_data(base))
             if v & 0xFFFF0000 == 0xBADF0000:
                 fail = f"pass {p + 1} row {row}: FUSEDATA {v:#010x} (PRI error)"
                 break
             buf.append(v)  # all-ones is a legal OTP word, kept verbatim
         if fail:
             break
-    bar.wr(FUSE_ADDR, saved)
-    restored = bar.rd(FUSE_ADDR) == saved
+    bar.wr(fuse_addr(base), saved)
+    restored = bar.rd(fuse_addr(base)) == saved
     if not restored:
-        print(f"  FUSEROWS RESTORE FAILED: original FUSEADDR {saved} DID NOT RESTORE (reads {bar.rd(FUSE_ADDR):#010x}) - investigate before trusting anything else")
+        print(f"  FUSEROWS RESTORE FAILED: original FUSEADDR {saved} DID NOT RESTORE (reads {bar.rd(fuse_addr(base)):#010x}) - investigate before trusting anything else")
     complete = fail is None and restored
     if fail:
         print(f"  FUSEROWS ABORT: {fail} - gathered prefix below, INCOMPLETE")
@@ -1437,6 +1487,9 @@ def main():
     ap.add_argument("--bdf", help="only this PCI address, e.g. 0000:01:00.0")
     ap.add_argument("--reapply", action="store_true",
                     help="write SS0=0x88888888 SS1=0x8 where the PLM gate is open")
+    ap.add_argument("--fusebase", default=None, metavar="HEX",
+                    help="fuse-controller block base override (default family-auto: "
+                         "Turing 0x21000, GA10x+/Ada 0x820000; same layout)")
     ap.add_argument("--fuserows", nargs="?", const="all", default=None, metavar="A-B",
                     help="WRITE MODE: physical fuse-row capture (ga100-ff-tools read_rows"
                          " protocol: FUSEADDR row select + FUSECTRL CMD_READ only, guarded,"
@@ -1512,7 +1565,12 @@ def main():
                       " (read-back is the only success criterion)")
                 rc = 0 if ok else 1
         if fuserows is not None:
-            if not fuse_row_dump(bar, fuserows):
+            base = None
+            if args.fusebase:
+                base = int(args.fusebase, 16) if args.fusebase.lower().startswith("0x") else int(args.fusebase, 16)
+            if base is None:
+                base = FUSE_BASE_TURING if fam == "turing" else FUSE_BASE_GA100_LAYOUT
+            if not fuse_row_dump(bar, fuserows, base):
                 rc = 1
     return rc
 
