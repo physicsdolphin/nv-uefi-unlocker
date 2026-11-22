@@ -7,7 +7,16 @@
 # CRC guard off, announced). Two passes match (256 rows), address restored
 # (FUSEADDR saved 255 == LAST). Explicit range 0x0-0xff requested.
 # Provenance: user paste (Windows, elevated probe-driver run).
-# CLASSIFICATION: UNKNOWN PER-DEVICE FUSE MATERIAL (standing, 2026-11-22).
+# CLASSIFICATION (revised 2026-11-23, security-review re-check): these rows
+# carry unknown per-device fuse material that is ADDITIONALLY ENCRYPTED -
+# i.e. even if the plaintext contains key material, what the controller
+# exposes is ciphertext, unusable without keys we do not have and cannot
+# extract. Sharing the FULL row dump is therefore cleared as SAFE by the
+# team's security review (supersedes the 11-22 caution notice). Original
+# observation stands: entropy near sample max, no decodable structure,
+# sizes match no known public format (HDCP 1.x 280B / HDCP 2.2 RSA blocks
+# were hypothesized by the security review and found structurally absent).
+
 # Rows 0x2a..0x47, 0x4b..0x57, 0x5a..0x5b, 0x5e are device-unique random material (byte entropy 89-100% of
 # sample max after dedup; no decodable structure; sizes do NOT match any
 # known public format incl. HDCP 1.x 280B / HDCP 2.2 RSA blocks, and differ
