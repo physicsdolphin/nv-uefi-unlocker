@@ -188,7 +188,11 @@ FMC 是 `0x48` 明文头 + 加密体（code+data+`0xA00` manifest），P-384/SHA
    的 1 MiB `NV_PROM` 窗口：经典 Turing/Ampere/Ada App ID（`0x01/0x05/0x08/0x45/0x49/0x85`）
    全部消失，微码表（35 槽：29 空 + 6 非空）改为新编号与 80 B **V6 描述符**；窗口内 4 项
    （`0x07/0x15/0x19` 与 `app 0x23` `target=0x0e`）的 `vDesc bit2` 均置位，另 2 项
-   （`0x18/0x24`）超出 1 MiB `NV_PROM` 窗口（详见 [GB205 实测档案](evidence/gb205-2f18/README.md)）。
+   （`0x18/0x24`）超出 1 MiB `NV_PROM` 窗口；基于同卡完整 ROM 导出补齐 6/6 个 80 B V6
+   字段映射（`0x07/0x23/0x18` 存在 `0xA00` 残差、`+30` 标签 `0x23=BHUB`/`0x24=_RUN`、
+   `0x19/0x15` 二级 20 B manifest 的 S/T 空间算术闭合链）见
+   [GB205 实测档案](evidence/gb205-2f18/README.md) 与
+   [V6 描述符逆向笔记](evidence/gb205-2f18/v6-descriptor-re.md)。
 3. **每 SM selector**：需要 caller-owned RM 通道，未做。
 
 上游列的"算作解锁"判据（可直接借作我们的验收）：驱动速率 getter 报的钳制位为 0；

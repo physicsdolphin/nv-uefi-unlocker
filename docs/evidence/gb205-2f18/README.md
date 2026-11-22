@@ -63,6 +63,7 @@
 结论边界：
 1. 经典 Turing/Ampere/Ada 的 App ID（`0x01 PRE_OS`、`0x05 LIC`、`0x08 LS_UDE`、`0x45/0x85 FWSEC`、`0x49 SCRUBBER`）在 GB205 表中全部消失，替换为新编号与 **80 字节 V6 描述符**。
 2. 4 个窗口内可读描述符（含 [blackwell-gb20x-status.md](../../blackwell-gb20x-status.md) §4 列出的 `app 0x23`，`target=0x0e`）均置位 `vDesc bit2`（加密标记）；另外 2 项（`0x18`、`0x24`）位于 1 MiB `NV_PROM` 窗口之外，仅凭 BAR0 窗口无法读取其描述符，亦不能仅凭 bit2 推断具体加密算法或密钥源。
+3. 针对该 VBIOS 完整导出文件（1,961,983 字节，补齐 `0x18`/`0x24` 共 6/6 个 V6 描述符）的 80 B V6 字段布局、`0xA00` 残差、`+30` 可读标签（`0x23=BHUB`、`0x24=_RUN`）以及 Class A（`0x19`/`0x15`）20 字节二级 manifest 算术闭合链分析，详见同目录 [v6-descriptor-re.md](v6-descriptor-re.md)（不含固件字节转储）。
 
 ## 4. 稳态张量钳制与精度权衡评估（驱动 `621.01`）
 
