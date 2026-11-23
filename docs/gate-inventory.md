@@ -149,7 +149,10 @@ booter 自己的指令（ROP 只是重排调用序）。
   **Phase 0 同轮收口**：本 boot payload 只写 FEAT——XP3G PLM0 与 FUSECTRL/FUSEOPT
   PLM 在 rail-off 后仍 0xffffffff = **TU106 consumer 原生开**（scan 副作用假设
   作废）。TU11x 对照待社区探针（ssdiag gen2 face 已印 XP3G_PLM0，一行读数即可
-  扩格）。
+  扩格）。**轮五b 负控**：纯净态单跑 slot3 三连打**不钳**——有效配方=轮一策略组
+  + slot3/VAL3 **合取**（轮三成功时轮一九写同会话在场），单独都无效；与 #914
+  "override 孤立写不动链路"精确同形，最小成分二分留待需要时（成本=rail-off 洗净
+  + 单变量，机制主线已闭合优先级低）。
 
 ### 2.4 Turing BAR1 ReBAR（strap 层，不需要载荷）
 

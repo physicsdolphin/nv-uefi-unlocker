@@ -121,6 +121,22 @@ poke 0x8872c <- 0x6 -> readback OK
   同轮分叉 = 读数时链路正在重训（disable-enable 后的重训过程），终态以 GPU-Z
   正常 Gen3 为准。
 
+## 轮五b（同日）：负控——slot3 三连打单独执行无效，配方=合取
+
+S4 后纯净态（XP3G 全原值）单跑轮三三连打：
+
+```
+poke 0x8e12c <- 0x16480000 -> readback OK
+poke 0x8e11c <- 0x4        -> readback OK
+poke 0x8872c <- 0x6        -> readback OK
+```
+
+**不钳 Gen2**。轮三成功时轮一九写仍同会话在场 → 有效配方 = **轮一策略组（先导）
++ slot3/VAL3（触发）合取**，两者单独都无效。与 cmp170hx #914（"override 孤立写
+不动链路"）精确同形——override 块是组合拳组件，两条谱系在此汇合。最小成分二分
+（哪一项先导是必要项：OVR0/VAL0？MAX_RATE？PL_LINK_RATE？）留待需要时再做——
+每步需 rail-off 洗净 + 单变量，成本高，机制主线已闭合、优先级低。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
