@@ -160,19 +160,22 @@ PSTRAPS SET0[15:14]+SET1[22:20]（BAR0+0x101000/0x10100c，和值编码 0=64MiB�
    AD/GA100 明文在库）——这是"不是工程缺口"的硬边界。
 6. **熔丝总开关**：OPT_FEATURE_FUSES_OVERRIDE_DISABLE（0x8203f0）=0 是解锁域存在
    前提（GB20x 亦为 0=未关，唯一墙是特权级）。
-7. **OS 侧接受度（2026-11-22 更新）**：交棒形态谱——open `0xffffffff` 被拒
-   （#246，TU117/Linux）；**relock `0xffffffef` + SS live 在 TU116 上同样 Code 43**
-   （#280，Windows 621.14/v2.1.11）；TU102 两形皆活（#12/#103/#125/#240）→ **TU11x 的
-   RM 拒绝与 PLM 交棒形态无关，"已证形"不外推出 TU102**。判别阶梯（#280 回帖已发）：
-   ①legacy 驱动格（TU11x×legacy 未测；TU106 四象限先验为负——门开×legacy=Code 43、
-   relock 门关×legacy=TDR 洗回厂，rc4 定谳 → `EnableGpuFirmware=1` 是 20 系机理级硬前置）
-   ②rc5 keep-open 重放（v2.1.11 tag 在 061aef8 之前；relock 写在 621.01/630.20 代有
-   #99 PF-FLR 反应家族，621.14 同代）③~~全厂回锁消融~~ **撤销（2026-11-22 勘误）**：
-   relock 写值本来就是 `0xffffff8f`（tx.rs:1711），0xef 是写后读回=硅 sticky（开过门后
-   bits 5:6 抵抗主机清除，TU106/TU104 同款；TU102 22G 一次读回 0x8f 且 SS 保持=随板方差
-   #74）——PLM 位不是写值可控轴，无 knob 可做。④残差 diff/⑤RM 错误码解码/⑥驱动代际。
+7. **OS 侧接受度（2026-11-23 更新，实验进行中）**：驱动模式×交棒形态矩阵
+   （TU10x=TU106 台架+TU102 实机；TU11x 每格 n=1，结论按实验阶段处理）——
+   开门×GSP：活/解锁保留（keep-open bench + #12/#103/#125/#240），TU11x 未测=
+   **当前先验最高格**；回锁×GSP：活/SS 完好时保留（#99 家族），TU11x Code 43
+   （#280，TU116 21c4）；开门×legacy：Code 43（TU106 台架两载具代一致），TU11x
+   同形（#286，TU117 1f83：启用驱动→Code 43、开机绑定→疑似 TDR 挂死，
+   621.24/617.42 双代同果）；回锁门关×legacy：TDR 风暴洗回厂（TU106 台架），
+   TU11x 疑似同域待确认。→ **GSP 模式对开门/回锁两种交棒都接受（TU10x 全部
+   存活记录在 GSP 侧），拒绝是 legacy 驱动专属行为**；#286 关键观察=Code 43 后
+   解锁态不丢（legacy init 早期拒绝继续而非洗状态，工作假设）；
+   `EnableGpuFirmware=1` = Turing 全族 GSP 硬前置。零写负控：TU117 replay 死
+   签名域（`mailbox0=0x0b`）不可作负控——用 agitate-only（#286 已用对）。
+   谱系：#246（open 形拒）→ #280（relock 形也拒 → 形态无关）→ sticky 位勘误
+   （relock 写值本就是 `0xffffff8f`，0xef 为写后读回=硅 sticky，PLM 位非写值
+   可控轴，"全厂回锁 knob"提案撤销）→ #286（legacy 格两 die 同形填充）。
    GA10x = PLM-flip verdict；Ada = marker/HALT。manifest 按 family 打印对应提示。
-   manifest 按 family 打印对应提示。
 8. **逐芯片几何**：booter 尺寸/gadget 地址/签名段名逐族不同——跨族移植=重抽取重审计
    （宪法 §9.1）；falcgen 把"新 die 边际成本"降到一把 debug key + 一条命令，但
    **不降低审计义务**。
