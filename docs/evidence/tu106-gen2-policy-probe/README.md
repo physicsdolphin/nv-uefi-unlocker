@@ -254,6 +254,26 @@ nvoc-cli restart-display-driver
   RM 在 GSP 里，宿主注册键传递路径不达 FB sizing，或 GSP-RM 忽略之）；
   顺带证伪"堆覆盖≈孔径"关联——注册表侧没有 BAR1 增长捷径。
 
+## 轮八d（同日）：XP3G 块全景扫描（0x8e110-0x8e140，ssdiag 0.8.11 --read-offset range）
+
+```
+0x8e110-0x8e12c  全 0     （OVR0-3/VAL0-3 出厂净态，含 slot1/2）
+0x8e130 = 0x00606060      （新活值——谱系无记载）
+0x8e134 = 0x8e138 = 0
+0x8e13c = 0xbadf5040      （块内第二个 PLM 保护字；PLM 库 0x8e1b4/8/c closed）
+0x8e140 = 0x00000000
+```
+
+- **0x8e130 未记载活值**：cmp170hx register-reference XP3G 块表（0x8e100/OVR/
+  VAL/PLM）不含 +0x30。形状猜想（无定论）：三个 2-bit 字段各 =0b11（bits[6:5]/
+  [14:13]/[22:21]）——若字段编码 3=Gen3，则是**每实体速率状态/默认表**（×3=
+  本卡 Gen3 天花板的镜像）；可测预测=钳 Gen2 后读它应变 0x00404040（2=Gen2）。
+- **块内多特权域**：0x8e13c 在 PLM0 开放区之外（badf=另一 PLM 库守着）——
+  XP3G 块不是单一 PLM 面，写域矩阵的多库实例。
+- A100 对照（cmp170hx 同表）：PLM4/8/C 在 170HX 上读 0xffffffff（open）——
+  与 TU106 的 badf（closed）成跨 die 差异；OVR0 曾读回 0x4（非 0/1 one-hot
+  预期）——A100 侧槽语义可能与 Turing 不同，跨 die 外推继续降权。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
