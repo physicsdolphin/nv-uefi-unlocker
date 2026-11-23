@@ -191,6 +191,8 @@ TU106 + GSP 模式有休眠恢复后成功交棒的实测，但这不能代替�
 
 先核对系统侧选择器和电源状态。RTD3 让空闲 GPU 进入 D3cold 时会清除易失解锁；EFI 读回成功不能证明状态在系统内一直保留。
 
+**系统内寄存器探针的内核前提（2026-11-23，[#246](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/246) 实证）**：`tools/diag-unlock.py` 经 sysfs `resource0` mmap 直读 BAR0——在 `CONFIG_IO_STRICT_DEVMEM=y` 的内核（Arch/Manjaro 式配置；Ubuntu generic 未启用）上，被驱动占用的 BAR 一律拒绝映射（EINVAL，root 亦然；机制=pci-sysfs 的 `iomem_is_exclusive` 检查，读写同生死）。判据一行：`grep -E "CONFIG_(IO_)?STRICT_DEVMEM" /boot/config-$(uname -r)`；解法=内核命令行加 `iomem=relaxed`（**无运行时开关**——该变量仅由 `iomem=` 引导参数设置，root 不可热改；读写同开、含 /dev/mem）。工具在 mmap EINVAL 时会打印本提示。
+
 若发行版在 `/usr/lib/modprobe.d/nvidia-runtimepm.conf` 启用 `NVreg_DynamicPowerManagement=0x02`，可在 `/etc/modprobe.d/` 使用同名文件覆盖。先备份已有配置：
 
 **一键脚本**：`sudo bash tools/disable-rtd3.sh`——实现本节全部步骤（同名覆盖+备份、设备级 `power/control=on` 立即生效、initramfs 工具探测、冲突文件点名、合并配置终检）；`--check` 只读体检当前状态。手工步骤如下：

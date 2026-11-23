@@ -745,7 +745,22 @@ class Bar0:
             raise RuntimeError("BAR0 not assigned (device powered down?)")
         self.start = start
         f = open(os.path.join(devpath, "resource0"), "r+b", 0)
-        self.map = mmap.mmap(f.fileno(), 16 * 1024 * 1024)
+        try:
+            self.map = mmap.mmap(f.fileno(), 16 * 1024 * 1024)
+        except OSError as e:
+            f.close()
+            if e.errno == 22:
+                # #246: CONFIG_IO_STRICT_DEVMEM kernels (Arch/Manjaro-style
+                # configs) treat a driver-claimed BAR as exclusive, so
+                # pci_mmap_resource returns EINVAL even for root; the check
+                # is iomem_is_exclusive(res->start) in pci-sysfs.c.
+                raise RuntimeError(
+                    "mmap(resource0) EINVAL - this kernel maps driver-claimed BARs "
+                    "exclusively (CONFIG_IO_STRICT_DEVMEM=y, Arch/Manjaro-style "
+                    "configs): boot with iomem=relaxed to lift it, or check "
+                    "zgrep IO_STRICT_DEVMEM /boot/config-$(uname -r)"
+                ) from e
+            raise
 
     def rd(self, off):
         # Host-side last-resort net (ssdiag 0.7.4 parity, 2026-11-11 lesson):

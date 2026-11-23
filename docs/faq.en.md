@@ -197,6 +197,8 @@ TU106 with GSP mode has verified successful hibernate-resume handoff, but that d
 
 Check in-OS selectors and power state first. RTD3 can park an idle GPU in D3cold, clearing the volatile unlock; successful EFI read-backs do not prove continued OS persistence.
 
+**Kernel prerequisite for in-OS register probes (2026-11-23, [#246](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/246) field data)**: `tools/diag-unlock.py` reads BAR0 by mmapping sysfs `resource0` — on kernels with `CONFIG_IO_STRICT_DEVMEM=y` (Arch/Manjaro-style configs; Ubuntu generic leaves it unset), a driver-claimed BAR is refused for mapping entirely (EINVAL, root included; the `iomem_is_exclusive` check in pci-sysfs — reads and writes share the map's fate). One-line check: `grep -E "CONFIG_(IO_)?STRICT_DEVMEM" /boot/config-$(uname -r)`; the fix is `iomem=relaxed` on the kernel command line (**no runtime toggle** — the variable is set only by the `iomem=` boot parameter and cannot be hot-flipped by root; it opens reads and writes, /dev/mem included). The tool prints this hint when the mmap fails with EINVAL.
+
 If your distribution enables `NVreg_DynamicPowerManagement=0x02` in `/usr/lib/modprobe.d/nvidia-runtimepm.conf`, override it with the same basename in `/etc/modprobe.d/`. Back up existing configuration first:
 
 **One-shot script**: `sudo bash tools/disable-rtd3.sh` — performs every step of this section (the same-named override with backup, the device-level `power/control=on` that takes effect immediately, initramfs-tool detection, naming conflicting files, and a merged-config final check); `--check` is a read-only status report. Manual steps below:
