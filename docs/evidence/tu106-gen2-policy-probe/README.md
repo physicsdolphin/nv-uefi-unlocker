@@ -83,6 +83,26 @@ poke 0x8872c <- 0x6        -> readback OK   (LTSSM kick)
   0x118234 host 写拒——写域四格矩阵闭合（见 gate-inventory §3.9）。
 - 未测：可逆性（OVR3←0 + kick 是否回 Gen3）、跨重启持久性、负载下带宽确认。
 
+## 轮四（同日）：可逆性负结果——旋钮作用在能力向量层
+
+```
+poke 0x8e11c <- 0x0 -> readback OK
+poke 0x8872c <- 0x6 -> readback OK
+```
+
+**Gen2 未回退**；设备管理器禁用-启用也不行（MMIO config 寄存器，无复位不洗）。
+新读数：config 头行 **LnkCap max Gen2 x16 | LnkCap2 [Gen1,Gen2]**（原 max Gen3 +
+[Gen1,Gen2,Gen3]）——**旋钮把 Gen3 能力位从广告里摘除了**，作用层=能力向量，
+深于 TLS/MaxRate。这同时解释了轮一为何九写不动链路：那些写不治理，能力广告
+才是治理层，slot3/VAL3 动的是广告源头。
+
+- 脏寄存器清单（相对首轮 dump）：0x8841c、0x8e110、0x88610、0x8c040、0x8c1c0、
+  0x880a8、0x8872c、0x8e12c（VAL3 仍 0x16480000——OVR3←0 只关了使能位）。
+- 全量回退清单（原值）：`0x8841c←0x20b40500 / 0x8e110←0 / 0x88610←0x1001 /
+  0x8c040←0x80045800 / 0x8c1c0←0x130036 / 0x880a8←0x1f0003 / 0x8e12c←0 /
+  0x8e11c←0 / 0x8872c←0`，回退后 kick 再看 LnkCap；仍 Gen2 → **温重启**
+  （devinit/固件启动期改写 = 保证恢复路径）。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3

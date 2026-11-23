@@ -135,20 +135,32 @@ booter 自己的指令（ROP 只是重排调用序）。
   前一轮"方向反转"解读作废。可逆性（OVR3←0+kick 是否回 Gen3）与跨重启持久性
   待测。evidence：docs/evidence/tu106-gen2-policy-probe/（三轮全录）。原生开归因
   （本卡冷态纯读）与 40HX 对照仍待 Phase 0。
+  **轮四（同日）**：可逆性负结果——OVR3←0+kick 不回 Gen3，禁用-启用设备也不行
+  （MMIO config 寄存器无复位不洗）；config 头行 **LnkCap max Gen2 +
+  LnkCap2 [Gen1,Gen2]**=旋钮把 Gen3 从**能力向量**里摘除，作用层深于 TLS/MaxRate
+  ——同时解释轮一九写为何不动链路（那些写不治理，能力广告才是治理层）。
+  OVR3←0 只关使能，VAL3（0x16480000）与轮一全组仍脏。全量回退清单（首轮 dump
+  原值）：`0x8841c←0x20b40500 / 0x8e110←0 / 0x88610←0x1001 / 0x8c040←0x80045800 /
+  0x8c1c0←0x130036 / 0x880a8←0x1f0003 / 0x8e12c←0 / 0x8e11c←0 / 0x8872c←0`；
+  仍 Gen2 → 温重启（devinit/固件启动期改写=保证恢复路径）。
 
 ### 2.4 Turing BAR1 ReBAR（strap 层，不需要载荷）
 
 PSTRAPS SET0[15:14]+SET1[22:20]（BAR0+0x101000/0x10100c，和值编码 0=64MiB…10=64GiB）
 在平台 DXE PCIe 枚举期写（NvStrapsReBar 实证，OQ#11）——**与 SEC2 载荷正交**，载具是
 主板 UEFI 镜像内 DXE 驱动。app 期改 straps 需自重配 PCI 窗口，若做须单独立项。
-**in-OS 分叉（2026-11-24 TU106 台架）**：PSTRAPS 主机直写**粘住**且经设备管理器
-禁用-启用循环保留——载具问题重开：若 in-OS 写（SET0 bit31=override_en + 64G 编码
-part1=3/part2=7，NvStrapsReBar SetupNvStraps.c 位段）能活过温重启并被 stock BIOS
-枚举期采纳，载具从"改主板固件"坍缩成"系统内一次写+重启"。待测三步：写
-0x101000←0x8000c080 / 0x10100c←0x82713000 → 重跑 inventory 看 config ReBAR cap
-supported 列表是否长出 64G（判 device 侧 cap 是否 PSTRAPS 派生）→ 温重启看 BAR1
-现值。回退=清 bit31 恢复原值（0x00400080/0x02013000）。evidence：
-docs/evidence/tu106-pstraps-inos-probe/。
+**in-OS 分叉（2026-11-24 TU106 台架，两轮）**：PSTRAPS 主机直写**粘住**且经设备
+管理器禁用-启用循环保留——载具问题重开。轮二实测：SET1（part2=7+bit31）全粘，
+**SET0[15:14]（part1）被硅写掩码**（写入含位、读回无，二次确认）→ **in-OS 可达
+BAR1 index 上限=7=8GiB**（16/32/64G 需 part1，host 拿不到；8GB 显存卡 8GiB 恰是
+经典 ReBAR 目标）；override_en=1 生效后 **config ReBAR cap 0x15 整个消失**——
+straps override 下设备改呈固定尺寸 BAR，可调 BAR 机制被抑制（cap 广告=straps
+派生的机制 datum）。现态：BAR1 straps index 7=8GiB + override_en=1（SET0=
+0x80400080 含原 bit22、SET1=0x82713000）。待温重启判别：①BAR1 是否按 8GiB
+枚举（依赖 BIOS Above-4G；放不下=Code 12，断电冷启恢复）②straps 是否复位重载
+洗掉（#135 先例预测洗）。若洗掉而仍要 in-OS BAR1 增长→下一候选=#211 的 0x610
+型 FB override 的 Turing 对应物。回退=清 bit31 恢复原值（0x00400080/0x02013000）。
+evidence：docs/evidence/tu106-pstraps-inos-probe/。
 注意 §2.2 的尺寸表与这里是同一张 64MiB<<i 表的两个消费方。
 
 ### 2.5 登记行（证据在库、无落地路径或无收益）

@@ -29,3 +29,26 @@ poke 0x10100c <- 0x82713000   (part2=7 + bit31；其余位保留原值)
 回退：`0x101000 ← 0x00400080` / `0x10100c ← 0x02013000`（清 bit31 恢复原值）。
 风险注：override 生效时序未证——立即 resize 可能动活窗（驱动 BAR1 映射失效→TDR），
 重启即恢复；NvStrapsReBar 原生场景在 DXE 枚举期写（驱动映射前），in-OS 时序属未测。
+
+## 轮二（同日）：part1 硅掩码 + 8GiB 生效 + ReBAR cap 消失
+
+```
+poke 0x101000 <- 0x8000c080 -> readback MISMATCH 0x80000080 (dropped or masked)
+poke 0x10100c <- 0x82713000 -> readback OK
+```
+
+- **SET0[15:14]（part1）被硅写掩码**：写入值含 bits[15:14]=3，读回为 0——同寄存器
+  内逐位段写保护（bit31 与 bit7 可写、[15:14] 拒）。→ **in-OS 可达 BAR1 index 上限
+  = part2 单独 = 7 = 8GiB**（2070 显存 8GB 恰为经典 ReBAR 目标；16/32/64G 需 part1，
+  host 侧拿不到）。
+- SET1 全粘（part2=7 + bit31）→ **BAR1 straps = index 7 = 8GiB，override_en=1**。
+- **config ReBAR cap 0x15 整个消失**（原 "3 resizable BARs, BAR1 [256M/128M/64M]"
+  → "no 0x15 capability"）——straps override 下设备改呈固定尺寸 BAR，可调 BAR
+  机制被抑制（机制 datum：cap 广告是 straps 派生的）。
+- **勘误（我方）**：轮二 SET0 算值漏保留原 bit22——应为 0x8040c080，实给
+  0x8000c080 → bit22 已被清。bit22 不在 ssdiag 解码字段内（BAR0=SET1[19:17]、
+  BAR3=SET1 bit23、override_en=SET0 bit31），语义未解码，回写 0x80400080 恢复。
+- 待温重启判别：①BAR1 是否按 8GiB 枚举（依赖 BIOS Above-4G Decoding；放不下=
+  Code 12，断电冷启恢复）②straps 是否复位重载洗掉（#135 先例预测洗；FEAT AON
+  先例存疑）。若 straps 洗掉而仍要 in-OS BAR1 增长 → 下一候选 = #211 的 0x610 型
+  FB override（GA102 枚举期写、活过 FLR）的 Turing 对应物。
