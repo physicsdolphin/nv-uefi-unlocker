@@ -277,6 +277,8 @@
 
 机理上：**是否发生回锁取决于平台侧谁在 bind 前重跑 devinit**——笔记本上是 MUX controller 与 EC 的厂商行为设计，桌面老固件上是 CSM 时代固件的 legacy-VGA/初始化路径；这些路径都会在自己认为该复位的时候重跑 devinit（把 FEAT 块推回厂值），且都不在驱动控制范围内。待验证推论：对笔记本用户"升级驱动"只是换一条回锁路径，不是修复（直连平台 617.42 即可存活）；桌面侧不再需要以驱动版本为闸。`#99` 的 PF FLR 曾记为同族的另一个观测形态（复位型）、与回锁型分桶；2026-11-12 的同卡 A/B 把两桶接上了——**是我们交棒时的重锁写诱发了驱动侧的 PF FLR**，门开交棒后同一驱动即无事件。
 
+**2026-11-23 热操作台架补注（owner 实测，一句话确认层级，日志待补）**：ssdiag 0.8.9 `--target-offset/--value` 在 GSP 模式系统内实现 PLM 热锁回/热解锁（主机写 `0x409650`），算力实测随锁正常减半、恢复即回——锁为行为级而非寄存器化妆；**SS0=0x88888888 单独充分、SS1 可保持 0x0**（20 系钳制路径仅 FP16/FP32-acc，DP 字段无关）——现行 "SS0==88888888 && SS1 低 nibble==8" 双条件判据在 20 系为过严，工具判读放宽与 loader 省写 SS1 均待第二 die 复核（事务路径不动）。**canary 判读分层**：活驱动箱上 poke 后 canary 读 cleared（运行中的 GSP-RM 自己占用/清 SW_SCRATCH）——"intact=状态未被洗"的判读只适用于驱动未初始化的箱（#280/#286 形态）；#286 迭代循环若禁用/启用后 canary 转 cleared=失败的驱动 start 触碰过 scratch/FLR，下一候选前重 poke 即可。**TU11x 交付形态候选（实验阶段）**：若 #286 全零轮通过（门开+出厂 SS 被驱动接受）→ "U 盘只砸门（载荷不写 SS）→ 进系统 ssdiag 改写 SS" 成型，SS 改写从 U 盘侧挪到系统侧，每引导重放形态不变。
+
 来源：[TU106 报告](evidence/m3-tu106/host-and-final-result.md)、[#12](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/12)、[#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89)、[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16)、[GSP 前置](faq.md#turing)。
 
 <a id="device-16"></a>
