@@ -1,0 +1,22 @@
+=== O  (2026-11-23 22:28:47) ===
+device: PCI\VEN_10DE&DEV_1F83&SUBSYS_169C1B4C&REV_A1\4&842DB2A&0&0008
+  before: Status=Error Problem=CM_PROB_FAILED_POST_START
+  poke| PLATFORM: VBS status (kernel readback)  = unverified (registry value absent - WMI may still say 2; fail-closed below)
+  poke| ada 4-write     WPR_PLM                0x001fa7c4= 0xbadf5040 (closed (non-standard))
+  poke| ada 4-write     WPR_CFG_PLM            0x001fa7cc= 0xbadf5040 (closed (non-standard))
+  poke| ada 4-write     FBPA_PLM               0x009a0148= 0xffffffcf (closed (non-standard))
+  poke| PLM_PL0_WE 0x008200f8 = 0xffffffff bit4=1 (FUSECTRL_PLM bit4; 1=host-level writes enabled)
+  poke| APP08_WRITE_GATE = ? (PL2 pair bit6=1/1 + helper 0x944c; DMEM8[0x646]/[0x64d] are ROM-internal)
+  poke| note: ga100 offsets, NV_FUSE_OPT_ prefix dropped; badf5040 = word exists behind a PLM,
+  poke| poke: 1 write(s), executed in order - a wrong offset can hang the box (recovery = hard reset; unlock state survives reboots, rail-off clears)
+  !! MISMATCH: the write was dropped or masked - round void, see the poke dump
+  GPU 1 RTD3: EnableRuntimePowerManagement = absent (driver default: runtime D3 allowed) - a cleared canary pairs with this line; fix = FAQ #relock-winrtd3 / tools/disable-rtd3.ps1
+  USB4: device-router driver ENABLED - the takeover will reset the tunnel at bind; a cleared canary is expected
+  POWER: RTD3 policy = absent (driver default: runtime D3 allowed) - a cleared canary pairs with this line; fix = FAQ #relock-winrtd3 / tools/disable-rtd3.ps1 - EnableRuntimePowerManagement on the adapter driver key
+  CANARY_A/B (loader-written)  = 0x0164c0de/0x0165cafe -> intact
+  turing 0x4096xx      PLM       0x00409650= 0xffffffef (closed (relock+drift))
+  turing 0x4096xx      SS0       0x00409664= 0x88888888 [0* 0* 0* 0* 0* 0* 0* 0*]
+  turing 0x4096xx      SS1       0x0040966c= 0x00000000 [.]
+  VERDICT [turing]: NOT_UNLOCKED
+  CANARY: intact + SS gone - no reset; something WROTE the FEAT block (driver init / devinit replay, not a power event)
+log: E:\gzq\exp-logs\20261123-222847-O.txt
