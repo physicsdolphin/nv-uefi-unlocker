@@ -1,4 +1,6 @@
-//! ssdiag v0.8.10 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.11 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.11: --read-offset accepts range form A-B (inclusive, word step,
+//! cap 512) and printed reads are sorted+deduped.
 //! v0.8.10 adds --read-offset A (READ-ONLY probe, repeatable): read BAR0
 //! offset A and print - the arbitrary-read counterpart of --target-offset.
 //! v0.8.9 adds --target-offset A --value V (ARBITRARY WRITE MODE, repeatable
@@ -5400,14 +5402,38 @@ fn run() -> i32 {
             }
             "--read-offset" => {
                 let v = args.next().unwrap_or_else(|| {
-                    eprintln!("--read-offset requires a hex BAR0 offset, e.g. --read-offset 0x8e114");
+                    eprintln!("--read-offset requires a hex BAR0 offset, e.g. --read-offset 0x8e114, or a range --read-offset 0x8e110-0x8e140");
                     std::process::exit(2);
                 });
-                match u32::from_str_radix(v.trim_start_matches("0x").trim_start_matches("0X"), 16) {
-                    Ok(b) if b < 0x0100_0000 => read_offsets.push(b),
-                    _ => {
-                        eprintln!("bad --read-offset {v:?}; need a BAR0-relative hex offset inside the 16 MiB aperture");
-                        std::process::exit(2);
+                if let Some((a, b)) = v.split_once('-') {
+                    // range form A-B: inclusive, 32-bit word step, capped
+                    let pa = u32::from_str_radix(a.trim_start_matches("0x").trim_start_matches("0X"), 16);
+                    let pb = u32::from_str_radix(b.trim_start_matches("0x").trim_start_matches("0X"), 16);
+                    match (pa, pb) {
+                        (Ok(lo), Ok(hi)) if lo < 0x0100_0000 && hi < 0x0100_0000 && lo <= hi => {
+                            let n = ((hi - lo) / 4 + 1) as usize;
+                            if n > 512 {
+                                eprintln!("--read-offset range {v:?} spans {n} words; cap is 512");
+                                std::process::exit(2);
+                            }
+                            let mut off = lo;
+                            while off <= hi {
+                                read_offsets.push(off);
+                                off += 4;
+                            }
+                        }
+                        _ => {
+                            eprintln!("bad --read-offset range {v:?}; need hex A-B with A<=B inside the 16 MiB aperture");
+                            std::process::exit(2);
+                        }
+                    }
+                } else {
+                    match u32::from_str_radix(v.trim_start_matches("0x").trim_start_matches("0X"), 16) {
+                        Ok(b) if b < 0x0100_0000 => read_offsets.push(b),
+                        _ => {
+                            eprintln!("bad --read-offset {v:?}; need a BAR0-relative hex offset inside the 16 MiB aperture");
+                            std::process::exit(2);
+                        }
                     }
                 }
             }
@@ -5467,7 +5493,9 @@ OPTIONS:
                    reboots, rail-off clears it). On multi-GPU boxes pass
                    --select or the writes hit every card
   --read-offset A  READ-ONLY probe, repeatable: read BAR0 offset A and
-                   print. Same transport/risks class as --target-offset
+                   print. Range form A-B also accepted (inclusive,
+                   32-bit word step, cap 512, e.g. 0x8e110-0x8e140).
+                   Same transport/risks class as --target-offset
                    minus the write (reads at parked/gated offsets return
                    badf poison, never hangs)
   --fuserows[=A-B] WRITE MODE per card: physical fuse-row capture via the
@@ -5571,6 +5599,8 @@ SSDIAG_COLOR=force pins on.",
         eprintln!("--target-offset without a following --value (each offset needs exactly one value)");
         return 2;
     }
+    read_offsets.sort_unstable();
+    read_offsets.dedup();
 
     if let Err(msg) = validate_prom_bit_flags(prom_bit, reapply, fuserows.is_some(), !pokes.is_empty()) {
         eprintln!("{msg}");
