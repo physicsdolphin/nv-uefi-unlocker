@@ -235,6 +235,14 @@ nvoc-cli restart-display-driver
   Gen4 PHY）+ 镜像只读双重封死。与 170HX 谱系 "no gen4 override register" 在
   语义上汇合：不是"没有寄存器"，是"升方向对 host 无接口"。
 
+## 轮八b（同日）：VAL3 值探针负结果——值编码逐 die 私有
+
+`VAL3←0x200000`（A100 的 MAGIC_D 值，170HX 谱系用它抬限）+ OVR3 ← 4 → **无效**。
+结论：VAL3 的描述符编码**不能跨 die 借用**——A100 值在 170HX 上有效、在 TU106
+上是惰性值，"VAL3=本卡 MAGIC_D 才有效"的 die-local 性实锤。Gen1 锁方向就此
+收口（已知字段 + 外部值候选全负）。owner 定性：**Turing 这代卡就不支持 Gen4**——
+升方向的第一性是硬件不支持，接口缺失是其次。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
