@@ -5391,8 +5391,10 @@ OPTIONS:
                    and walk PCI ROM headers -> BIT -> token 0x70 v2 ucode
                    table; prints structural metadata only (app/target IDs,
                    descriptor version/size/enc bit2, stored_size, empty/OOB
-                   counts; no firmware byte dumps). Cannot be combined with
-                   --reapply or --fuserows
+                   counts; no firmware byte dumps). Runs on ANY NVIDIA-class
+                   die (the PROM walk does not depend on the FEAT cluster,
+                   so it also fires on unknown/unmapped-family dies).
+                   Cannot be combined with --reapply or --fuserows
   --fuserows[=A-B] WRITE MODE per card: physical fuse-row capture via the
                    guarded ga100-ff-tools read_rows protocol (FUSEADDR row
                    select + FUSECTRL CMD_READ only, latch checks, two
@@ -6111,6 +6113,10 @@ fn parse_prom_bit(rom: &[u8]) -> Result<PromBitReport, PromBitError> {
             let encrypted = (vdesc & (1 << 2)) != 0;
             let stored_size = prom_le32(rom, desc_off + 4);
             let meta = if desc_ver == 2 && desc_size >= 60 && desc_off + 52 <= rom.len() {
+                // V2 field map (verified against the NVOC TU106 decode, where
+                // IMEMLoad 0x9600 = sec 0x300 + secSize 0x9300 self-checks):
+                // +24=IMEMLoadSize +32=IMEMSecBase +36=IMEMSecSize
+                // +48=DMEMLoadSize (NOT DMEMPhysBase, which sits at +44).
                 PromDescMeta::V2 {
                     imem_load: prom_le32(rom, desc_off + 24).unwrap_or(0),
                     sec_base: prom_le32(rom, desc_off + 32).unwrap_or(0),
@@ -6460,8 +6466,19 @@ mod tests {
 
     #[test]
     fn blackwell_dump_renders_without_panicking() {
-        let mut seen_modifier = false;
-        let mut seen_sec2_plm = false;
+        // The two PR-added side-evidence rows must stay in BLACKWELL_ROWS
+        // (docs/blackwell-gb20x-status.md lists both; they went missing from
+        // the source once already).
+        assert!(
+            BLACKWELL_ROWS
+                .iter()
+                .any(|&(n, o)| n == "SM_ISSUE_RATE_MODIFIER" && o == 0x0050_4204)
+        );
+        assert!(
+            BLACKWELL_ROWS
+                .iter()
+                .any(|&(n, o)| n == "SEC2_PLM" && o == 0x0084_03C4)
+        );
         let rd = |off: u32| match off {
             0x0082_3800 | 0x0082_3804 => 0xFFFF_FB8F,
             0x0082_3818 => 0x00C3_6180,
@@ -6471,11 +6488,6 @@ mod tests {
             0x0084_03C4 => 0x0000_0B0F,
             _ => 0,
         };
-        assert!(BLACKWELL_ROWS.iter().any(|&(n, o)| {
-            if n == "SM_ISSUE_RATE_MODIFIER" && o == 0x0050_4204 { seen_modifier = true; }
-            if n == "SEC2_PLM" && o == 0x0084_03C4 { seen_sec2_plm = true; }
-            false
-        }) || (seen_modifier && seen_sec2_plm));
         dump_debug(&rd, "blackwell-gb2");
     }
 
