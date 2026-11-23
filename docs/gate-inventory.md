@@ -113,7 +113,8 @@ booter 自己的指令（ROP 只是重排调用序）。
 - 机制已完整实证（Turing 侧，cmp50hx patch 04 + [cmp-gen2 §1](cmp-gen2-sm-unlock-assessment.md)）：
   载荷内开 **XP3G PLM 0x8e1b0** ← 0xffffffff，主机侧 7 项策略写
   （0x8841c/0x8e120/0x8e110/0x88610/0x8c2c0/0x8c040/0x8c1c0）+ LTSSM kick 0x8872c←6 +
-  配置空间 LNKCTL2 TLS=Gen2；**LnkSta 才是判据**（LnkCap 会说谎）。
+  配置空间 LNKCTL2 TLS=Gen2；**LnkSta 才是判据**（LnkCap 会说谎）。首步开门
+  无免 payload 替代——PLM 寄存器 host 直写已实测全拒（边界 9）。
 - 收益：矿卡 Gen1→Gen2 2× 链路带宽（P104-100 先例 p104-gen2-unlock 同理 2×；
   该先例走 PCI 配置空间+PL 内部寄存器运行期写——**正交车道**，不经 PLM）。
 - 卡点：Turing 帧预算 2 写封顶，XP3G 第三写进不去——**falcgen 的预算校验把这条
@@ -179,6 +180,15 @@ PSTRAPS SET0[15:14]+SET1[22:20]（BAR0+0x101000/0x10100c，和值编码 0=64MiB�
 8. **逐芯片几何**：booter 尺寸/gadget 地址/签名段名逐族不同——跨族移植=重抽取重审计
    （宪法 §9.1）；falcgen 把"新 die 边际成本"降到一把 debug key + 一条命令，但
    **不降低审计义务**。
+9. **PLM 寄存器自身写域（2026-11-24 TU106 台架 11 点实测）**：可读 ≠ 可写——
+   11 个 closed-stock PLM（GFW 0x118128、XVE 0x88ab4、FUSE-WDATA 0x210f4/
+   0x8200e0/0x8200e4、PMU 0x100b10/0x100b38/0x100b84、FBPA 0x9a0148/0x9a0168/
+   0x9a0554）host 写 0xffffffff 全部静默丢弃，读回逐位保持原值（0xffffff8f/
+   0xffffff88/0xffffffcf 三形状一致，无 sticky 位——与 FEAT 0xef erratum 形成
+   closed/open 两态对照）。**"开门只能由 payload 干"从推断变为实测边界**：
+   系统内级联开门不存在；寄存器按所在块 PLM 过滤（SS0/SS1 bench 的粘住面），
+   而 PLM 寄存器本身恒 L3。顺带含义：§2.3 矿卡 gen2 的"载荷内开 XP3G PLM0"
+   没有免 payload 替代路径。evidence：docs/evidence/tu106-plm-cascade-probe/。
 
 ## 4. falcgen 工具面（本轮落地）
 
