@@ -164,6 +164,32 @@ down/up 是已证可靠重训杠杆，正序的立即钳=带内 kick 在全量�
 HWiNFO/GPU-Z 读根口 00:01.0 的链路状态，应见 Gen2）。实用配方定型：**还原命令
 + 禁用-启用 = 干净回 3.0/3.0**。
 
+## 轮六（同日）：归一化二分——状态层 6 写封顶，触发层=驱动重初始化事件
+
+- **R1 负结果**：{OVR0, MAX_RATE, PL_LINK_RATE} + slot3 → 不钳（VSEC_HIERARCHY
+  疑似状态必要项；R1 是否做过 PnP 未记录，待补测）。
+- **逻辑出列两项**：0x8c2c0（同值写 no-op）、0x8e120（VAL0←0=原值 no-op）。
+- **R2c 正结果**：{OVR0, MAX_RATE, PL_LINK_RATE, VSEC_HIERARCHY} + slot3（6 态写）
+  → PnP 后钳 Gen2——**状态层 6 写充分**；TLS/PRIV_MISC_1 非状态项。
+- **触发层排除**：slot3 单打（轮五b）、PRIV_MISC_1 单加、TLS 单加、两项合取、
+  30–60s 时延、**空闲降速-回升循环（T3，P5/P8 自然重协商不触发）**、带内 kick
+  ——全部不立即。
+- **nvoc-cli restart-display-driver = 双向触发器**（nvoc 项目工具）：钳制态刷新
+  到 Gen2、还原态刷新到 Gen3——**NVIDIA 驱动重初始化事件会重读能力向量并应用**；
+  设备管理器禁用-启用同效（全 PnP 版）。硬件层重协商（idle 循环）不应用。
+- **归一化终态**：
+  - 进 2.0 = `OVR0(0x8e110←1) + MAX_RATE(0x8c040←0x800c5800) +
+    PL_LINK_RATE(0x8c1c0←0x150036) + VSEC_HIERARCHY(0x88610←1) + VAL3(0x8e12c←
+    0x16480000) + OVR3(0x8e11c←4)` + 驱动重初始化；
+  - 回 3.0 = 上述 6 项回原值（0x8e110←0 / 0x88610←0x1001 / 0x8c040←0x80045800 /
+    0x8c1c0←0x130036 / 0x8e12c←0 / 0x8e11c←0）+ 驱动重初始化。
+  - 对称干净：进/出同构 6 写，TLS/PRIV_MISC_1 从配方中彻底退役。
+- **未决尾巴**：①轮三立即性未复现（当时无驱动重启发生，孤例处理）；②轮五d
+  kick 能抬能力向量但 T 系 kick 不能压（单向性注脚）；③kick 是否必要未单独测
+  （R2c 含 kick，可试 6 写无 kick + restart-display-driver）；④降阶梯未走完：
+  VSEC 必要性（R1 PnP 缺证）、MAX_RATE vs PL_LINK_RATE 单项、OVR0 必要性、纯
+  slot 对（5b 当时无触发器配合，需用 restart-display-driver 复测）。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
