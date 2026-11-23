@@ -691,6 +691,9 @@ so no transaction was attempted and nothing was written"
     // "the unlocked GPU's live state poisons the handoff" from "our UEFI
     // surgery poisons it". A freeze under this marker indicts the surgery;
     // a clean boot leaves the live GPU state as the remaining suspect.
+    if tx::probe_file("\\tx-fwsec-only.txt") {
+        info!("TX: \\tx-fwsec-only.txt present - the transaction stops after the FWSEC stage (no booter, no selectors, no FLR; issue #286 residue bracket)");
+    }
     if tx::probe_file("\\tx-agitate-only.txt") {
         info!("TX: \\tx-agitate-only.txt present - full-surgery zero-write control instead of the transaction (see run_agitate_only's contract)");
         let mut agitate_bridge = None;

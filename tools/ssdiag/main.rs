@@ -5829,6 +5829,14 @@ SSDIAG_COLOR=force pins on.",
         let can_msg = match (canary_state(&rd), unlocked) {
             ("intact", true) => "CANARY: intact + SS live - no reset, nothing rewrote the state after handoff",
             ("intact", false) => "CANARY: intact + SS gone - no reset; something WROTE the FEAT block (driver init / devinit replay, not a power event)",
+            // 0/0 is ambiguous between "a reset cleared an armed pair" and
+            // "the loader never armed it" (\tx-no-canary.txt, arm skipped) -
+            // issue #286 hit this false positive twice. Disambiguate when
+            // possible: an OPEN FEAT gate at 0/0 is the arm-skipped
+            // signature (the loader arms AFTER opening the gate, so
+            // gate-open + never-armed cannot happen on a real run).
+            ("cleared", true) if plm == 0xFFFF_FFFF =>
+                "CANARY: 0/0 with an OPEN gate - most likely the loader never armed it (\\tx-no-canary.txt / arm-skipped run), NOT a reset; check the loader log's CANARY lines",
             ("cleared", true) => "CANARY: cleared + SS live - a reset happened but the AON island survived it (FLR/SBR class, not a rail-off)",
             ("cleared", false) => "CANARY: cleared + SS gone - a reset hit this boot after the EFI handoff (expected anonymous relock)",
             ("partial", _) => "CANARY: partial - narrow-domain reset, or a devinit rewrote one of the two words",

@@ -694,3 +694,38 @@ fn t_no_flr_ada_ablation() {
     assert!(report.unwind_clean && report.selectors_written && report.signature_restored);
     assert!(!report.flr_done, "no_flr must report the FLR as skipped");
 }
+
+#[test]
+fn t44_fwsec_only_handoff_residue_bracket() {
+    // Loader analog of \tx-fwsec-only.txt (issue #286 residue bracket,
+    // 2026-11-23): the transaction stops right after the FWSEC stage - no
+    // booter fire, no selector writes, no canary arm, NO FLR (failure path
+    // included). The driver then re-runs its own FWSEC and inits; its
+    // verdict brackets the residue to the SEC2/booter stage vs the FWSEC
+    // stage. Contract: FWSEC fired, nothing else did, the unwind is clean
+    // (DMA freed, BME cleared), and the phase log carries the bracket line.
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.fwsec_only = true;
+    let report = tx.run().expect("fwsec-only happy path");
+    assert!(report.fwsec_fired, "FWSEC must have fired: {report:?}");
+    assert!(!report.booter_fired, "the booter must NOT fire: {report:?}");
+    assert!(!report.selectors_written, "no selector writes: {report:?}");
+    assert!(!report.flr_done, "no FLR anywhere (failure path included): {report:?}");
+    assert!(report.bme_restored && report.unwind_clean, "clean unwind: {report:?}");
+    assert!(
+        tx.log().iter().any(|l| l.contains("FWSEC-ONLY: marker present")),
+        "the bracket line must be in the phase log"
+    );
+    drop(tx);
+    // The only GPU writes on this path are the FWSEC stage's own (stock
+    // firmware behavior) - the FEAT block must stay untouched (no
+    // selector/PLM writes; read the ledger for any FEAT-range write).
+    assert!(
+        gpu.writes.iter().all(|(off, _)| !(0x0040_9600..0x0040_9700).contains(off)
+            && !(0x0082_3800..0x0082_3830).contains(off)),
+        "the FEAT blocks must not be written on the fwsec-only path: {:?}",
+        gpu.writes.iter().filter(|(off, _)| (0x0040_9600..0x0040_9700).contains(off)
+            || (0x0082_3800..0x0082_3830).contains(off)).collect::<Vec<_>>()
+    );
+}

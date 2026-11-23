@@ -1256,6 +1256,30 @@ pub fn run_transaction(
     }
     info!("TX: fwsec ok (WPR2 verified)");
 
+    // \tx-fwsec-only.txt (issue #286 residue bracket, 2026-11-23): hand off
+    // right after the FWSEC stage - no booter, no selectors, no canary, no
+    // FLR (and the failure path below does not emergency-FLR either, so a
+    // refusal leaves the state untouched). The residue bracket this closes:
+    // everything up to and including FWSEC is stock firmware behavior; the
+    // driver then re-runs its own FWSEC (it rebuilds WPR2 - measured on the
+    // #286 bench) and inits. Driver accepts -> the SEC2/booter residue is
+    // the trigger (and a payload-side SEC2 self-clean becomes the
+    // deliverable fix); driver still refuses -> the GSP-FWSEC residue alone
+    // is the trigger, and with the TU117 one-way gate that is a structural
+    // dead end for in-OS recovery. Everything AFTER this line (booter DMA,
+    // radix, WprMeta, fires, selectors) is what the driver would NOT have
+    // seen on a stock boot - exactly the delta under test.
+    if crate::tx::probe_file("\\tx-fwsec-only.txt") {
+        info!("TX-FWSEC-ONLY: marker present - handing off after the FWSEC stage (no booter, no selectors, no canary, NO FLR anywhere including the failure path)");
+        crate::tx_detach::restore_vga(gpu.pci, claim.initial_attrs);
+        if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
+            info!("TX-FWSEC-ONLY: native-GOP recovery failed: {e} - console left to bootmgfw (a wrong reconnect is worse than none)");
+        }
+        crate::logging::unmute_console();
+        info!("TX-FWSEC-ONLY: FINAL: FWSEC-stage handoff complete - the driver's own init is the experiment");
+        return Ok(());
+    }
+
     use crate::tx_booter as tb;
 
     // Boot descriptor + booter bundle validation (per-family pinned

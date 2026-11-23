@@ -149,6 +149,13 @@ pub struct Transaction<'a> {
     /// host writes to the GPU. The zero-write contract is asserted by the
     /// tests against FakeGpu::writes (the host-write ledger).
     pub agitate_only: bool,
+    /// Loader analog of \tx-fwsec-only.txt (issue #286 residue bracket):
+    /// the transaction stops right after the FWSEC stage - no booter, no
+    /// selectors, no canary arm, no FLR anywhere (failure path included).
+    /// The driver then sees stock firmware + its own FWSEC residue, and
+    /// its accept/refuse verdict brackets the residue to the SEC2/booter
+    /// stage vs the FWSEC stage.
+    pub fwsec_only: bool,
     staging_fallback_used: bool,
     fwsec_fallback_used: bool,
     fwsec_vram_staged: bool,
@@ -185,6 +192,7 @@ impl<'a> Transaction<'a> {
             warm_wpr2_marker: false,
             no_flr: false,
             agitate_only: false,
+            fwsec_only: false,
             staging_high: false,
             staging_fallback_used: false,
             fwsec_fallback_used: false,
@@ -689,18 +697,28 @@ impl<'a> Transaction<'a> {
                 self.fwsec()?;
                 self.note("FWSEC-FALLBACK: VRAM-staged re-ignition verified (the LOCAL_FB aperture delivers) - continuing the chain");
             }
-            self.booter_fire_and_verify()?;
-            if self.payload {
-                self.selectors()?;
-                self.signature_restore()?;
-            }
-            if self.no_flr {
-                // \tx-no-flr.txt ablation: the FLR is state cleanup on
-                // Ada/GA10x (unlock read back above; AON holds it across
-                // any reset) - skipping leaves WPR2/GFW live by design.
-                self.note("FLR skipped by no_flr (WPR2/GFW left live - issue #242 ablation)");
+            if self.fwsec_only {
+                // \tx-fwsec-only.txt (issue #286 residue bracket): hand off
+                // right after the FWSEC stage. No booter fire, no selector
+                // writes, no canary arm, NO FLR - and the unwind contract
+                // still holds (DMA released, BME cleared). The driver then
+                // re-runs its own FWSEC and inits; its verdict brackets the
+                // residue to the SEC2/booter stage vs the FWSEC stage.
+                self.note("FWSEC-ONLY: marker present - handing off after the FWSEC stage (no booter, no selectors, no canary, no FLR)");
             } else {
-                self.flr_and_post()?;
+                self.booter_fire_and_verify()?;
+                if self.payload {
+                    self.selectors()?;
+                    self.signature_restore()?;
+                }
+                if self.no_flr {
+                    // \tx-no-flr.txt ablation: the FLR is state cleanup on
+                    // Ada/GA10x (unlock read back above; AON holds it across
+                    // any reset) - skipping leaves WPR2/GFW live by design.
+                    self.note("FLR skipped by no_flr (WPR2/GFW left live - issue #242 ablation)");
+                } else {
+                    self.flr_and_post()?;
+                }
             }
             Ok(())
         })();
@@ -715,9 +733,9 @@ impl<'a> Transaction<'a> {
             // its absence is the design, not a fault.
             halt_seen: matches!(self.last_cpuctl, Some(c) if c & 0x10 != 0),
             plm_open_verified: self.last_plm == Some(0xffff_ffff),
-            selectors_written: self.payload,
+            selectors_written: self.payload && !self.fwsec_only,
             bme_restored: !self.bme_set,
-            flr_done: !self.faults.fail_flr && !self.no_flr,
+            flr_done: !self.faults.fail_flr && !self.no_flr && !self.fwsec_only,
             signature_restored: !self.payload || !self.faults.signature_restore_fail,
             unwind_clean: self.dma_live == 0 && !self.bme_set,
         })
