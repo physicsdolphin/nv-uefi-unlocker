@@ -554,6 +554,34 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     };
     let gpu = tx::TxGpu { pci: &pci, bar: 0 };
 
+    // \tx-rebar.txt (2026-11-24 bench follow-up, NV_30_DXE template): UEFI-stage
+    // ReBAR window grow - see tx::run_rebar_only. Runs before any transaction
+    // machinery and before the asset prechecks (asset-less sticks can rebar);
+    // writes only the advertise+select pair with read-back, resets nothing,
+    // then hands off. Size index = decimal marker content, default 13
+    // (8 GiB), clamped 1..=19. Reversible by rail-off.
+    if tx::probe_file("\\tx-rebar.txt") {
+        let idx = chainload::boot_volume_read(uefi::cstr16!(r"\tx-rebar.txt"))
+            .map(|c| {
+                let s: alloc::string::String = c.iter().map(|&b| b as char).collect();
+                s.trim().parse::<u32>().ok()
+            })
+            .flatten()
+            .filter(|&n| (1..=19).contains(&n))
+            .unwrap_or(13);
+        info!("TX: \\tx-rebar.txt present - UEFI-stage ReBAR grow (0x88610 advertise + 0x88bc0 select size_idx {idx}; NO FLR, NO reset - the pair must survive into Windows' boot enumeration; recovery = power-off)");
+        match tx::run_rebar_only(&gpu, idx) {
+            Ok(()) => {
+                info!("SELECTOR RESULT: rebar pair written and readback-verified - chaining to Windows boot enumeration");
+            }
+            Err(e) => {
+                info!("REBAR: failed ({e:?}) - handing off unchanged; no reset on this path, power-off clears any partial write");
+            }
+        }
+        tx::handoff_out(&pci);
+        return CardOutcome::Attempted;
+    }
+
     // Per-family asset selection by PCI device ID - see asset_family.
     let dev = g.device_id;
     let Some(family) = asset_family(dev) else {

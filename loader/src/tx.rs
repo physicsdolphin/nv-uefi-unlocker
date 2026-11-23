@@ -2209,6 +2209,57 @@ pub fn flr_once(pci: &crate::pci::PciIo) {
     pm_flr_post(pci, pm);
 }
 
+/// \tx-rebar.txt (2026-11-24 TU106 bench line, NV_30_DXE template): UEFI-stage
+/// ReBAR window grow. The GA102 FB-size override (config 0x610 = BAR0 0x88610
+/// through the XVE PRI page; mask 0xF80 value 0xC80 - proven on TU106, one
+/// write opens the ReBAR advertisement from 3 sizes to 10) then the ReBAR
+/// control register (config 0xBC0 = BAR0 0x88bc0) selects the BAR1 size.
+/// Read-back after every write (constitution #1). NO reset and NO FLR on any
+/// path - both registers are config space and any reset washes them; the
+/// whole point is handing a live override+selection to Windows' boot
+/// enumeration. In-OS control writes re-latch the aperture immediately
+/// (>=2G hard-hangs the bench board; resized states are fragile - a UAC
+/// prompt is lethal), so this write happens HERE: nothing maps BAR1 but the
+/// console framebuffer, whose base and low offsets survive a pure growth,
+/// and Windows pci.sys assigns the window at enumeration with the driver
+/// initializing against the final size (no live re-latch, no UAC window).
+pub fn run_rebar_only(gpu: &TxGpu, size_idx: u32) -> Result<(), TxError> {
+    const FB_OFF: u32 = 0x0008_8610;
+    const CAP_OFF: u32 = 0x0008_8bbc;
+    const CTL_OFF: u32 = 0x0008_8bc0;
+    const FB_MASK: u32 = 0x0000_0f80;
+    const FB_VAL: u32 = 0x0000_0c80;
+    const SZ_MASK: u32 = 0x0000_3f00;
+
+    info!("REBAR: BEGIN (two writes + readback, no claim, no reset, no FLR; size_idx {size_idx} = {} MiB aperture)", 1u32 << size_idx);
+    let old_fb = gpu.read32(FB_OFF)?;
+    let new_fb = (old_fb & !FB_MASK) | FB_VAL;
+    gpu.write32(FB_OFF, new_fb);
+    let rb_fb = gpu.read32(FB_OFF)?;
+    let fb_ok = rb_fb == new_fb;
+    info!("REBAR: 0x88610 {old_fb:#010x} -> wrote {new_fb:#010x} -> readback {rb_fb:#010x} {}", if fb_ok { "OK" } else { "MISMATCH" });
+    if !fb_ok {
+        return Err(TxError::EIO);
+    }
+
+    let mask = gpu.read32(CAP_OFF)?;
+    info!("REBAR: 0x88bbc BAR1 supported mask {mask:#010x} ({} sizes advertised)", mask.count_ones());
+
+    let old_ctl = gpu.read32(CTL_OFF)?;
+    let new_ctl = (old_ctl & !SZ_MASK) | (size_idx << 8);
+    gpu.write32(CTL_OFF, new_ctl);
+    let rb_ctl = gpu.read32(CTL_OFF)?;
+    let ctl_ok = rb_ctl == new_ctl;
+    info!("REBAR: 0x88bc0 {old_ctl:#010x} -> wrote {new_ctl:#010x} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if ctl_ok { "OK" } else { "MISMATCH" });
+    if !ctl_ok {
+        return Err(TxError::EIO);
+    }
+
+    let mask2 = gpu.read32(CAP_OFF)?;
+    info!("REBAR: FINAL mask {mask:#010x} -> {mask2:#010x}, ctl {rb_ctl:#010x} - handing a live override+selection to Windows boot enumeration");
+    Ok(())
+}
+
 /// Last observable state before the chain-load, in one line. Everything the
 /// Windows side will later read back is logged here so the two records can be
 /// compared directly (a mismatch after boot localizes the consumer that undid
