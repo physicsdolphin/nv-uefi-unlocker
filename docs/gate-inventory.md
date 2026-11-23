@@ -121,8 +121,20 @@ booter 自己的指令（ROP 只是重排调用序）。
   边界变成了机械拒绝**（`--family tu102 --writes 0x8e1b0=…,0x409650=…,0x1fa828=…`
   → exit 2）。落地路径=pivot 重排（§1.2）或 stockflow 载荷审计。
 - 门控纪律：仅矿卡设备 ID（30/40/50HX=1exx/21xx、90HX=22xx），永不按"任意 Gen1
-  钳制卡"放宽。TU106 consumer 的 XP3G PLM 读 0xffffffff（OPEN）——40HX 卡对照
-  是下一轮输入（ssdiag PCIE_LINK_ROWS/XP3G 面已可采）。
+  钳制卡"放宽。
+- **TU106 consumer 机制探针（2026-11-24，实验进行中）**：XP3G PLM0 原生 OPEN 的
+  台架上主机侧全链 9 写全粘——含 **config 镜像写穿透**（0x880a8←TLS=Gen2 后
+  config space 读回 Gen2，跨轮持有=PRI 镜像可写且穿透的正 datum）；但同一行读数
+  **TLS=Gen2 与 LnkSta=Gen3 共存**（spec 级违反：广告路径若真钳 Gen2 则 Gen3 训不上
+  来）——链路速率由 XP3G/XVE 内部态驱动，不取 config TLS。Gen1/Gen2 观测=空闲
+  PM（P5/P8 节能：同一次运行内 config Gen1→MMIO Gen3 动态可证，LnkCtl ASPM 位
+  逐轮漂移），任何单点采样须负载限定。结构解读参照 cmp170hx 谱系：gen 上限=
+  falcon 固件启动期改写强制的**天花板**（"falcon is driving the rewrites"/"no gen3
+  override register"，170HX #978）；XP3G OVR 块=**解锁方向**（抬起矿卡固件钳，
+  孤立写不动链路的旁证 #914），无压低机制——consumer 无钳可解，方向反转。
+  OVR3=0x4/VAL3=0x00200000 两腿未试（cmp170hx 谱系含，预测同样无效）。
+  evidence：docs/evidence/tu106-gen2-policy-probe/。原生开归因（本卡冷态纯读）与
+  40HX 对照仍待 Phase 0。
 
 ### 2.4 Turing BAR1 ReBAR（strap 层，不需要载荷）
 
