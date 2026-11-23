@@ -1,4 +1,6 @@
-//! ssdiag v0.8.9 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.10 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.10 adds --read-offset A (READ-ONLY probe, repeatable): read BAR0
+//! offset A and print - the arbitrary-read counterpart of --target-offset.
 //! v0.8.9 adds --target-offset A --value V (ARBITRARY WRITE MODE, repeatable
 //! ordered pairs): raw BAR0 writes through the same pmxdrv transport the
 //! diagnostics use, each followed by a read-back print. Lands regardless of
@@ -5347,6 +5349,7 @@ fn run() -> i32 {
     let mut prom_bit = false;
     let mut pokes: Vec<(u32, u32)> = Vec::new();
     let mut poke_off: Option<u32> = None;
+    let mut read_offsets: Vec<u32> = Vec::new();
     let mut dry = false;
     let mut inv_only = false;
     let mut sb_arm = false;
@@ -5391,6 +5394,19 @@ fn run() -> i32 {
                     Some(off) => pokes.push((off, val)),
                     None => {
                         eprintln!("--value without a preceding --target-offset");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--read-offset" => {
+                let v = args.next().unwrap_or_else(|| {
+                    eprintln!("--read-offset requires a hex BAR0 offset, e.g. --read-offset 0x8e114");
+                    std::process::exit(2);
+                });
+                match u32::from_str_radix(v.trim_start_matches("0x").trim_start_matches("0X"), 16) {
+                    Ok(b) if b < 0x0100_0000 => read_offsets.push(b),
+                    _ => {
+                        eprintln!("bad --read-offset {v:?}; need a BAR0-relative hex offset inside the 16 MiB aperture");
                         std::process::exit(2);
                     }
                 }
@@ -5450,6 +5466,10 @@ OPTIONS:
                    box (recovery = hard reset; the unlock state survives
                    reboots, rail-off clears it). On multi-GPU boxes pass
                    --select or the writes hit every card
+  --read-offset A  READ-ONLY probe, repeatable: read BAR0 offset A and
+                   print. Same transport/risks class as --target-offset
+                   minus the write (reads at parked/gated offsets return
+                   badf poison, never hangs)
   --fuserows[=A-B] WRITE MODE per card: physical fuse-row capture via the
                    guarded ga100-ff-tools read_rows protocol (FUSEADDR row
                    select + FUSECTRL CMD_READ only, latch checks, two
@@ -5899,6 +5919,12 @@ SSDIAG_COLOR=force pins on.",
                 if !ok {
                     rc = 1;
                 }
+            }
+        }
+        if !read_offsets.is_empty() {
+            println!("read: {} offset(s), read-only", read_offsets.len());
+            for &off in &read_offsets {
+                println!("read {:#x} = {}", off, hx32(rd(off)));
             }
         }
         if let Some(range) = fuserows {
