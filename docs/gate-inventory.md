@@ -156,8 +156,11 @@ booter 自己的指令（ROP 只是重排调用序）。
   向量；设备管理器禁用-启用同效；硬件层 idle 重协商与带内 kick 不算触发）；回
   3.0 = 三项回原值（0x88610←0x1001 等）+ 同触发。原 50HX 十二写链 consumer 化
   压缩到 3 写。九写中的 TLS/PRIV_MISC_1/MAX_RATE/PL_LINK_RATE/OVR0/VAL0/CYA_0
-  与 kick 全部退役；power-cycle-volatile。evidence：docs/evidence/tu106-gen2-
-  policy-probe/（七轮全录）。
+  与 kick 全部退役；power-cycle-volatile。**双向边界（轮八）**：旋钮只降不升——
+  Gen1 锁在已知字段不可达（MAX_RATE=00 无效，GEN1 需未知的 VAL 编码，搁置）；
+  Gen4 广告不可抬（LnkCap/LnkCap2 PRI 镜像写拒=capability 广告 host 只读，
+  MAX_RATE=11b 顶在 Gen3 硅顶）。evidence：docs/evidence/tu106-gen2-
+  policy-probe/（八轮全录）。
 
 ### 2.4 Turing BAR1 ReBAR（strap 层，不需要载荷）
 

@@ -221,6 +221,20 @@ nvoc-cli restart-display-driver
 - `nvoc-cli restart-display-driver` = 触发（驱动重 init 重读能力向量）；
 - 全部 power-cycle-volatile； LnkSta 升方向需驱动事件、降方向可带内即时。
 
+## 轮八（同日）：双向边界——Gen1 锁不可达（已知字段），Gen4 广告不可抬
+
+- **G1 锁 Gen1**：LINK_CONFIG_0 [19:18]=00（第三种取值，前有 01=出厂跑 Gen3、
+  10=钳 Gen2、11=轮一试过顶在 Gen3）→ **无效**。field=0 非 Gen1。已知字段层面
+  Gen1 锁不可达；剩余=VAL3 值盲搜（值编码未知，命中概率低，搁置）。
+- **G4 抬 Gen4**：LnkCap/LnkCap2 的 PRI 镜像**写拒**（0x88084←0x454d04、
+  0x880a4←0x1e 双双 MISMATCH，读回含 PM 变动的 L0s 延迟字段抖动 0x453d03/
+  0x454d03）——**capability 广告从 host 只读**，抬升唯一下游是 slot 机制，
+  而轮一已证 MAX_RATE=11b 顶在 Gen3。
+- **双向边界定型**：天花板旋钮在 TU106 consumer 上**只降不升**——降侧 3 写可及
+  Gen2（Gen1 需未知的 VAL 编码），升侧被硅（Turing SerDes=Gen3，GA102 才上
+  Gen4 PHY）+ 镜像只读双重封死。与 170HX 谱系 "no gen4 override register" 在
+  语义上汇合：不是"没有寄存器"，是"升方向对 host 无接口"。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
