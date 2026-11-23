@@ -74,3 +74,6 @@ owner 实测与判读（勘误轮三后的初读）：
 §2.4 载具终审：**DXE（NvStrapsReBar）单路线**——它赢在写时机就在枚举窗内；
 0x610 型 FB override 为唯一剩余假想路（未探）。轮二机制 datum（part1 硅掩码
 →in-OS 上限 8GiB；override_en 摘 ReBAR cap 广告）保持。
+附（同日负控）：RM 自带 `OverrideFbSize` 注册键（NV_REG_STR_OVERRIDE_FB_SIZE，
+宿主侧堆覆盖）在 GSP 模式下**无效**（16384/4096 两档+驱动重启：FB_SIZE_MIB 仍
+badf、5G+ 分配照常）——注册表侧无 BAR1/堆增长捷径，0x610 仍需 MMIO 面模板。

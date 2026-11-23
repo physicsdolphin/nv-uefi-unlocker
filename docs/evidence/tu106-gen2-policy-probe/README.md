@@ -243,6 +243,17 @@ nvoc-cli restart-display-driver
 收口（已知字段 + 外部值候选全负）。owner 定性：**Turing 这代卡就不支持 Gen4**——
 升方向的第一性是硬件不支持，接口缺失是其次。
 
+## 轮八c（同日）：slot1/slot2 首读 + OverrideFbSize 注册键负结果
+
+- **slot1/slot2 首读**（ssdiag 0.8.10 `--read-offset`）：OVR1/VAL1（0x8e114/0x8e118）
+  与 OVR2/VAL2（0x8e124/0x8e128）出厂态全 0——四槽 one-hot 布局里 1/2 号槽
+  矿卡链与 consumer 链都不用（50HX 用 slot0 抬限、TU106 钳制走 slot3）。
+- **OverrideFbSize 注册键无效**（RM 自带 FB 堆覆盖，mem_mgr.c 读
+  `NV_REG_STR_OVERRIDE_FB_SIZE`）：16384/4096 两档设键 + 驱动重启，FB_SIZE_MIB
+  仍 badf5040、单进程照样申请 5G+ 显存——**GSP 模式下该键不被执行**（Turing+
+  RM 在 GSP 里，宿主注册键传递路径不达 FB sizing，或 GSP-RM 忽略之）；
+  顺带证伪"堆覆盖≈孔径"关联——注册表侧没有 BAR1 增长捷径。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
