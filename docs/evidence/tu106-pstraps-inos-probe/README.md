@@ -77,3 +77,30 @@ owner 实测与判读（勘误轮三后的初读）：
 附（同日负控）：RM 自带 `OverrideFbSize` 注册键（NV_REG_STR_OVERRIDE_FB_SIZE，
 宿主侧堆覆盖）在 GSP 模式下**无效**（16384/4096 两档+驱动重启：FB_SIZE_MIB 仍
 badf、5G+ 分配照常）——注册表侧无 BAR1/堆增长捷径，0x610 仍需 MMIO 面模板。
+
+## 轮五（同日）：NV_30_DXE 模板移植——0x610 FB override 在 TU106 生效，catch-22 破口
+
+**地址同一性**（文考+实测双证）：config 0x610 = BAR0 0x88610（XVE PRI 页=config
+space 镜像：LnkCap@0x88084、LnkCtl2@0x880a8 穿透已证、AD1X_BAR1_CAP_MIRROR
+0x88bbc=config 0xBBC）——gen2 配方的"武装位"寄存器与 GA102 FB override 是**同一
+寄存器**（ssdiag 字典名 VSEC_HIERARCHY = NV_30_DXE 名 FB_SIZE_OVERRIDE）。
+
+模板（Ga102ReBarFix.c）：mask 0xF80 / value 0xC80（bit11=enable，bits[10:7]=9）。
+
+实测：
+```
+基线  0x88610=0x1001  0x88bbc=0x1c00 (supported={64M,128M,256M})  0x88bc0=0x801 (control: BAR1, size_idx 8)
+poke  0x88610 <- 0x1C81 -> readback OK
+读回  0x88bbc = 0x0ffc00  —— supported 长出 10 位！
+config 头行确认: BAR1 supported [32G/16G/8G/4G/2G/1G/512M/256M/128M/64M]
+```
+
+- **"0x610=GA102 专属"证伪**：TU106 同款接口，一条 MMIO 写就把 ReBAR 广告从
+  3 档开到 10 档（8GB 卡上 32G 档只是广告，实际可用受 VRAM 钳制）。
+- ReBAR control 镜像同位：0x88bc0=0x801 = {BAR index=1, size_idx=8(256MiB)}；
+  8GiB = size_idx 13 → **0x0d01**。
+- 载具意义： straps catch-22 不适用此路——0x610 写在 config 空间、复位后即可
+  重写，而 **loader 本就跑在复位后/Windows 枚举前的时窗**——若 disable-enable
+  能触发重分派则 in-OS 全程可解；否则 loader 加"0x88610|=0xC80 + 0x88bc0←idx"
+  两写 = NvStrapsReBar 的 DXE 功能装进现成载具，零 BIOS 改动（#211 侧证：窗口
+  一旦按 override 分配，FLR 洗不掉）。
