@@ -52,3 +52,13 @@ poke 0x10100c <- 0x82713000 -> readback OK
   Code 12，断电冷启恢复）②straps 是否复位重载洗掉（#135 先例预测洗；FEAT AON
   先例存疑）。若 straps 洗掉而仍要 in-OS BAR1 增长 → 下一候选 = #211 的 0x610 型
   FB override（GA102 枚举期写、活过 FLR）的 Turing 对应物。
+
+## 轮三（同日）：S4 休眠（rail-off）判别完成——reset-reload 模型确认，载具革命不成立
+
+S4 断电 + 解锁 boot 后：**PSTRAPS SET0/SET1 全部回厂值**（0x00400080/0x02013000、
+override_en=0、BAR1 index 0）+ **config ReBAR cap 0x15 回归**（3 resizable BARs，
+BAR1 [256M/128M/64M]）——#135 先例兑现：**straps=上电默认，in-OS 写不活过断电**。
+in-OS PSTRAPS 路线定性：会话内诊断/实验工具，无持久化载具价值；§2.4 ReBAR 载具
+维持 DXE（NvStrapsReBar）路线，in-OS 活窗增长留给 0x610 型 FB override 思路。
+轮二的两个机制 datum（part1 硅掩码→in-OS 上限 8GiB；override_en 抑制 ReBAR cap
+广告）保持成立。

@@ -103,6 +103,24 @@ poke 0x8872c <- 0x6 -> readback OK
   0x8e11c←0 / 0x8872c←0`，回退后 kick 再看 LnkCap；仍 Gen2 → **温重启**
   （devinit/固件启动期改写 = 保证恢复路径）。
 
+## 轮五（同日）：S4 休眠（rail-off）+ 解锁 boot —— 旋钮挥发性与 Phase 0 归因一次收口
+
+- **Gen3 能力安全恢复**：LnkCap max Gen3、LnkCap2 [Gen1,Gen2,Gen3]、TLS Gen3——
+  轮三/轮四的能力向量改动**随断电洗净**（旋钮=power-cycle-volatile，无持久损害）。
+  残余瞬态：LINK_CONFIG_0=0x80085800（[19:18]=2）+ LnkSta 暂挂 Gen2=驱动从休眠
+  镜像恢复时的链路策略重放（我们写的是 3，原值是 1——既非原值也非我写值=本轮
+  驱动/固件所为），禁用-启用后 GPU-Z 恢复正常 Gen3（owner 实测），可自愈。
+- **意外收获：S4 恰好执行了 Phase 0**（rail-off + 本次解锁 boot 的 payload 只写
+  FEAT 0x409650）——**XP3G PLM0=0xffffffff、FUSECTRL_PLM/FUSEOPT_PLM=0xffffffff
+  全部原生开**（TU106 consumer），fuserow scan 副作用假设作废；
+  DEBUG_FEAT_SW_OVR_EN 0x21148=1 同为原生值。FEAT_PLM=本 boot loader 武装
+  （canary intact 同 boot）。
+- XP3G 策略寄存器全组回原值（0x20b40500/0x1001/0x130036/OVR/VAL 全 0）——
+  **gen2 旋钮 = 会话内易失**，无任何跨断电残留。
+- 附注：本 inventory 内部又有 config LnkSta Gen2 vs MMIO 0x88088=0x143(Gen3) 的
+  同轮分叉 = 读数时链路正在重训（disable-enable 后的重训过程），终态以 GPU-Z
+  正常 Gen3 为准。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3

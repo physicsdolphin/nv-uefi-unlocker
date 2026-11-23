@@ -143,6 +143,13 @@ booter 自己的指令（ROP 只是重排调用序）。
   原值）：`0x8841c←0x20b40500 / 0x8e110←0 / 0x88610←0x1001 / 0x8c040←0x80045800 /
   0x8c1c0←0x130036 / 0x880a8←0x1f0003 / 0x8e12c←0 / 0x8e11c←0 / 0x8872c←0`；
   仍 Gen2 → 温重启（devinit/固件启动期改写=保证恢复路径）。
+  **轮五（同日 S4 休眠轮）**：rail-off 后 Gen3 能力向量全恢复（旋钮=power-cycle-
+  volatile，无持久损害）；XP3G 策略寄存器全组回原值；残余=驱动从休眠镜像重放
+  链路策略（LINK_CONFIG_0 [19:18]=2、LnkSta 暂挂 Gen2），禁用-启用自愈。
+  **Phase 0 同轮收口**：本 boot payload 只写 FEAT——XP3G PLM0 与 FUSECTRL/FUSEOPT
+  PLM 在 rail-off 后仍 0xffffffff = **TU106 consumer 原生开**（scan 副作用假设
+  作废）。TU11x 对照待社区探针（ssdiag gen2 face 已印 XP3G_PLM0，一行读数即可
+  扩格）。
 
 ### 2.4 Turing BAR1 ReBAR（strap 层，不需要载荷）
 
@@ -156,11 +163,12 @@ BAR1 index 上限=7=8GiB**（16/32/64G 需 part1，host 拿不到；8GB 显存�
 经典 ReBAR 目标）；override_en=1 生效后 **config ReBAR cap 0x15 整个消失**——
 straps override 下设备改呈固定尺寸 BAR，可调 BAR 机制被抑制（cap 广告=straps
 派生的机制 datum）。现态：BAR1 straps index 7=8GiB + override_en=1（SET0=
-0x80400080 含原 bit22、SET1=0x82713000）。待温重启判别：①BAR1 是否按 8GiB
-枚举（依赖 BIOS Above-4G；放不下=Code 12，断电冷启恢复）②straps 是否复位重载
-洗掉（#135 先例预测洗）。若洗掉而仍要 in-OS BAR1 增长→下一候选=#211 的 0x610
-型 FB override 的 Turing 对应物。回退=清 bit31 恢复原值（0x00400080/0x02013000）。
-evidence：docs/evidence/tu106-pstraps-inos-probe/。
+0x80400080 含原 bit22、SET1=0x82713000）。**S4 判别完成（同日轮三）**：rail-off
+后 straps 全回厂值（override_en=0、index 0）+ ReBAR cap 0x15 回归——reset-reload
+模型确认，**in-OS PSTRAPS 写不活过断电，载具革命不成立**：in-OS 写定性=会话内
+诊断工具；ReBAR 载具维持 DXE（NvStrapsReBar），in-OS 活窗增长留给 0x610 型
+FB override 思路（#211）。轮二的机制 datum（part1 硅掩码→in-OS 上限 8GiB；
+override_en 抑制 cap 广告）保持。evidence：docs/evidence/tu106-pstraps-inos-probe/。
 注意 §2.2 的尺寸表与这里是同一张 64MiB<<i 表的两个消费方。
 
 ### 2.5 登记行（证据在库、无落地路径或无收益）
