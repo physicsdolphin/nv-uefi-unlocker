@@ -554,31 +554,79 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     };
     let gpu = tx::TxGpu { pci: &pci, bar: 0 };
 
-    // \tx-rebar.txt (2026-11-24 bench follow-up, NV_30_DXE template): UEFI-stage
-    // ReBAR window grow - see tx::run_rebar_only. Runs before any transaction
-    // machinery and before the asset prechecks (asset-less sticks can rebar);
-    // writes only the advertise+select pair with read-back, resets nothing,
-    // then hands off. Size index = decimal marker content, default 13
-    // (8 GiB), clamped 1..=19. Reversible by rail-off.
-    if tx::probe_file("\\tx-rebar.txt") {
-        let idx = chainload::boot_volume_read(uefi::cstr16!(r"\tx-rebar.txt"))
-            .map(|c| {
-                let s: alloc::string::String = c.iter().map(|&b| b as char).collect();
-                s.trim().parse::<u32>().ok()
-            })
-            .flatten()
-            .filter(|&n| (1..=19).contains(&n))
-            .unwrap_or(13);
-        info!("TX: \\tx-rebar.txt present - UEFI-stage ReBAR grow (0x88610 advertise + 0x88bc0 select size_idx {idx}; NO FLR, NO reset - the pair must survive into Windows' boot enumeration; recovery = power-off)");
-        match tx::run_rebar_only(&gpu, idx) {
-            Ok(()) => {
-                info!("SELECTOR RESULT: rebar pair written and readback-verified - chaining to Windows boot enumeration");
+    // ---- \tx-rebar ladder (2026-11-24 bench line, three rungs) -------------
+    // Rung 0 \tx-rebar-read.txt: read-only probe (config first, then the XVE
+    //   MMIO mirrors one log line each - isolates the first-run EFI hang).
+    // Rung 1 \tx-rebar.txt: detach+claim (the 11-22 soft-lock discipline:
+    //   never touch the card with firmware drivers bound) then the
+    //   NV_30_DXE pair through REAL config space, readback-verified, zero
+    //   reset, dark handoff. Size = decimal marker content, default 13.
+    // Rung 2 \tx-rebar-sbr.txt (+ the SBR machinery's own \tx-sbr-gpu.txt):
+    //   rung 1 with a disciplined Secondary Bus Reset inside the claimed
+    //   window first (display engine reset, straps re-latched, BAR/command
+    //   restored from the claim baseline) - maximum cleanliness, dark to
+    //   Windows. Requires BOTH markers.
+    // Every rung: NO FLR, no post-write reset - the pair must survive into
+    // Windows' boot enumeration; recovery = power-off.
+    let rebar_idx = chainload::boot_volume_read(uefi::cstr16!(r"\tx-rebar.txt"))
+        .or_else(|| chainload::boot_volume_read(uefi::cstr16!(r"\tx-rebar-sbr.txt")))
+        .map(|c| {
+            let s: alloc::string::String = c.iter().map(|&b| b as char).collect();
+            s.trim().parse::<u32>().ok()
+        })
+        .flatten()
+        .filter(|&n| (1..=19).contains(&n))
+        .unwrap_or(13);
+
+    if tx::probe_file("\\tx-rebar-read.txt") {
+        info!("TX: \\tx-rebar-read.txt present - rung 0: read-only rebar-face probe (config side proven, MMIO side experimental; hang there = the isolation answer)");
+        tx::probe_rebar_reads(&pci, &gpu);
+        tx::handoff_out(&pci);
+        return CardOutcome::Attempted;
+    }
+
+    if tx::probe_file("\\tx-rebar.txt") || tx::probe_file("\\tx-rebar-sbr.txt") {
+        let sbr_rung = tx::probe_file("\\tx-rebar-sbr.txt");
+        info!(
+            "TX: rebar rung {} ({} size_idx {rebar_idx}) - claiming first (11-22 discipline), then config-space pair, NO FLR, NO post-write reset; recovery = power-off",
+            if sbr_rung { 2 } else { 1 },
+            if sbr_rung { "\\tx-rebar-sbr.txt + \\tx-sbr-gpu.txt" } else { "\\tx-rebar.txt" }
+        );
+        match crate::tx_detach::detach_and_claim(g.handle) {
+            Ok(claim) => {
+                info!("REBAR: claimed (GOP off, screen dark by design from here to the Windows driver)");
+                let pair_ok = true;
+                if sbr_rung {
+                    let baseline = claim.baseline.clone();
+                    let alive = revive::sbr_gpu_in_transaction(&gpu, &baseline);
+                    if alive {
+                        info!("REBAR: SBR complete, device verified alive, config restored from claim baseline");
+                    } else {
+                        info!("REBAR: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
+                        logging::finish();
+                        loop {
+                            boot::stall(core::time::Duration::from_millis(500));
+                        }
+                    }
+                }
+                if pair_ok {
+                    match tx::run_rebar_only(&pci, rebar_idx) {
+                        Ok(()) => {
+                            info!("SELECTOR RESULT: rebar pair written and readback-verified - chaining to Windows boot enumeration (dark handoff)");
+                        }
+                        Err(e) => {
+                            info!("REBAR: pair failed ({e:?}) - handing off unchanged; no reset on this path, power-off clears any partial write");
+                        }
+                    }
+                }
+                drop(claim);
+                tx::handoff_out(&pci);
             }
             Err(e) => {
-                info!("REBAR: failed ({e:?}) - handing off unchanged; no reset on this path, power-off clears any partial write");
+                info!("REBAR: claim failed ({e:?}) - refusing to write against a firmware-bound card (the 11-22 soft-lock class); handing off untouched");
+                tx::handoff_out(&pci);
             }
         }
-        tx::handoff_out(&pci);
         return CardOutcome::Attempted;
     }
 

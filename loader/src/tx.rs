@@ -2209,54 +2209,80 @@ pub fn flr_once(pci: &crate::pci::PciIo) {
     pm_flr_post(pci, pm);
 }
 
-/// \tx-rebar.txt (2026-11-24 TU106 bench line, NV_30_DXE template): UEFI-stage
-/// ReBAR window grow. The GA102 FB-size override (config 0x610 = BAR0 0x88610
-/// through the XVE PRI page; mask 0xF80 value 0xC80 - proven on TU106, one
-/// write opens the ReBAR advertisement from 3 sizes to 10) then the ReBAR
-/// control register (config 0xBC0 = BAR0 0x88bc0) selects the BAR1 size.
-/// Read-back after every write (constitution #1). NO reset and NO FLR on any
-/// path - both registers are config space and any reset washes them; the
-/// whole point is handing a live override+selection to Windows' boot
-/// enumeration. In-OS control writes re-latch the aperture immediately
-/// (>=2G hard-hangs the bench board; resized states are fragile - a UAC
-/// prompt is lethal), so this write happens HERE: nothing maps BAR1 but the
-/// console framebuffer, whose base and low offsets survive a pure growth,
-/// and Windows pci.sys assigns the window at enumeration with the driver
-/// initializing against the final size (no live re-latch, no UAC window).
-pub fn run_rebar_only(gpu: &TxGpu, size_idx: u32) -> Result<(), TxError> {
-    const FB_OFF: u32 = 0x0008_8610;
-    const CAP_OFF: u32 = 0x0008_8bbc;
-    const CTL_OFF: u32 = 0x0008_8bc0;
+/// \tx-rebar-read.txt rung 0 (2026-11-24 bench line): read-only rebar-face
+/// probe at the EFI stage. Config-space reads first - PORT-DIAG reads config
+/// with firmware drivers bound on every boot, proven safe. The XVE MMIO
+/// mirrors go second, one access per log line: the 2026-11-22 pre-transaction
+/// SBR soft-lock taught "nothing touches the card while firmware drivers are
+/// bound", and the first \tx-rebar.txt run (size_idx 13 and 10 alike) hung
+/// right at what this probe will isolate - the first XVE-page access. If the
+/// MMIO reads hang, the config values are already in the log and the answer
+/// (XVE page inaccessible at EFI while firmware-bound) is delivered.
+pub fn probe_rebar_reads(pci: &crate::pci::PciIo, gpu: &TxGpu) {
+    info!("REBAR-READ: config side first (proven at EFI by PORT-DIAG)");
+    for (off, name) in
+        [(0x88u32, "LnkCtl/LnkSta"), (0x610, "FB override"), (0xbbc, "BAR1 cap mask"), (0xbc0, "BAR1 control")]
+    {
+        info!("REBAR-READ: cfg {off:#04x} ({name}) = {:#010x}", pci.config_read_u32(off));
+    }
+    info!("REBAR-READ: config done - now XVE MMIO mirrors, EXPERIMENTAL (firmware-bound state, the 11-22 soft-lock class; hang here = the answer)");
+    for (off, name) in
+        [(0x0008_8088u32, "LnkCtl/LnkSta"), (0x0008_8610, "FB override"), (0x0008_8bbc, "BAR1 cap"), (0x0008_8bc0, "BAR1 ctl")]
+    {
+        let v = pci.bar_read_u32(gpu.bar, off as u64);
+        info!("REBAR-READ: mmio {off:#08x} ({name}) = {v:#010x}");
+    }
+    info!("REBAR-READ: complete - every access survived");
+}
+
+/// \tx-rebar.txt rung 1 / \tx-rebar-sbr.txt rung 2 (2026-11-24 bench line,
+/// NV_30_DXE template): the ReBAR grow pair through REAL config space -
+/// the GA102 FB-size override (config 0x610; mask 0xF80 value 0xC80; one
+/// write opens the TU106 ReBAR advertisement from 3 sizes to 10, proven
+/// in-OS) then the ReBAR control (config 0xBC0) selecting the BAR1 size.
+/// The XVE MMIO page is bypassed entirely (that page's first EFI-stage touch
+/// hung the first run; NV_30_DXE writes config and so do we). Read-back
+/// after every write (constitution #1). The caller gates this behind
+/// detach+claim - the 11-22 soft-lock discipline (never touch the card with
+/// firmware drivers bound) - and NO reset / NO FLR may follow on any path:
+/// both registers are config space, and the whole point is handing a live
+/// override+selection to Windows' boot enumeration.
+pub fn run_rebar_only(pci: &crate::pci::PciIo, size_idx: u32) -> Result<(), TxError> {
+    const FB_CFG: u32 = 0x610;
+    const CAP_CFG: u32 = 0xbbc;
+    const CTL_CFG: u32 = 0xbc0;
     const FB_MASK: u32 = 0x0000_0f80;
     const FB_VAL: u32 = 0x0000_0c80;
     const SZ_MASK: u32 = 0x0000_3f00;
 
-    info!("REBAR: BEGIN (two writes + readback, no claim, no reset, no FLR; size_idx {size_idx} = {} MiB aperture)", 1u32 << size_idx);
-    let old_fb = gpu.read32(FB_OFF)?;
+    info!("REBAR: BEGIN (config-space pair, readback each; size_idx {size_idx} = {} MiB aperture)", 1u32 << size_idx);
+    let old_fb = pci.config_read_u32(FB_CFG);
+    info!("REBAR: cfg 0x610 read {old_fb:#010x}");
     let new_fb = (old_fb & !FB_MASK) | FB_VAL;
-    gpu.write32(FB_OFF, new_fb);
-    let rb_fb = gpu.read32(FB_OFF)?;
+    pci.cfg_write_u32(FB_CFG, new_fb);
+    let rb_fb = pci.config_read_u32(FB_CFG);
     let fb_ok = rb_fb == new_fb;
-    info!("REBAR: 0x88610 {old_fb:#010x} -> wrote {new_fb:#010x} -> readback {rb_fb:#010x} {}", if fb_ok { "OK" } else { "MISMATCH" });
+    info!("REBAR: cfg 0x610 wrote {new_fb:#010x} -> readback {rb_fb:#010x} {}", if fb_ok { "OK" } else { "MISMATCH" });
     if !fb_ok {
         return Err(TxError::EIO);
     }
 
-    let mask = gpu.read32(CAP_OFF)?;
-    info!("REBAR: 0x88bbc BAR1 supported mask {mask:#010x} ({} sizes advertised)", mask.count_ones());
+    let mask = pci.config_read_u32(CAP_CFG);
+    info!("REBAR: cfg 0xbbc BAR1 supported mask {mask:#010x} ({} sizes advertised)", mask.count_ones());
 
-    let old_ctl = gpu.read32(CTL_OFF)?;
+    let old_ctl = pci.config_read_u32(CTL_CFG);
+    info!("REBAR: cfg 0xbc0 read {old_ctl:#010x}");
     let new_ctl = (old_ctl & !SZ_MASK) | (size_idx << 8);
-    gpu.write32(CTL_OFF, new_ctl);
-    let rb_ctl = gpu.read32(CTL_OFF)?;
+    pci.cfg_write_u32(CTL_CFG, new_ctl);
+    let rb_ctl = pci.config_read_u32(CTL_CFG);
     let ctl_ok = rb_ctl == new_ctl;
-    info!("REBAR: 0x88bc0 {old_ctl:#010x} -> wrote {new_ctl:#010x} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if ctl_ok { "OK" } else { "MISMATCH" });
+    info!("REBAR: cfg 0xbc0 wrote {new_ctl:#010x} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if ctl_ok { "OK" } else { "MISMATCH" });
     if !ctl_ok {
         return Err(TxError::EIO);
     }
 
-    let mask2 = gpu.read32(CAP_OFF)?;
-    info!("REBAR: FINAL mask {mask:#010x} -> {mask2:#010x}, ctl {rb_ctl:#010x} - handing a live override+selection to Windows boot enumeration");
+    let mask2 = pci.config_read_u32(CAP_CFG);
+    info!("REBAR: FINAL mask {mask:#010x} -> {mask2:#010x}, ctl {rb_ctl:#010x} - live override+selection handed to Windows boot enumeration");
     Ok(())
 }
 
