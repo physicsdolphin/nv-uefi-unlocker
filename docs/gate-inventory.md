@@ -203,11 +203,22 @@ falcgen synth --family tu102 --writes 0x8e1b0=0xffffffff,0x409650=0xffffffff,0x1
 
 ## 5. 未来行（登记，不承诺）
 
-- **Pascal（10 系）**：FWSEC 走 V1 描述符（接口偏移布局不同）；无 FEAT selector 域
-  记载（Turing 的 0x823xxx 在 Turing 自身都 badf，Pascal 更无人测绘）。候选门：
-  ①PCIe Gen2（P104 先例=配置空间+PL 寄存器运行期写，正交车道，无需 SEC2 载荷）；
-  ②FP64 速率机理未知。无 debug key 公开记录=生成器无输入（边界 5）。先做只读
-  词典轮（ssdiag GA100VFI 词典路径），再谈载体。
+- **Pascal（10 系）/ Volta**（2026-11-24 考察修正，证据=open-gpu-kernel-modules
+  615.78.08 + linux-firmware + nova 内核文档）：**有 SEC2 与硬件安全引导链**（此前
+  "SEC2 是 Turing 引入"的表述错误——linux-firmware `nvidia/gp102/sec2/` =
+  desc/image/sig 三元组旧容器格式、`acr/` 161 条、`gr/` fecs/gpccs 签名固件；nova
+  文档的 HS/LS 模型与 BROM 硬件验签适用到 Ampere 或更早）。**无 GSP**（open 模块
+  README："Turing or later"；gsp/sec2 arch 实现树无 Pascal/Volta 目录；swref
+  pascal/gp102 仅 6 头文件，连 dev_sec2.h 都没有）——GSP-RM、WPR2/FRTS、FEAT
+  cluster 全为 Turing+ 语义。**falcgen 车道不适用，三前提全断**：①sec2 固件
+  公开可下载但容器是旧格式且加密状态未证、GP10x debug key 无公开破解（硬边界 5）；
+  ②无界签名 DMA 未证实存在（Turing booter 特定形状，Pascal sec2 无人审计）；③
+  FEAT selector 轴不存在（结构性缺失）。ISA 层 fuc4≠fuc5（envydis 变体表齐全
+  =解码器可转录，但 CRYPT 特性/参数表/环境模型需平行实现）——**falcgen 定位
+  保持"GSP 时代 SEC2 booter RE 工具"，Pascal falcon 审计是独立 RE 项目（未立项）**。
+  候选门：①PCIe Gen2（P104 先例=配置空间+PL 寄存器运行期写，正交车道，无需
+  SEC2 载荷）；②FP64 速率机理未知。先做只读词典轮（ssdiag GA100VFI 词典路径），
+  再谈载体。
 - **Gen2 pivot**（§1.2 路径 1）：envdis 审计 cmp50hx stockflow 载荷 + falcgen pivot
   文法，单独立项。
 - **FLR 间隔多发**（§1.2 路径 2）：需守卫语义分级 + 全 parity 干净收尾先行，单独立项。
