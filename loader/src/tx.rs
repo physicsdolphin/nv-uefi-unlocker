@@ -2235,54 +2235,145 @@ pub fn probe_rebar_reads(pci: &crate::pci::PciIo, gpu: &TxGpu) {
     info!("REBAR-READ: complete - every access survived");
 }
 
-/// \tx-rebar.txt rung 1 / \tx-rebar-sbr.txt rung 2 (2026-11-24 bench line,
-/// NV_30_DXE template): the ReBAR grow pair through REAL config space -
-/// the GA102 FB-size override (config 0x610; mask 0xF80 value 0xC80; one
-/// write opens the TU106 ReBAR advertisement from 3 sizes to 10, proven
-/// in-OS) then the ReBAR control (config 0xBC0) selecting the BAR1 size.
-/// The XVE MMIO page is bypassed entirely (that page's first EFI-stage touch
-/// hung the first run; NV_30_DXE writes config and so do we). Read-back
-/// after every write (constitution #1). The caller gates this behind
-/// detach+claim - the 11-22 soft-lock discipline (never touch the card with
-/// firmware drivers bound) - and NO reset / NO FLR may follow on any path:
-/// both registers are config space, and the whole point is handing a live
-/// override+selection to Windows' boot enumeration.
-pub fn run_rebar_only(pci: &crate::pci::PciIo, size_idx: u32) -> Result<(), TxError> {
-    const FB_CFG: u32 = 0x610;
-    const CAP_CFG: u32 = 0xbbc;
-    const CTL_CFG: u32 = 0xbc0;
+/// \tx-rebar rung 1/2 pair - MMIO route (2026-11-24 bench line): the
+/// GA102 FB-size override (config 0x610 = BAR0 0x88610 through the XVE PRI
+/// page; mask 0xF80 value 0xC80 - proven on TU106, one write opens the
+/// ReBAR advertisement from 3 sizes to 10) then the ReBAR control (config
+/// 0xBC0 = BAR0 0x88bc0) selecting the BAR1 size. The PciIo config route is
+/// OUT on this firmware (extended offsets >0x100 answer UNSUPPORTED - the
+/// rung-2 round proved it fail-closed), so the pair goes through the XVE
+/// mirror - and the caller gates it behind claim(+SBR): the disciplined
+/// window where BAR0 MMIO is proven alive (the SBR sanity read) and the
+/// 11-22 "never touch the card while firmware drivers are bound" discipline
+/// is satisfied. Read-back after every write (constitution #1); the value is
+/// logged BEFORE each write (a hang leaves the pre-state in the log). NO
+/// reset / NO FLR may follow: the pair must survive into Windows' boot
+/// enumeration.
+pub fn run_rebar_mmio(gpu: &TxGpu, size_idx: u32) -> Result<(), TxError> {
+    const FB_OFF: u32 = 0x0008_8610;
+    const CAP_OFF: u32 = 0x0008_8bbc;
+    const CTL_OFF: u32 = 0x0008_8bc0;
     const FB_MASK: u32 = 0x0000_0f80;
     const FB_VAL: u32 = 0x0000_0c80;
     const SZ_MASK: u32 = 0x0000_3f00;
 
-    info!("REBAR: BEGIN (config-space pair, readback each; size_idx {size_idx} = {} MiB aperture)", 1u32 << size_idx);
-    let old_fb = pci.config_read_u32(FB_CFG);
-    info!("REBAR: cfg 0x610 read {old_fb:#010x}");
+    info!("REBAR: BEGIN (MMIO-mirror pair via XVE, readback each; size_idx {size_idx} = {} MiB aperture)", 1u32 << size_idx);
+    let old_fb = gpu.read32(FB_OFF)?;
+    info!("REBAR: mmio 0x88610 read {old_fb:#010x} (pre-write)");
     let new_fb = (old_fb & !FB_MASK) | FB_VAL;
-    pci.cfg_write_u32(FB_CFG, new_fb);
-    let rb_fb = pci.config_read_u32(FB_CFG);
+    gpu.write32(FB_OFF, new_fb);
+    let rb_fb = gpu.read32(FB_OFF)?;
     let fb_ok = rb_fb == new_fb;
-    info!("REBAR: cfg 0x610 wrote {new_fb:#010x} -> readback {rb_fb:#010x} {}", if fb_ok { "OK" } else { "MISMATCH" });
+    info!("REBAR: mmio 0x88610 wrote {new_fb:#010x} -> readback {rb_fb:#010x} {}", if fb_ok { "OK" } else { "MISMATCH" });
     if !fb_ok {
         return Err(TxError::EIO);
     }
 
-    let mask = pci.config_read_u32(CAP_CFG);
-    info!("REBAR: cfg 0xbbc BAR1 supported mask {mask:#010x} ({} sizes advertised)", mask.count_ones());
+    let mask = gpu.read32(CAP_OFF)?;
+    info!("REBAR: mmio 0x88bbc BAR1 supported mask {mask:#010x} ({} sizes advertised)", mask.count_ones());
 
-    let old_ctl = pci.config_read_u32(CTL_CFG);
-    info!("REBAR: cfg 0xbc0 read {old_ctl:#010x}");
+    let old_ctl = gpu.read32(CTL_OFF)?;
+    info!("REBAR: mmio 0x88bc0 read {old_ctl:#010x} (pre-write)");
     let new_ctl = (old_ctl & !SZ_MASK) | (size_idx << 8);
-    pci.cfg_write_u32(CTL_CFG, new_ctl);
-    let rb_ctl = pci.config_read_u32(CTL_CFG);
+    gpu.write32(CTL_OFF, new_ctl);
+    let rb_ctl = gpu.read32(CTL_OFF)?;
     let ctl_ok = rb_ctl == new_ctl;
-    info!("REBAR: cfg 0xbc0 wrote {new_ctl:#010x} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if ctl_ok { "OK" } else { "MISMATCH" });
+    info!("REBAR: mmio 0x88bc0 wrote {new_ctl:#010x} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if ctl_ok { "OK" } else { "MISMATCH" });
     if !ctl_ok {
         return Err(TxError::EIO);
     }
 
-    let mask2 = pci.config_read_u32(CAP_CFG);
+    let mask2 = gpu.read32(CAP_OFF)?;
     info!("REBAR: FINAL mask {mask:#010x} -> {mask2:#010x}, ctl {rb_ctl:#010x} - live override+selection handed to Windows boot enumeration");
+    Ok(())
+}
+
+/// \tx-rebar rung with \\tx-rebar-ecam.txt - ECAM-direct route: the same
+/// config registers through the memory-mapped ECAM region (MCFG, found by
+/// walking RSDP->XSDT), bypassing BOTH the PciIo extended-config refusal and
+/// the XVE MMIO page. Boot services are identity-mapped, so the ECAM
+/// physical address is directly readable once located. NV_30_DXE's native
+/// route is config space; this is that route without the PciIo filter.
+/// Every access logged before the next; hang leaves the trail in the log.
+pub fn run_rebar_ecam(loc: (usize, usize, usize, usize), size_idx: u32) -> Result<(), TxError> {
+    use uefi::table::cfg::ConfigTableEntry;
+    const FB_MASK: u32 = 0x0000_0f80;
+    const FB_VAL: u32 = 0x0000_0c80;
+    const SZ_MASK: u32 = 0x0000_3f00;
+
+    info!("REBAR-ECAM: BEGIN (ECAM-direct config pair; size_idx {size_idx})");
+    let mut rsdp: Option<u64> = None;
+    uefi::system::with_config_table(|entries| {
+        for entry in entries {
+            if entry.guid == ConfigTableEntry::ACPI2_GUID {
+                rsdp = Some(entry.address as u64);
+            }
+        }
+    });
+    let Some(rsdp) = rsdp else {
+        info!("REBAR-ECAM: no ACPI2.0 config-table entry - no RSDP, route unavailable");
+        return Err(TxError::ENodev);
+    };
+    info!("REBAR-ECAM: RSDP at {rsdp:#x}");
+    // RSDP v2: +28 XSDT address (u64).
+    let xsdt = unsafe { core::ptr::read_volatile((rsdp + 24) as *const u64) };
+    info!("REBAR-ECAM: XSDT at {xsdt:#x}");
+    // XSDT header: +4 length (u32), entries are u64 table pointers from +0x24.
+    let xsdt_len = unsafe { core::ptr::read_volatile((xsdt + 4) as *const u32) } as usize;
+    let mut mcfg: Option<u64> = None;
+    for i in 0..(xsdt_len.saturating_sub(36) / 8) {
+        let tbl = unsafe { core::ptr::read_volatile((xsdt + 36 + (i as u64) * 8) as *const u64) };
+        if tbl == 0 || tbl < 0x1000 {
+            continue;
+        }
+        let sig = unsafe { core::ptr::read_volatile(tbl as *const [u8; 4]) };
+        if &sig == b"MCFG" {
+            mcfg = Some(tbl);
+            info!("REBAR-ECAM: MCFG found at {tbl:#x}");
+            break;
+        }
+    }
+    let Some(mcfg) = mcfg else {
+        info!("REBAR-ECAM: no MCFG table in XSDT - route unavailable");
+        return Err(TxError::ENodev);
+    };
+    // MCFG: +0x44 u64 = ECAM base.
+    let ecam = unsafe { core::ptr::read_volatile((mcfg + 0x44) as *const u64) };
+    info!("REBAR-ECAM: ECAM base {ecam:#x}");
+    let (seg, bus, dev, fun) = loc;
+    if seg != 0 {
+        info!("REBAR-ECAM: segment {seg} != 0 - single-segment MCFG assumption broken, route unavailable");
+        return Err(TxError::ENodev);
+    }
+    let dev_base = ecam + ((bus as u64) << 20) + ((dev as u64) << 15) + ((fun as u64) << 12);
+    info!("REBAR-ECAM: device config at {dev_base:#x} (bus {bus} dev {dev} fn {fun})");
+    let rd = |off: u32| unsafe { core::ptr::read_volatile((dev_base + off as u64) as *const u32) };
+    let wr = |off: u32, v: u32| unsafe { core::ptr::write_volatile((dev_base + off as u64) as *mut u32, v) };
+
+    let old_fb = rd(0x610);
+    info!("REBAR-ECAM: cfg 0x610 read {old_fb:#010x} (pre-write)");
+    let new_fb = (old_fb & !FB_MASK) | FB_VAL;
+    wr(0x610, new_fb);
+    let rb_fb = rd(0x610);
+    let fb_ok = rb_fb == new_fb;
+    info!("REBAR-ECAM: cfg 0x610 wrote {new_fb:#010x} -> readback {rb_fb:#010x} {}", if fb_ok { "OK" } else { "MISMATCH" });
+    if !fb_ok {
+        return Err(TxError::EIO);
+    }
+    let mask = rd(0xbbc);
+    info!("REBAR-ECAM: cfg 0xbbc BAR1 supported mask {mask:#010x} ({} sizes)", mask.count_ones());
+    let old_ctl = rd(0xbc0);
+    info!("REBAR-ECAM: cfg 0xbc0 read {old_ctl:#010x} (pre-write)");
+    let new_ctl = (old_ctl & !SZ_MASK) | (size_idx << 8);
+    wr(0xbc0, new_ctl);
+    let rb_ctl = rd(0xbc0);
+    let ctl_ok = rb_ctl == new_ctl;
+    info!("REBAR-ECAM: cfg 0xbc0 wrote {new_ctl:#010x} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if ctl_ok { "OK" } else { "MISMATCH" });
+    if !ctl_ok {
+        return Err(TxError::EIO);
+    }
+    let mask2 = rd(0xbbc);
+    info!("REBAR-ECAM: FINAL mask {mask:#010x} -> {mask2:#010x}, ctl {rb_ctl:#010x}");
     Ok(())
 }
 
