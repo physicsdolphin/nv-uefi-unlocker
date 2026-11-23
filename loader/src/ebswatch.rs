@@ -449,6 +449,19 @@ fn commit_line(line: &Line) {
         if FILE_ERROR.load(Ordering::Relaxed) {
             return;
         }
+        // Pre-StartImage close (pre_close_watch_file) leaves the slot None;
+        // reopen on demand so a retried EBS (error path, services alive)
+        // keeps its budgeted lines instead of dying on the closed handle.
+        if (*slot).is_none() && !SERVICES_DEAD.load(Ordering::Relaxed) {
+            match reopen_watch_file() {
+                Some(f) => *slot = Some(f),
+                None => {
+                    FILE_ERROR.store(true, Ordering::Relaxed);
+                    info!("EBS-WATCH: \\ebs-watch.log reopen failed - file channel closed, port+framebuffer channels stay live");
+                    return;
+                }
+            }
+        }
         let mut ok = false;
         if let Some(f) = (*slot).as_mut() {
             let pos0 = f.get_position().unwrap_or(0xffff_ffff);
@@ -477,6 +490,23 @@ fn commit_line(line: &Line) {
             // call path by construction of the budgets).
             info!("EBS-WATCH: \\ebs-watch.log write failed - file channel closed, port+framebuffer channels stay live");
         }
+    }
+}
+
+/// Close the watch file before StartImage so the dirent is committed even on
+/// SUCCESS runs: on a clean ExitBootServices nothing further is ever written
+/// (post-EBS only raw channels are legal), and a handle left open at handoff
+/// leaves the dirent uncommitted on FAT drivers that only commit on Close -
+/// the #278 unlocked boot's 0-byte `\ebs-watch.log` shape (the same run's
+/// data was in the cache; Windows saw a stale 0-byte dirent). Commit-time
+/// reopen-on-demand keeps the error-path lines alive after this.
+pub fn pre_close_watch_file() {
+    if !INSTALLED.load(Ordering::Relaxed) {
+        return;
+    }
+    // Safety: single-threaded boot services; drop = Close per spec.
+    unsafe {
+        let _ = (*WATCH_FILE.0.get()).take();
     }
 }
 

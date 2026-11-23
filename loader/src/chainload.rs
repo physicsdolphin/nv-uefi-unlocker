@@ -915,6 +915,11 @@ fn start_loader(handle: uefi::Handle, path: &CStr16) -> Result<()> {
     info!("CHAIN-BOUNDARY: LoadImage ok - OS loader image resident");
     info!("CHAIN-BOUNDARY: StartImage enter - control passes to the OS loader; the next durable record (if any) comes from \\ebs-watch.log with \\tx-ebs-watch.txt armed, or from a later boot");
     crate::logging::finish();
+    // Close the watch file too: on a clean EBS nothing further is written
+    // (post-EBS only raw channels are legal), and a handle left open at
+    // handoff leaves the dirent uncommitted on Close-commit-only FAT
+    // drivers - the #278 unlocked boot's 0-byte \ebs-watch.log shape.
+    crate::ebswatch::pre_close_watch_file();
     let r = boot::start_image(loaded);
     info!("CHAIN: loader returned: {:?}", r);
     Ok(())
@@ -1787,6 +1792,7 @@ fn start_preloaded(pre: &PreloadedOsLoader) -> Result<()> {
             info!("CHAIN-BOUNDARY: StartImage enter (preloaded) - control passes to the OS loader; the next durable record (if any) comes from \\ebs-watch.log with \\tx-ebs-watch.txt armed, or from a later boot");
             // Flush and close the USB log before handing control away.
             crate::logging::finish();
+            crate::ebswatch::pre_close_watch_file();
             let r = boot::start_image(pre.handle);
             info!("CHAIN-PRE: preloaded loader returned: {:?}", r);
             Ok(())

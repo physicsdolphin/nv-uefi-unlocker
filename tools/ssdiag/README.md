@@ -108,6 +108,7 @@ ssdiag --inventory                  # unelevated hardware block + family verdict
 ssdiag --dry-run                    # print platform gates + discovered cards, load nothing
 ssdiag --prom-bit                   # read-only VBIOS PROM (BAR0+0x300000) BIT / ucode table metadata
 ssdiag --reapply                    # + SS0=0x88888888 SS1=0x8 per card where the gate is open
+ssdiag --target-offset 0x409664 --value 0x88888888   # arbitrary write + readback (works with the driver failed; see help)
 ssdiag --select 1F07                # narrow to functions whose DeviceID matches
 ```
 
