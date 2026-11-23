@@ -41,6 +41,8 @@ Usage:
   sudo python3 diag-unlock.py                 # read all NVIDIA dGPUs
   sudo python3 diag-unlock.py --bdf 0000:01:00.0
   sudo python3 diag-unlock.py --reapply       # SS0=0x88888888 SS1=0x8 when open
+  sudo python3 diag-unlock.py --force-diag    # IO_STRICT_DEVMEM boxes: auto
+                                              # unbind/re-bind around the run
   sudo python3 diag-unlock.py --bdf 0000:01:00.0 \
        --target-offset 0x409664 --value 0x88888888 --target-offset 0x40966c --value 0x8
   python3 diag-unlock.py --inventory          # unelevated hardware snapshot
@@ -737,30 +739,76 @@ def inventory():
     return 0
 
 
+# --force-diag bookkeeping: (devpath, driver-name) pairs unbound for the
+# run, re-bound automatically at exit (strict-DEVMEM boxes; #246).
+_FORCE_DIAG_UNBOUND = []
+
+
+def _bound_driver_name(devpath):
+    try:
+        return os.path.basename(os.path.realpath(os.path.join(devpath, "driver")))
+    except OSError:
+        return None
+
+
+def _driver_io(name, action, devpath):
+    with open(os.path.join("/sys/bus/pci/drivers", name, action), "w") as f:
+        f.write(os.path.basename(devpath))
+
+
 class Bar0:
-    def __init__(self, devpath):
+    def __init__(self, devpath, force_diag=False):
         with open(os.path.join(devpath, "resource")) as f:
             start = int(f.readline().split()[0], 16)
         if start == 0:
             raise RuntimeError("BAR0 not assigned (device powered down?)")
         self.start = start
         f = open(os.path.join(devpath, "resource0"), "r+b", 0)
+        self.bound_driver = None
         try:
             self.map = mmap.mmap(f.fileno(), 16 * 1024 * 1024)
         except OSError as e:
             f.close()
-            if e.errno == 22:
-                # #246: CONFIG_IO_STRICT_DEVMEM kernels (Arch/Manjaro-style
-                # configs) treat a driver-claimed BAR as exclusive, so
-                # pci_mmap_resource returns EINVAL even for root; the check
-                # is iomem_is_exclusive(res->start) in pci-sysfs.c.
+            if e.errno != 22:
+                raise
+            # #246: CONFIG_IO_STRICT_DEVMEM kernels (Arch/Manjaro-style
+            # configs) treat a driver-claimed BAR as exclusive - even for
+            # root (iomem_is_exclusive in pci-sysfs.c; a lockdown denial
+            # would be EPERM, not EINVAL). Two outs: iomem=relaxed on the
+            # cmdline, or --force-diag (unbind, run, re-bind on exit).
+            if not force_diag:
                 raise RuntimeError(
                     "mmap(resource0) EINVAL - this kernel maps driver-claimed BARs "
                     "exclusively (CONFIG_IO_STRICT_DEVMEM=y, Arch/Manjaro-style "
-                    "configs): boot with iomem=relaxed to lift it, or check "
-                    "zgrep IO_STRICT_DEVMEM /boot/config-$(uname -r)"
+                    "configs): boot with iomem=relaxed, or re-run with --force-diag "
+                    "(auto unbind/re-bind; read the risk note in --help first), or "
+                    "check zgrep IO_STRICT_DEVMEM /boot/config-$(uname -r)"
                 ) from e
-            raise
+            drv = _bound_driver_name(devpath)
+            if not drv:
+                raise RuntimeError(
+                    "mmap(resource0) EINVAL with nothing bound - not the strict-DEVMEM "
+                    "claim; check the device state"
+                ) from e
+            print(f"  force-diag: unbinding {drv} from {os.path.basename(devpath)} "
+                  "(auto-restore at exit; known risk: driver unbind can hang - "
+                  "recovery = hard reset)")
+            _driver_io(drv, "unbind", devpath)
+            self.bound_driver = drv
+            f = open(os.path.join(devpath, "resource0"), "r+b", 0)
+            try:
+                self.map = mmap.mmap(f.fileno(), 16 * 1024 * 1024)
+            except OSError as e2:
+                _driver_io(drv, "bind", devpath)
+                self.bound_driver = None
+                f.close()
+                raise RuntimeError(
+                    f"mmap(resource0) EINVAL even unbound ({e2}) - not the "
+                    "strict-DEVMEM claim; driver re-bound"
+                ) from e2
+            _FORCE_DIAG_UNBOUND.append((devpath, drv))
+            print("  force-diag: mmap OK unbound - strict-DEVMEM refusal confirmed; "
+                  "the driver is re-bound automatically at exit")
 
     def rd(self, off):
         # Host-side last-resort net (ssdiag 0.7.4 parity, 2026-11-11 lesson):
@@ -1855,6 +1903,12 @@ def main():
     ap.add_argument("--value", dest="poke_values", action="append", default=None,
                     metavar="HEX",
                     help="hex 32-bit value for the preceding --target-offset")
+    ap.add_argument("--force-diag", action="store_true",
+                    help="IO_STRICT_DEVMEM boxes only: on EINVAL from the BAR0 mmap, "
+                         "automatically UNBIND the NVIDIA driver, run, and RE-BIND at "
+                         "exit (root). Explicit opt-in because a driver unbind can "
+                         "hang (D-state history); the safer route is iomem=relaxed "
+                         "on the kernel cmdline")
     ap.add_argument("--inventory", action="store_true",
                     help="print the unelevated read-only hardware inventory "
                          "block (OS/CPU/board/BIOS/chassis/per-GPU family "
@@ -1936,7 +1990,7 @@ def main():
     for bdf, devpath in devs:
         print(f"{bdf}:")
         try:
-            bar = Bar0(devpath)
+            bar = Bar0(devpath, force_diag=args.force_diag)
         except (PermissionError, RuntimeError) as e:
             print(f"  BAR0 unavailable: {e}")
             rc = 1
@@ -1991,6 +2045,14 @@ def main():
                 rc = 1
         if args.prom_bit:
             dump_prom_bit(bar)
+    for devpath, drv in reversed(_FORCE_DIAG_UNBOUND):
+        print(f"  force-diag: re-binding {drv} to {os.path.basename(devpath)}")
+        try:
+            _driver_io(drv, "bind", devpath)
+        except OSError as e:
+            print(f"  force-diag WARNING: re-bind failed ({e}) - bind manually via "
+                  f"/sys/bus/pci/drivers/{drv}/bind", file=sys.stderr)
+            rc = 1
     return rc
 
 
