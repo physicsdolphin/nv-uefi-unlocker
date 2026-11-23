@@ -15,9 +15,9 @@
 
 | 问题 | 现状 |
 |---|---|
-| 钳制存在吗？ | **存在，且全系同形。** GB206 `FUSE_SS_FMLA32=3`、`IMLA1/2/4=3`，与 GB202 / GB203M 逐字相同；`FEAT_READOUT_1=0x00c36180` 三卡**逐字节相同**，尽管 GB206 的 SM 数不到 5090 一半 |
+| 钳制存在吗？ | **存在，且全系同形。** GB206 / GB205 `FUSE_SS_FMLA32=3`、`IMLA1/2/4=3`，与 GB202 / GB203M 逐字相同；`FEAT_READOUT_1=0x00c36180` 四卡**逐字节相同**，尽管 GB206/GB205 的 SM 数远小于 5090 |
 | 门是什么？ | `FEAT_OVR_PLM=0xfffffb8f`：读掩码 `0xf`、写掩码 `0x8`（**仅 PL3**）。主机（PL0/PL2）写 SS0/SS1/PLM 全部静默丢弃（3/3，读回不变） |
-| 覆盖通路本身关了吗？ | **没关。** `FUSE_FEAT_OVR_DIS=0`、`FUSE_EN_SW_OVERRIDE=0`，与 GB202/GB203M/A100/170HX 同值。唯一墙是特权级 |
+| 覆盖通路本身关了吗？ | **没关。** `FUSE_FEAT_OVR_DIS=0`、`FUSE_EN_SW_OVERRIDE=0`，与 GB202/GB203M/GB205/A100/170HX 同值。唯一墙是特权级 |
 | 是硅的问题吗？ | **不是。** 同 GB202 die 的 RTX PRO 6000 满速（BF16→FP32 518 TF/s）、`FEAT_READOUT_1=0`——纯产品分割 |
 | 为什么旧办法不行？ | Blackwell 引导链**没有 SEC2 阶段**：FSP(ROM,PL3)→GSP BootROM(ROM,PL3)→FMC(主机供、签名+加密、PL3)→GSP-RM(明文,PL2)。Ada/Ampere 的"签名 booter 栈溢出→ROP gadget→写 PLM"载具不存在 |
 | 有 GB20x booter 吗？ | **公开不存在。** `kgspGetBinArchiveBooterLoadUcode` 只为 TU102/TU116/GA100/GA102/AD102 开分支，其余落共享 fallback；开放模块里该 fallback 是 NULL 桩，真实映像只在闭源 `nv-kernel.o` |
@@ -29,28 +29,31 @@
 ## 1. 钳制与门：与 Ada 同形，但读出的不是 Ada 语义
 
 GB206 实测（`10de:2d04`，RTX 5060 Ti 16 GB，驱动 615.71.10，Linux 6.12.113，
-BAR0 `0xf8000000`，`nvidia` 绑定态，逐字 `ioread32`）：
+BAR0 `0xf8000000`，`nvidia` 绑定态，逐字 `ioread32`）；GB205 实测（`10de:2f18`，
+RTX 5070 Ti Laptop 12 GB，46 SM / 23 TPC，驱动 621.01，VBIOS `98.05.31.00.44`，
+只读采样见 [GB205 实测档案](evidence/gb205-2f18/README.md)）：
 
-| 行 | 偏移 | GB206 | GB202（5090） | GB203M |
-|---|---|---:|---:|---:|
-| `PMC_BOOT_0` | `0x000000` | `0x1b6000a1` | `0x21120000` | `0x1b3000a1` |
-| `FUSE_SS_FMLA16` | `0x8207d4` | 0 | 0 | 0 |
-| **`FUSE_SS_FMLA32`** | `0x8207d8` | **3** | **3** | **3** |
-| `FUSE_SS_IMLA1` | `0x8207e0` | 3 | 3 | 3 |
-| `FUSE_SS_IMLA2` | `0x8207e4` | 3 | 3 | 3 |
-| `FUSE_SS_IMLA4` | `0x8207ec` | 3 | 3 | 3 |
-| `FUSE_SS_DP` / `FFMA` / `IMLA0` / `IMLA3` | — | 0 | 0 | 0 |
-| `FUSE_FEAT_OVR_DIS` | `0x8203f0` | 0 | 0 | 0 |
-| `FUSE_EN_SW_OVERRIDE` | `0x820040` | 0 | 0 | 0 |
-| `FUSE_SS_PLM` | `0x8200fc` | `0xfffffbff` | — | `0xfffffbff` |
-| **`FEAT_OVR_PLM`** | `0x823804` | **`0xfffffb8f`** | **`0xfffffb8f`** | **`0xfffffb8f`** |
-| `FEAT_READOUT_1` | `0x823818` | **`0x00c36180`** | **`0x00c36180`** | `0x00c36180` |
-| `FEAT_READOUT_0` | `0x823814` | `0x00000233` | `0x00000233` | — |
-| `FEAT_OVR_ECC` | `0x82380c` | `0x00888888` | `0x00888888` | — |
-| `FEAT_OVR_ECC_1` | `0x823810` | `0xaa2a2aaa` | `0x002a2aaa` | — |
-| `SECURE_FEAT_OVR_QUADRO_WR_SEC` | `0x82038c` | 2 | 2 | — |
-| `SM_ISSUE_RATE_MODIFIER` | `0x504204` | 5 | 5 | — |
-| GFW falcon CPUCTL | `0x110100` | `0xbadf5720` | `0xbadf4100` | — |
+| 行 | 偏移 | GB206 | GB205（5070 Ti Laptop） | GB202（5090） | GB203M |
+|---|---|---:|---:|---:|---:|
+| `PMC_BOOT_0` | `0x000000` | `0x1b6000a1` | `0x1b5000a1` | `0x21120000` | `0x1b3000a1` |
+| `FUSE_SS_FMLA16` | `0x8207d4` | 0 | 0 | 0 | 0 |
+| **`FUSE_SS_FMLA32`** | `0x8207d8` | **3** | **3** | **3** | **3** |
+| `FUSE_SS_IMLA1` | `0x8207e0` | 3 | 3 | 3 | 3 |
+| `FUSE_SS_IMLA2` | `0x8207e4` | 3 | 3 | 3 | 3 |
+| `FUSE_SS_IMLA4` | `0x8207ec` | 3 | 3 | 3 | 3 |
+| `FUSE_SS_DP` / `FFMA` / `IMLA0` / `IMLA3` | — | 0 | 0 | 0 | 0 |
+| `FUSE_FEAT_OVR_DIS` | `0x8203f0` | 0 | 0 | 0 | 0 |
+| `FUSE_EN_SW_OVERRIDE` | `0x820040` | 0 | 0 | 0 | 0 |
+| `FUSE_SS_PLM` | `0x8200fc` | `0xfffffbff` | `0xfffffbff` | — | `0xfffffbff` |
+| **`FEAT_OVR_PLM`** | `0x823804` | **`0xfffffb8f`** | **`0xfffffb8f`** | **`0xfffffb8f`** | **`0xfffffb8f`** |
+| `FEAT_READOUT_1` | `0x823818` | **`0x00c36180`** | **`0x00c36180`** | **`0x00c36180`** | `0x00c36180` |
+| `FEAT_READOUT_0` | `0x823814` | `0x00000233` | `0x00000233` | `0x00000233` | — |
+| `FEAT_OVR_ECC` | `0x82380c` | `0x00888888` | `0x00888888` | `0x00888888` | — |
+| `FEAT_OVR_ECC_1` | `0x823810` | `0xaa2a2aaa` | `0xaa2a2aaa` | `0x002a2aaa` | — |
+| `SECURE_FEAT_OVR_QUADRO_WR_SEC` | `0x82038c` | 2 | 2 | 2 | — |
+| `SM_ISSUE_RATE_MODIFIER` | `0x504204` | 5 | 5 | 5 | — |
+| `SEC2_PLM` | `0x8403c4` | `0x00000b0f` | `0x00000b0f` | — | — |
+| GFW falcon CPUCTL | `0x110100` | `0xbadf5720` | `0xbadf5720` | `0xbadf4100` | — |
 
 写入梯（`SS0=0x88888888`、`SS1=0x8`、`PLM=0xffffffff`，每次读回后恢复原值）：
 **0/3 接受，读回不变，静默丢弃**，与 GB202/GB203M 相同。
@@ -68,8 +71,12 @@ imla2 imla3 imla4 DP`）。
 公开 `ctrl2080gr.h` 的枚举把 selector `3` 定义成 `REDUCED_SPEED_1_8`，但
 Blackwell 的码→速率律不同：
 
-- `fmla32 = 3` 实测约 **半速**（FP16→FP32acc 48.33 TF/s，出厂 180 W 上限；
-  厂标 47.4，未钳制通路 86.27，天花板 ~1.79×），不是 1/8；
+- `fmla32 = 3` 实测约 **半速**（GB206：FP16→FP32acc 48.33 TF/s，出厂 180 W 上限；
+  厂标 47.4，未钳制通路 86.27，天花板 ~1.79×；GB205 5070 Ti Laptop 驱动 `621.01`
+  经跨平台稳态脚本 [blackwell_clamp_eval.py](../tools/bench/blackwell_clamp_eval.py)
+  实测时钟归一化 `FLOP/clk/SM`：FP16→FP32 `0.49×`、BF16→FP32 `0.48×`、TF32 `0.48×`、
+  FP8→FP32 `0.50×`，而未钳制 FP16→FP16 累加达 `0.83×`，配对 A/B 时钟归一化 `1.68–1.71×`
+  但样本相对 L2 误差上升约 16.6×，见 [GB205 实测档案](evidence/gb205-2f18/README.md)），不是 1/8；
 - `imla1/2/4 = 3` 下 INT8 仍满速；
 - `READOUT_1` 是 **fuse 镜像**，不是有效速率读数；两侧 `READOUT_0/2` 的 RM
   消费者全是 ECC 能力位，没有一个读速率。
@@ -176,7 +183,16 @@ FMC 是 `0x48` 明文头 + 加密体（code+data+`0xA00` manifest），P-384/SHA
    SR 描述符与页表未拆。SR 复用冷启动 COT 与已映射的 GSP-RM，只有恢复的
    **状态**能改变跑什么——信任面比冷路径宽。
 2. **FSP/FMC 解析器**：上面 §2 的检查面已画图；FSP 帧格式、heap 11 档 lever、
-   vBIOS app `0x23` 尾部待做。
+   vBIOS app `0x23` 尾部待做。在 GB205（`10de:2f18`，VBIOS `98.05.31.00.44`）上用只读
+   `--prom-bit`（已同步进 `ssdiag` 与 Linux `diag-unlock.py`）扫 `BAR0+0x300000`
+   的 1 MiB `NV_PROM` 窗口：经典 Turing/Ampere/Ada App ID（`0x01/0x05/0x08/0x45/0x49/0x85`）
+   全部消失，微码表（35 槽：29 空 + 6 非空）改为新编号与 80 B **V6 描述符**；窗口内 4 项
+   （`0x07/0x15/0x19` 与 `app 0x23` `target=0x0e`）的 `vDesc bit2` 均置位，另 2 项
+   （`0x18/0x24`）超出 1 MiB `NV_PROM` 窗口；基于同卡完整 ROM 导出补齐 6/6 个 80 B V6
+   字段映射（`0x07/0x23/0x18` 存在 `0xA00` 残差、`+30` 标签 `0x23=BHUB`/`0x24=_RUN`、
+   `0x19/0x15` 二级 20 B manifest 的 S/T 空间算术闭合链）见
+   [GB205 实测档案](evidence/gb205-2f18/README.md) 与
+   [V6 描述符逆向笔记](evidence/gb205-2f18/v6-descriptor-re.md)。
 3. **每 SM selector**：需要 caller-owned RM 通道，未做。
 
 上游列的"算作解锁"判据（可直接借作我们的验收）：驱动速率 getter 报的钳制位为 0；
@@ -205,6 +221,7 @@ SAMPLE：
 | 速率熔丝 | `0x8207D4/D8/DC/E0/E4/E8/EC`、`0x82059C`、`0x820224` |
 | 覆盖总闸/使能 | `0x8203F0`、`0x820040`、`0x8200FC`（`FUSE_SS_PLM`，注意**不是**有效门） |
 | 旁证 | `0x82038C`（Quadro 安全写）、`0x504204`（inert 修改器）、`0x8403C4`（SEC2 PLM） |
+| PROM BIT 元数据（可选 `--prom-bit`） | `0x300000..0x3FFFFC`（1 MiB `NV_PROM`，`ssdiag` / `diag-unlock.py` 跨平台只读，仅输出结构元数据不转储固件字节，且禁止与 `--reapply` / `--fuserows` 并用）；另注：Blackwell PROM 前 ~207 KiB 几乎全为 `0xFF`（GB205 仅 `PROM+0x0=0xffffc04c` 非全 1），`loader/src/sample.rs` 的前 64 KiB CRC32 现已对此类几乎全 `0xFF` 的前导填充发出提示，避免误当 VBIOS 指纹 |
 
 解读纪律：
 

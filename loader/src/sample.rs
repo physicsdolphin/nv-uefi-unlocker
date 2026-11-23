@@ -262,12 +262,24 @@ pub fn run(gpu: &FoundGpu) {
                 core::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len() * 4)
             };
             match boot::calculate_crc32(bytes) {
-                Ok(crc) => info!(
-                    "SAMPLE NV_PROM first {:#x} bytes: crc32 {crc:#010x}, magic {:#010x}{}",
-                    buf.len() * 4,
-                    buf[0],
-                    if buf[0] == !0u32 { " (window all-ones - CRC not an identity)" } else { "" }
-                ),
+                Ok(crc) => {
+                    let non_ff = buf.iter().filter(|&&w| w != !0u32).count();
+                    let note = if buf[0] == !0u32 && non_ff == 0 {
+                        " (window all-ones - CRC not an identity)"
+                    } else if non_ff <= 4 {
+                        // Blackwell (GB205 field-measured: PROM+0x0 = 0xffffc04c followed by
+                        // ~207 KiB of 0xFF padding before the first PCI ROM image at 0x35400).
+                        // Hashing only the first 64 KiB covers leading padding, not the VBIOS.
+                        " (mostly 0xFF leading padding - first 64 KiB CRC not a VBIOS identity)"
+                    } else {
+                        ""
+                    };
+                    info!(
+                        "SAMPLE NV_PROM first {:#x} bytes: crc32 {crc:#010x}, magic {:#010x}{note}",
+                        buf.len() * 4,
+                        buf[0],
+                    );
+                }
                 Err(e) => info!("SAMPLE NV_PROM crc failed: {:?}", e.status()),
             }
         }

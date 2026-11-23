@@ -80,6 +80,8 @@ BLACKWELL_ROWS = [
     ("FUSE_SS_IMLA2", 0x0082_07E4),
     ("FUSE_SS_IMLA3", 0x0082_07E8),
     ("FUSE_SS_IMLA4", 0x0082_07EC),
+    ("SM_ISSUE_RATE_MODIFIER", 0x0050_4204),
+    ("SEC2_PLM", 0x0084_03C4),
 ]
 # FEAT_READOUT_1 is NOT nine contiguous 3-bit fields: offsets 0,3,7,10,13,
 # 16,19,22,28 (gaps at bit 6 and bits 27:25). Contiguous decode yields
@@ -784,7 +786,7 @@ def family_of(boot0):
         return "ada", GAADA
     if 0x1A0 <= die <= 0x1AF:  # GB100=0x1A0, GB102=0x1A2
         return "blackwell-gb1", BLACKWELL
-    if 0x1B0 <= die <= 0x1BF:  # GB202/GB203M/GB206 class (50-series)
+    if 0x1B0 <= die <= 0x1BF:  # GB202/GB203M/GB205/GB206 class (50-series)
         return "blackwell-gb2", BLACKWELL
     if 0x210 <= die <= 0x21F:  # GB202 also reports 0x21120000 in an RM debug dump
         return "blackwell-gb2", BLACKWELL
@@ -983,6 +985,9 @@ def report(bar, tag="", devpath=None):
     rrow(bar, AD1X_ROWS)
     if blackwell:
         print("  --- blackwell fuse/aux block (read-only; selectors are fuse mirrors) ---")
+        # GB20x TPC CTRL overrides (0x820838+4g, 12 GPCs; ssdiag 0.7.7 parity, discussion #216).
+        tpc_ctrl = " ".join(f"{bar.rd(TPC_CTRL_BASE + 4 * g):#010x}" for g in range(12))
+        print(f"  TPC_CTRL (0x820838+4g, 12 GPCs): {tpc_ctrl}")
         rrow(bar, BLACKWELL_ROWS)
         print(f"  READOUT_1 fields (imla0 fmla16 fmla32 ffma imla1 imla2 imla3 imla4 DP) ="
               f" {decode_readout1(bar.rd(0x0082_3818))}")
@@ -1482,11 +1487,339 @@ def fuse_row_dump(bar, rng, base=FUSE_BASE_GA100_LAYOUT):
     return complete
 
 
+# --- Read-only VBIOS PROM BIT / ucode table metadata walker (ssdiag parity) ---
+PROM_BASE = 0x0030_0000
+PROM_SIZE = 0x0010_0000  # 1 MiB NV_PROM aperture (0x300000..0x3ffffc)
+
+PROM_APP_NAMES = {
+    0x01: "PRE_OS",
+    0x05: "FIRMWARE_SEC_LIC",
+    0x08: "LS_UDE",
+    0x23: "APP_0x23",
+    0x45: "FWSEC_DBG",
+    0x49: "SCRUBBER",
+    0x85: "FWSEC_PROD",
+}
+
+
+def prom_app_name(app_id):
+    return PROM_APP_NAMES.get(app_id, "-")
+
+
+def _le16(buf, off):
+    if off < 0 or off + 2 > len(buf):
+        return None
+    return int.from_bytes(buf[off : off + 2], "little")
+
+
+def _le32(buf, off):
+    if off < 0 or off + 4 > len(buf):
+        return None
+    return int.from_bytes(buf[off : off + 4], "little")
+
+
+def prom_pcir_info(rom, off):
+    if off < 0 or off + 0x1A > len(rom) or rom[off : off + 2] != b"\x55\xaa":
+        return None
+    pcir_rel = _le16(rom, off + 0x18)
+    if pcir_rel is None:
+        return None
+    p = off + pcir_rel
+    if p + 0x16 > len(rom):
+        return None
+    tag = rom[p : p + 4]
+    if tag not in (b"PCIR", b"NPDS", b"RGIS"):
+        return None
+    slen = _le16(rom, p + 0x0A)
+    sub = _le16(rom, p + 0x10)
+    code_type = rom[p + 0x14]
+    npde_at = (p + slen + 0xF) & ~0xF
+    if rom[npde_at : npde_at + 4] == b"NPDE":
+        ext_len = _le16(rom, npde_at + 6)
+        sub_len = _le16(rom, npde_at + 8)
+        if ext_len is not None and sub_len is not None and ext_len >= 10 and npde_at + ext_len <= len(rom):
+            sub = sub_len
+    return {
+        "offset": off,
+        "tag": tag.decode("ascii"),
+        "code_type": code_type,
+        "image_len": sub * 512,
+    }
+
+
+def prom_find_expansion(image):
+    curr = 0
+    base_size = None
+    for _ in range(16):
+        info = prom_pcir_info(image, curr)
+        if info is None:
+            return None
+        if info["code_type"] == 0xE0:
+            if base_size is None or curr < base_size:
+                return None
+            return curr - base_size
+        if info["code_type"] == 0x00 and base_size is None:
+            base_size = info["image_len"]
+        if info["image_len"] == 0:
+            return None
+        nxt = curr + info["image_len"]
+        if nxt >= len(image):
+            return None
+        curr = nxt
+    return None
+
+
+def parse_prom_bit(rom):
+    """Parse VBIOS PROM BIT + token 0x70 v2 ucode table metadata (no firmware dumps)."""
+    if len(rom) < 4:
+        return {"error": "unreadable", "reason": "aperture shorter than 4 bytes"}
+    first_word = _le32(rom, 0)
+    if (first_word >> 16) == 0xBADF:
+        return {"error": "unreadable", "reason": "PRI error (0xBADF) at PROM+0x0"}
+    trimmed = rom[: len(rom) - (len(rom) % 4)]
+    if trimmed and all(b == 0 for b in trimmed):
+        return {"error": "unreadable", "reason": "all-zero PROM aperture"}
+    if trimmed and all(b == 0xFF for b in trimmed):
+        return {"error": "unreadable", "reason": "all-ones PROM aperture"}
+
+    rom_images = []
+    for off in range(0, max(0, len(rom) - 0x19), 0x200):
+        info = prom_pcir_info(rom, off)
+        if info is not None:
+            rom_images.append(info)
+
+    bit_off = None
+    for a in range(0, max(0, len(rom) - 11), 2):
+        if _le16(rom, a) == 0xB8FF and rom[a + 2 : a + 6] == b"BIT\x00":
+            hs = rom[a + 8]
+            if hs >= 12 and a + hs <= len(rom) and (sum(rom[a : a + hs]) & 0xFF) == 0:
+                bit_off = a
+                break
+    if bit_off is None:
+        return {"error": "no_bit_header"}
+
+    bit_hdr_size = rom[bit_off + 8]
+    bit_stride = rom[bit_off + 9]
+    bit_token_count = rom[bit_off + 10]
+    if not (6 <= bit_stride <= 8):
+        return {"error": "unsupported_stride", "stride": bit_stride}
+
+    preceding_x86 = [img for img in rom_images if img["offset"] <= bit_off and img["code_type"] == 0x00]
+    preceding_any = [img for img in rom_images if img["offset"] <= bit_off]
+    if preceding_x86:
+        image_base = preceding_x86[-1]["offset"]
+    elif preceding_any:
+        image_base = preceding_any[-1]["offset"]
+    else:
+        image_base = 0
+
+    expansion_off = prom_find_expansion(rom[image_base:])
+    adjust = image_base + expansion_off if expansion_off is not None else image_base
+
+    found_0x70 = False
+    ucode_tables = []
+    for t in range(bit_token_count):
+        tok = bit_off + bit_hdr_size + t * bit_stride
+        if rom[tok : tok + 2] != b"\x70\x02":
+            continue
+        found_0x70 = True
+        raw_ptr = _le32(rom, tok + 4) if bit_stride >= 8 else _le16(rom, tok + 4)
+        if raw_ptr is None:
+            continue
+        data_ptr = image_base + raw_ptr
+        table_rel = _le32(rom, data_ptr)
+        if table_rel is None:
+            continue
+        table_off = adjust + table_rel
+        if table_off + 6 > len(rom):
+            continue
+        ver = rom[table_off]
+        hdr_size = rom[table_off + 1]
+        entry_size = rom[table_off + 2]
+        slot_count = rom[table_off + 3]
+        if ver != 1 or hdr_size < 6 or entry_size < 6:
+            continue
+
+        empty_slots = 0
+        entries = []
+        for e in range(slot_count):
+            at = table_off + hdr_size + e * entry_size
+            if at + 6 > len(rom):
+                break
+            app_id = rom[at]
+            target_id = rom[at + 1]
+            desc_rel = _le32(rom, at + 2)
+            if app_id == 0 and target_id == 0 and desc_rel == 0:
+                empty_slots += 1
+                continue
+            desc_off = adjust + desc_rel
+            if desc_off + 4 > len(rom):
+                entries.append({
+                    "kind": "oob",
+                    "app_id": app_id,
+                    "target_id": target_id,
+                    "desc_rel": desc_rel,
+                    "abs_off": desc_off,
+                })
+                continue
+            vdesc = _le32(rom, desc_off)
+            desc_ver = (vdesc >> 8) & 0xFF
+            desc_size = (vdesc >> 16) & 0xFFFF
+            encrypted = bool(vdesc & (1 << 2))
+            stored_size = _le32(rom, desc_off + 4)
+            meta = {"kind": "other"}
+            if desc_ver == 2 and desc_size >= 60 and desc_off + 52 <= len(rom):
+                meta = {
+                    "kind": "v2",
+                    "imem_load": _le32(rom, desc_off + 24),
+                    "sec_base": _le32(rom, desc_off + 32),
+                    "sec_size": _le32(rom, desc_off + 36),
+                    "dmem_load": _le32(rom, desc_off + 48),
+                }
+            elif desc_ver == 3 and desc_size >= 44 and desc_off + 42 <= len(rom):
+                meta = {
+                    "kind": "v3",
+                    "pkc_off": _le32(rom, desc_off + 8),
+                    "engine_mask": _le16(rom, desc_off + 36),
+                    "ucode_id": rom[desc_off + 38],
+                    "sig_count": rom[desc_off + 39],
+                    "sig_versions": _le16(rom, desc_off + 40),
+                }
+            elif desc_ver == 6 and desc_size >= 80:
+                meta = {"kind": "v6", "image_start": desc_off + desc_size}
+            entries.append({
+                "kind": "readable",
+                "app_id": app_id,
+                "target_id": target_id,
+                "desc_off": desc_off,
+                "desc_ver": desc_ver,
+                "desc_size": desc_size,
+                "encrypted": encrypted,
+                "stored_size": stored_size,
+                "meta": meta,
+            })
+        ucode_tables.append({
+            "table_off": table_off,
+            "ver": ver,
+            "hdr_size": hdr_size,
+            "entry_size": entry_size,
+            "slot_count": slot_count,
+            "empty_slots": empty_slots,
+            "entries": entries,
+        })
+
+    if not found_0x70:
+        return {"error": "no_ucode_token"}
+
+    return {
+        "error": None,
+        "first_word": first_word,
+        "rom_images": rom_images,
+        "bit_off": bit_off,
+        "bit_hdr_size": bit_hdr_size,
+        "bit_stride": bit_stride,
+        "bit_token_count": bit_token_count,
+        "image_base": image_base,
+        "expansion_off": expansion_off,
+        "adjust": adjust,
+        "ucode_tables": ucode_tables,
+    }
+
+
+def dump_prom_bit(bar):
+    print("\n--- PROM BIT TABLE ENUMERATION (BAR0+0x300000, read-only metadata) ---")
+    buf = bytearray(PROM_SIZE)
+    for i in range(0, PROM_SIZE, 4):
+        buf[i : i + 4] = int.to_bytes(bar.rd(PROM_BASE + i), 4, "little")
+    rep = parse_prom_bit(bytes(buf))
+    err = rep.get("error")
+    if err == "unreadable":
+        print(f"PROM unreadable: {rep['reason']} (device parked / no ROM shadow)")
+    elif err == "no_bit_header":
+        print("PROM-BIT: no checksum-valid BIT header found in 1 MiB aperture")
+    elif err == "unsupported_stride":
+        print(f"PROM-BIT: BIT token stride {rep['stride']} outside expected range 6..=8")
+    elif err == "no_ucode_token":
+        print("PROM-BIT: BIT header parsed, but token 0x70 v2 (falcon ucode table) is absent")
+    else:
+        print(f"PROM first word: {rep['first_word']:#010x}")
+        print(f"verified PCI ROM images ({len(rep['rom_images'])}):")
+        for img in rep["rom_images"]:
+            print(
+                f"  PROM+{img['offset']:#07x}: tag=\"{img['tag']}\" "
+                f"code_type={img['code_type']:#04x} len={img['image_len']:#x}"
+            )
+        exp_s = f"{rep['expansion_off']:#x}" if rep["expansion_off"] is not None else "none"
+        print(
+            f"BIT at PROM+{rep['bit_off']:#07x} (hdr={rep['bit_hdr_size']} "
+            f"stride={rep['bit_stride']} tokens={rep['bit_token_count']}) | "
+            f"image_base={rep['image_base']:#x} expansion={exp_s} adjust={rep['adjust']:#x}"
+        )
+        for tbl in rep["ucode_tables"]:
+            print(
+                f"ucode table at PROM+{tbl['table_off']:#07x}: ver={tbl['ver']} "
+                f"hdr={tbl['hdr_size']} entry_size={tbl['entry_size']} slots={tbl['slot_count']}"
+            )
+            print(
+                f"  {'APP':>4}  {'TARGET':>6}  {'NAME':>16}  {'DESC_OFF':>10}  "
+                f"{'VER':>4}  {'ENC(bit2)':>9}  {'DESC_SIZE':>9}  STORED_SIZE"
+            )
+            print("  " + "-" * 82)
+            readable = 0
+            oob = 0
+            for entry in tbl["entries"]:
+                if entry["kind"] == "oob":
+                    oob += 1
+                    print(
+                        f"  {entry['app_id']:#04x}  {entry['target_id']:#04x}  "
+                        f"{prom_app_name(entry['app_id']):>16}  "
+                        f"OOB(rel={entry['desc_rel']:#x}, abs={entry['abs_off']:#x})"
+                    )
+                else:
+                    readable += 1
+                    enc_s = "YES" if entry["encrypted"] else "no"
+                    stored = entry["stored_size"]
+                    stored_s = f"{stored:#x} ({stored // 1024} KiB)" if stored is not None else "-"
+                    print(
+                        f"  {entry['app_id']:#04x}  {entry['target_id']:#04x}  "
+                        f"{prom_app_name(entry['app_id']):>16}  {entry['desc_off']:#010x}  "
+                        f"v{entry['desc_ver']:<3}  {enc_s:>9}  {entry['desc_size']:>6} B  {stored_s}"
+                    )
+                    m = entry["meta"]
+                    if m["kind"] == "v2" and not entry["encrypted"]:
+                        print(
+                            f"    V2: imemLoad={m['imem_load']:#x} secBase={m['sec_base']:#x} "
+                            f"secSize={m['sec_size']:#x} dmemLoad={m['dmem_load']:#x}"
+                        )
+                    elif m["kind"] == "v3":
+                        print(
+                            f"    V3: pkcOff={m['pkc_off']:#x} engineMask={m['engine_mask']:#x} "
+                            f"ucodeId={m['ucode_id']} sigCount={m['sig_count']} "
+                            f"sigVersions={m['sig_versions']:#x}"
+                        )
+                    elif m["kind"] == "v6":
+                        print(
+                            f"    V6: desc_size={entry['desc_size']} "
+                            f"image_start=PROM+{m['image_start']:#x}"
+                        )
+            print(
+                f"  summary: {tbl['slot_count']} slot(s) "
+                f"({readable + oob} non-empty: {readable} readable, {oob} out-of-aperture; "
+                f"{tbl['empty_slots']} empty)"
+            )
+        print("note: metadata-only read-only scan; raw firmware bytes are intentionally omitted")
+    print("--- END PROM BIT ---")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bdf", help="only this PCI address, e.g. 0000:01:00.0")
     ap.add_argument("--reapply", action="store_true",
                     help="write SS0=0x88888888 SS1=0x8 where the PLM gate is open")
+    ap.add_argument("--prom-bit", action="store_true",
+                    help="READ-ONLY: read BAR0+0x300000 (1 MiB NV_PROM) and walk PCI ROM -> BIT -> "
+                         "token 0x70 v2 ucode table metadata (no firmware byte dumps; cannot be "
+                         "combined with --reapply or --fuserows)")
     ap.add_argument("--fusebase", default=None, metavar="HEX",
                     help="fuse-controller block base override (default family-auto: "
                          "Turing 0x21000, GA10x+/Ada 0x820000; same layout)")
@@ -1500,6 +1833,13 @@ def main():
                          "block (OS/CPU/board/BIOS/chassis/per-GPU family "
                          "verdict + advisories) and exit - no root needed")
     args = ap.parse_args()
+
+    if args.prom_bit and (args.reapply or args.fuserows is not None):
+        print(
+            "--prom-bit is strictly read-only and cannot be combined with --reapply or --fuserows",
+            file=sys.stderr,
+        )
+        return 2
 
     fuserows = None
     if args.fuserows is not None:
@@ -1545,6 +1885,8 @@ def main():
         st = report(bar, devpath=devpath)
         read_rebar(devpath)
         if st is None:
+            if args.prom_bit:
+                dump_prom_bit(bar)
             continue
         fam, regs, plm, unlocked = st
         if args.reapply:
@@ -1572,6 +1914,8 @@ def main():
                 base = FUSE_BASE_TURING if fam == "turing" else FUSE_BASE_GA100_LAYOUT
             if not fuse_row_dump(bar, fuserows, base):
                 rc = 1
+        if args.prom_bit:
+            dump_prom_bit(bar)
     return rc
 
 

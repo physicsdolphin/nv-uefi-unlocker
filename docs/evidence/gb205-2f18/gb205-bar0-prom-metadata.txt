@@ -1,0 +1,114 @@
+[GB205 field sample: NVIDIA GeForce RTX 5070 Ti Laptop GPU (10de:2f18, SUBSYS 1558:6586, VBIOS 98.05.31.00.44)]
+[Captured 2026-11-22 on COLORFUL P16 Pro IXA1, Windows 11 26H2, driver 621.01 (32.0.16.2101), elevated read-only ssdiag 0.8.8 --prom-bit (from this PR)]
+[Sanitized for public repository: private host inventory (RAM serials, disks, partitions, unrelated PCI devices, PnP UID) omitted; --prom-bit itself emits metadata only with zero firmware bytes.]
+
+GPU 1: NVIDIA GeForce RTX 5070 Ti Laptop GPU
+GPU 1 PCI: 10de:2f18 SUBSYS 65861558 BDF 01:00.0
+GPU 1 family: outside the tu10x/ga10x/ad10x families - OUT-OF-SCOPE
+GPU 1 VBIOS: 98.05.31.00.44 (nvapi)
+GPU 1 driver: 32.0.16.2101 (621.01), dated 10-19-2026; EnableGpuFirmware unset (LEGACY mode)
+config-space ReBAR (bus 1 dev 0 fn 0): cap @0x0134 - 1 resizable BAR(s)
+  BAR1 supported [16G/8G/4G/2G/1G/512M/256M/128M/64M] current 16384 MiB (size_idx 14)
+config-space link caps (bus 1 dev 0 fn 0): LnkCap max Gen5 x16 | LnkSta Gen5 x8 (downgraded) | LnkCap2 [Gen1,Gen2,Gen3,Gen4,Gen5] | LnkCtl2 TLS Gen5
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:01.0 VEN_8086&DEV_A70D PMCSR = D0 (0x0000) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: 44000000
+
+--- core/debug block ---
+  PMC_BOOT_0             0x00000000= 0x1b5000a1
+  PSTRAPS_SET0           0x00101000= 0x00400080
+  PSTRAPS_SET1           0x0010100c= 0x02013000
+  FB_SIZE_MIB            0x001183a4= 0x00002fc3
+  GFW_PLM                0x00118128= 0x00008b8f
+  GFW_SCRATCH            0x00118234= 0x00000000
+  BSI_SCRATCH15          0x001180fc= 0x00001182
+  VGA_WORKSPACE          0x00625f04= 0x00000001
+  WPR2_LO                0x001fa824= 0x02fb8800
+  WPR2_HI                0x001fa828= 0x02fc1000
+  MMU_PLM                0x001fa7c8= 0x0884cb8f
+  MMU_LOCK_LO            0x001fa82c= 0x000ffff0
+  MMU_LOCK_HI            0x001fa830= 0x00000000
+  GSP_CPUCTL             0x00110100= 0xbadf5720 [BADF]
+  GSP_EXCI               0x001100d0= 0xbadf5720 [BADF]
+  SEC2_CPUCTL            0x00840100= 0x00000010
+  SEC2_MBOX0             0x00840040= 0xbf7d4000
+  SEC2_MBOX1             0x00840044= 0x94000008
+  SEC2_EXCI              0x008400d0= 0xbadf5720 [BADF]
+  FUSE_VER_DECODE        0x008241c0= 0x00000002
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0   LTC/FBP(PTOP 0x22450) = 2
+
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       0x00409650= 0x8087cbcf (closed (non-standard))
+  turing 0x4096xx      SS0       0x00409664= 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      READOUT   0x00409668= 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      SS1       0x0040966c= 0xbadf5040 [PRIV_VIOLATION]
+  0x823xxx amp/ada/gb  PLM       0x00823804= 0xfffffb8f (closed (PL3-only writes))
+  0x823xxx amp/ada/gb  SS0       0x0082381c= 0x76027063 [r3 r6 . r7 r2 . r6 r7]
+  0x823xxx amp/ada/gb  SS1       0x00823820= 0x00030004 [r4]
+  0x823xxx amp/ada/gb  READOUT_1 0x00823818= 0x00c36180 [fields 0 0 3 0 3 3 0 3 0 - not rates]
+
+--- blackwell fuse/aux block (read-only; selectors are fuse mirrors) ---
+  TPC_CTRL (0x820838+4g, 12 GPCs): 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  FUSE_EN_SW_OVERRIDE        = 0x00000000
+  FUSE_SS_PLM                = 0xfffffbff
+  SECURE_FEAT_OVR_QUADRO_WR  = 0x00000002
+  FUSE_SS_DP                 = 0x00000000
+  FUSE_SS_FFMA               = 0x00000000
+  FUSE_SS_FMLA16             = 0x00000000
+  FUSE_SS_FMLA32             = 0x00000003
+  FUSE_SS_IMLA0              = 0x00000000
+  FUSE_SS_IMLA1              = 0x00000003
+  FUSE_SS_IMLA2              = 0x00000003
+  FUSE_SS_IMLA3              = 0x00000000
+  FUSE_SS_IMLA4              = 0x00000003
+  SM_ISSUE_RATE_MODIFIER     = 0x00000005
+  SEC2_PLM                   = 0x00000b0f
+  FUSE_OPT_FEATURE_OVR   0x008203f0= 0x00000000
+  FUSE_VER               0x00824140= 0x00000002
+  READOUT_1 fields (imla0 fmla16 fmla32 ffma imla1 imla2 imla3 imla4 DP) = 0 0 3 0 3 3 0 3 0
+
+--- ampere/ada FEAT sweep (M1 cluster) ---
+         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+   value 0xfffffb8f 0x00100183 0x00888888 0xaa2a2aaa 0x00000233 0x00000003 0x00000001 0x022aaaaa 0xfffffb8f
+
+--- topology / floorsweep (GB205 46 SM = 23 TPC across 5 active GPCs) ---
+  GA100_SM_OVR_RGN 0x00820a00..0x00820b1c:
+    [guard]  0x00820a00..0x00820a3c: all 0xbadf5040
+    [island] 0x00820a40..0x00820abc: 32 words all 0x00000000
+    [tail]   0x00820ac0..0x00820b1c: all 0xbadf5040
+  GA100_SM_STAT  0x00820c38 = 0x000000e1 0x000000e1 0x000000e0 0x000000e0 0x000000e0 0x000000ff 0x000000ff 0x000000ff
+  STAT_GPC       0x00820c1c = 0x00000fe0
+  STAT_FBP       0x00820d38 = 0x000000f8
+  GB20X_PES      0x00822a78 = 0x00000008 0x00000008 0x00000008 0x00000008 0x00000008 0x0000000f 0x0000000f 0x0000000f 0x0000000f 0x0000000f 0x0000000f 0x0000000f
+  OFA_DISABLE    0x00822a68 = 0x00000000
+  FBP_LTC        0x00822900 = 0x00000012 0x00000012 0x00000012 0x000000ff 0x000000ff 0x000000ff 0x000000ff 0x000000ff
+  GR_TOPO_409604 0x00409604 = 0x06030005 (byte3 GPC-slots 6 / byte0 active-GPC 5)
+  VERDICT [blackwell-gb2]: NOT_UNLOCKED
+
+--- PROM BIT TABLE ENUMERATION (BAR0+0x300000, read-only metadata) ---
+PROM first word: 0xffffc04c
+verified PCI ROM images (5):
+  PROM+0x34200: tag="PCIR" code_type=0xe0 len=0xa00
+  PROM+0x34c00: tag="PCIR" code_type=0xe0 len=0x800
+  PROM+0x35400: tag="PCIR" code_type=0x00 len=0xfa00
+  PROM+0x44e00: tag="PCIR" code_type=0x03 len=0x18000
+  PROM+0x5ce00: tag="PCIR" code_type=0xe0 len=0xfa00
+BIT at PROM+0x361f0 (hdr=12 stride=6 tokens=20) | image_base=0x35400 expansion=0x18000 adjust=0x4d400
+ucode table at PROM+0xa25a1: ver=1 hdr=6 entry_size=6 slots=35
+   APP  TARGET              NAME    DESC_OFF   VER  ENC(bit2)  DESC_SIZE  STORED_SIZE
+  ----------------------------------------------------------------------------------
+  0x07  0x06                 -  0x000adcd4  v6          YES      80 B  0x20600 (129 KiB)
+    V6: desc_size=80 image_start=PROM+0xadd24
+  0x18  0x01                 -  OOB(rel=0xceb04, abs=0x11bf04)
+  0x19  0x01                 -  0x000ce324  v6          YES      80 B  0x20f00 (131 KiB)
+    V6: desc_size=80 image_start=PROM+0xce374
+  0x15  0x01                 -  0x000ef364  v6          YES      80 B  0x5500 (21 KiB)
+    V6: desc_size=80 image_start=PROM+0xef3b4
+  0x23  0x0e          APP_0x23  0x000f48f0  v6          YES      80 B  0x27000 (156 KiB)
+    V6: desc_size=80 image_start=PROM+0xf4940
+  0x24  0x0f                 -  OOB(rel=0xdb504, abs=0x128904)
+  summary: 35 slot(s) (6 non-empty: 4 readable, 2 out-of-aperture; 29 empty)
+note: metadata-only read-only scan; raw firmware bytes are intentionally omitted
+--- END PROM BIT ---
+driver service removed (remove-when-done)
