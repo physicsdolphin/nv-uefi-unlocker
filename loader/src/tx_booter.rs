@@ -47,6 +47,7 @@ pub struct BootDesc {
     pub app_version: u32,
 }
 
+#[cfg(feature = "tx")]
 pub fn boot_desc_parse(desc: &[u8], image_size: u32) -> Result<BootDesc, TxError> {
     let f = |i: usize| le32(desc, i * 4);
     if desc.len() == 76 {
@@ -127,6 +128,7 @@ pub struct BooterHdr {
 /// Load and validate a BTL1 booter bundle. Geometry comes from the bundle
 /// header itself and is cross-checked against the per-family pins measured
 /// from pinned 610.43.03 (constitution: identity pinned, no silent drift).
+#[cfg(feature = "tx")]
 pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a [u8], &'a [u8]), TxError> {
     if bundle.len() < 72 || le32(bundle, 0) != BTL1_MAGIC || le32(bundle, 4) != 1 {
         return Err(TxError::EInval);
@@ -219,6 +221,7 @@ pub fn load_booter<'a>(bundle: &'a [u8], family: &str) -> Result<(BooterHdr, &'a
 /// The indexing, the bounds and the copy live in the dependency-free
 /// btl1_signature module, so sim/tests runs this exact code on the host
 /// (loader is an x86_64-unknown-uefi crate and never runs under `cargo test`).
+#[cfg(feature = "tx")]
 pub fn booter_patch_stock(image: &mut [u8], hdr: &BooterHdr, signatures: &[u8], fuse_ver: u32) -> Result<(), TxError> {
     // Turing BOOT_DIRECT bundles carry exactly ONE signature (SIG_PROD,
     // 16B AES): there is no fuse-version table to index, so index 0 is
@@ -240,6 +243,7 @@ pub fn booter_patch_stock(image: &mut [u8], hdr: &BooterHdr, signatures: &[u8], 
 }
 
 /// Replace the patch slot with the V67 payload image (the exploit vehicle).
+#[cfg(feature = "tx")]
 pub fn booter_patch_v67(image: &mut [u8], hdr: &BooterHdr, v67: &[u8]) -> Result<(), TxError> {
     if v67.len() != V67_SIZE || hdr.patch_loc as usize + V67_SIZE > image.len() {
         return Err(TxError::EInval);
@@ -300,6 +304,7 @@ pub fn radix_build(gpu: &TxGpu, image: &[u8]) -> Result<RadixBlock, TxError> {
 
 /// prep_610.c gpu_unlock_wpr_meta_pack, 1:1.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "tx")]
 pub fn wpr_meta_pack(
     meta: &mut [u8],
     layout: &LayoutOut,
@@ -399,12 +404,14 @@ pub fn wpr_meta_pack(
 
 /// Stock-signature restore: meta signature slot back to the stock DMA
 /// (constitution 9.5 - the payload must never remain published).
+#[cfg(feature = "tx")]
 pub fn signature_restore(meta: &mut [u8], stock_dma: u64, stock_size: u64) {
     wr64(meta, 72, stock_dma);
     wr64(meta, 80, stock_size);
 }
 
 /// Selector write with read-back (unlock_610.c write_selector, 1:1).
+#[cfg(feature = "tx")]
 pub fn write_selector(gpu: &TxGpu, name: &str, offset: u32, unlock: u32) -> Result<(), TxError> {
     let value = gpu.read32(offset)?;
     info!("selector read: {name}={value:#x} expected_unlock={unlock:#x}");
@@ -445,6 +452,7 @@ pub enum BooterWait {
 /// memOff=imemVa), DMEM at 0 (the patched signature rides inside the DMEM
 /// section at patch_loc - data_off), BROM PKC params, BOOTVEC=imemVa,
 /// WprMeta address in the mailboxes, start, then `wait` (see BooterWait).
+#[cfg(feature = "tx")]
 pub fn booter_fire(
     gpu: &TxGpu,
     hdr: &BooterHdr,
@@ -603,6 +611,7 @@ pub fn booter_fire(
 /// #14/#16: sub-4GB meta reads get LOCKED by some Turing cards with booter
 /// exit 0x91; the driver stages at 0x110BB0000 and passes a 64-bit mailbox
 /// pair) - \tx-low-staging.txt reverts for A/B.
+#[cfg(feature = "tx")]
 pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: u64) -> Result<(), TxError> {
     const FALCON_CPUCTL: u32 = 0x100;
     const FALCON_BOOTVEC: u32 = 0x104;
@@ -999,6 +1008,7 @@ fn portal_audit(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], p: &SecPlacement) {
 ///    reference performs zero MMIO until the halt poll;
 /// 4. direct CPUCTL=2 START with no alias-retry branch, plus the
 ///    reference's pre-START portal verify readbacks.
+#[cfg(feature = "tx")]
 pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: u64) -> Result<(), TxError> {
     let base = crate::tx::eng::SEC2;
     // Entry precondition (reference fire_direct): SEC2 halted and readable.
@@ -1147,6 +1157,7 @@ fn wpr_desc_rejected_hint(mbox0: u32, meta: &[u8]) {
 /// never touches the PLM selectors, so demanding unlock values here would
 /// fail a correct run. `meta` is the host view of the published WprMeta DMA
 /// page, for the failure-path readback in `wpr_desc_rejected_hint`.
+#[cfg(feature = "tx")]
 pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u8]) -> Result<(), TxError> {
     let plm = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_PLM as u64);
     let ss0 = gpu.pci.bar_read_u32(gpu.bar, crate::tx::regs::FEAT_SS0 as u64);
@@ -1216,6 +1227,7 @@ pub fn verify_execution(gpu: &TxGpu, family: &str, payload_mode: bool, meta: &[u
 /// Windows driver path is excluded for that boot; an intact state here that
 /// is gone in Windows puts the driver pass back on the hook. Never fails the
 /// transaction - the reconnect itself is already delivered by this point.
+#[cfg(feature = "tx")]
 pub fn probe_post_console(gpu: &TxGpu, family: &str, payload_mode: bool, tx_relock: bool) {
     let (plm_at, ss0_at, ss1_at, readout_at) = if crate::tx::family_is_turing(family) {
         (TU10X_FEAT_PLM, TU10X_FEAT_SS0, TU10X_FEAT_SS1, TU10X_FEAT_READOUT)
@@ -1298,6 +1310,7 @@ pub const TU10X_FEAT_SS1: u32 = 0x0040_966c;
 /// previously logged the Ampere/Ada address here, which reads badf on Turing).
 pub const TU10X_FEAT_READOUT: u32 = 0x0040_9668;
 
+#[cfg(feature = "tx")]
 pub fn verify_execution_tu10x(gpu: &TxGpu, payload_mode: bool, meta: &[u8]) -> Result<(), TxError> {
     let plm = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_PLM as u64);
     let ss0 = gpu.pci.bar_read_u32(gpu.bar, TU10X_FEAT_SS0 as u64);
@@ -1381,6 +1394,7 @@ pub fn verify_execution_tu10x(gpu: &TxGpu, payload_mode: bool, meta: &[u8]) -> R
 /// FLR phase (unlock_610.c unlock_transaction_reset, EFI adaptation):
 /// pre-FLR selector verify -> BME clear -> config-space FLR trigger ->
 /// post-FLR GFW/WPR2/selector survival. PCI config via PciIo.
+#[cfg(feature = "tx")]
 pub fn flr_phase(gpu: &TxGpu, family: &str, payload_mode: bool) -> Result<(), TxError> {
     // FEAT SS0/SS1 addresses are family-specific (Turing 0x409664/6c vs
     // GA10x/Ada 0x82381c/20) and PLM-locked at PL0 until a payload opens

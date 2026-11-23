@@ -254,6 +254,7 @@ fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
 }
 
 /// gpu_unlock_fuse_version: bit position + 1 of the low-16 value.
+#[cfg(feature = "tx")]
 pub fn fuse_version(raw: u32) -> u32 {
     let mut value = raw & 0xffff;
     if value == 0 {
@@ -537,6 +538,7 @@ pub fn layout_from_registers(
 /// FWSEC ignition phase (unlock_610.c 921-1026, 1:1): read PROM, parse,
 /// patch FRTS for our layout, install the fuse-version signature slot,
 /// fire on the GSP, verify scratch + WPR2 against the layout.
+#[cfg(feature = "tx")]
 pub fn fwsec_ignite(gpu: &TxGpu, layout: &LayoutOut) -> Result<(), TxError> {
     const GSP_BASE: u32 = 0x0011_0000;
     const GSP_FBIF: u32 = 0x0011_0600;
@@ -756,6 +758,7 @@ const _: () = {
 /// with no new instrumentation. The EXCI compare is low-16 ONLY: #89 read
 /// 0x00a003ff on the old high band and 0x009003ff on the low band - the
 /// sub-code drifts with the staging arm, the 0x3ff error cluster does not.
+#[cfg(feature = "tx")]
 pub fn fwsec_aperture_dead_signature(gpu: &TxGpu) -> bool {
     const GSP: u32 = 0x0011_0000;
     let lo = gpu.pci.bar_read_u32(gpu.bar, 0x001f_a824);
@@ -765,6 +768,7 @@ pub fn fwsec_aperture_dead_signature(gpu: &TxGpu) -> bool {
     lo == 0x1fff_fe00 && hi == 0 && cpuctl == 0 && (exci & 0xffff) == 0x3ff
 }
 
+#[cfg(feature = "tx")]
 pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram: bool) -> Result<(), TxError> {
     const GSP: u32 = 0x0011_0000;
     const FALCON2: u32 = 0x0011_1000;
@@ -1084,6 +1088,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
 /// BINDATA → BTL1, `\\scrubber_ad10x.bin`): image 7424B, ucode 0xd, 2×RSA-384.
 /// The VBIOS PROM app 0x49 we tried first is a DIFFERENT ucode (22528B) that
 /// is not what advances the handoff (measured 2026-10-26).
+#[cfg(feature = "tx")]
 pub fn scrubber_if_needed(gpu: &TxGpu) -> Result<(), TxError> {
     const SEC2_BASE: u32 = 0x0084_0000;
     const SEC2_FBIF: u32 = 0x0084_0600;

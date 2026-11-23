@@ -8,15 +8,15 @@
 //! There is deliberately no write helper in this file.
 
 use core::ffi::c_void;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 use core::time::Duration;
 use log::info;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 use uefi::boot::AllocateType;
 use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, SearchType};
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 use uefi::mem::memory_map::MemoryMap as _;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 use uefi::mem::memory_map::MemoryType;
 use uefi::proto::unsafe_protocol;
 use uefi::{cstr16, Identify, Status};
@@ -26,11 +26,11 @@ pub const NVIDIA_VENDOR_ID: u16 = 0x10de;
 /// Per-family gate for above-4GB staging (tx.rs sets it for 'tu10x' at the
 /// top of each card's transaction; every other family keeps the exact
 /// allocation path it was field-verified with). Default OFF.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 static TX_HIGH_STAGING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// Enable above-4GB staging for the current card's transaction.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn set_high_staging(on: bool) {
     TX_HIGH_STAGING.store(on, core::sync::atomic::Ordering::Relaxed);
 }
@@ -39,12 +39,12 @@ pub fn set_high_staging(on: bool) {
 /// allocates the FWSEC staging in the LOW band by default - issue #74
 /// proved >=4GiB unreachable on TB platforms - and restores the gate for
 /// the meta/signature/radix allocations).
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn high_staging() -> bool {
     TX_HIGH_STAGING.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 static MEMMAP_CAPTURED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// Capture the memory map once per boot - every descriptor ending at/above
@@ -52,7 +52,7 @@ static MEMMAP_CAPTURED: core::sync::atomic::AtomicBool = core::sync::atomic::Ato
 /// high RAM is the open question behind the per-board 0x91 differences
 /// (issues #16/#17/#19). Runs before the first allocation so it lands in
 /// every log, success or failure.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 fn capture_memmap_once() {
     if MEMMAP_CAPTURED.swap(true, core::sync::atomic::Ordering::Relaxed) {
         return;
@@ -264,9 +264,9 @@ impl PciIo {
     /// to `mask`, which is why the historical call sites pass exactly
     /// 0x0007. Kept as-is (behavior verified on hardware across the whole
     /// transaction history); new code uses [`Self::attributes_enable_op`].
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
 
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn attributes_enable(&self, mask: u64) {
         // op 1 = EfiPciIoAttributeOperationSet; Arg1 = mask
         let mut st = Status::SUCCESS;
@@ -280,7 +280,7 @@ impl PciIo {
 
     /// Proper EfiPciIoAttributeOperationEnable (op 2): OR the given bits
     /// into the device's attribute set without touching the rest.
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn attributes_enable_op(&self, mask: u64) -> Status {
         let mut st = Status::SUCCESS;
         unsafe {
@@ -293,7 +293,7 @@ impl PciIo {
     /// set (EDK2 keeps it in the PciIo device struct, not in config space).
     /// Captured before the claim so the handoff can restore the VGA
     /// forwarding subset it cleared (issue #109 chain-2 code-12 class).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn attributes_get(&self) -> Option<u64> {
         let mut attrs = 0u64;
         let mut st = Status::SUCCESS;
@@ -319,7 +319,7 @@ impl PciIo {
     /// RomSize fields, pinned at slots 19/18 of PciIoRaw). This is the
     /// copy the firmware fetched at enumeration - the native-GOP path
     /// extracts the card's own GOP driver from it.
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn rom_image(&self) -> Option<&[u8]> {
         // Verbatim slot dump BEFORE any use (issue #128 run 11: the log
         // went dark inside the recovery block; a garbage RomSize fed
@@ -353,7 +353,7 @@ impl PciIo {
 
     /// THE BAR write primitive — consumed only by `tx` builds. M0/M1
     /// binaries contain no call sites (constitution §1.7 audit anchor).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn bar_write_u32(&self, bar: u8, offset: u64, v: u32) {
         // Safety: exclusive-borrowed protocol, buffers outlive the call.
         unsafe {
@@ -362,7 +362,7 @@ impl PciIo {
     }
 
     /// PCI config-space dword write (tx builds: BAR restore after FLR).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn cfg_write_u32(&self, offset: u32, v: u32) {
         // Safety: exclusively borrowed protocol; offset must be 4-aligned.
         unsafe {
@@ -372,7 +372,7 @@ impl PciIo {
 
     /// PCI config-space write (tx builds: BME clear + FLR trigger +
     /// COMMAND restore when the Attributes API is refused).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn cfg_write_u16(&self, offset: u32, v: u16) {
         // Safety: exclusively borrowed protocol.
         unsafe {
@@ -383,7 +383,7 @@ impl PciIo {
     /// Walk the legacy capability list for the Power Management capability
     /// (ID 0x01). Read-only. `None` = no PM cap, which means the D-state
     /// cannot be evaluated at all (the device is then assumed powered on).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn pm_cap(&self) -> Option<u8> {
         if self.config_read_u16(0x06) & 0x10 == 0 {
             return None; // STATUS.CAP_LIST absent
@@ -407,7 +407,7 @@ impl PciIo {
     /// reset - it is an arbitrary config-space write that leaves the function
     /// untouched. Same iteration guard as `pm_cap` (a self-referential chain
     /// would otherwise hang the firmware app with no log line).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn pcie_cap(&self) -> Option<u8> {
         if self.config_read_u16(0x06) & 0x10 == 0 {
             return None; // STATUS.CAP_LIST absent
@@ -425,13 +425,13 @@ impl PciIo {
     }
 
     /// PMCSR read (PM capability + 4). Bits 1:0 = PowerState.
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn pmcsr(&self, cap: u8) -> u16 {
         self.config_read_u16(cap as u32 + 4)
     }
 
     /// PMCSR write, caller supplies the exact value.
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn pmcsr_write(&self, cap: u8, v: u16) {
         self.cfg_write_u16(cap as u32 + 4, v);
     }
@@ -439,7 +439,7 @@ impl PciIo {
     /// Request D0 by clearing PMCSR.PowerState (all other bits preserved)
     /// and verify by readback. True only when the state field reads back 0.
     /// A D3hot -> D0 transition may take up to 10 ms (PCI PM spec).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn pmcsr_force_d0(&self, cap: u8) -> bool {
         let cur = self.pmcsr(cap);
         if cur & 0x3 == 0 {
@@ -462,7 +462,7 @@ impl PciIo {
     /// The bookkeeping lives host-side (built at POST enumeration), so this
     /// works even when the DEVICE's config space has since gone dead - the
     /// only BAR-assignment source for a slot that reads 0xffff.
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn get_bar_attributes(&self, bar_index: u8) -> Option<(u8, u64, u64, u64)> {
         type Fn = unsafe extern "efiapi" fn(
             *mut PciIoRaw,
@@ -504,7 +504,7 @@ impl PciIo {
     /// TOTORONG craft uses EfiReservedMemoryType, but consumer firmware
     /// (observed on AD107M) rejects it with INVALID_PARAMETER — fall back
     /// through legal coherent memory types before giving up.
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     pub fn dma_alloc(&self, len: usize) -> Result<DmaBuffer, Status> {
         capture_memmap_once();
         // Above-4GB staging first, gated per family (see set_high_staging):
@@ -589,7 +589,7 @@ impl PciIo {
     /// IOMMU driver (issue #1 arbitration), so there is no Map bookkeeping
     /// on this path - `release` frees via boot::free_pages. Turing GSP/SEC2
     /// are 64-bit DMA masters (the driver itself stages at 0x110BB0000).
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     fn dma_alloc_high(&self, len: usize) -> Result<DmaBuffer, Status> {
         const FOUR_GB: u64 = 0x1_0000_0000;
         let pages = len.div_ceil(4096);
@@ -678,7 +678,7 @@ impl PciIo {
 
 /// Coherent DMA buffer. Release is EXPLICIT (`release`) so the transaction's
 /// unwind can verify nobody freed twice or leaked — no silent Drop.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 #[allow(dead_code)] // consumed by the fwsec/booter wiring tranche
 pub struct DmaBuffer {
     pub host: *mut u8,
@@ -693,7 +693,7 @@ pub struct DmaBuffer {
     high: bool,
 }
 
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 impl DmaBuffer {
     /// Unmap + free. Idempotent (second call is a no-op returning true).
     /// Returns false if the firmware rejected the unmap — caller must log
@@ -731,7 +731,7 @@ impl DmaBuffer {
 /// Link Disable, Link Active, and the CURRENT secondary bus number vs. the
 /// one the dead function's handle was created under) all live on the PORT,
 /// not on the dead function.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub struct PortDiagRaw {
     /// 0x18: primary/secondary/subordinate bus numbers, as programmed NOW.
     pub buses: u32,
@@ -744,7 +744,7 @@ pub struct PortDiagRaw {
 
 /// Read-only snapshot off a bridge/root-port's own PciIo handle. Every
 /// lookup walks the capability list instead of assuming standard offsets.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn read_port_diag(pci: &PciIo) -> PortDiagRaw {
     let buses = pci.config_read_u32(0x18);
     let pmcsr = pci.pm_cap().map(|c| pci.pmcsr(c));
@@ -764,7 +764,7 @@ pub fn read_port_diag(pci: &PciIo) -> PortDiagRaw {
 /// 0xffff. Pure function: sim/src/port_diag.rs mirrors this body verbatim
 /// and unit-tests the ordering (the loader is UEFI-target-only and cannot
 /// run host tests).
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReviveLever {
     /// Link up, D0, and the dead fn's recorded bus matches the port's current
@@ -794,7 +794,7 @@ pub enum ReviveLever {
 }
 
 /// Raw capture plus the decoded fields and the chosen lever.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PortState {
     pub d_state: u8,
@@ -816,7 +816,7 @@ pub struct PortState {
 /// read never triggers a lever on its own.
 ///
 /// sim/src/port_diag.rs mirrors this body verbatim - keep them identical.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn decode_port_state(
     pmcsr: Option<u16>,
     lnkctl: Option<u16>,
@@ -860,7 +860,7 @@ pub fn decode_port_state(
 /// length). Returns (res_type, base, len, granularity).
 ///
 /// sim/src/port_diag.rs mirrors this body verbatim - keep them identical.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn parse_bar_descriptor(buf: &[u8]) -> Option<(u8, u64, u64, u64)> {
     if buf.len() < 46 {
         return None;
@@ -953,7 +953,7 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
             // 04:00.0 vanished from one boot's enumeration with no trace in
             // the log. One unconditional line per dead function, so even an
             // ultrafast round leaves the intermittent shape on the stick.
-            #[cfg(feature = "tx")]
+            #[cfg(feature = "diag")]
             info!(
                 "PORT-DIAG: {seg:04x}:{bus:02x}:{dev:02x}.{fun} DEAD (vendor {vendor:#06x}) - judged by SLOT-REVIVE only when \\tx-revive-dead-slot.txt is armed"
             );
@@ -976,7 +976,7 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
         // bus renumbering) and costs one config pass per bridge. The dead
         // function itself has nothing to read (its config space is what
         // returns 0xffff); the state that explains it lives up here.
-        #[cfg(feature = "tx")]
+        #[cfg(feature = "diag")]
         if class >> 8 == 0x06 && class & 0xff == 0x04 {
             let d = read_port_diag(&pci);
             let st = decode_port_state(
@@ -1029,7 +1029,7 @@ pub fn enumerate() -> alloc::vec::Vec<FoundGpu> {
 /// BDF that matches nothing (or an unparsable marker) refuses to guess and
 /// returns an empty set - the stick owner asked for a specific card and no
 /// other one may run.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
     // read_asset, NOT read_boot_file: the three states matter (issue #106
     // zero-byte lesson). Absent = no pin, default order. Ok(Some) = parse.
@@ -1134,7 +1134,7 @@ pub fn select_sample_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
 /// authoritative; the historical 0x78 is only a fallback for a firmware/card
 /// combination where the capability list itself is unreadable, and it is
 /// logged so the evidence record shows which branch ran.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn pcie_cap_or_measured(gpu: &PciIo) -> u8 {
     match gpu.pcie_cap() {
         Some(c) => {
@@ -1152,7 +1152,7 @@ pub fn pcie_cap_or_measured(gpu: &PciIo) -> u8 {
 
 /// Logs the GPU's command, status and device control, then the IDs, command,
 /// status, bus numbers and bridge control of every PCI bridge. Read-only.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn log_dma_path(tag: &str, gpu: &PciIo) {
     // PCIe cap from the capability walk: Device Control lives at +0x08.
     let pcie = pcie_cap_or_measured(gpu);
@@ -1204,7 +1204,7 @@ pub fn log_dma_path(tag: &str, gpu: &PciIo) {
 /// boot: a resource-class delta between the two pinpoints which side
 /// changed what. The bridge half is snapshotted again after the restore
 /// (`HANDOFF-VGA-FINAL`), because this point still precedes it.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn diag_handoff_pci(gpu: &PciIo) {
     info!(
         "HANDOFF-PCI gpu cfg00-1f: {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x}",
@@ -1431,7 +1431,7 @@ pub fn diag_boot_volume_controller() {
 /// routing (the claim's Set(0x0007) drops the VGA bits) - the FINAL
 /// snapshot after the handoff restore records the bits Windows actually
 /// inherits.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn diag_bridge_routing(tag: &str) {
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciIo::GUID)) else {
         info!("{tag} bridge scan: locate_handle_buffer failed");
@@ -1482,13 +1482,13 @@ pub fn diag_bridge_routing(tag: &str) {
 /// flight, and clearing is exactly as safe as on the success tail. The one
 /// path that never releases is the opt-in `\tx-stop-on-failure.txt` STOP:
 /// the machine halts for a full power cycle with the bridges untouched.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub struct BridgeMaster {
     /// (bridge handle, location for logs) of every bridge this guard enabled.
     enabled: alloc::vec::Vec<(uefi::Handle, Option<(usize, usize, usize, usize)>)>,
 }
 
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 impl BridgeMaster {
     pub fn enable(gpu: &PciIo) -> BridgeMaster {
         let mut enabled = alloc::vec::Vec::new();

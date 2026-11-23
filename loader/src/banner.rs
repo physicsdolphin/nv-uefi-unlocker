@@ -43,7 +43,13 @@ pub fn print(version: &str) {
             info!("            \\tx-stop-on-failure.txt = halt instead: no FLR, no handoff, no chain-load");
         }
     }
-    #[cfg(not(feature = "tx"))]
+    #[cfg(all(feature = "diag", not(feature = "tx")))]
+    {
+        info!(" ** DIAG BUILD: SURGERY ONLY - NO GPU-WRITE PATHS COMPILED **");
+        info!(" \\tx-agitate-only.txt = full-surgery zero-GPU-write control;");
+        info!(" \\tx-ebs-watch.txt = ExitBootServices observer; transaction code is not compiled in");
+    }
+    #[cfg(not(any(feature = "tx", feature = "diag")))]
     {
         info!(" read-only build: enumerate + sample + chain-load");
         info!(" console output only; no GPU writes by design");

@@ -19,32 +19,32 @@ mod gop;
 mod keywait;
 mod logging;
 mod pci;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod revive;
 mod sample;
 mod identity;
 mod identity_core;
 mod timing;
 mod usbreset;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod tx;
 #[cfg(feature = "tx")]
 mod tx_policy;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod gop_native;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod gop_order;
 #[cfg(feature = "tx")]
 mod claim_plm;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod tx_fwsec;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod tx_booter;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod tx_detach;
 #[cfg(feature = "tx")]
 mod tx_portal;
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 mod tx_prep;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -213,11 +213,11 @@ fn main() -> Status {
         info!(
             "CONFIRM: \\i_know_what_i_am_doing.txt present - ARMED: {secs}s countdown auto-runs, ANY key aborts"
         );
-        #[cfg(feature = "tx")]
+        #[cfg(feature = "diag")]
         {
             tx_prep::armed_confirm_with_prep(secs)
         }
-        #[cfg(not(feature = "tx"))]
+        #[cfg(not(feature = "diag"))]
         {
             keywait::wait_confirm_armed(secs)
         }
@@ -229,7 +229,7 @@ fn main() -> Status {
     // Phase: ENUMERATE (read-only). ALL NVIDIA display adapters, in
     // firmware enumeration order. The armed prep (TX builds) already ran
     // this, the GOP probe and the sample inside the countdown window.
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     let (gpus, prep_ran) = if let keywait::Confirm::Proceed = confirmed {
         match tx_prep::take_gpus() {
             Some(g) => (g, true),
@@ -238,9 +238,9 @@ fn main() -> Status {
     } else {
         (pci::enumerate(), false)
     };
-    #[cfg(not(feature = "tx"))]
+    #[cfg(not(feature = "diag"))]
     let gpus = pci::enumerate();
-    #[cfg(not(feature = "tx"))]
+    #[cfg(not(feature = "diag"))]
     let prep_ran = false;
 
     // Phase: GOP-PROBE (read-only; which console driver owns which GPU).
@@ -308,7 +308,7 @@ fn main() -> Status {
         None
     };
 
-    #[cfg(feature = "tx")]
+    #[cfg(feature = "diag")]
     let hard_stop = if let keywait::Confirm::Proceed = confirmed {
         // \tx-dry-run.txt (issue #146): skip the transaction entirely. Since
         // preload went opt-in (#198) the residency control is the PAIR
@@ -325,11 +325,11 @@ fn main() -> Status {
     } else {
         false
     };
-    #[cfg(not(feature = "tx"))]
+    #[cfg(not(feature = "diag"))]
     {
         drop(confirmed);
     }
-    #[cfg(not(feature = "tx"))]
+    #[cfg(not(feature = "diag"))]
     let hard_stop = false;
 
     // Opt-in STOP-on-hard-failure (see tx_one_card / \tx-stop-on-failure.txt):
@@ -431,7 +431,7 @@ fn main() -> Status {
 /// tiers live in the README matrix, and a first-silicon report
 /// upgrades the row (issue #8 process). Shared by tx_one_card and the
 /// armed-prep asset step.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 fn asset_family(dev: u16) -> Option<&'static str> {
     match dev {
         0x2600..=0x28ff => Some("ad102"),
@@ -447,7 +447,7 @@ fn asset_family(dev: u16) -> Option<&'static str> {
 }
 
 /// Outcome of one card's transaction attempt (see `tx_one_card`).
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 enum CardOutcome {
     /// Gated out before any GPU touch - no assets, no family mapping, PciIo
     /// open failure, or the (opt-in) identity gate refused it.
@@ -463,7 +463,7 @@ enum CardOutcome {
 
 /// Returns `true` iff a `CardOutcome::HardStop` occurred, in which case the
 /// caller (`main`) must not chain-load Windows.
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
     // SLOT-REVIVE pre-pass (marker-gated, see revive.rs): revive dead
     // downstream slots through their root ports before target selection.
@@ -539,7 +539,7 @@ nothing was written, nothing was detached"
 /// failure / identity gate refusal), and `CardOutcome::HardStop` as above.
 /// `tx_phase` turns `Attempted`/`NotAttempted` into the summary and the
 /// `FINAL: 0 card(s) unlocked` verdict (issue #139).
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams};
     let proto = unsafe {
@@ -707,6 +707,18 @@ so no transaction was attempted and nothing was written"
         return CardOutcome::Attempted;
     }
 
+    #[cfg(not(feature = "tx"))]
+    {
+        // DIAG build: the payload/transaction machinery is not compiled in.
+        // The agitate control above was the only GPU-touching branch this
+        // binary carries, and it writes nothing to BAR0 by contract.
+        info!("DIAG BUILD: transaction code is not compiled in - no unlock, no replay; the agitate control above was the only action this binary can take");
+        tx::handoff_out(&pci);
+        return CardOutcome::Attempted;
+    }
+
+    #[cfg(feature = "tx")]
+    {
     // BridgeMaster guard slot: run_transaction fills it mid-transaction (after
     // WprMeta publication) and releases it on the clean success tail. On a
     // failure return the guard comes back still armed and THIS caller releases
@@ -822,5 +834,6 @@ so no transaction was attempted and nothing was written"
                 }
             }
         }
+    }
     }
 }

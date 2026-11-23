@@ -15,11 +15,18 @@ uefi-raw = "0.17"
 
 [features]
 default = []
+# Diagnostic profile (soft-lock family, #279 request): the FULL surgery
+# (detach/claim/COMMAND/DMA/bridge-BME/native-GOP rebuild/reconnect) plus
+# the observers (ebs-watch, agitate-only) with the payload paths (FWSEC
+# ignition, booter fire, selectors, transaction replay) EXCLUDED from the
+# binary - \tx-agitate-only.txt is the only GPU-touching branch and it
+# writes nothing to BAR0 by contract. tx implies diag.
+diag = []
 # M3-class transaction machinery (BAR0 writes, engine reset/DMA/ignition).
 # OFF by default: the shipped binary contains zero GPU-write paths; a "tx"
 # build is the gated artifact (constitution 1.7 - never flash one without
 # the explicit user go).
-tx = []
+tx = ["diag"]
 
 [build-dependencies]
 # none: build.rs uses std only

@@ -107,6 +107,7 @@ pub fn canary_verdict(a: u32, b: u32) -> &'static str {
 /// Call direction: AON (FEAT) dying says "rail-off / full-chip reset",
 /// scratch dying while the AON values are intact says "FLR/SBR-class reset",
 /// both intact says "no reset - the writer was a plain register write".
+#[cfg(feature = "tx")]
 pub fn canary_arm(gpu: &TxGpu) {
     let (pre_a, pre_b) = (gpu.read32_raw(regs::CANARY_A), gpu.read32_raw(regs::CANARY_B));
     let ctrl = gpu.read32_raw(regs::PMC_BOOT_0);
@@ -193,6 +194,7 @@ impl TxGpu<'_> {
 /// pre-reset HWCFG2 wait (timeout tolerated, HW bug 3419321) -> reset
 /// pulse with 10 propagation reads each way -> scrub wait -> optional
 /// RISC-V<->Falcon BCR switch -> chip id into the boot vector (+0x84).
+#[cfg(feature = "tx")]
 pub fn falcon_reset(gpu: &TxGpu, base: u32, _fbif: u32, falcon2: u32, switch_to_falcon: bool) -> Result<(), TxError> {    info!("Falcon reset begin: base={base:#x} switch_to_falcon={switch_to_falcon}");
     // Pre-reset wait; ETIMEDOUT tolerated.
     if let Err(e) = gpu.poll_us(base + 0xf4, 1 << 31, 1 << 31, 1000, false) {
@@ -264,6 +266,7 @@ pub fn falcon_reset(gpu: &TxGpu, base: u32, _fbif: u32, falcon2: u32, switch_to_
 /// behind REQUIRE_CTX=1 (requests queue but are never serviced - the
 /// "2x32-slot stall" signature). Every portaled image still needs this
 /// because the ucode itself DMA-translates through the same FBIF.
+#[cfg(feature = "tx")]
 pub fn falcon_dma_unblock(gpu: &TxGpu, base: u32, fbif: u32) -> Result<(), TxError> {
     let mut ctl = gpu.read32(fbif + 0x24)?;
     ctl |= 1 << 7;
@@ -292,6 +295,7 @@ pub fn falcon_dma_unblock(gpu: &TxGpu, base: u32, fbif: u32) -> Result<(), TxErr
 /// badf5620 while GSP reads 0x10 - mapping the read-gate pattern across the
 /// block localizes the authority gate. +0x3c4 is TOTORONG's reset-PLM
 /// candidate. Data ports (IMEMD/DMEMD) are skipped to avoid side effects.
+#[cfg(feature = "tx")]
 pub fn authority_scan(gpu: &TxGpu) {
     if crate::ultrafast() {
         info!("AUTH-SCAN: ultrafast - skipped (pre-ignition differential probe is diagnostic-only)");
@@ -362,6 +366,7 @@ pub fn authority_scan(gpu: &TxGpu) {
 /// CPUCTL writes work and the START bit itself is gated/broken (retry via
 /// alias); if it does not stick, the register is write-protected entirely.
 /// Returns the post-probe CPUCTL value.
+#[cfg(feature = "tx")]
 pub fn falcon_authority_probe(gpu: &TxGpu, base: u32, name: &str) -> u32 {
     const OFFS: &[(&str, u32)] = &[
         ("CPUCTL", 0x100),
@@ -423,6 +428,7 @@ pub(crate) fn family_is_turing(family: &str) -> bool {
     family == "tu10x" || family == "tu11x"
 }
 
+#[cfg(feature = "tx")]
 pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxError> {
     // Preflight: is BAR0 decoding at all? Right after the MEM enable a powered
     // dGPU answers; one parked by the EC in D3cold (iGPU-only boot: no GOP on
@@ -518,6 +524,7 @@ pub fn claim_guards(gpu: &TxGpu, family: &str, post_flr: bool) -> Result<(), TxE
 /// side effects are the experiment. PLM ends at 0xfffffffe (not
 /// 0xffffffff), so the upstream Turing EALREADY guard cannot false-trigger
 /// on a later run; SS0 ends at the probe pattern, not the unlock value.
+#[cfg(feature = "tx")]
 fn host_probe_reference(gpu: &TxGpu) {
     const PLM: u32 = 0x0040_9650;
     const SS0: u32 = 0x0040_9664;
@@ -549,6 +556,7 @@ fn host_probe_reference(gpu: &TxGpu) {
 /// RTC but OMITS the day-of-month field ("month start + h:m:s"). The quirk
 /// is preserved verbatim to reproduce the proven run - this is a reference
 /// replay, not a precise wall clock.
+#[cfg(feature = "tx")]
 fn ptimer_seed_reference(gpu: &TxGpu) {
     let Some(t) = uefi::runtime::get_time().ok() else {
         info!("PTIMER-SEED: RTC unavailable - skipped");
@@ -646,6 +654,7 @@ pub fn list_root_entries() {
 /// Shared PciIo access helper for the pre-transaction FLR experiment.
 /// Returns whether an FLR was actually performed (drives the WPR2
 /// cold-state guard in claim_guards - issue #4.2).
+#[cfg(feature = "tx")]
 fn pre_flr_experiment(handle: uefi::Handle) -> bool {
     // Opt-in via a flag file on the boot volume. The kernel reference flow
     // (and unlock_610.c) run the scrubber/FWSEC chain WITHOUT any pre-FLR -
@@ -1022,6 +1031,7 @@ pub fn validate_asset_sizes(assets: &TxAssets) -> Result<(), TxError> {
 /// BME shape, known-pit #3/#9). Skip-class errors (EALREADY/EWarm/EBusy/
 /// EClaimUnreadable) all return before the arm point, so their slot stays
 /// None.
+#[cfg(feature = "tx")]
 pub fn run_transaction(
     gpu: &TxGpu,
     assets: &TxAssets,
@@ -2088,6 +2098,7 @@ fn agitate_stages(
 
 /// Save PMCSR and pin the function to D0 before an FLR (PCIe: FLR is only
 /// defined in D0; Linux's pci_reset_function also forces D0 first).
+#[cfg(feature = "tx")]
 pub fn pm_flr_pre(pci: &crate::pci::PciIo) -> Option<(u8, u16)> {
     let cap = pci.pm_cap()?;
     let saved = pci.pmcsr(cap);
@@ -2099,6 +2110,7 @@ pub fn pm_flr_pre(pci: &crate::pci::PciIo) -> Option<(u8, u16)> {
 }
 
 /// Restore the pre-FLR PMCSR with the state field pinned to D0 and verify.
+#[cfg(feature = "tx")]
 pub fn pm_flr_post(pci: &crate::pci::PciIo, saved: Option<(u8, u16)>) {
     let Some((cap, pmcsr)) = saved else { return };
     pci.pmcsr_write(cap, pmcsr & !0x3);
@@ -2110,6 +2122,7 @@ pub fn pm_flr_post(pci: &crate::pci::PciIo, saved: Option<(u8, u16)>) {
 /// One Function-Level Reset with spec timing and command restore.
 /// Per reference post-FLR expectations: PCI identity intact, GFW completion
 /// persists, WPR2 cleared, engines halted - the "cold-boot-equivalent" state.
+#[cfg(feature = "tx")]
 pub fn flr_once(pci: &crate::pci::PciIo) {
     let pm = pm_flr_pre(pci);
     // pci_save_state analog: command + BAR0-5 config dwords (0x04..0x28).
@@ -2245,6 +2258,7 @@ pub fn handoff_out(pci: &crate::pci::PciIo) {
 /// have left (engine resets, BCR switches, full DMA queues, SEC bit state)
 /// so the Windows driver receives a cold-boot-equivalent card. TOTORONG's
 /// unconditional end-of-transaction FLR serves the same purpose.
+#[cfg(feature = "tx")]
 pub fn emergency_flr(pci_handle: uefi::Handle) {
     use uefi::boot::{OpenProtocolAttributes, OpenProtocolParams};
     // Safety: GetProtocol; the exclusive claim has been dropped by now.

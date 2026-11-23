@@ -56,12 +56,12 @@ pub fn measure_if_enrolled(pci: &PciIo) -> bool {
     measure(pci).is_some()
 }
 
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub struct VerifiedIdentity<'a> {
     _pci: &'a PciIo,
 }
 
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub enum IdentityOutcome<'a> {
     /// `\tx-prom-sha256.txt` is absent: the gate is not configured for this
     /// run, so the transaction proceeds exactly as it always has (the
@@ -76,7 +76,7 @@ pub enum IdentityOutcome<'a> {
     Refused,
 }
 
-#[cfg(feature = "tx")]
+#[cfg(feature = "diag")]
 pub fn authorize(pci: &PciIo) -> IdentityOutcome<'_> {
     let Some(raw) = crate::chainload::boot_volume_read(uefi::cstr16!(r"\tx-prom-sha256.txt"))
     else {
