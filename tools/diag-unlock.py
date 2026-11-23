@@ -41,6 +41,8 @@ Usage:
   sudo python3 diag-unlock.py                 # read all NVIDIA dGPUs
   sudo python3 diag-unlock.py --bdf 0000:01:00.0
   sudo python3 diag-unlock.py --reapply       # SS0=0x88888888 SS1=0x8 when open
+  sudo python3 diag-unlock.py --bdf 0000:01:00.0 \
+       --target-offset 0x409664 --value 0x88888888 --target-offset 0x40966c --value 0x8
   python3 diag-unlock.py --inventory          # unelevated hardware snapshot
 """
 
@@ -1828,15 +1830,50 @@ def main():
                          " protocol: FUSEADDR row select + FUSECTRL CMD_READ only, guarded,"
                          " two passes, address restored). Range A-B hex/decimal;"
                          " default = whole IFF domain")
+    ap.add_argument("--target-offset", dest="target_offsets", action="append", default=None,
+                    metavar="HEX",
+                    help="ARBITRARY WRITE MODE, repeatable ordered pairs with --value: "
+                         "write a hex 32-bit value to a BAR0 hex offset and read back. "
+                         "Lands regardless of the NVIDIA driver's state; a wrong offset "
+                         "can hang the box (recovery = power cycle; the unlock state "
+                         "survives reboots, rail-off clears it)")
+    ap.add_argument("--value", dest="poke_values", action="append", default=None,
+                    metavar="HEX",
+                    help="hex 32-bit value for the preceding --target-offset")
     ap.add_argument("--inventory", action="store_true",
                     help="print the unelevated read-only hardware inventory "
                          "block (OS/CPU/board/BIOS/chassis/per-GPU family "
                          "verdict + advisories) and exit - no root needed")
     args = ap.parse_args()
 
-    if args.prom_bit and (args.reapply or args.fuserows is not None):
+    pokes = []
+    if args.target_offsets or args.poke_values:
+        offs = args.target_offsets or []
+        vals = args.poke_values or []
+        if len(offs) != len(vals):
+            print(
+                "--target-offset/--value count mismatch (each offset needs exactly one value)",
+                file=sys.stderr,
+            )
+            return 2
+        for o, v in zip(offs, vals):
+            try:
+                off = int(o, 16)
+                val = int(v, 16)
+            except ValueError:
+                print(f"bad poke pair {o!r}={v!r}: hex only", file=sys.stderr)
+                return 2
+            if off >= 0x0100_0000:
+                print(
+                    f"bad --target-offset {o}: BAR0-relative offsets live inside the 16 MiB aperture",
+                    file=sys.stderr,
+                )
+                return 2
+            pokes.append((off, val))
+
+    if args.prom_bit and (args.reapply or args.fuserows is not None or pokes):
         print(
-            "--prom-bit is strictly read-only and cannot be combined with --reapply or --fuserows",
+            "--prom-bit is strictly read-only and cannot be combined with --reapply, --fuserows or --target-offset/--value",
             file=sys.stderr,
         )
         return 2
@@ -1869,6 +1906,13 @@ def main():
     if not devs:
         print("no NVIDIA display controller found", file=sys.stderr)
         return 1
+    if pokes and len(devs) > 1 and not args.bdf:
+        print(
+            f"poke REFUSED: {len(devs)} NVIDIA GPUs discovered and no --bdf given - "
+            "arbitrary writes would hit every card; pass --bdf",
+            file=sys.stderr,
+        )
+        return 2
 
     # ssdiag 0.7.0 parity: a full dump opens with its own platform block
     inventory_block()
@@ -1906,6 +1950,22 @@ def main():
                 print(f"  reapply: SS0={rb0:#010x} SS1={rb1:#010x} -> {'OK' if ok else 'READBACK MISMATCH'}"
                       " (read-back is the only success criterion)")
                 rc = 0 if ok else 1
+        if pokes:
+            # 0.8.9-twin: arbitrary in-vivo writes through the same sysfs
+            # BAR0 mmap the diagnostics use - lands regardless of the
+            # NVIDIA driver's state (the #246 bench: RmInitAdapter failed,
+            # gate open). Read-back is the only success criterion.
+            print(f"  poke: ARBITRARY WRITE MODE, {len(pokes)} write(s) in order - a wrong offset"
+                  " can hang the box (recovery = power cycle; unlock state survives reboots,"
+                  " rail-off clears it)")
+            for off, val in pokes:
+                bar.wr(off, val)
+                rb = bar.rd(off)
+                ok = rb == val
+                print(f"  poke {off:#x} <- {val:#x} -> readback {rb:#010x}"
+                      f" {'OK' if ok else 'MISMATCH (dropped or masked - PLM filter?)'}")
+                if not ok:
+                    rc = 1
         if fuserows is not None:
             base = None
             if args.fusebase:
