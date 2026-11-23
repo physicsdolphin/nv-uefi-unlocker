@@ -29,6 +29,14 @@ pub struct Variant {
 
 pub const FUC5: Variant = Variant { fmask: F_FUC3P | F_FUC4P | F_FUC5P, crypt: false };
 pub const FUC5_CRYPT: Variant = Variant { fmask: F_FUC3P | F_FUC4P | F_FUC5P, crypt: true };
+/// Falcon v4 (GK104..GK208-era falcons; the Pascal-generation SEC2/PMU
+/// ucode). Per envydis falcon.c: fuc4 carries fuc3op+fuc4op+fucold and NOT
+/// fuc5op — the biggest visible deltas vs fuc5 are the old 3-byte
+/// st/add/adc/sub/sbb/cmp encodings (F_FUCOLD) in place of the fuc5 short
+/// forms, lbra/lcall (4-byte long branches, F_FUC4P) present, and no `ld`
+/// (fuc5-exclusive). No CRYPT — fuc4 has no fetch-decrypt (OQ#20; the
+/// gp102 sec2 image is plaintext fuc4, entropy-verified 2026-11-24).
+pub const FUC4: Variant = Variant { fmask: F_FUC3P | F_FUC4P | F_FUCOLD, crypt: false };
 
 pub fn var_ok(fmask: u8, v: Variant) -> bool {
     fmask == 0 || (v.fmask & fmask) == fmask || (fmask == F_CRYPT && v.crypt)

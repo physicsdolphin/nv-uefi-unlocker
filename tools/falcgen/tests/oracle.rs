@@ -151,3 +151,39 @@ fn variant_gating() {
     let i = decode_one(&[0x3d, 0x02, 0x40, 0x00], 0, 0, FUC5);
     assert_eq!(i.name, "mov");
 }
+
+#[test]
+fn fuc4_variant_gating() {
+    use falcgen::isa::FUC4;
+    // fuc5-exclusive `ld` (tabsi 0x3f, F_FUC5P): decodes as ld under fuc5,
+    // unknown under fuc4 (the row is absent there).
+    let i = decode_one(&[0x3f, 0x00, 0x00], 0, 0, FUC5);
+    assert_eq!(i.name, "ld");
+    let i = decode_one(&[0x3f, 0x00, 0x00], 0, 0, FUC4);
+    assert!(i.is_unknown(), "fuc4 has no tabsi 0x3f ld row: {i:?}");
+    // fucold `st` (tabsi low-6 zero, F_FUCOLD, 3-byte with the size token
+    // from the next byte): decodes as a 3-byte st under fuc4; under fuc5
+    // the same bytes carry the mov-FIMM8S row instead — same stream, two
+    // different instructions per ISA version.
+    let i = decode_one(&[0x00, 0x00, 0xfe], 0, 0, FUC4);
+    assert_eq!(i.name, "st");
+    let i = decode_one(&[0x00, 0x00, 0xfe], 0, 0, FUC5);
+    assert_eq!(i.name, "mov", "fuc5 reads the mov-FIMM8S row here: {i:?}");
+    assert_eq!(i.oplen, 2, "the fuc5 mov is 2 bytes vs the fuc4 st 3 bytes: {i:?}");
+    // lbra (low-8 0x3e, F_FUC4P) is v4-INTRODUCED and KEPT in v5+ (fuc5's
+    // feature set includes fuc4op) — both decode it; the version
+    // discriminators are the F_FUCOLD rows (old encodings dropped in v5).
+    let i = decode_one(&[0x3e, 0x00, 0x00, 0x00], 0, 0, FUC4);
+    assert_eq!(i.name, "lbra");
+    let i = decode_one(&[0x3e, 0x00, 0x00, 0x00], 0, 0, FUC5);
+    assert_eq!(i.name, "lbra");
+    // F_FUCOLD discriminator: byte 0x20 + IMM16 = 4-byte `add` under fuc4
+    // (old encoding, dropped in v5); under fuc5 the same first byte hits
+    // the 2-byte `st` short row instead.
+    let i = decode_one(&[0x20, 0x00, 0x34, 0x12], 0, 0, FUC4);
+    assert_eq!(i.name, "add");
+    assert_eq!(i.oplen, 4);
+    let i = decode_one(&[0x20, 0x00, 0x34, 0x12], 0, 0, FUC5);
+    assert_eq!(i.name, "st");
+    assert_eq!(i.oplen, 2);
+}
