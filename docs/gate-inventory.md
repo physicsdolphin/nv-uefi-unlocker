@@ -149,10 +149,15 @@ booter 自己的指令（ROP 只是重排调用序）。
   **Phase 0 同轮收口**：本 boot payload 只写 FEAT——XP3G PLM0 与 FUSECTRL/FUSEOPT
   PLM 在 rail-off 后仍 0xffffffff = **TU106 consumer 原生开**（scan 副作用假设
   作废）。TU11x 对照待社区探针（ssdiag gen2 face 已印 XP3G_PLM0，一行读数即可
-  扩格）。**轮五b 负控**：纯净态单跑 slot3 三连打**不钳**——有效配方=轮一策略组
-  + slot3/VAL3 **合取**（轮三成功时轮一九写同会话在场），单独都无效；与 #914
-  "override 孤立写不动链路"精确同形，最小成分二分留待需要时（成本=rail-off 洗净
-  + 单变量，机制主线已闭合优先级低）。
+  扩格）。**轮五b 负控→轮六/七二分到底**：slot3 单打不钳，但经逐级消减，**终极
+  配方 = 3 态写 + 驱动重初始化**：`0x88610←0x1（VSEC_HIERARCHY 清 bit12=武装位）+
+  0x8e12c←0x16480000（VAL3=本卡 PCIE_MAGIC_D 值，逐 die 映射）+ 0x8e11c←4
+  （slot3 使能）`，然后 `nvoc-cli restart-display-driver`（驱动重 init 重读能力
+  向量；设备管理器禁用-启用同效；硬件层 idle 重协商与带内 kick 不算触发）；回
+  3.0 = 三项回原值（0x88610←0x1001 等）+ 同触发。原 50HX 十二写链 consumer 化
+  压缩到 3 写。九写中的 TLS/PRIV_MISC_1/MAX_RATE/PL_LINK_RATE/OVR0/VAL0/CYA_0
+  与 kick 全部退役；power-cycle-volatile。evidence：docs/evidence/tu106-gen2-
+  policy-probe/（七轮全录）。
 
 ### 2.4 Turing BAR1 ReBAR（strap 层，不需要载荷）
 

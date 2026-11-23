@@ -190,6 +190,37 @@ HWiNFO/GPU-Z 读根口 00:01.0 的链路状态，应见 Gen2）。实用配方�
   VSEC 必要性（R1 PnP 缺证）、MAX_RATE vs PL_LINK_RATE 单项、OVR0 必要性、纯
   slot 对（5b 当时无触发器配合，需用 restart-display-driver 复测）。
 
+## 轮七（同日）：二分到底——**3 态写 + 驱动重启 = 终极配方**
+
+- T-A（去 VSEC）不钳 → VSEC 必要；T-E（纯 slot 对）不钳（复测确认 5b）；
+  **T-D 钳**（{VSEC, MAX_RATE, VAL3, OVR3}，OVR0/PL_LINK_RATE 双出列）；
+  **T-F 钳**（{VSEC, VAL3, OVR3}）→ MAX_RATE 出列。
+- 逻辑闭合：T-E ⊂ T-F 且 T-E 败 = VSEC 必要；T-F 仅 3 项且充分 = **极小集**。
+
+### 终版配方（12 写 → 3 写 + 1 条触发命令）
+
+```
+# 进 2.0（3 态写 + 驱动重初始化）
+ssdiag.exe --target-offset 0x88610 --value 0x1 --target-offset 0x8e12c --value 0x16480000 --target-offset 0x8e11c --value 0x4
+nvoc-cli restart-display-driver
+
+# 回 3.0（对称还原 + 驱动重初始化）
+ssdiag.exe --target-offset 0x88610 --value 0x1001 --target-offset 0x8c040 --value 0x80045800 --target-offset 0x8e12c --value 0x0 --target-offset 0x8e11c --value 0x0
+nvoc-cli restart-display-driver
+```
+
+（回程含 0x8c040 回厂值属保险项——T-F 已证非必要，不写它就不会脏；保留只为
+兼容任何用过旧配方的会话。）
+
+### 语义压缩
+
+- `0x88610` VSEC_HIERARCHY 清 bit12 = **武装位**（bit0 保留；bit12 语义未解码，
+  但它是必要先导）；
+- `0x8e12c` VAL3 ← **本卡 PCIE_MAGIC_D 值**（0x16480000，逐 die 映射）；
+- `0x8e11c` OVR3 ← 4 = slot3 使能；
+- `nvoc-cli restart-display-driver` = 触发（驱动重 init 重读能力向量）；
+- 全部 power-cycle-volatile； LnkSta 升方向需驱动事件、降方向可带内即时。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
