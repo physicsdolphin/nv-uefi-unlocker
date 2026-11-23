@@ -53,3 +53,10 @@ romcore/testdata/
 # README examples and the harness default land)
 /usbroot/
 /.relcheck/
+
+# working scratch: issue drafts/replies, patch scripts, upstream PR staging,
+# IDE files - conversation-local, never project artifacts
+/.issue*
+/.patches/
+/.upstream-pr/
+/.idea/
