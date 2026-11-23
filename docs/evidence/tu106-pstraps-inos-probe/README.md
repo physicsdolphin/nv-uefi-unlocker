@@ -104,3 +104,20 @@ config 头行确认: BAR1 supported [32G/16G/8G/4G/2G/1G/512M/256M/128M/64M]
   能触发重分派则 in-OS 全程可解；否则 loader 加"0x88610|=0xC80 + 0x88bc0←idx"
   两写 = NvStrapsReBar 的 DXE 功能装进现成载具，零 BIOS 改动（#211 侧证：窗口
   一旦按 override 分配，FLR 洗不掉）。
+
+## 轮六（同日）：control 写实测——尺寸阈值钉死（1G 活 / 2G 立死 / UAC 必死）
+
+owner 实测（勘误我方"live resize 协议违规"初判——机制是**尺寸阈值**而非规程）：
+
+- `0x88bc0 <- 0xd01`（8GiB）→ 内核级卡死，重启后重写可复现，偶尔 reset 键失效；
+- **1G（idx 10）不死、512M 活**——阈值在两者之上；2G 起立死。**板阈值有谱系
+  记载**（NvStrapsReBar README:92："for some boards you may need to use lower
+  values, to limit BAR size to 4 GB or 2GB"）——Z170-A/BIOS 3802 实测上限 1G；
+- **512M/1G 状态下弹 UAC prompt 必死**（安全桌面切换触发驱动路径踩进超出
+  其预期的 BAR 窗）——运行时 resize 后的态是**易碎态**，不是可用态。
+- 机制整合：control 写入**立即重锁** BAR 尺寸（无 MSE 拆除环节），新窗 ≤ 某阈值
+  时覆盖面尚可存活、超阈值立死——in-OS 运行时 resize = **诊断工具**，非交付态。
+- **载具结论不变且更硬**：loader 引导窗写入（Windows 枚举时按 cap 分配，驱动
+  从第一天就以大窗初始化，无运行时改锁、无 UAC 脆弱性）= 唯一交付形态；
+  尺寸必须做成**逐板参数**（本台板 1G；现代板 8G+ 待别的平台验）。
+  4G=idx12→0x0c01 / 8G=idx13→0x0d01 留档备 loader 用。
