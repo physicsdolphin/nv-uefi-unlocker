@@ -53,12 +53,24 @@ poke 0x10100c <- 0x82713000 -> readback OK
   先例存疑）。若 straps 洗掉而仍要 in-OS BAR1 增长 → 下一候选 = #211 的 0x610 型
   FB override（GA102 枚举期写、活过 FLR）的 Turing 对应物。
 
-## 轮三（同日）：S4 休眠（rail-off）判别完成——reset-reload 模型确认，载具革命不成立
+## 轮三（同日）：S4 休眠（rail-off）判别——straps 不活过断电
 
 S4 断电 + 解锁 boot 后：**PSTRAPS SET0/SET1 全部回厂值**（0x00400080/0x02013000、
 override_en=0、BAR1 index 0）+ **config ReBAR cap 0x15 回归**（3 resizable BARs，
 BAR1 [256M/128M/64M]）——#135 先例兑现：**straps=上电默认，in-OS 写不活过断电**。
-in-OS PSTRAPS 路线定性：会话内诊断/实验工具，无持久化载具价值；§2.4 ReBAR 载具
-维持 DXE（NvStrapsReBar）路线，in-OS 活窗增长留给 0x610 型 FB override 思路。
-轮二的两个机制 datum（part1 硅掩码→in-OS 上限 8GiB；override_en 抑制 ReBAR cap
-广告）保持成立。
+
+## 轮四（同日）：驱动重载 vs 温重启判别——结构性死锁（catch-22）
+
+owner 实测与判读（勘误轮三后的初读）：
+
+- **restart-display-driver：straps 寄存器保留**（index 7 / override_en=1 仍在），
+  但 **BAR1 活窗不变**（仍 256 MiB）——驱动重 init 不触发 PCI 资源重分派，
+  窗口分配方（PnP 资源管理器）不重读 straps；
+- **温重启：straps 洗掉**——reset 域重锁存（该轮多跑了一次解锁 boot，不影响判读）。
+
+**结构性结论（catch-22）**：让固件按 override 枚举 8GiB 需要 straps 活到枚举时刻，
+而枚举只发生在复位后——**复位洗 straps，保留 straps 的路径（驱动重载）又不重新
+分配**。两条腿互斥，in-OS PSTRAPS 路线**结构性关闭**（比"可能活过温重启"更强）。
+§2.4 载具终审：**DXE（NvStrapsReBar）单路线**——它赢在写时机就在枚举窗内；
+0x610 型 FB override 为唯一剩余假想路（未探）。轮二机制 datum（part1 硅掩码
+→in-OS 上限 8GiB；override_en 摘 ReBAR cap 广告）保持。
