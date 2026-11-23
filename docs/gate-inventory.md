@@ -122,25 +122,33 @@ booter 自己的指令（ROP 只是重排调用序）。
   → exit 2）。落地路径=pivot 重排（§1.2）或 stockflow 载荷审计。
 - 门控纪律：仅矿卡设备 ID（30/40/50HX=1exx/21xx、90HX=22xx），永不按"任意 Gen1
   钳制卡"放宽。
-- **TU106 consumer 机制探针（2026-11-24，实验进行中）**：XP3G PLM0 原生 OPEN 的
-  台架上主机侧全链 9 写全粘——含 **config 镜像写穿透**（0x880a8←TLS=Gen2 后
-  config space 读回 Gen2，跨轮持有=PRI 镜像可写且穿透的正 datum）；但同一行读数
-  **TLS=Gen2 与 LnkSta=Gen3 共存**（spec 级违反：广告路径若真钳 Gen2 则 Gen3 训不上
-  来）——链路速率由 XP3G/XVE 内部态驱动，不取 config TLS。Gen1/Gen2 观测=空闲
-  PM（P5/P8 节能：同一次运行内 config Gen1→MMIO Gen3 动态可证，LnkCtl ASPM 位
-  逐轮漂移），任何单点采样须负载限定。结构解读参照 cmp170hx 谱系：gen 上限=
-  falcon 固件启动期改写强制的**天花板**（"falcon is driving the rewrites"/"no gen3
-  override register"，170HX #978）；XP3G OVR 块=**解锁方向**（抬起矿卡固件钳，
-  孤立写不动链路的旁证 #914），无压低机制——consumer 无钳可解，方向反转。
-  OVR3=0x4/VAL3=0x00200000 两腿未试（cmp170hx 谱系含，预测同样无效）。
-  evidence：docs/evidence/tu106-gen2-policy-probe/。原生开归因（本卡冷态纯读）与
-  40HX 对照仍待 Phase 0。
+- **TU106 consumer 机制探针（2026-11-24 三轮，已收口）**：XP3G PLM0 原生 OPEN 的
+  台架上，主机侧 9 写（50HX patch04 移植）全粘含 **config 镜像写穿透**（0x880a8←
+  TLS=Gen2，config space 读回跨轮持有）但速率不动（同读数 TLS=Gen2+LnkSta=Gen3
+  共存；Gen1/Gen2 观测=空闲 PM，P5/P8 节能，同轮 config Gen1→MMIO Gen3 动态可证）。
+  **第三轮翻案**：补 OVR3(0x8e11c)←4 + VAL3(0x8e12c)←**0x16480000**（=本卡
+  PCIE_MAGIC_D/XP3G_STATUS3 值，非 A100 的 0x200000——"VAL3=MAGIC_D 值"模式逐
+  die 映射）+ kick → **链路上限被钳到 Gen2**。"无压低机制/no gen3 override
+  register"（170HX #978 谱系）**不迁移到 Turing consumer**：slot3 就是活体 gen3
+  天花板旋钮。工作假设（待更多 die 验证）：slot0=Gen2 侧 override（矿卡 50HX 抬
+  限用它）、slot3=Gen3 侧 override（consumer 压限用它）——两方向旋钮都真实存在，
+  前一轮"方向反转"解读作废。可逆性（OVR3←0+kick 是否回 Gen3）与跨重启持久性
+  待测。evidence：docs/evidence/tu106-gen2-policy-probe/（三轮全录）。原生开归因
+  （本卡冷态纯读）与 40HX 对照仍待 Phase 0。
 
 ### 2.4 Turing BAR1 ReBAR（strap 层，不需要载荷）
 
 PSTRAPS SET0[15:14]+SET1[22:20]（BAR0+0x101000/0x10100c，和值编码 0=64MiB…10=64GiB）
 在平台 DXE PCIe 枚举期写（NvStrapsReBar 实证，OQ#11）——**与 SEC2 载荷正交**，载具是
 主板 UEFI 镜像内 DXE 驱动。app 期改 straps 需自重配 PCI 窗口，若做须单独立项。
+**in-OS 分叉（2026-11-24 TU106 台架）**：PSTRAPS 主机直写**粘住**且经设备管理器
+禁用-启用循环保留——载具问题重开：若 in-OS 写（SET0 bit31=override_en + 64G 编码
+part1=3/part2=7，NvStrapsReBar SetupNvStraps.c 位段）能活过温重启并被 stock BIOS
+枚举期采纳，载具从"改主板固件"坍缩成"系统内一次写+重启"。待测三步：写
+0x101000←0x8000c080 / 0x10100c←0x82713000 → 重跑 inventory 看 config ReBAR cap
+supported 列表是否长出 64G（判 device 侧 cap 是否 PSTRAPS 派生）→ 温重启看 BAR1
+现值。回退=清 bit31 恢复原值（0x00400080/0x02013000）。evidence：
+docs/evidence/tu106-pstraps-inos-probe/。
 注意 §2.2 的尺寸表与这里是同一张 64MiB<<i 表的两个消费方。
 
 ### 2.5 登记行（证据在库、无落地路径或无收益）
@@ -201,6 +209,10 @@ PSTRAPS SET0[15:14]+SET1[22:20]（BAR0+0x101000/0x10100c，和值编码 0=64MiB�
    系统内级联开门不存在；寄存器按所在块 PLM 过滤（SS0/SS1 bench 的粘住面），
    而 PLM 寄存器本身恒 L3。顺带含义：§2.3 矿卡 gen2 的"载荷内开 XP3G PLM0"
    没有免 payload 替代路径。evidence：docs/evidence/tu106-plm-cascade-probe/。
+   第三格补齐（同日）：closed PLM 后普通寄存器同拒（GFW_SCRATCH 0x118234←0 读回
+   0x3ff）+ GR_TOPO 0x409604 host 写拒（可读不可写）——写域四格矩阵闭合：PLM
+   寄存器 closed=拒/open=部分 sticky（0xef erratum）；普通寄存器 open 门后=粘/
+   closed 门后=拒。
 
 ## 4. falcgen 工具面（本轮落地）
 

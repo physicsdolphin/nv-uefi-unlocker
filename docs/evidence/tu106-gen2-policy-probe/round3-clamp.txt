@@ -1,0 +1,9 @@
+poke 0x8e12c <- 0x16480000 -> readback OK   (XP3G_VAL3 = 本卡 PCIE_MAGIC_D / XP3G_STATUS3 值)
+poke 0x8e11c <- 0x4        -> readback OK   (XP3G_OVR3)
+poke 0x8872c <- 0x6        -> readback OK   (LTSSM kick)
+
+结果（owner 报告）：之后，pcie 上限被锁到 2.0 了 —— Gen3 天花板旋钮成立。
+
+同轮负格：
+poke 0x409604 <- 0x8040002 -> readback MISMATCH 0x8040003 (dropped or masked - PLM filter?)   (GR_TOPO 可读不可写)
+poke 0x118234 <- 0x0       -> readback MISMATCH 0x3ff     (dropped or masked - PLM filter?)   (GFW_SCRATCH, closed GFW_PLM 后普通寄存器=拒)

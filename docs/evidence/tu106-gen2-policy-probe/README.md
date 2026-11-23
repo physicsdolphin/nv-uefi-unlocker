@@ -60,6 +60,29 @@ poke 0x8872c <- 0x6        -> readback OK   (LTSSM kick)
 - 本轮未试的腿：OVR3(0x8e11c)=0x4 / VAL3(0x8e12c)=0x00200000（cmp170hx 谱系
   register-index 含此对；结构解读预测同样无效，可作 2-poke 收尾负控）。
 
+## 收口（同日第三轮）：OVR3/VAL3 补腿 = gen3 天花板旋钮——上节"方向反转"解读作废
+
+第三轮补腿（die 值修正后，`round3-clamp.txt`）：
+
+```
+poke 0x8e12c <- 0x16480000 -> readback OK   (XP3G_VAL3 = 本卡 PCIE_MAGIC_D / XP3G_STATUS3 值)
+poke 0x8e11c <- 0x4        -> readback OK   (XP3G_OVR3)
+poke 0x8872c <- 0x6        -> readback OK   (LTSSM kick)
+```
+
+**结果：PCIe 上限被钳到 Gen2**（owner 报告）。逐条更正：
+
+- 上节"无压低机制——consumer 无钳可解，方向反转"**被本轮证伪**：170HX #978 谱系
+  （"no gen3 override register"）不迁移到 Turing consumer——slot3 就是活体 gen3
+  天花板旋钮（in-OS、驱动在跑、原生开 PLM0 门后）。
+- "VAL3 = PCIE_MAGIC_D 值"模式逐 die 成立：cmp170hx 链写 A100 的 MAGIC_D；TU106
+  写**本卡自己的** 0x16480000（dump 里 PCIE_MAGIC_D 0x21520 与 XP3G_STATUS3 同值）。
+- 工作假设（待更多 die）：slot0=Gen2 侧 override（矿卡 50HX 抬限用它）、
+  slot3=Gen3 侧 override（consumer 压限用它）——两方向旋钮都真实存在。
+- 同轮负格：GR_TOPO 0x409604 host 写拒（0x8040002→读回 0x8040003）；GFW_SCRATCH
+  0x118234 host 写拒——写域四格矩阵闭合（见 gate-inventory §3.9）。
+- 未测：可逆性（OVR3←0 + kick 是否回 Gen3）、跨重启持久性、负载下带宽确认。
+
 ## 附
 
 - `post-state-run1.txt` / `post-state-run2.txt`：两轮完整 inventory（config Gen1↔Gen3
