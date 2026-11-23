@@ -1,4 +1,15 @@
-//! ssdiag v0.8.8 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.9 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.9 adds --target-offset A --value V (ARBITRARY WRITE MODE, repeatable
+//! ordered pairs): raw BAR0 writes through the same pmxdrv transport the
+//! diagnostics use, each followed by a read-back print. Lands regardless of
+//! the NVIDIA driver's state (the #286 bench: Code 43 + basic display driver
+//! + an open gate) - the in-vivo selector/PLM experiment vehicle: poke an
+//! SS0/SS1 candidate, flip the device (disable/enable does not FLR on
+//! Turing, the AON domain persists), watch the driver accept or refuse.
+//! Guardrails: pairs must be explicit, multi-GPU boxes require --select,
+//! every write is printed with its read-back. Same write class as
+//! --fuserows: user-approved, a wrong offset can hang the box (recovery =
+//! hard reset; the unlock state survives reboots, rail-off clears it).
 //! v0.8.8 opens --fuserows to Turing: the same fuse-controller block lives
 //! at 0x21000 there (envytools pfuse; family-auto base, --fusebase override
 //! for probing the second base). Turing runs degraded but honest: CRC_STATUS
@@ -5324,6 +5335,8 @@ fn fuse_row_dump(
 
 fn run() -> i32 {
     let mut reapply = false;
+    let mut pokes: Vec<(u32, u32)> = Vec::new();
+    let mut poke_off: Option<u32> = None;
     let mut dry = false;
     let mut inv_only = false;
     let mut sb_arm = false;
@@ -5338,6 +5351,39 @@ fn run() -> i32 {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--reapply" => reapply = true,
+            "--target-offset" => {
+                let v = args.next().unwrap_or_else(|| {
+                    eprintln!("--target-offset requires a hex BAR0 offset, e.g. --target-offset 0x409664");
+                    std::process::exit(2);
+                });
+                match u32::from_str_radix(v.trim_start_matches("0x").trim_start_matches("0X"), 16) {
+                    Ok(b) if b < 0x0100_0000 => poke_off = Some(b),
+                    _ => {
+                        eprintln!("bad --target-offset {v:?}; need a BAR0-relative hex offset inside the 16 MiB aperture");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--value" => {
+                let v = args.next().unwrap_or_else(|| {
+                    eprintln!("--value requires a hex 32-bit value, e.g. --value 0x88888888");
+                    std::process::exit(2);
+                });
+                let val = match u32::from_str_radix(v.trim_start_matches("0x").trim_start_matches("0X"), 16) {
+                    Ok(x) => x,
+                    Err(_) => {
+                        eprintln!("bad --value {v:?}; need a hex 32-bit value");
+                        std::process::exit(2);
+                    }
+                };
+                match poke_off.take() {
+                    Some(off) => pokes.push((off, val)),
+                    None => {
+                        eprintln!("--value without a preceding --target-offset");
+                        std::process::exit(2);
+                    }
+                }
+            }
             "--fusebase" => {
                 let v = args.next().unwrap_or_else(|| {
                     eprintln!("--fusebase requires a hex offset, e.g. --fusebase 0x21000");
@@ -5370,12 +5416,20 @@ fn run() -> i32 {
                     "ssdiag {ver} - in-OS NVIDIA register diagnosis + separate-lock re-apply
 
 USAGE:
-  ssdiag [--reapply] [--select <substr>] [--safeboot-arm|--safeboot-disarm]
+  ssdiag [--reapply] [--target-offset A --value V ...] [--select <substr>] [--safeboot-arm|--safeboot-disarm]
 
 OPTIONS:
   --reapply        per card with an OPEN FEAT gate: write SS0=0x88888888
                    SS1=0x8 and verify by read-back (separate-lock method -
                    restores an unlock the driver re-derived, no reboot)
+  --target-offset A --value V   ARBITRARY WRITE MODE, repeatable pairs
+                   (executed in order, per selected card): write V to
+                   BAR0 offset A, read back and print. Works while the
+                   NVIDIA driver is failed/unbound - the pmxdrv transport
+                   is independent of nvlddmkm. A wrong offset can hang the
+                   box (recovery = hard reset; the unlock state survives
+                   reboots, rail-off clears it). On multi-GPU boxes pass
+                   --select or the writes hit every card
   --fuserows[=A-B] WRITE MODE per card: physical fuse-row capture via the
                    guarded ga100-ff-tools read_rows protocol (FUSEADDR row
                    select + FUSECTRL CMD_READ only, latch checks, two
@@ -5467,10 +5521,14 @@ SSDIAG_COLOR=force pins on.",
                 std::process::exit(2);
             }
             other => {
-                eprintln!("unknown arg {other:?}; usage: ssdiag [--reapply] [--select <substr>] [--fuserows[=A-B]]");
+                eprintln!("unknown arg {other:?}; usage: ssdiag [--reapply] [--target-offset A --value V ...] [--select <substr>] [--fuserows[=A-B]]");
                 return 2;
             }
         }
+    }
+    if poke_off.is_some() {
+        eprintln!("--target-offset without a following --value (each offset needs exactly one value)");
+        return 2;
     }
 
     // safe-mode staging commands run before every other path - they touch
@@ -5596,6 +5654,13 @@ SSDIAG_COLOR=force pins on.",
     stage("driver ready");
 
     println!("{ } NVIDIA GPU function(s) discovered", gpus.len());
+    if !pokes.is_empty() && gpus.len() > 1 && select.is_none() {
+        eprintln!(
+            "poke REFUSED: {} NVIDIA GPUs discovered and no --select given - arbitrary writes would hit every card; pass --select <substr>",
+            gpus.len()
+        );
+        return 2;
+    }
     let mut rc = 0;
     let total = gpus.len();
     for (i, g) in gpus.iter_mut().enumerate() {
@@ -5762,6 +5827,34 @@ SSDIAG_COLOR=force pins on.",
                     hx32(rb0),
                     hx32(rb1),
                     if ok { green("OK") } else { red("READBACK MISMATCH") }
+                );
+                if !ok {
+                    rc = 1;
+                }
+            }
+        }
+        if !pokes.is_empty() {
+            // 0.8.9: arbitrary in-vivo writes through the same pmxdrv
+            // transport the diagnostics use - lands regardless of the
+            // NVIDIA driver's state (the #286 bench: Code 43 + basic
+            // display, gate open, SS/PLM editable). Read-back is the only
+            // success criterion (constitution #1); a mismatch means the
+            // write was dropped (PLM filter) or masked, never that it
+            // "probably worked".
+            println!(
+                "{}: {} write(s), executed in order - a wrong offset can hang the box (recovery = hard reset; unlock state survives reboots, rail-off clears)",
+                yellow("poke"),
+                pokes.len()
+            );
+            for &(off, val) in &pokes {
+                wr(off, val);
+                let rb = rd(off);
+                let ok = rb == val;
+                println!(
+                    "poke {:#x} <- {:#x} -> readback {}",
+                    off,
+                    val,
+                    if ok { green("OK") } else { red(&format!("MISMATCH {rb:#x} (dropped or masked - PLM filter?)")) }
                 );
                 if !ok {
                     rc = 1;
