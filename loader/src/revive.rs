@@ -551,11 +551,12 @@ fn sbr_cycle(port: &PciIo) {
     boot::stall(Duration::from_millis(2000));
 }
 
-/// GPU-SBR (marker `\tx-sbr-gpu.txt`): a forced Secondary Bus Reset on the
-/// TARGET GPU's own parent port, executed INSIDE the transaction's
+/// GPU-SBR (built into every rebar arm since 2026-11-25; the opt-in
+/// `\tx-sbr-gpu.txt` arm retired with the merge): a forced Secondary Bus
+/// Reset on the TARGET GPU's own parent port, executed INSIDE the
 /// disciplined window - after detach+claim (no firmware drivers bound, the
 /// console mirror is muted, the card is exclusively claimed) and before
-/// FWSEC ignition (nothing unlocked, nothing to destroy).
+/// anything touches the reset-gated XVE page.
 ///
 /// The first attempt (bench 2026-11-22) ran PRE-transaction - firmware GOP
 /// still bound, console still printing through the card - and soft-locked
@@ -577,18 +578,15 @@ fn sbr_cycle(port: &PciIo) {
 /// readable state, and its only future source is GetBarAttributes on the
 /// stale handle (implemented in `restore_bars_from_bookkeeping`).
 ///
-/// Returns true when the caller should continue the chain (marker absent =
-/// silent no-op, or reset + restore + MMIO sanity all verified); false when
-/// the post-reset device could not be verified alive with working MMIO (a
-/// reset device without verified life must not be transacted - readback is
-/// the only success criterion). On false the transaction aborts with the
-/// card freshly reset and nothing unlocked.
+/// Returns true when the caller should continue the chain (reset + restore
+/// + MMIO sanity all verified); false when the post-reset device could not
+/// be verified alive with working MMIO (a reset device without verified
+/// life must not be transacted - readback is the only success criterion).
+/// On false the caller halts with the card freshly reset and nothing
+/// written.
 pub fn sbr_gpu_in_transaction(gpu: &crate::tx::TxGpu, baseline: &[u32]) -> bool {
-    if !crate::config::flag(crate::config::FlagArm::SbrGpu) {
-        return true;
-    }
     info!(
-        "GPU-SBR: \\tx-sbr-gpu.txt present - forced Secondary Bus Reset on this card's parent port (disciplined window: drivers detached, console muted, nothing unlocked)"
+        "GPU-SBR: built-in rebar precondition - Secondary Bus Reset on this card's parent port (disciplined window: drivers detached, console muted, nothing unlocked)"
     );
     // GetBarAttributes cross-check, taken while the device is alive: the
     // bookkeeping is host-side POST state, the claim baseline is the live

@@ -47,7 +47,9 @@
 > `tx-no-bridge-master.txt`（BME 使能无条件）、`pre-flr-on.txt`（pre-FLR 实验
 > 完结，kernel-matching 流终胜，函数删除）、`tx-accept-warm-wpr2.txt`（温 WPR2
 > 逃逸口；宪法正确恢复=断电）、`tx-require-d0.txt`（warm 入口的响亮日志+强制
-> D0 读回即是现场分辨）。全部零探测、盘上惰性。
+> D0 读回即是现场分辨）、`tx-sbr-gpu.txt`（SBR 内建进所有 rebar 臂——XVE 页
+> reset-gated 是硬前提不是旋钮；纯解锁 boot 的事务内 SBR 实验臂同轮退役）。
+> 全部零探测、盘上惰性。
 > legacy 重连退役依据：早于 native-GOP 重建默认（v2.1.10），自带 #35/#61
 > 递归死锁家族与 R7000 DDC-CI 链路未训练形态；#52/D#131 的 nonrec 实证全部
 > 早于 native 默认。重建异常的逃生阀现在是 `reconnect = off`（暗交棒，
@@ -57,7 +59,7 @@
 
 `no_log`、`no_console`、`dry_run`、`agitate_only`、`fwsec_only`、`exit_fw`、
 `relock`、`force_continue`、`preload`、`ebs_watch`、`ebs_selftest`、
-`host_probe`、`acpi_dump`、`gop_no_reorder`、`sbr_gpu`、`rebar_gop`、
+`host_probe`、`acpi_dump`、`gop_no_reorder`、`rebar_gop`、
 `rebar_then_tx`、`no_asset_cache`
 
 （逐条语义见 FAQ 的 marker 表对应行；键名 = marker 名去掉 `tx-` 前缀和
@@ -78,7 +80,7 @@
 | `fb_gb` | GiB 1..=64 | `tu10x-fb-gb.txt` | ini 严格 |
 | `native_gop` | 卷上 GOP 模块路径 | `tx-native-gop.txt` | 站点探测 |
 | `flush_lines` | 0..=4096 | `tx-flush-lines.txt` | ini 严格 |
-| `rebar` | `read` / `scan` / `<select>/<advertise>`（如 `11/9`） | `tx-rebar.txt`、`tx-rebar-read.txt`、`tx-rebar-scan.txt` | ini 严格（select 1..=19，advertise 0..=15） |
+| `rebar` | `read` / `scan` / `<target>/<advertise>`（如 `11/9`；**恒斜杠形，0=该侧不写，`0/0`=整臂跳过**；裸 `11`/半斜杠拒跑） | `tx-rebar.txt`、`tx-rebar-read.txt`、`tx-rebar-scan.txt` | ini 严格（target 0..=19，advertise 0..=15）。**SBR 内建**：所有 rebar 臂自动先跑纪律窗 SBR（XVE 页 reset-gated，无 SBR=硬死锁），`sbr_gpu` 臂已随内建化退役 |
 | `rebar_route` | `mmio` / `ecam` | `tx-rebar-ecam.txt` | — |
 
 ### 列表臂

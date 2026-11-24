@@ -530,9 +530,12 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     //                    UNSUPPORTED on this firmware - rung-2 round proved
     //                    it fail-closed)
     //     ecam:          ECAM-direct config access (RSDP->XSDT->MCFG)
-    //   Optional +sbr_gpu: disciplined Secondary Bus Reset inside the
-    //   claimed window before the pair (display engine reset, straps
-    //   re-latched, BAR/command restored from the claim baseline).
+    //   SBR is BUILT-IN (2026-11-25): disciplined Secondary Bus Reset inside
+    //   the claimed window before anything touches the XVE page (display
+    //   engine reset, straps re-latched, BAR/command restored from the claim
+    //   baseline). The XVE page is reset-gated - no SBR = hard hang at the
+    //   first register touch (11-22 lesson), so this is a precondition, not
+    //   a knob.
     // Every flow: NO FLR, no post-write reset - the pair must survive into
     // Windows' boot enumeration; recovery = power-off.
     // select = the ReBAR control write (advisory; Windows re-arbitrates),
@@ -548,25 +551,22 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     }
 
     if matches!(rebar_setting, Some(txini::RebarSetting::Scan)) {
-        let sbr_rung = config::flag(config::FlagArm::SbrGpu);
-        info!("TX: rebar scan arm - 0x610 field-encoding sweep + cap-mirror write probe (route {}, zero BAR-assignment writes; recovery = power-off)", if sbr_rung { "claim+SBR" } else { "claim" });
+        info!("TX: rebar scan arm - 0x610 field-encoding sweep + cap-mirror write probe (claim+SBR window, zero BAR-assignment writes; recovery = power-off)");
         match crate::tx_detach::detach_and_claim(g.handle) {
             Ok(claim) => {
                 info!("REBAR-SCAN: claimed (GOP off, screen dark by design)");
-                let mut sbr_ok = true;
-                if sbr_rung {
-                    let baseline = claim.baseline.clone();
-                    sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
-                    if sbr_ok {
-                        info!("REBAR-SCAN: SBR complete, device verified alive");
-                    } else {
-                        info!("REBAR-SCAN: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
-                    }
-                }
+                // SBR is BUILT INTO every rebar arm since 2026-11-25: the
+                // XVE page is reset-gated, so the claim window without the
+                // reset is not a usable shape (11-22 lesson). The old
+                // claim-only ablation rung retired with the sbr_gpu arm.
+                let baseline = claim.baseline.clone();
+                let sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
                 if sbr_ok {
+                    info!("REBAR-SCAN: SBR complete, device verified alive");
                     tx::run_rebar_fieldscan(&gpu);
                     info!("SELECTOR RESULT: field sweep complete - see REBAR-SCAN lines above");
                 } else {
+                    info!("REBAR-SCAN: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
                     logging::finish();
                     loop {
                         boot::stall(core::time::Duration::from_millis(500));
@@ -598,27 +598,26 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
         advertise: rebar_adv,
     }) = rebar_setting
     {
-        let sbr_rung = config::flag(config::FlagArm::SbrGpu);
         let ecam_route = matches!(config::rebar_route(), txini::RebarRoute::Ecam);
         info!(
-            "TX: rebar pair arm (target size_idx {}, advertise field {}, route {}, SBR {}) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off (0 = that side is NOT written)",
+            "TX: rebar pair arm (target size_idx {}, advertise field {}, route {}, SBR built-in) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off (0 = that side is NOT written)",
             rebar_idx,
             rebar_adv,
-            if ecam_route { "ECAM-direct" } else { "XVE-MMIO mirror" },
-            if sbr_rung { "yes" } else { "no" }
+            if ecam_route { "ECAM-direct" } else { "XVE-MMIO mirror" }
         );
         match crate::tx_detach::detach_and_claim(g.handle) {
             Ok(claim) => {
                 info!("REBAR: claimed (GOP off, screen dark by design from here to the Windows driver)");
-                let mut sbr_ok = true;
-                if sbr_rung {
-                    let baseline = claim.baseline.clone();
-                    sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
-                    if sbr_ok {
-                        info!("REBAR: SBR complete, device verified alive, config restored from claim baseline");
-                    } else {
-                        info!("REBAR: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
-                    }
+                // SBR built-in (2026-11-25): the XVE page is reset-gated -
+                // the claim window without the reset hangs at the first
+                // register touch (11-22 lesson). The opt-in sbr_gpu arm
+                // retired with this merge.
+                let baseline = claim.baseline.clone();
+                let sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
+                if sbr_ok {
+                    info!("REBAR: SBR complete, device verified alive, config restored from claim baseline");
+                } else {
+                    info!("REBAR: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
                 }
                 if sbr_ok {
                     // 0 on a side = that write is skipped; the ECAM route

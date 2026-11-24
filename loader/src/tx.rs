@@ -1050,25 +1050,12 @@ pub fn run_transaction(
     };
     info!("TX: detach+claim ok");
 
-    // GPU-SBR experiment (marker \tx-sbr-gpu.txt, see revive.rs): forced
-    // Secondary Bus Reset on the card's parent port, executed INSIDE the
-    // disciplined window - drivers detached, console muted, nothing
-    // unlocked. BAR restore comes from the claim's config baseline. The
-    // first attempt ran PRE-transaction with the firmware GOP still bound
-    // and soft-locked the machine (bench 2026-11-22) - that placement is
-    // removed; this window matches the Ampere chain's own FLR discipline.
-    // On false the chain aborts: the card is freshly reset and nothing
-    // unlocked, so no unwinding is due.
-    // 2026-11-24 rebar merge: SKIPPED when the rebar pair already landed
-    // this boot (\tx-rebar-then-tx.txt flow) - a second SBR re-latches
-    // ReBAR config away from the written pair (field-proven: BAR1 config
-    // re-wound to the 8G-aligned default mid-transaction, killing the BAR
-    // at handoff) and Turing's chain needs no reset anyway (FLR skipped).
-    if crate::config::flag(crate::config::FlagArm::RebarThenTx) {
-        info!("TX-tu10x: in-transaction SBR SKIPPED (rebar_then_tx arm: the rebar pair already landed this boot; a second SBR re-latches ReBAR config and kills the BAR)");
-    } else if !crate::revive::sbr_gpu_in_transaction(gpu, &claim.baseline) {
-        return Err(TxError::EIO);
-    }
+    // (The in-transaction SBR experiment arm retired 2026-11-25 together
+    // with its \tx-sbr-gpu.txt marker: SBR is now BUILT INTO the rebar
+    // arms - the XVE page is reset-gated - and a transaction-side SBR has
+    // no role on a pure unlock boot. Its old rebar_then_tx skip branch
+    // (a second SBR re-latches ReBAR config away from the written pair)
+    // retired with the arm it guarded.)
 
     // WPR2 cold-state guard (issue #4.2): WPR2-up at entry is triaged
     // inside claim_guards on firmware-window evidence (GFW/BSI proof
