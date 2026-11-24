@@ -1,0 +1,6 @@
+[package]
+name = "txini"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "\\tx.ini consolidated stick-config parser and arm resolver (no_std + alloc, shared by loader and host tests, issue #290)"

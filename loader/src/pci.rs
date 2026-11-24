@@ -19,7 +19,7 @@ use uefi::mem::memory_map::MemoryMap as _;
 #[cfg(feature = "diag")]
 use uefi::mem::memory_map::MemoryType;
 use uefi::proto::unsafe_protocol;
-use uefi::{cstr16, Identify, Status};
+use uefi::{Identify, Status};
 
 pub const NVIDIA_VENDOR_ID: u16 = 0x10de;
 
@@ -516,11 +516,8 @@ impl PciIo {
         // below 4GB elsewhere. The reference driver itself stages the meta
         // above 4GB (live dump 0x110BB0000) and passes a 64-bit mailbox
         // pair, so the high path is the driver-exact configuration.
-        // \tx-low-staging.txt forces the legacy PciIo path for A/B testing.
         if !TX_HIGH_STAGING.load(core::sync::atomic::Ordering::Relaxed) {
             info!("DMA alloc: family not gated for >4GB staging - legacy PciIo path");
-        } else if crate::tx::probe_file("\\tx-low-staging.txt") {
-            info!("DMA alloc: \\tx-low-staging.txt present - legacy sub-4GB PciIo path forced");
         } else if let Ok(b) = self.dma_alloc_high(len) {
             return Ok(b);
         } else {
@@ -1036,7 +1033,7 @@ pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
     // Err (zero-byte/corrupt/short read) must NOT fall through to the
     // default - a broken pin silently unlocking every card is the worst
     // outcome for a pin switch, so refuse alongside the unparsable case.
-    match crate::tx::read_asset("\\tx-select-bdf.txt") {
+    match crate::config::select_bdf_tx() {
         Err(_) => {
             info!("ENUMERATE: tx-select-bdf.txt present but unreadable (zero-byte/corrupt) - refusing to guess, TX skipped");
             alloc::vec::Vec::new()
@@ -1117,7 +1114,7 @@ fn parse_bdf(raw: &[u8]) -> Option<(usize, usize, usize, usize)> {
 /// that is an accepted, lower-stakes tradeoff: the worst a corrupt marker can
 /// do here is skip or retarget a register dump, not touch anything.
 pub fn select_sample_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
-    match crate::chainload::boot_volume_read(cstr16!(r"\tx-select-bdf.txt")) {
+    match crate::config::select_bdf_sample() {
         None => all.first().into_iter().cloned().collect(),
         Some(raw) => match parse_bdf(&raw) {
             Some(bdf) => all

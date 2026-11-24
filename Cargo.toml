@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["loader", "assets", "sim", "romcore"]
+members = ["loader", "assets", "sim", "romcore", "txini"]
 # loader is an x86_64-unknown-uefi binary and cannot build for the host
 # triple; plain `cargo build` therefore only covers the host-side crates.
 # Build the EFI app with `cargo efi` (see .cargo/config.toml).
-default-members = ["assets", "sim", "romcore"]
+default-members = ["assets", "sim", "romcore", "txini"]
 # tools/ crates (ssdiag, falcgen) are DETACHED on purpose: they ship on
 # their own release cadence with their own version, Cargo.lock and target
 # dir (empty [workspace] table + local /target gitignore in each crate).

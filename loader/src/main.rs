@@ -9,11 +9,11 @@ extern crate log;
 
 use log::info;
 use uefi::prelude::*;
-use uefi::CStr16;
 
 mod acpi_dump;
 mod banner;
 mod chainload;
+mod config;
 mod ebswatch;
 mod gop;
 mod keywait;
@@ -28,8 +28,6 @@ mod timing;
 mod usbreset;
 #[cfg(feature = "diag")]
 mod tx;
-#[cfg(feature = "tx")]
-mod tx_policy;
 #[cfg(feature = "diag")]
 mod gop_native;
 #[cfg(feature = "diag")]
@@ -49,24 +47,11 @@ mod tx_prep;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// CONFIRM semantics switch (armed mode): when this file exists on the
-/// stick root, the operator has declared intent ON THE STICK ITSELF - the
-/// wait becomes a short countdown that auto-proceeds, any key aborts. The
-/// first marker line may set the countdown seconds (0..=30, default 5;
-/// 0 = no wait, PROCEED as soon as the read-only prep finishes).
-const ARMED_MARKER: &CStr16 = cstr16!(r"\i_know_what_i_am_doing.txt");
-/// Phantom-key ignore list (one key per line, written as an ABORT line
-/// prints it). Loaded before the input settle so it covers every key wait.
-const IGNORE_KEY_MARKER: &CStr16 = cstr16!(r"\tx-ignore-key.txt");
-/// Issue #38: verdict-lines-only console output. Some iGPU GOPs render
-/// ~1 line/s, so the full console mirror cost minutes per run; the log
-/// file always records everything either way.
-const INPUT_RESET_MARKER: &CStr16 = cstr16!(r"\input-reset.txt");
-const QUIET_MARKER: &CStr16 = cstr16!(r"\tx-quiet.txt");
-/// Issue #38 follow-up: count-based log-flush cadence knob (0..=4096
-/// lines, 0 = stage-marker lines only; default 16). Marker-line flushes
-/// are unaffected - they are the crash-forensics anchors.
-const FLUSH_LINES_MARKER: &CStr16 = cstr16!(r"\tx-flush-lines.txt");
+// The marker consts that used to live here (armed / ignore-key /
+// input-reset / quiet / flush-lines) moved into config:: content and flag
+// accessors - each arm reads the ini first, then falls back to the same
+// marker file, with double-set refused at boot (issue #290).
+
 const CONFIRM_WAIT: u64 = 30;
 
 /// \tx-ultrafast.txt: verified-machine speed profile. Skips every purely
@@ -94,22 +79,21 @@ fn set_ultrafast(v: bool) {
 #[entry]
 fn main() -> Status {
     timing::init();
+    // \tx.ini (issue #290): parse the optional consolidated config before
+    // anything else - several arms (log-commit, no-log, no-console,
+    // ultrafast) must be known before the logger exists. Silent by design;
+    // refusals/warnings are collected and replayed right after logger init.
+    config::init();
     // diag6 (#122): the log-commit ladder is read from the stick BEFORE the
-    // log exists, because the create-commit is itself a suspect. Both probes
-    // are read-only directory opens; if a run dies inside them there is no
+    // log exists, because the create-commit is itself a suspect. Both paths
+    // are read-only file opens; if a run dies inside them there is no
     // fresh dirent at all - that is the discriminator against a death after
     // the create.
-    let commit = if chainload::boot_volume_has(cstr16!(r"\tx-log-commit.txt")) {
-        2
-    } else if chainload::boot_volume_has(cstr16!(r"\tx-log-commit-lines.txt")) {
-        1
-    } else {
-        0
-    };
-    set_ultrafast(chainload::boot_volume_has(cstr16!(r"\tx-ultrafast.txt")));
-    logging::set_log_disabled(chainload::boot_volume_has(cstr16!(r"\tx-no-log.txt")));
-    logging::set_console_off(chainload::boot_volume_has(cstr16!(r"\tx-no-console.txt")));
-    logging::set_log_commit(commit);
+    let commit = config::log_commit();
+    set_ultrafast(config::ultrafast());
+    logging::set_log_disabled(config::flag(config::FlagArm::NoLog));
+    logging::set_console_off(config::flag(config::FlagArm::NoConsole));
+    logging::set_log_commit(commit as usize);
     logging::init(VERSION);
     // Durable (marker) line: separates a completed logger init from the
     // quiet-probe/watchdog strip that follows (#122).
@@ -117,6 +101,20 @@ fn main() -> Status {
     if ultrafast() {
         info!("ULTRAFAST: \\tx-ultrafast.txt present - diagnostic probes skipped; quiet + no-canary + marker-only flush folded in; verdict readbacks unchanged");
     }
+    // A refused \tx.ini stops the boot HERE: before the watchdog work, the
+    // banner, any enumeration or GPU touch. Console mirror forced on so
+    // no-console cannot silence a refusal; quiet is not active yet at this
+    // point (it is enabled later, after this check).
+    if config::refused() {
+        logging::set_console_off(false);
+        config::log_diagnostics();
+        info!(
+            "FINAL: \\tx.ini refused - nothing was written to the GPU; fix the lines above and reboot. Handing the machine back to the firmware boot manager."
+        );
+        logging::finish();
+        return Status::SUCCESS;
+    }
+    config::log_diagnostics();
     info!(
         "BOOT: diag7 log-commit={} (0=v2.1.9 default, 1=+marker Close, 2=+create Close; auto-degrades to 0 if the reopen chain refuses)",
         logging::log_commit()
@@ -124,7 +122,7 @@ fn main() -> Status {
     // Phase: QUIET gate (issue #38). The stick opts in via the marker;
     // refused when the log file could not be opened (console = only
     // record, it must stay complete).
-    if chainload::boot_volume_has(QUIET_MARKER) || ultrafast() {
+    if config::quiet() {
         if logging::set_quiet(true) {
             info!(
                 "QUIET: quiet profile on (\\tx-quiet.txt or \\tx-ultrafast.txt) - console shows verdict lines only; every line still lands in \\loader.log"
@@ -166,13 +164,12 @@ fn main() -> Status {
 
     // Phase: FLUSH knob (issue #38 follow-up). Optional per-stick cadence
     // for the count-based log flushes; stage-marker flushes are unaffected.
-    if let Some(content) = chainload::boot_volume_read(FLUSH_LINES_MARKER) {
-        let n = chainload::parse_flush_lines(&content);
+    if let Some(n) = config::flush_lines() {
         logging::set_flush_every_lines(n as usize);
         if n == 0 {
-            info!("FLUSH: \\tx-flush-lines.txt - count-based flush off (stage-marker lines only)");
+            info!("FLUSH: flush-lines arm - count-based flush off (stage-marker lines only)");
         } else {
-            info!("FLUSH: \\tx-flush-lines.txt - every {n} lines");
+            info!("FLUSH: flush-lines arm - every {n} lines");
         }
     } else if ultrafast() {
         // Explicit cadence marker wins; ultrafast only supplies a default.
@@ -194,12 +191,12 @@ fn main() -> Status {
     // happens only after PROCEED, and aborting mid-prep writes nothing.
     // Optional phantom-key ignore list; loaded before any key is read so the
     // settle below and every later wait already honour it. Esc stays usable.
-    if let Some(content) = chainload::boot_volume_read(IGNORE_KEY_MARKER) {
+    if let Some(content) = config::content(config::ContentArm::IgnoreKey) {
         keywait::load_ignore_keys(&content);
     }
     // CONFIRM 之前一次性处理输入:复位/排空/(可选)USB 端口复位/安静窗口。
     // 此时还没有中止窗口,被持续上报的键(如鼠标的键盘接口)不会中止倒计时。
-    let usb_list = chainload::boot_volume_read(INPUT_RESET_MARKER).map(|c| usbreset::parse(&c));
+    let usb_list = config::content(config::ContentArm::InputReset).map(|c| usbreset::parse(&c));
     if let Some(l) = &usb_list {
         info!("USB-RESET: input-reset.txt present - {} device(s) listed", l.len());
     }
@@ -208,10 +205,9 @@ fn main() -> Status {
             usbreset::reset_listed(l);
         }
     });
-    let confirmed = if let Some(content) = chainload::boot_volume_read(ARMED_MARKER) {
-        let secs = chainload::parse_armed_seconds(&content);
+    let confirmed = if let Some(secs) = config::armed() {
         info!(
-            "CONFIRM: \\i_know_what_i_am_doing.txt present - ARMED: {secs}s countdown auto-runs, ANY key aborts"
+            "CONFIRM: armed mode (i_know_what_i_am_doing, marker or tx.ini) - {secs}s countdown auto-runs, ANY key aborts"
         );
         #[cfg(feature = "diag")]
         {
@@ -297,9 +293,9 @@ fn main() -> Status {
     // falls back to the legacy chain on any doubt. Pure chain-side behavior
     // (no GPU writes), so it exists in every build.
     let preloaded = if let keywait::Confirm::Proceed = confirmed {
-        // PR #209 follow-up: with \tx-exit-fw.txt the StartImage never runs,
+        // PR #209 follow-up: with the exit-fw arm the StartImage never runs,
         // so the pre-transaction USB read would buy nothing - skip it.
-        if chainload::boot_volume_has(cstr16!(r"\tx-exit-fw.txt")) {
+        if config::exit_fw() {
             None
         } else {
             chainload::preload_os_loader()
@@ -309,42 +305,30 @@ fn main() -> Status {
     };
 
     #[cfg(feature = "diag")]
-    let hard_stop = if let keywait::Confirm::Proceed = confirmed {
+    if let keywait::Confirm::Proceed = confirmed {
         // \tx-dry-run.txt (issue #146): skip the transaction entirely. Since
         // preload went opt-in (#198) the residency control is the PAIR
         // \tx-dry-run.txt + \tx-preload.txt: the loader is resident, but this
         // path never reaches an asset read, so the cache stays EMPTY - "preload
         // residency, zero GPU writes, no detach, no reconnect", not "full
         // residency". (Measured: the dry-run log has no TX-ASSET-DIAG line.)
-        if chainload::boot_volume_has(cstr16!(r"\tx-dry-run.txt")) {
-            info!("TX-DRY-RUN: \\tx-dry-run.txt present - the GPU transaction is SKIPPED this boot (zero writes, no detach; preload residency control - assets are NOT read on this path, issue #146)");
-            false
+        if config::dry_run() {
+            info!("TX-DRY-RUN: dry-run arm present (marker or tx.ini) - the GPU transaction is SKIPPED this boot (zero writes, no detach; preload residency control - assets are NOT read on this path, issue #146)");
         } else {
-            tx_phase(&gpus)
+            tx_phase(&gpus);
         }
     } else {
-        false
-    };
+        drop(confirmed);
+    }
     #[cfg(not(feature = "diag"))]
     {
         drop(confirmed);
     }
-    #[cfg(not(feature = "diag"))]
-    let hard_stop = false;
 
-    // Opt-in STOP-on-hard-failure (see tx_one_card / \tx-stop-on-failure.txt):
-    // a hard TX failure with that marker present means this session must not
-    // act on the card again or hand off on its own - the firmware may still
-    // be mid-operation. No further GPU interaction, no chain-load; recovery
-    // is manual (full power-off, remove the stick, normal boot).
-    if hard_stop {
-        info!("STOP: hard TX failure with \\tx-stop-on-failure.txt armed - halting without FLR, without trying another GPU, without chain-loading Windows");
-        info!("STOP: power off completely, remove the USB stick, then boot normally. Do not retry this session.");
-        logging::finish();
-        loop {
-            uefi::boot::stall(core::time::Duration::from_millis(500));
-        }
-    }
+    // The opt-in STOP-on-hard-failure halt (tx-stop-on-failure.txt) was
+    // retired 2026-11-25: the unwind path is now unconditional
+    // (emergency FLR + handoff + next card), so there is no post-phase
+    // halt branch here anymore.
 
     // Phase: EBS-WATCH (soft-lock family cross-review 2026-11-22, issues
     // #242/#278/#279): with \tx-ebs-watch.txt on the stick, wrap
@@ -370,10 +354,10 @@ fn main() -> Status {
     // off (the log file is the evidence record, not the screen).
     match chainload::chain_load_bootmgfw(preloaded) {
         Ok(()) => {
-            // PR #209 follow-up: the exit-to-fw marker also returns Ok -
+            // PR #209 follow-up: the exit-to-fw arm also returns Ok -
             // distinguish it from a genuine bootmgfw return so the evidence
             // log does not record an anomaly on every marker run.
-            if chainload::boot_volume_has(cstr16!(r"\tx-exit-fw.txt")) {
+            if config::exit_fw() {
                 info!("CHAIN: exit-to-fw marker - handed back to the firmware boot manager (expected)");
             } else {
                 info!("CHAIN: bootmgfw returned unexpectedly");
@@ -455,16 +439,10 @@ enum CardOutcome {
     /// Reached `run_transaction`, whatever its outcome - upstream's existing
     /// "attempted" telemetry (issue #139).
     Attempted,
-    /// Opt-in `\tx-stop-on-failure.txt` is present and a genuine hard
-    /// failure occurred: the whole multi-GPU run stops here, and `main`
-    /// must not chain-load Windows either.
-    HardStop,
 }
 
-/// Returns `true` iff a `CardOutcome::HardStop` occurred, in which case the
-/// caller (`main`) must not chain-load Windows.
 #[cfg(feature = "diag")]
-fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
+fn tx_phase(gpus: &[pci::FoundGpu]) {
     // SLOT-REVIVE pre-pass (marker-gated, see revive.rs): revive dead
     // downstream slots through their root ports before target selection.
     // Inert without \tx-revive-dead-slot.txt (returns the input unchanged).
@@ -472,11 +450,10 @@ fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
     let targets = pci::select_tx_targets(&gpus);
     if targets.is_empty() {
         info!("TX: no transaction target (selection marker refused, or no supported GPU) - chain-loading unchanged Windows");
-        return false;
+        return;
     }
     tx::list_root_entries();
     let mut attempted = 0usize;
-    let mut hard_stop = false;
     for (i, g) in targets.iter().enumerate() {
         info!(
             "TX: ===== target {}/{}: 10de:{:04x} @ {:04x}:{:02x}:{:02x}.{} =====",
@@ -491,17 +468,6 @@ fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
         match tx_one_card(g) {
             CardOutcome::NotAttempted => {}
             CardOutcome::Attempted => attempted += 1,
-            CardOutcome::HardStop => {
-                attempted += 1;
-                hard_stop = true;
-                info!(
-                    "TX: hard stop on target {}/{} - the remaining {} target(s) will NOT run this session",
-                    i + 1,
-                    targets.len(),
-                    targets.len() - (i + 1)
-                );
-                break;
-            }
         }
     }
     let skipped = targets.len() - attempted;
@@ -521,22 +487,20 @@ nothing was written, nothing was detached"
     // (chainload::chain_load_bootmgfw -> tx::handoff_free_assets, default
     // since v2.1.11): the abort path and \tx-dry-run.txt need the same
     // hygiene, and CHAIN-MEMMAP logs the map after the free.
-    hard_stop
 }
 
 /// One card's full transaction. EALREADY/EWarm/EBusy/EClaimUnreadable are
 /// skip-class: nothing was torn down, the multi-GPU loop continues. A
-/// generic (hard) failure keeps the field-proven default (emergency FLR,
-/// continue to the next card) UNLESS the opt-in `\tx-stop-on-failure.txt`
-/// marker is present, in which case it becomes a `CardOutcome::HardStop`
-/// instead - see that file's doc comment and the `CardOutcome` enum above.
+/// generic (hard) failure runs the field-proven unwind (emergency FLR,
+/// bridge-BME release, handoff, next card) - the opt-in STOP variant was
+/// retired with \tx-stop-on-failure.txt on 2026-11-25.
 ///
 /// Returns `CardOutcome::Attempted` when the transaction was actually
 /// ATTEMPTED (the card was eligible, its asset set reached
 /// `run_transaction`, and - if the opt-in identity gate is configured - it
 /// was verified), `CardOutcome::NotAttempted` when the card was gated out
 /// before any GPU touch (no assets / no family mapping / PciIo open
-/// failure / identity gate refusal), and `CardOutcome::HardStop` as above.
+/// failure / identity gate refusal).
 /// `tx_phase` turns `Attempted`/`NotAttempted` into the summary and the
 /// `FINAL: 0 card(s) unlocked` verdict (issue #139).
 #[cfg(feature = "diag")]
@@ -557,68 +521,52 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     // ---- \tx-rebar ladder (2026-11-24 bench line) --------------------------
     // Rung 0 \tx-rebar-read.txt: read-only probe (config first, then the XVE
     //   MMIO mirrors one log line each - isolates the first-run EFI hang).
-    // Main flow \tx-rebar.txt (size = decimal content, default 13): claim
-    //   first (the 11-22 discipline: never touch the card with firmware
-    //   drivers bound - the first run hung there), then the NV_30_DXE pair
-    //   with the route selected by markers:
+    // ReBAR arms - \tx-rebar.txt family or the tx.ini `rebar` key
+    //   (read | scan | <select>/<advertise>): claim first (the 11-22
+    //   discipline: never touch the card with firmware drivers bound - the
+    //   first run hung there), then the NV_30_DXE pair with the route from
+    //   config::rebar_route():
     //     default:       XVE MMIO mirrors (PciIo extended config is
     //                    UNSUPPORTED on this firmware - rung-2 round proved
     //                    it fail-closed)
-    //     +\tx-rebar-ecam.txt: ECAM-direct config access (RSDP->XSDT->MCFG)
-    //   Optional +\tx-sbr-gpu.txt: disciplined Secondary Bus Reset inside
-    //   the claimed window before the pair (display engine reset, straps
-    //   re-latched, BAR/command restored from the claim baseline).
+    //     ecam:          ECAM-direct config access (RSDP->XSDT->MCFG)
+    //   SBR is BUILT-IN (2026-11-25): disciplined Secondary Bus Reset inside
+    //   the claimed window before anything touches the XVE page (display
+    //   engine reset, straps re-latched, BAR/command restored from the claim
+    //   baseline). The XVE page is reset-gated - no SBR = hard hang at the
+    //   first register touch (11-22 lesson), so this is a precondition, not
+    //   a knob.
     // Every flow: NO FLR, no post-write reset - the pair must survive into
     // Windows' boot enumeration; recovery = power-off.
-    let rebar_raw = chainload::boot_volume_read(uefi::cstr16!(r"\tx-rebar.txt"))
-        .map(|c| {
-            let s: alloc::string::String = c.iter().map(|&b| b as char).collect();
-            s
-        })
-        .unwrap_or_default();
-    let mut rebar_parts = rebar_raw.trim().split('/');
-    // content: "<select_idx>" or "<select_idx>/<advertise_field>" -
     // select = the ReBAR control write (advisory; Windows re-arbitrates),
     // advertise = the 0x610 field[10:7] value (the real ceiling; 9 = 32G,
     // 13 = 512G per the 2026-11-24 field map).
-    let rebar_idx = rebar_parts
-        .next()
-        .and_then(|p| p.parse::<u32>().ok())
-        .filter(|&n| (1..=19).contains(&n))
-        .unwrap_or(13);
-    let rebar_adv = rebar_parts
-        .next()
-        .and_then(|p| p.parse::<u32>().ok())
-        .filter(|&n| n <= 15)
-        .unwrap_or(9);
+    let rebar_setting = config::rebar();
 
-    if tx::probe_file("\\tx-rebar-read.txt") {
-        info!("TX: \\tx-rebar-read.txt present - rung 0: read-only rebar-face probe (config side proven, MMIO side experimental; hang there = the isolation answer)");
+    if matches!(rebar_setting, Some(txini::RebarSetting::Read)) {
+        info!("TX: rebar read arm - rung 0: read-only rebar-face probe (config side proven, MMIO side experimental; hang there = the isolation answer)");
         tx::probe_rebar_reads(&pci, &gpu);
         tx::handoff_out(&pci);
         return CardOutcome::Attempted;
     }
 
-    if tx::probe_file("\\tx-rebar-scan.txt") {
-        let sbr_rung = tx::probe_file("\\tx-sbr-gpu.txt");
-        info!("TX: \\tx-rebar-scan.txt present - 0x610 field-encoding sweep + cap-mirror write probe (route {}, zero BAR-assignment writes; recovery = power-off)", if sbr_rung { "claim+SBR" } else { "claim" });
+    if matches!(rebar_setting, Some(txini::RebarSetting::Scan)) {
+        info!("TX: rebar scan arm - 0x610 field-encoding sweep + cap-mirror write probe (claim+SBR window, zero BAR-assignment writes; recovery = power-off)");
         match crate::tx_detach::detach_and_claim(g.handle) {
             Ok(claim) => {
                 info!("REBAR-SCAN: claimed (GOP off, screen dark by design)");
-                let mut sbr_ok = true;
-                if sbr_rung {
-                    let baseline = claim.baseline.clone();
-                    sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
-                    if sbr_ok {
-                        info!("REBAR-SCAN: SBR complete, device verified alive");
-                    } else {
-                        info!("REBAR-SCAN: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
-                    }
-                }
+                // SBR is BUILT INTO every rebar arm since 2026-11-25: the
+                // XVE page is reset-gated, so the claim window without the
+                // reset is not a usable shape (11-22 lesson). The old
+                // claim-only ablation rung retired with the sbr_gpu arm.
+                let baseline = claim.baseline.clone();
+                let sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
                 if sbr_ok {
+                    info!("REBAR-SCAN: SBR complete, device verified alive");
                     tx::run_rebar_fieldscan(&gpu);
                     info!("SELECTOR RESULT: field sweep complete - see REBAR-SCAN lines above");
                 } else {
+                    info!("REBAR-SCAN: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
                     logging::finish();
                     loop {
                         boot::stall(core::time::Duration::from_millis(500));
@@ -635,39 +583,47 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
         return CardOutcome::Attempted;
     }
 
-    // \tx-rebar-then-tx.txt (2026-11-24): run the rebar pair AND the full
-    // unlock transaction in one boot. The pair lands inside the claim+SBR
-    // window (same as the rebar-only flow), the claim is released, and
-    // control FALLS THROUGH the rebar if-block to the transaction below -
-    // which re-claims fresh. Turing's unlock chain skips FLR (FEAT PLM does
-    // not survive it), so nothing in the transaction resets the pair away;
-    // the SS selectors + the 32G window land together at the handoff.
+    // rebar_then_tx (2026-11-24): run the rebar pair AND the full unlock
+    // transaction in one boot. The pair lands inside the claim+SBR window
+    // (same as the rebar-only flow), the claim is released, and control
+    // FALLS THROUGH the rebar if-block to the transaction below - which
+    // re-claims fresh. Turing's unlock chain skips FLR (FEAT PLM does not
+    // survive it), so nothing in the transaction resets the pair away; the
+    // SS selectors + the 32G window land together at the handoff.
     // Declared here so the flag survives past the rebar if-block's match
     // scope (the fall-through must cross it).
-    let rebar_then_tx = tx::probe_file("\\tx-rebar-then-tx.txt");
-    if tx::probe_file("\\tx-rebar.txt") {
-        let sbr_rung = tx::probe_file("\\tx-sbr-gpu.txt");
-        let ecam_route = tx::probe_file("\\tx-rebar-ecam.txt");
+    let rebar_then_tx = config::flag(config::FlagArm::RebarThenTx);
+    if let Some(txini::RebarSetting::Pair {
+        select: rebar_idx,
+        advertise: rebar_adv,
+    }) = rebar_setting
+    {
+        let ecam_route = matches!(config::rebar_route(), txini::RebarRoute::Ecam);
         info!(
-            "TX: \\tx-rebar.txt present (size_idx {rebar_idx}, advertise field {rebar_adv} (top idx {}), route {}, SBR {}) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off",
-            rebar_adv as i32 - 2,
-            if ecam_route { "ECAM-direct" } else { "XVE-MMIO mirror" },
-            if sbr_rung { "yes" } else { "no" }
+            "TX: rebar pair arm (target size_idx {}, advertise field {}, route {}, SBR built-in) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off (0 = that side is NOT written)",
+            rebar_idx,
+            rebar_adv,
+            if ecam_route { "ECAM-direct" } else { "XVE-MMIO mirror" }
         );
         match crate::tx_detach::detach_and_claim(g.handle) {
             Ok(claim) => {
                 info!("REBAR: claimed (GOP off, screen dark by design from here to the Windows driver)");
-                let mut sbr_ok = true;
-                if sbr_rung {
-                    let baseline = claim.baseline.clone();
-                    sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
-                    if sbr_ok {
-                        info!("REBAR: SBR complete, device verified alive, config restored from claim baseline");
-                    } else {
-                        info!("REBAR: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
-                    }
+                // SBR built-in (2026-11-25): the XVE page is reset-gated -
+                // the claim window without the reset hangs at the first
+                // register touch (11-22 lesson). The opt-in sbr_gpu arm
+                // retired with this merge.
+                let baseline = claim.baseline.clone();
+                let sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
+                if sbr_ok {
+                    info!("REBAR: SBR complete, device verified alive, config restored from claim baseline");
+                } else {
+                    info!("REBAR: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
                 }
                 if sbr_ok {
+                    // 0 on a side = that write is skipped; the ECAM route
+                    // never carried an advertise field (config 0xBC0 only),
+                    // so target=0 on ECAM degenerates to a claim+SBR-only
+                    // round trip (still a valid straps re-latch arm).
                     let pair = if ecam_route {
                         tx::run_rebar_ecam((g.seg, g.bus, g.dev, g.fun), rebar_idx)
                     } else {
@@ -675,10 +631,10 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                     };
                     match pair {
                         Ok(()) => {
-                            let gop_reconnect = tx::probe_file("\\tx-rebar-gop.txt");
+                            let gop_reconnect = config::flag(config::FlagArm::RebarGop);
                             info!(
                                 "SELECTOR RESULT: rebar pair written and readback-verified - {} before chaining",
-                                if gop_reconnect { "rebuilding the console GOP (\\tx-rebar-gop.txt ablation)" } else { "dark handoff" }
+                                if gop_reconnect { "rebuilding the console GOP (rebar-gop ablation arm)" } else { "dark handoff" }
                             );
                             if gop_reconnect {
                                 if let Err(e) =
@@ -700,7 +656,7 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                 }
                 drop(claim);
                 if rebar_then_tx {
-                    info!("REBAR: \\tx-rebar-then-tx.txt present - claim released, FALLING THROUGH to the full unlock transaction (fresh claim inside; Turing skips FLR so the pair survives the chain)");
+                    info!("REBAR: rebar_then_tx arm - claim released, FALLING THROUGH to the full unlock transaction (fresh claim inside; Turing skips FLR so the pair survives the chain)");
                     // Fall through: no handoff_out, and NOT the match-tail
                     // return below - control must leave this whole if-block
                     // to reach the transaction code. The flag escapes the
@@ -859,11 +815,11 @@ so no transaction was attempted and nothing was written"
     // "the unlocked GPU's live state poisons the handoff" from "our UEFI
     // surgery poisons it". A freeze under this marker indicts the surgery;
     // a clean boot leaves the live GPU state as the remaining suspect.
-    if tx::probe_file("\\tx-fwsec-only.txt") {
-        info!("TX: \\tx-fwsec-only.txt present - the transaction stops after the FWSEC stage (no booter, no selectors, no FLR; issue #286 residue bracket)");
+    if config::fwsec_only() {
+        info!("TX: fwsec-only arm present (marker or tx.ini) - the transaction stops after the FWSEC stage (no booter, no selectors, no FLR; issue #286 residue bracket)");
     }
-    if tx::probe_file("\\tx-agitate-only.txt") {
-        info!("TX: \\tx-agitate-only.txt present - full-surgery zero-write control instead of the transaction (see run_agitate_only's contract)");
+    if config::agitate_only() {
+        info!("TX: agitate-only arm present (marker or tx.ini) - full-surgery zero-write control instead of the transaction (see run_agitate_only's contract)");
         let mut agitate_bridge = None;
         let outcome = tx::run_agitate_only(&gpu, &assets, g.handle, &mut agitate_bridge);
         match outcome {
@@ -943,67 +899,35 @@ so no transaction was attempted and nothing was written"
             tx::handoff_out(&pci);
             CardOutcome::Attempted
         }
-        // Generic/hard failure. Field-proven default (marker absent): run
-        // emergency_flr and hand off, same as always. Opt-in
-        // \tx-stop-on-failure.txt (see that file + CardOutcome::HardStop):
-        // per the safety-constitution discussion in the PR, a reset or a
-        // freed resource issued while the firmware may still be
-        // mid-operation is itself an uncontrolled write to a card whose
-        // state is no longer trusted - so with the marker present, do
-        // neither: no FLR, no handoff, no next card, no chain-load. This is
-        // a deliberate tradeoff against the default's guaranteed-boot
-        // behavior, which is why it is opt-in rather than a silent flip.
+        // Generic/hard failure: the field-proven path, now unconditional
+        // (the opt-in \tx-stop-on-failure.txt STOP variant was retired
+        // 2026-11-25 - zero field uptake across its lifetime): run
+        // emergency_flr on this card, hand off, continue to the next card.
         Err(e) => {
-            // The failure policy lives in tx_policy (pure, sim-tested); this
-            // arm is its EFI-side execution.
-            match tx_policy::hard_failure_action(tx::probe_file("\\tx-stop-on-failure.txt")) {
-                tx_policy::HardFailureAction::Stop => {
-                    info!("TX: transaction failed: {e:?} - opt-in STOP (\\tx-stop-on-failure.txt present): no FLR, no handoff, no next card, no chain-load this session");
-                    // The claim muted the console mirror; the failure path's
-                    // re-enable lives in handoff_out - run it here too so the
-                    // frozen mid-transaction state is at least logged and
-                    // visible on whatever console surface still exists. The
-                    // GOP itself is NOT reconnected: that would be acting
-                    // again on a card whose state is no longer trusted - the
-                    // screen may stay dark and loader.log is the sole record.
-                    tx::handoff_out(&pci);
-                    // Bridge release = tx_policy::BridgeReleaseOnFailure::
-                    // Never on this path: clearing bus-master under
-                    // possibly-live DMA is the same uncontrolled write the
-                    // FLR would be, and the machine is about to halt for a
-                    // power cycle, so nothing downstream observes the bridges.
-                    CardOutcome::HardStop
-                }
-                tx_policy::HardFailureAction::FlrAndContinue => {
-                    info!("TX: transaction failed: {e:?} - NOT retrying this session");
-                    // Field report (issue #74): on a TB4/USB4 eGPU the unwind FLR can
-                    // leave the function off the bus afterwards - Windows then shows
-                    // CM_PROB_PHANTOM, fans stop, and the only recovery measured on
-                    // that seat is an AC cycle of the enclosure. Say so, or the first
-                    // person to see it concludes the card is dead.
-                    info!("TX: recovery note: if this card sits in an eGPU enclosure and disappears from the bus after this failure, power-cycle the enclosure (PSU off ~30 s); an internal card needs a normal power cycle");
-                    // Failure unwind: FLR wipes our half-states (engine resets,
-                    // BCR, DMA queues) so the Windows driver gets a cold-boot
-                    // card. Bridge release = tx_policy::AfterFlr on this path:
-                    // only AFTER the FLR - post-reset nothing can be in flight
-                    // through the bridges, so clearing is exactly as safe as on
-                    // the success tail; clearing earlier would be an
-                    // uncontrolled write under possibly-live DMA (booter 0x89
-                    // family), and never clearing would carry our bus-master
-                    // bits into Windows (dirty-BME handoff shape, #3/#9).
-                    tx::emergency_flr(g.handle);
-                    if let tx_policy::BridgeReleaseOnFailure::AfterFlr =
-                        tx_policy::bridge_release_on_failure(tx_policy::HardFailureAction::FlrAndContinue)
-                    {
-                        if let Some(bm) = bridge_master.as_mut() {
-                            bm.release();
-                            info!("TX: bridge BME restored after the failure FLR");
-                        }
-                    }
-                    tx::handoff_out(&pci);
-                    CardOutcome::Attempted
-                }
+            info!("TX: transaction failed: {e:?} - NOT retrying this session");
+            // Field report (issue #74): on a TB4/USB4 eGPU the unwind FLR can
+            // leave the function off the bus afterwards - Windows then shows
+            // CM_PROB_PHANTOM, fans stop, and the only recovery measured on
+            // that seat is an AC cycle of the enclosure. Say so, or the first
+            // person to see it concludes the card is dead.
+            info!("TX: recovery note: if this card sits in an eGPU enclosure and disappears from the bus after this failure, power-cycle the enclosure (PSU off ~30 s); an internal card needs a normal power cycle");
+            // Failure unwind: FLR wipes our half-states (engine resets,
+            // BCR, DMA queues) so the Windows driver gets a cold-boot card.
+            // Bridge release only AFTER the FLR - post-reset nothing can be
+            // in flight through the bridges, so clearing is exactly as safe
+            // as on the success tail; clearing earlier would be an
+            // uncontrolled write under possibly-live DMA (booter 0x89
+            // family), and never clearing would carry our bus-master bits
+            // into Windows (dirty-BME handoff shape, #3/#9). The old
+            // tx_policy module pinned this ordering; it retired with the
+            // STOP variant (single-decision enums with one value left).
+            tx::emergency_flr(g.handle);
+            if let Some(bm) = bridge_master.as_mut() {
+                bm.release();
+                info!("TX: bridge BME restored after the failure FLR");
             }
+            tx::handoff_out(&pci);
+            CardOutcome::Attempted
         }
     }
     }

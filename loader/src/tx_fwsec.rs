@@ -1,6 +1,5 @@
 //! FWSEC ignition phase (unlock_610.c 921-1026) + helpers (vbios_610.c,
 //! prep_610.c), no_std ports. Part of the `tx` feature.
-#![allow(dead_code)] // pre-wired ahead of the gate; behavior twin in sim/assets
 
 
 
@@ -105,12 +104,6 @@ fn find_expansion_offset(rom: &[u8]) -> Option<usize> {
 /// Compact BIT -> token 0x70 -> ucode table -> FWSEC walk (Ada V3 path).
 pub fn prom_find_fwsec(rom: &[u8], debug: bool) -> Option<FwsecInfo> {
     prom_find_ucode(rom, if debug { 0x45 } else { 0x85 })
-}
-
-/// Scrubber ucode (app 0x49) - the kernel runs it on SEC2 BEFORE FWSEC when
-/// BSI SCRUBBER_HANDOFF < DONE (kgspExecuteScrubberIfNeeded_AD102).
-pub fn prom_find_scrubber(rom: &[u8]) -> Option<FwsecInfo> {
-    prom_find_ucode(rom, 0x49)
 }
 
 fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
@@ -414,7 +407,7 @@ pub fn layout_from_registers(
                     // hatch when the register decode is gated or implausible.
                     // Plain decimal GiB; everything downstream (vga/frts/wpr/
                     // heap) keys off this one number.
-                    let override_mib = crate::tx::read_boot_file("\\tu10x-fb-gb.txt")
+                    let override_mib = crate::config::content(crate::config::ContentArm::FbGb)
                         .and_then(|b| core::str::from_utf8(&b).ok().map(str::trim).and_then(|s| s.parse::<u64>().ok()))
                         .filter(|g| *g >= 1 && *g <= 64);
                     match override_mib {
@@ -828,14 +821,14 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     // "<4GB locked" note concerns LOCKED-STATE BOOTER reads, never the FWSEC
     // BL. Meta/signature/radix keep the global >4GB gate.
     // \tx-fwsec-high-staging.txt restores the old high band for ablation.
-    let mut dma = if !crate::tx::probe_file("\\tx-fwsec-high-staging.txt") && crate::pci::high_staging() {
+    let mut dma = if crate::pci::high_staging() {
         let restore = crate::pci::high_staging();
         crate::pci::set_high_staging(false);
         let d = gpu.pci.dma_alloc(fw.image_size as usize);
         crate::pci::set_high_staging(restore);
         let d = d.map_err(|_| TxError::ENodev)?;
         info!(
-            "FWSEC-TU10X: staging allocated in the LOW band by default (dev={:#x}) - >=4GiB is unreachable on some platforms (issue #74); \\tx-fwsec-high-staging.txt restores high",
+            "FWSEC-TU10X: staging allocated in the LOW band by default (dev={:#x}) - >=4GiB is unreachable on some platforms (issue #74)",
             d.dev
         );
         d
@@ -860,20 +853,23 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     }
     core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
-    // \tx-fwsec-vram-staging.txt (issue #89-proven vehicle): some hosts cannot
-    // DMA the FWSEC image from sysmem at ALL (not just >=4GiB - #89's 1f03
-    // died with EXCI 0x009003ff even on the v2.1.8 low-band default). The
-    // field-proven shape: copy the image into the framebuffer via BAR1, point
-    // the BL's codeDma/dataDma at the FB offset, and switch the GSP FBIF
-    // TRANSCFG4 aperture to LOCAL_FB ((t4&!7)|4). The meta itself MUST stay
-    // in sysmem (the booter reads it through the sysmem aperture - VRAM meta
-    // reads back as garbage and exits 0x89, #89 measured). Default OFF.
-    let vram_staging = force_vram || crate::tx::probe_file("\\tx-fwsec-vram-staging.txt");
+    // VRAM staging (issue #89-proven vehicle): some hosts cannot DMA the
+    // FWSEC image from sysmem at ALL (not just >=4GiB - #89's 1f03 died
+    // with EXCI 0x009003ff even on the v2.1.8 low-band default). The
+    // field-proven shape: copy the image into the framebuffer via BAR1,
+    // point the BL's codeDma/dataDma at the FB offset, and switch the GSP
+    // FBIF TRANSCFG4 aperture to LOCAL_FB ((t4&!7)|4). The meta itself
+    // MUST stay in sysmem (the booter reads it through the sysmem
+    // aperture - VRAM meta reads back as garbage and exits 0x89, #89
+    // measured). Reached ONLY through the FWSEC-FALLBACK retry below -
+    // the manual preset marker was retired 2026-11-25: the fallback's one
+    // function-level FLR happens behind the already-dark detached screen,
+    // so the preset saved nothing the operator could perceive.
     if force_vram {
-        info!("FWSEC-TU10X: forced VRAM staging (FWSEC-FALLBACK retry arm)");
+        info!("FWSEC-TU10X: VRAM staging (FWSEC-FALLBACK retry arm - sysmem aperture dead)");
     }
     const FWSEC_VRAM_OFF: u64 = 0x0100_0000; // 16 MiB into FB (BAR1 window)
-    if vram_staging {
+    if force_vram {
         let img = unsafe { core::slice::from_raw_parts(dma.host, fw.image_size as usize) };
         let st = gpu.pci.bar_write_buf(1, FWSEC_VRAM_OFF, img);
         let (rb0, rb1) = (
@@ -915,18 +911,18 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     gpu.write32(GSP + 0x624, ctl | 1 << 7); // FBIF_CTL DISABLE_CTX_REQ
     gpu.write32(GSP + 0x10C, 0); // DMACTL
     gpu.write32(GSP + 0x600, 0x15); // TRANSCFG0 = COHERENT_SYSMEM|PHYSICAL
-    if vram_staging {
+    if force_vram {
         gpu.write32(GSP + 0x610, (0x15 & !7) | 4); // TRANSCFG4 -> LOCAL_FB (issue #89 shape)
     } else {
         gpu.write32(GSP + 0x610, 0x15); // TRANSCFG4 (the BL's ctxDma index)
     }
     let t4 = gpu.read32(GSP + 0x610)?;
-    info!("FWSEC-TU10X: FBIF trans4={t4:#010x} dmactl cleared (vram_staging={vram_staging})");
+    info!("FWSEC-TU10X: FBIF trans4={t4:#010x} dmactl cleared (vram_staging={force_vram})");
 
     // 3. BL DESC (RM_FLCN_BL_DMEM_DESC, 0x54 bytes) -> DMEM 0.
     let mut desc = [0u8; 0x54];
     let put32 = |d: &mut [u8], off: usize, v: u32| d[off..off + 4].copy_from_slice(&v.to_le_bytes());
-    let (code_dev, data_phys) = if vram_staging {
+    let (code_dev, data_phys) = if force_vram {
         (FWSEC_VRAM_OFF, FWSEC_VRAM_OFF + fw.data_off as u64)
     } else {
         (dma.dev, dma.dev + fw.data_off as u64)
@@ -1002,7 +998,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
         // the failure lands HERE (the #74 three-death-shapes: a silent FWSEC
         // image fetch) even though FWSEC staging is already LOW by default.
         info!(
-            "FWSEC-TU10X: known causes (issue #74 four-cell matrix): 1) BIOS VT-d/IOMMU ON - it kills staging DMA in BOTH bands, turn it OFF first (SVM/AMD-V and Intel VT-x verified harmless); 2) a bridge on the path without bus master (see the DMA-PATH lines); 3) band problems are unlikely here - FWSEC staging is already LOW by default (\\tx-fwsec-high-staging.txt is ablation only)"
+            "FWSEC-TU10X: known causes (issue #74 four-cell matrix): 1) BIOS VT-d/IOMMU ON - it kills staging DMA in BOTH bands, turn it OFF first (SVM/AMD-V and Intel VT-x verified harmless); 2) a bridge on the path without bus master (see the DMA-PATH lines); 3) band problems are unlikely here - FWSEC staging is already LOW by default"
         );
         let _ = dma.release(gpu.pci);
         return Err(TxError::EIO);
@@ -1023,7 +1019,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     if crate::tx::probe_file("\\tx-no-gsp-halt-gate.txt") {
         info!("FWSEC-TU10X: \\tx-no-gsp-halt-gate.txt present - legacy completion (WPR2 match only, no HALT wait, no result check)");
         let _ = dma.release(gpu.pci);
-        if vram_staging {
+        if force_vram {
             gpu.write32(GSP + 0x610, 0x15); // restore sysmem aperture for later stages
             info!("FWSEC-TU10X: TRANSCFG4 restored to 0x15 (sysmem) after VRAM-staged FWSEC");
         }
@@ -1071,7 +1067,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
         return Err(TxError::EIO);
     }
     let _ = dma.release(gpu.pci);
-    if vram_staging {
+    if force_vram {
         gpu.write32(GSP + 0x610, 0x15); // restore sysmem aperture for later stages
         info!("FWSEC-TU10X: TRANSCFG4 restored to 0x15 (sysmem) after VRAM-staged FWSEC");
     }

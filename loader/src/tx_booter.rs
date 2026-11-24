@@ -1,7 +1,6 @@
 //! Booter publication + execution + selectors + FLR — final transaction
 //! segment, behavioral port of unlock_610.c (434-489, 749-800, 878-920,
 //! 1113-1432) and prep_610.c (boot_desc parse, booter patch, wpr_meta_pack).
-#![allow(dead_code)]
 
 
 use log::info;
@@ -19,14 +18,8 @@ pub const SS0_UNLOCK: u32 = 0x8888_8888;
 pub const SS1_UNLOCK: u32 = 0x8;
 pub const BTL1_MAGIC: u32 = 0x314C_5442;
 
-fn le16(d: &[u8], o: usize) -> u16 {
-    u16::from_le_bytes([d[o], d[o + 1]])
-}
 fn le32(d: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]])
-}
-fn wr32(d: &mut [u8], o: usize, v: u32) {
-    d[o..o + 4].copy_from_slice(&v.to_le_bytes());
 }
 fn wr64(d: &mut [u8], o: usize, v: u64) {
     d[o..o + 8].copy_from_slice(&v.to_le_bytes());
@@ -42,9 +35,6 @@ pub struct BootDesc {
     pub data_offset: u32,
     pub manifest_offset: u32,
     pub image_size: u32,
-    /// desc d7 (appVersion) — Turing writes it to GSP FALCON_OS after the
-    /// booter load (kgspBootstrap_TU102).
-    pub app_version: u32,
 }
 
 #[cfg(feature = "tx")]
@@ -68,7 +58,6 @@ pub fn boot_desc_parse(desc: &[u8], image_size: u32) -> Result<BootDesc, TxError
             data_offset: f(10),
             code_offset: f(12),
             image_size,
-            app_version: f(7),
         });
     }
     if desc.len() != 84
@@ -100,7 +89,6 @@ pub fn boot_desc_parse(desc: &[u8], image_size: u32) -> Result<BootDesc, TxError
         data_offset: f(10),
         code_offset: f(12),
         image_size,
-        app_version: f(7),
     })
 }
 
@@ -242,15 +230,10 @@ pub fn booter_patch_stock(image: &mut [u8], hdr: &BooterHdr, signatures: &[u8], 
     })
 }
 
-/// Replace the patch slot with the V67 payload image (the exploit vehicle).
-#[cfg(feature = "tx")]
-pub fn booter_patch_v67(image: &mut [u8], hdr: &BooterHdr, v67: &[u8]) -> Result<(), TxError> {
-    if v67.len() != V67_SIZE || hdr.patch_loc as usize + V67_SIZE > image.len() {
-        return Err(TxError::EInval);
-    }
-    image[hdr.patch_loc as usize..hdr.patch_loc as usize + V67_SIZE].copy_from_slice(v67);
-    Ok(())
-}
+// booter_patch_v67 (patch-slot image overlay) was removed 2026-11-25: the
+// live payload vehicle DMA's the V67 image as the SIGNATURE staging
+// (tx.rs copies it into sig_dma; the unbounded signature copy is the
+// exploit), so the image-slot variant had no callers.
 
 /// Radix: three-level page tables over the GSP image, carved from ONE
 /// contiguous DMA block (EFI-friendly variant of the per-page C allocator;
@@ -458,7 +441,6 @@ pub fn booter_fire(
     hdr: &BooterHdr,
     image: &[u8],
     meta_addr: u64,
-    local_fb: bool,
     wait: BooterWait,
 ) -> Result<(), TxError> {
     const SEC2: u32 = crate::tx::eng::SEC2;
@@ -468,18 +450,6 @@ pub fn booter_fire(
     // (post-halt reads go badf5620) - the reset re-opens it.
     crate::tx::falcon_reset(gpu, SEC2, crate::tx::eng::SEC2_FBIF, crate::tx::eng::SEC2_FALCON2, true)?;
     crate::tx::falcon_dma_unblock(gpu, SEC2, crate::tx::eng::SEC2_FBIF)?;
-    if local_fb {
-        // VRAM staging: switch the falcon DMA aperture from coherent sysmem
-        // to LOCAL_FB (kernel_gsp_falcon_ga102.c programs the same two
-        // TRANSCFG fields). Every booter read then stays on-device - no PCIe
-        // transaction, no platform DMA layer in the path.
-        let fbif = crate::tx::eng::SEC2_FBIF;
-        let mut trans = gpu.read32(fbif)?;
-        trans &= !3; // TARGET[1:0]: 1 (coherent sysmem) -> 0 (local FB); MEM_TYPE stays PHYSICAL
-        gpu.write32(fbif, trans);
-        let rb = gpu.read32(fbif)?;
-        info!("BOOTER-VRAM: TRANSCFG TARGET=LOCAL_FB, trans={rb:#010x}");
-    }
     crate::tx::falcon_authority_probe(gpu, SEC2, "SEC2");
     // Kernel BootFromHs loads ONLY the secure code segment, and lands it at
     // physical IMEM 0 (dest=imemPa=0) with virtual tags from imemVa - the
@@ -639,9 +609,9 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     crate::tx_portal::portal_load_dmem(gpu, base, 0, dmem);
     portal_audit(gpu, hdr, image, &place);
 
-    // BOOTVEC = start of non-secure code (or the secure entry under the
-    // \tx-bootvec-sec.txt switch); mailboxes = WprMeta phys addr.
-    gpu.write32(base + FALCON_BOOTVEC, place.bootvec);
+    // BOOTVEC = start of non-secure code (the NS stub entry); mailboxes =
+    // WprMeta phys addr.
+    gpu.write32(base + FALCON_BOOTVEC, 0);
     gpu.write32(base + FALCON_MAILBOX0, meta_dma as u32);
     gpu.write32(base + FALCON_MAILBOX1, (meta_dma >> 32) as u32);
     info!(
@@ -763,14 +733,6 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     Ok(())
 }
 
-/// Cache flush for the C-reference fire shape (wbinvd before the portal
-/// verifies and again before START, mirroring the proven run).
-fn wbinvd_flush() {
-    // SAFETY: privileged instruction, no memory operands; boot-services
-    // single-threaded context.
-    unsafe { core::arch::asm!("wbinvd", options(nostack, preserves_flags)) };
-}
-
 // ---------------------------------------------------------------------------
 // TU10x booter forensics (branch diag/tu10x-forensics, 2026-10-31).
 //
@@ -848,76 +810,25 @@ fn log_mailbox_verdict(mbox0: u32) {
     info!("BOOTER: mailbox0 verdict: {mbox0:#x} - {}", mailbox0_verdict(mbox0));
 }
 
-/// ASCII number parse ("0x200" hex or "512" decimal) for \tx-sec-base.txt.
-/// v2.1.8 fix (issue #57 round E): the first version consumed the leading
-/// '0' as a decimal digit and then rejected the 'x' - "0x200" silently
-/// parsed as None while "512" worked, voiding that ablation round. The 'x'
-/// is now accepted whenever no nonzero digit has been consumed yet.
-fn parse_num_ascii(raw: &[u8]) -> Option<u32> {
-    let mut hex = false;
-    let mut val: u32 = 0;
-    let mut any = false;
-    for &b in raw {
-        match b {
-            0 | b'\n' | b'\r' | b' ' | b'\t' => continue,
-            b'x' | b'X' if val == 0 && !hex => hex = true,
-            b'0'..=b'9' => {
-                let d = (b - b'0') as u32;
-                val = val.checked_mul(if hex { 16 } else { 10 })?.checked_add(d)?;
-                any = true;
-            }
-            b'a'..=b'f' if hex => {
-                let d = (b - b'a' + 10) as u32;
-                val = val.checked_mul(16)?.checked_add(d)?;
-                any = true;
-            }
-            b'A'..=b'F' if hex => {
-                let d = (b - b'A' + 10) as u32;
-                val = val.checked_mul(16)?.checked_add(d)?;
-                any = true;
-            }
-            _ => return None,
-        }
-    }
-    any.then_some(val)
-}
-
 /// Secure-segment placement resolver + BOOTER-PLACE log. The default is
 /// byte-identical to the field-proven placement (dest and tag are two
-/// quantities that happen to be equal). \tx-sec-base.txt moves dest AND tag
-/// together - moving only one manufactures exactly the fetch fault this
-/// diagnostic hunts for; \tx-bootvec-sec.txt starts the core at the secure
-/// entry instead of the NS stub. Shape and both switches credit PR #67
-/// (Catnip202X), field-tested in issue #62's D/E rounds.
+/// quantities that happen to be equal; shape credits PR #67, Catnip202X,
+/// field-tested in issue #62's D/E rounds). The \tx-sec-base.txt dest/tag
+/// override and the \tx-bootvec-sec.txt secure-entry bootvec were retired
+/// 2026-11-25 - nsstub-season research knobs, the header-derived default
+/// is the shipped shape.
 struct SecPlacement {
     dest: u32,
     tag: u32,
-    bootvec: u32,
-    bootvec_sec: bool,
 }
 
 fn sec_placement(hdr: &BooterHdr) -> SecPlacement {
     let default_dest = hdr.imem_ns_size.div_ceil(256) * 256;
-    let mut p = SecPlacement { dest: default_dest, tag: hdr.app_code_off, bootvec: 0, bootvec_sec: false };
-    let override_txt = crate::tx::read_boot_file("\\tx-sec-base.txt")
-        .and_then(|raw| parse_num_ascii(&raw))
-        .filter(|v| *v != 0 && (*v & 0xff) == 0);
-    if let Some(v) = override_txt {
-        p.dest = v;
-        p.tag = v;
-    }
-    if crate::tx::probe_file("\\tx-bootvec-sec.txt") {
-        p.bootvec = p.dest;
-        p.bootvec_sec = true;
-    }
-    if let Some(v) = override_txt {
-        info!("BOOTER-PLACE: sec-base override Some({v:#x}) - dest AND tag moved together");
-    }
+    let p = SecPlacement { dest: default_dest, tag: hdr.app_code_off };
     info!(
-        "BOOTER-PLACE: ns 0x0+{:#x} -> dest 0 tag 0x0 | sec {:#x}+{:#x} -> dest {:#x} tag {:#x} (default dest {:#x}, tag==dest: {}, override: {}) | bootvec {:#x} ({})",
+        "BOOTER-PLACE: ns 0x0+{:#x} -> dest 0 tag 0x0 | sec {:#x}+{:#x} -> dest {:#x} tag {:#x} (default dest {:#x}, tag==dest: {}) | bootvec 0x0 (ns stub)",
         hdr.imem_ns_size, hdr.app_code_off, hdr.app_code_size, p.dest, p.tag, default_dest,
-        p.tag == p.dest, override_txt.is_some(), p.bootvec,
-        if p.bootvec_sec { "secure entry" } else { "ns stub" }
+        p.tag == p.dest
     );
     p
 }
@@ -990,101 +901,6 @@ fn portal_audit(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], p: &SecPlacement) {
         h = fnv(h, v);
     }
     info!("BOOTER-AUDIT: dmem readback {} (fnv {:010x})", if ok { "MATCH" } else { "MISMATCH" }, h);
-}
-
-/// C-reference SEC2 booter fire for Turing BOOT_DIRECT (issue #17/#62
-/// matrix, marker \tx-sec2-c-load.txt). Byte-exact mirror of the
-/// hardware-proven reference path (chenxluo/tu102-22g-uefi-unlock
-/// fire_direct, 2026-10-29, the exact #17 card) in everything it does
-/// DIFFERENTLY from booter_fire_direct, where the load placement itself
-/// (NS@0, SEC@align256(ns), DMEM@0, BOOTVEC=0) is identical and kept:
-/// 1. no engine reset - entry must already be halted (checked, never
-///    assumed); the reference never resets SEC2;
-/// 2. FBIF CTL bit7 (ALLOW_PHYS_NO_CTX) preserve-set + DMACTL=0 WITHOUT
-///    touching TRANSCFG (the default path additionally forces
-///    TRANSCFG0=(x&!7)|5; the reference leaves the as-POSTed aperture);
-/// 3. a fully QUIET 3s window after START - the default path samples
-///    DMEM/mailboxes mid-run through the same portal registers; the
-///    reference performs zero MMIO until the halt poll;
-/// 4. direct CPUCTL=2 START with no alias-retry branch, plus the
-///    reference's pre-START portal verify readbacks.
-#[cfg(feature = "tx")]
-pub fn booter_fire_direct_c(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: u64) -> Result<(), TxError> {
-    let base = crate::tx::eng::SEC2;
-    // Entry precondition (reference fire_direct): SEC2 halted and readable.
-    // No reset is performed - if the PRI window is closed or the core runs,
-    // this variant refuses instead of "fixing" the state.
-    let cpuctl = gpu.pci.bar_read_u32(gpu.bar, (base + 0x100) as u64);
-    if cpuctl == !0u32 || cpuctl & 0xffff_0000 == 0xbadf_0000 || cpuctl & (1 << 4) == 0 {
-        info!(
-            "BOOTER-C: entry precondition failed (CPUCTL={cpuctl:#010x}, want halted+readable) - refusing (the reference path never resets)"
-        );
-        return Err(TxError::EIO);
-    }
-    info!("BOOTER-C: entry halted ok (CPUCTL={cpuctl:#010x}) - no reset, as-POSTed state kept");
-    // Reference preamble: FBIF CTL bit7 preserve-set, DMACTL = 0. TRANSCFG
-    // stays exactly as the POST/BSI handoff left it.
-    let ctl = gpu.read32(base + 0x624)?;
-    gpu.write32(base + 0x624, ctl | (1 << 7));
-    gpu.write32(base + 0x10c, 0);
-    info!("BOOTER-C: FBIF CTL {ctl:#010x} -> {:#010x} (bit7), DMACTL=0, TRANSCFG untouched", ctl | (1 << 7));
-    // Portal loads - identical placement to booter_fire_direct (and the same
-    // placement switches + readback audit, so the two paths stay comparable
-    // in the #17/#62 matrix rounds).
-    let ns = &image[hdr.imem_ns_off as usize..(hdr.imem_ns_off + hdr.imem_ns_size) as usize];
-    crate::tx_portal::portal_load_imem(gpu, base, 0, hdr.imem_ns_off, ns, false);
-    let place = sec_placement(hdr);
-    let sec = &image[hdr.app_code_off as usize..(hdr.app_code_off + hdr.app_code_size) as usize];
-    crate::tx_portal::portal_load_imem(gpu, base, place.dest, place.tag, sec, true);
-    let dmem = &image[hdr.data_off as usize..(hdr.data_off + hdr.data_size) as usize];
-    crate::tx_portal::portal_load_dmem(gpu, base, 0, dmem);
-    portal_audit(gpu, hdr, image, &place);
-    wbinvd_flush();
-    // Reference verify readbacks BEFORE start (imem word0, dmem 0x200).
-    gpu.write32(base + 0x180, 0);
-    let imem_rb = gpu.read32(base + 0x184)?;
-    let ns_word0 = u32::from_le_bytes(ns[..4].try_into().unwrap());
-    if imem_rb != ns_word0 {
-        info!("BOOTER-C: imem verify mismatch: {imem_rb:#010x} != {ns_word0:#010x}");
-        return Err(TxError::EIO);
-    }
-    gpu.write32(base + 0x1c0, 0x200);
-    let dmem_rb = gpu.read32(base + 0x1c4)?;
-    gpu.write32(base + 0x1c0, 0);
-    if dmem.len() >= 0x204 {
-        let dmem_word = u32::from_le_bytes(dmem[0x200..0x204].try_into().unwrap());
-        if dmem_rb != dmem_word {
-            info!("BOOTER-C: dmem verify mismatch: {dmem_rb:#010x} != {dmem_word:#010x}");
-            return Err(TxError::EIO);
-        }
-    }
-    info!("BOOTER-C: portal verify ok (imem {imem_rb:#010x} dmem {dmem_rb:#010x})");
-    // BOOTVEC = 0 (or the secure entry under \tx-bootvec-sec.txt), mailboxes
-    // = meta, direct START (the reference writes CPUCTL=2 unconditionally;
-    // the alias retry lives in the default path).
-    gpu.write32(base + 0x104, place.bootvec);
-    gpu.write32(base + 0x040, meta_dma as u32);
-    gpu.write32(base + 0x044, (meta_dma >> 32) as u32);
-    wbinvd_flush();
-    info!(
-        "BOOTER-C: fire meta dev={meta_dma:#x} mbox0={:#010x} mbox1={:#010x} BOOTVEC=0 START (quiet window next - no MMIO for 3s)",
-        meta_dma as u32,
-        meta_dma >> 32
-    );
-    gpu.write32(base + 0x100, 2);
-    // QUIET window: 3s of zero MMIO (the reference's exact shape), then the
-    // bounded halt poll, then a 1s settle. NO mid-run portal sampling.
-    uefi::boot::stall(core::time::Duration::from_micros(3_000_000));
-    gpu.poll_us(base + 0x100, 1 << 4, 1 << 4, 2_000_000, true)?;
-    uefi::boot::stall(core::time::Duration::from_micros(1_000_000));
-    let cpu_end = gpu.read32(base + 0x100)?;
-    let mbox0 = gpu.read32(base + 0x040)?;
-    let mbox1 = gpu.read32(base + 0x044)?;
-    let exci = gpu.read32(base + 0x0d0)?;
-    info!("BOOTER-C: post-quiet CPUCTL={cpu_end:#010x} mailbox0={mbox0:#x} mailbox1={mbox1:#x} exci={exci:#010x} (verdict lands in POST-BOOT)");
-    log_exci_decode(exci);
-    log_mailbox_verdict(mbox0);
-    Ok(())
 }
 
 /// Booter status codes 0x89-0x90 belong to `wpr_desc_validate` (cmp170hx

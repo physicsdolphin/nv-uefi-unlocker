@@ -48,6 +48,8 @@ maker 在本地 `usbroot/` 输出资产（`*.bin` 平铺在该目录，另已建
 
 **免 U 盘复制（可选）**：生成完成后 maker 会探测本机**现有** FAT32 分区并询问是否一键安装——内置盘（非 USB）上**非引导**（非 ESP、非系统/启动卷）的数据 FAT32 分区提示"持久化安装"（以后从主板一次性启动菜单直接引导该卷；部分主板不枚举内置盘 FAT 分区，U 盘始终是通用路径），U 盘上的 FAT32 分区提示"安装到 U 盘"。安装只做**追加复制**：目标上已有文件一律不覆盖、不删除，同名异内容文件会让整个目标被拒绝并逐个列出（除非盘根 `nvuu-stick.json` 表明这是本项目先前安装的布局，才允许原地升级）；绝不创建/调整/格式化分区，绝不写系统 ESP，绝不添加 NVRAM 启动项。两个探测都没有结果时，脚本会给出两条路线的准备指引（内置盘划一块非 ESP 数据 FAT32 分区 / 一个有足够大 FAT32 分区的 U 盘）。脚本化场景用 `-NoInstallPrompt` / `--no-install-prompt` 跳过询问，或 `-InstallTo D:\` / `--install-to <挂载点>` 指定已存在的目标（同一套资格校验）。
 
+**`\tx.ini` 聚合配置（可选，实验性）**：下表的大量 marker 可以收进盘根一个 `\tx.ini`（如 `i_know_what_i_am_doing = 5`、`rebar = 11/9`、`reconnect = off`）。没有这个文件 = 与从前完全一致；**同一臂在 ini 和 marker 两处都设 = 拒绝引导**（日志列出冲突，删一边再跑）；解析/取值错误同样拒绝（GPU 零写入）。台架/消融旋钮故意不进 ini，仍是 marker-only。完整键表与语法见 [docs/tx-ini.md](tx-ini.md)（issue #290）。
+
 **为什么放到这个路径就能被识别？** UEFI 固件对**可移动介质**有一个固定的回退引导路径——`\EFI\BOOT\BOOTX64.EFI`（x86_64）。文件在这个路径上，固件就会把它当作引导项自动列出/执行，**不需要**写入或修改任何 NVRAM 启动项——这也是本工具"无常驻引导项"纪律（[安全约束](#safety)）能成立的原因：拔掉 U 盘，机器回到原样。其他架构有各自的默认文件名（如 aarch64 是 `BOOTAA64.EFI`）：当前工具、资产与所有实测都只覆盖 x86_64；如果你在 aarch64（ARM 笔记本/服务器）上有需求，请开 feature request/PR 说明平台与固件，开发者暂时没有测试条件。
 
 **`-Out G:\` 在 Windows PowerShell 5.1 上会报 `New-Item : The path is not of a legal form`**（盘符根以 `\` 结尾，`New-Item -Path` 不接受；[#195](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/195)）。脚本创建目录时会自动剥掉尾反斜杠；若用旧包，改传 **`-Out G:`**（不带 `\`）即可。
@@ -80,27 +82,22 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-ignore-key.txt` | 幽灵键过滤:每行一个键,`#` 起注释,写法与 ABORT 日志行一致(`Special(LEFT)`、`Printable('z')`),或 `0x1A` / `scan 0x104`。列出的键在所有按键等待中视为未按下(CONFIRM、武装倒计时、链式加载选择器)。**Esc 永远不能被忽略。** 最多 8 项;无法解析的行会记录并跳过。卡键(EC 合成键、带键盘接口的 USB 鼠标/接收器)的免重编译方案:从自己的 `loader.log` 读出键值写入此文件 |
 | `chain-target.txt` | 第一个非空、非 `#` 行指定优先 EFI 路径，逐卷查找；找不到时记录日志并回退默认顺序。**固件 BootOrder 里有跨盘残留引导项时先看这条**：默认解析会按 BootOrder 取到别的盘上的旧 loader（[#204](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/204) 实例是另一块盘的 `\EFI\ubuntu\shimx64.efi`，事务全绿但链到 Linux），首行写 `\EFI\Microsoft\Boot\bootmgfw.efi` 即可钉死本机链载目标。制盘菜单可代写（Windows / Ubuntu / systemd-boot / 发行版 GRUB 与 shim / 自定义路径，默认不钉） |
 | `tx-preload.txt` | 启用预驱动预载链回（P2-7，TOTORONG 工艺）：事务前 LoadImage OS loader，交棒尾 PE 探针通过后直接 StartImage。**默认自 2026-11-09 起不预载**，走事务后固件 BootOrder 解析的旧链载路径——[#198](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/198) 九格矩阵：预载+脏卡与每一轮交棒后 logo 硬挂死逐一对应，而预载+干净卡（readonly）与无预载+脏卡（v2.1.5 run-10，无此特性）都活，默认回到久经田野的基线；预载原有的"FLR 后分配面退化时链载失败"鲁棒性动机已由固件 BootOrder 解析链（#128/#142）覆盖。需复现旧行为做 A/B 时加此标记；旧 `\tx-no-preload.txt` 退役，存在不再有任何效果 |
-| `no-reconnect.txt` | 跳过目标 GPU 的 GOP 重连，适用于事务后重连卡死或复位 |
-| `tx-reconnect-nonrecursive.txt` | 只把重连改为非递归、保留 vendor GOP 绑定（console 栈交给 bootmgfw 重建）；比 `no-reconnect.txt` 温和，适用于"能进系统但重连卡死"一族（[#52](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/52) X470、[Discussion #131](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/131) X99/C610 实证） |
+| `tx-no-reconnect.txt` / tx.ini `reconnect = off` | 跳过目标 GPU 的重连（native-GOP 重建），暗交棒——Windows Boot Manager 自建控制台。适用于事务后重建阶段挂死/复位（[#52](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/52)/[#35](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/35)/[#61](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/61) 家族）。**默认 on，但 rebar 臂激活时自动默认 off**（rebar 对写+任何 GOP 重连=已证 Code 12 族，pci 在新扩 BAR 上重平衡；显式 `reconnect = on` 可覆盖）。旧 legacy 递归重连路径及其 marker 三件套（`tx-reconnect-legacy.txt`、`tx-reconnect-nonrecursive.txt`、`no-reconnect.txt`）已于 2026-11-25 整体退役 |
 | `i_know_what_i_am_doing.txt` | N 秒倒计时后自动运行，任意键中止；首行数字（0–30）可覆盖秒数，缺省 5。**0 = 不等待**：只读预备（枚举/选卡/资产预读进内存）一完成立即 PROCEED，中止窗=预备窗本身（预备期间按键仍中止）；自 v2.1.12-rc1 起 0 合法（此前钳到 1）。armed 路径在倒计时窗口内完成只读预备，自动运行从内存起跑 |
 | `tx-flush-lines.txt` | 首行数字（0–4096）覆盖日志计数 flush 频率（缺省 16 行/次；0=仅阶段标记行 flush）。调大减少 USB 偶发慢写停顿（2026-11-01 TU106 实测 4 次 ~1.2s 停顿全与 flush 对齐），代价是挂死时丢更多日志尾巴；阶段标记行始终 flush |
 | `tx-quiet.txt` | 安静模式（issue #38）：console 只显示裁决行（banner/确认/每卡目标与结果/HANDOFF/FINAL/CHAIN），`loader.log` 仍逐行全量记录；log 文件打不开时自动回退全量 console。慢 iGPU（~1 行/秒刷新）机器上把分钟级回显压到秒级；与 `i_know_what_i_am_doing.txt` 组合即全自动无人值守快速跑。事务期间画面停在最后一行属正常，不是卡死 |
-| `tx-gop-disconnect.txt` | 诊断开关：断开所有 GOP 句柄（含 iGPU）而非仅目标卡。**不要当提速手段用**——console 静默后无增益，且他卡 console 被杀后 loader 不会恢复它（依赖 bootmgfw 重建，存在 Code 12 风险形态，见 issue #35） |
-| `tx-reconnect-legacy.txt`（tx 构建） | **退出阀**：恢复旧版重连路径（递归 ConnectController + PR#13 自动非递归逻辑）。默认已改为 native-GOP console 重建（本卡影子 ROM 原厂 GOP），仅当新版在你的板上有异常时使用 |
+| `gop-disconnect-all.txt`（2026-11-25 自 `tx-gop-disconnect.txt` 改名——原名没说 ALL） | 诊断开关：断开**所有** GOP 句柄（含 iGPU）而非仅目标卡。**不要当提速手段用**——console 静默后无增益，且他卡 console 被杀后 loader 不会恢复它（依赖 bootmgfw 重建，存在 Code 12 风险形态，见 issue #35） |
 | `tx-native-gop.txt`（tx 构建） | **可选 pin**：native-GOP 已是默认行为，此 marker 不再是启用开关；首行写卷上 GOP 模块路径可指定用该模块替代本卡影子 ROM（兼容包形态），空/缺省=影子 ROM |
 | GOP 句柄序重排（**默认开启**，tx 构建，issue #228） | native-GOP 重建后 console 卡的 child 是**最新创建**的 GOP 句柄（排队尾），而 grub gfxterm / Linux efistub / bootmgr 都取**第一个** GOP（sink 盲）——多卡+无头 BMC 类拓扑上句柄序翻转后启动图形画到无头头上（#228 C621E 实证：grub/plymouth 全盲、Windows 登录才被驱动拉回）。console 重建成功后自动把 EDID-less 竞争者控制器驱动停/启一轮（新 child 追加队尾）让 console child 居首，竞争者功能保留。**四道门全绿才写**：verified child 枚举在位 + 带 EDID（sink 证明）+ 翻转在位 + 竞争者无 EDID 且非 console 卡自身；任一失败=响亮日志+零写入，术后读回。健康机负控实证：console 已居首=Noop 零写入。**范围=in-session 链**（每靴重放解锁→交棒→OS）；暖启动句柄序由固件重建自决 |
 | `tx-gop-no-reorder.txt`（tx 构建） | **退出阀**：跳过默认的 GOP 句柄序重排（GOP-ORDER dump 仍落日志）；仅当默认行为在你的板上有异常时使用 |
-| `tx-gop-reorder.txt`（tx 构建） | 旧启用 marker：重排已默认化，此 marker 仍被接受但为**空操作**（保持 stick 兼容，可删除） |
 | `tx-gop-hide.txt`（tx 构建） | **手动兜底**：每行一个 BDF（`bb:dd.f` 或 `dddd:bb:dd.f`）或 vendor:device（`vvvv:dddd`），对应 GOP child 直接 Disconnect（不重建）。拒绝条件：清单命中 console 卡自身（兄弟头规则，**整单拒执行**）、无可解析行（拒绝猜）、术后读回失败响亮上报。与默认重排互斥：hide 先执行 |
 | `tx-prom-sha256.txt`（tx 构建） | **可选身份门**：64 位十六进制，钉住 `BAR0+0x300000` 固定 1 MiB PROM 窗口的 SHA-256。缺省=未配置，事务照常进行；存在=必须匹配（两次稳定读取）才会调用 `run_transaction`，缺失/格式错/读不稳/不匹配都在任何写入之前拒绝，判定与资产缺失同级。登记方法：此文件存在时所有构建（含只读构建）都会把实测 `IDENTITY:` SHA-256 打进日志，默认引导不产生 PROM 读取开销——先放一个占位值启动一次，把日志里的实测值抄回文件即可 |
-| `tx-stop-on-failure.txt`（tx 构建） | **可选的硬失败即 STOP**：文件存在即启用，内容忽略。缺省（不存在）行为不变——通用失败照常跑 `emergency_flr`，多卡循环继续下一张。存在此 marker 时，通用失败改为立即停止：不跑 FLR、不释放桥 BME、不换下一张卡，loader 也不会链式启动 Windows。失败路径的 console 镜像恢复与只读判定行照跑，但屏幕可能保持黑屏（对状态已不可信的卡刻意不重连 GOP）——`loader.log` 是唯一记录。被停止的会话也不会 StartImage OS loader，连续尝试在 TPM 里测得的前置链逐位一致（对 BitLocker 类 PCR 密封档案有意义：恢复引导照常解封） |
 | `tx-no-canary.txt` | 整组跳过复位金丝雀的读写（A/B 对照；见[回锁章](#relock)） |
 | `tx-relock.txt`（tx 构建） | **退出阀**：交棒前把 FEAT PLM 锁回 `0xffffff8f`（三代通用）。默认自 2026-11-08 起三代都门开交棒（Turing 加入 Ampere/Ada 的开门形态；TU106 bench 端到端坐实门开无害且系统内写入面开放，见 `docs/evidence/tu106-1f07/keep-open-2026-11-08/`）。Turing 臂实测回锁值 `0xffffffef`/`0xffffff8f` 随板方差；Ampere/Ada 臂（FLR 判定后重锁）未上过 bench。**注意重锁本身有代价**：部分驱动会对重锁态发起 init 期 PF FLR 并清零 SS（[#99](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/99) 同卡 A/B），所以 v2.1.11 及更早的默认行为（Turing 臂专属；GA10x/Ada 交棒一直门开）在那些驱动上会丢锁 |
 | `tx-ultrafast.txt`（tx 构建） | **速度档**（已验证机器用）：跳过全部纯诊断性质的事前/事后探测——M1 冷态采样、GOP 探测、AUTH-SCAN、ROOT-DIR 转储、opener/拓扑诊断、载荷后 FEAT sweep、HANDOFF-PCI / HANDOFF-VGA-FINAL 转储、POST-GOP 探针、CHAIN-MEMMAP——并折叠 quiet + **仅事务锚点 flush**（比阶段标记集紧得多：~80 次/轮 → ~15 次/轮；挂死时锚点之间的日志盲区更大，显式 `tx-flush-lines.txt` 仍优先）。**裁决链读回一个不少**：selector 写读回、WPR2/POST-BOOT 判定、booter 载入审计照跑——读回是唯一成功判据。**复位金丝雀不省**（写读回毫秒级、复位取证价值高；自 2026-11-09 起 ultrafast 照跑，`HANDOFF-OUT` 显示真实判定；确要跳过用 `tx-no-canary.txt`）。被跳过的阶段在日志里各留一行 `ultrafast - skipped`。只建议在已多轮验证的机器上使用（制盘菜单可代写，默认 N） |
 | `tx-no-log.txt`（tx 构建） | 不开 `\loader.log`（全程仅 console 输出；quiet 因"console 是唯一记录"守卫结构性失效，console 保持完整）。挂死即零取证，只建议与 armed、已多轮验证的机器同用 |
 | `tx-no-console.txt`（tx 构建） | 完全不回显（慢速 GOP 文本输出的回显成本归零，issue #38 的分钟级回显形态直接消失）。确认提示不可见——**必须与 armed 同用**（键盘语义不变：armed 倒计时内任意键仍中止）；与 `tx-no-log.txt` 同置即全程零输出的完全静默跑，挂死时屏与盘两处都无证据 |
-| `tx-keep-assets.txt` | **退出阀**：交棒前不释放资产缓存（默认自 v2.1.11 起释放，见[交棒内存](#handoff)）。仅用于 A/B 或排查"链载后仍要读资产"的形态；`tx-free-assets.txt` 旧标记仍被接受，已是空操作 |
-| `tx-low-staging.txt` / `tx-fwsec-high-staging.txt` | staging 带手工钉死：前者把 booter 组（meta/签名/radix/boot）整体压到 <4GiB，后者把 FWSEC staging 挪回高区（FWSEC 自 v2.1.8 默认低位）。**自 v2.1.12-rc1 起带自动回退（STAGING-FALLBACK）**：Turing 的 HIGH 默认下若 booter `0x89` 且宿主 meta magic 完好（=写侧落盘、读侧未送达，[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)/[#156](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/156)/[#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191) 类），自动单次低位重试——无 FLR、单发无循环；`0x91`（[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16) 反向 sub-4GB 读锁类）与宿主 magic 损坏不触发，回退也失败则走原失败路径并提示查 VT-d。带要求按机器双向分化，判例表见[兼容矩阵](compatibility.md)。**FWSEC 侧的同形自动回退也已落地（FWSEC-FALLBACK，2026-11-22）**：主链 FWSEC 点火死于 A 类指纹（WPR2-never + 空窗残影 `0x1ffffe00/0` + `CPUCTL=0` + EXCI 低 16 位 `0x3ff`——GSP Falcon FBIF→sysmem 孔径失效，[#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89)/[#275](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/275) 双机）时，免 marker 单次函数级 FLR + BME 重臂 + VRAM staging 重点火；重试再死走原失败路径；`\tx-fwsec-vram-staging.txt` 已在位（手动 VRAM 先手）时不触发。健康台架无法真机复现该孔径失效——触发器的真机验证依赖两台无 marker 复测（sim t41–t43 覆盖门控逻辑：触发/负控/终态单发） |
+| staging 自动重试（**默认行为**，v2.1.12-rc1 起） | **booter 侧 STAGING-FALLBACK**：Turing 的 HIGH 默认下若 booter `0x89` 且宿主 meta magic 完好（=写侧落盘、读侧未送达，[#74](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/74)/[#156](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/156)/[#191](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/191) 类），自动单次低位重试——无 FLR、单发无循环；`0x91`（[#16](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/16) 反向 sub-4GB 读锁类）与宿主 magic 损坏不触发，回退也失败则走原失败路径并提示查 VT-d。带要求按机器双向分化，判例表见[兼容矩阵](compatibility.md)。**FWSEC 侧同形自动回退（FWSEC-FALLBACK，2026-11-22）**：主链 FWSEC 点火死于 A 类指纹（WPR2-never + 空窗残影 `0x1ffffe00/0` + `CPUCTL=0` + EXCI 低 16 位 `0x3ff`——GSP Falcon FBIF→sysmem 孔径失效，[#89](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/89)/[#275](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/275) 双机）时，免 marker 单次函数级 FLR + BME 重臂 + VRAM staging 重点火；重试再死走原失败路径。健康台架无法真机复现该孔径失效——触发器真机验证依赖两台无 marker 复测（sim t41–t43 覆盖门控逻辑）。staging 手动 marker 三件套（`tx-low-staging.txt`/`tx-fwsec-high-staging.txt`/`tx-fwsec-vram-staging.txt`）已于 2026-11-25 全部退役（零探测，盘上惰性）——自动梯覆盖其全部失败类；VRAM 预设的唯一收益（省一次失败尝试 + 一次函数级 FLR）发生在 GOP 已断、屏幕已黑的窗口内，操作者无感知 |
 | `tx-acpi-dump.txt` | 只读：把固件 DSDT 与全部 SSDT 连同关键词索引落到卷根 `\acpi\`（离线 `iasl -d` 反编译；回答"谁在管这张卡的电"）。确认键之前执行，没有 N 卡也生效 |
 | `tx-exit-fw.txt` | **退出阀**（[PR #209](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/209)，issue #208 A 线）：跳过链式 `bootmgfw`，事务完成后直接交回固件引导管理器、由固件按 BootOrder 原生引导 Windows。适用于链载 `bootmgfw` 报 `\BCD` 0xc0000034 的机器（MSI GP66 11UG/AMI 实证：路径/卷/映像字节全精确仍死=bootmgfw 内部启动上下文差异，只能让固件自己拉）。**前提**：固件持久 BootOrder 里 Windows Boot Manager 须排在 U 盘之前，否则循环回 U 盘；一次性启动菜单进入则正常落穿。中止路径（30 秒超时/按错键）同样过此检查，marker 存在时中止也交回固件——链路坏掉的机器上这反而是更好行为（链载会落到 Recovery 屏）。marker 同置时事务前预载自动跳过 |
 | `tx-revive-dead-slot.txt`（tx 构建） | **死槽复活阶梯**（[#276](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/276)，现场验证 2026-11-23）：对枚举读 vendor 0xffff 的死槽执行——ROM 身份门（固件缓存影子的 PCIR 读 vendor/device，只对 N 卡执行并打印死槽身份；无 ROM 的设备一律 decline）→ 杠杆阶梯 PMCSR→D0 / 清 Link Disable / **总线号恢复**（重编号族）/ **Secondary Bus Reset**（每级读回验证，复活只认 vendor 读回）。死槽自有 console GOP 在任何复位前自动断联（GOP 绑定态 SBR=黑屏卡死，台架实证）。复活后从固件簿记（GetBarAttributes）恢复 BAR，**复活槽保留候选表、同 boot 交易**。无 ROM 的死槽（桥类）会被身份门 decline |
@@ -181,7 +178,7 @@ Turing 的 `gsp_boot_tu10x.bin` 是 proven GspRmBoot 归档的前 `0x6000` 字�
 
 **混合输出"无收益"族的机理与实证绕法（#171→[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)，2026-11-10）**：神舟 TX9 3070M（`249d`，混合输出/非独显直连）曾"进系统无解锁、算力无提升"（[#171](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/171)，已关）。**机理**：混合模式下进系统后厂商电源管理把 dGPU 置入 ACPI D3（甲族 AON 复位/断电路径），易失的解锁态随之被抹——另有独立用户同形印证（"混合模式把解锁状态抹了，改独显直连就好了"，B 站评论，弱证据仅作旁证）。**实证绕法 = HDMI 欺诈器（dummy plug）+ 系统内"复制显示器"模式**：让平台把 dGPU 当作"有显示活动"从而不停电；该法由报告者在维护者的 D3 诊断下自行猜想并本机验证成功（armed 全链绿 + ssdiag `UNLOCKED (override values live)`）。**硬前提：至少一个视频口原生从独显出线**——全部视频口都从 iGPU 出线的机器用不了这招，只能改独显直连（BIOS/MUX 有该项时）；两样都没有则此路不通。欺诈器本身是一次性小开销（十几元档，通用配件），对混合本用户完全可行。该记录无性能 A/B 与睡眠持久性数据；另注：3070M（Ampere）无需 Turing 的 GSP 注册表前置，开了也无害。**固件侧替代（2026-11-16 起实证）**：固件（含隐藏项）提供 ACPI D3 开关的机器，直接全局关闭即可从根上去掉这条断电路径——G614JV 实测解锁 100% 保留（[丢锁一节实例记录](#relock-acpid3)）；零独显直出、欺诈器用不上的机器优先找这个开关。
 
-**笔记本内屏与亮度（DDC-CI）**：部分笔记本上，旧版固件重连会在解锁后把内屏链路留在未训练状态——背光直接黑、DDC-CI 亮度控制失灵（一台拯救者 R7000 2024 实证；旧路径首次尝试即复现，v2.1.10 在同一台机上修复）。v2.1.10 起默认的 native-GOP 重建会重新 `StartImage` 本卡原厂 GOP 驱动，进系统前重跑一次链路训练，自动消除该故障。这类机器上退回 `tx-reconnect-legacy.txt` 会让它复现。
+**笔记本内屏与亮度（DDC-CI）**：部分笔记本上，旧版固件重连会在解锁后把内屏链路留在未训练状态——背光直接黑、DDC-CI 亮度控制失灵（一台拯救者 R7000 2024 实证；旧路径首次尝试即复现，v2.1.10 在同一台机上修复）。v2.1.10 起默认的 native-GOP 重建会重新 `StartImage` 本卡原厂 GOP 驱动，进系统前重跑一次链路训练，自动消除该故障。致病的旧 legacy 重连路径（`tx-reconnect-legacy.txt`）已于 2026-11-25 退役，此类机器上复现该症状请改用 `reconnect = off` 暗交棒。
 
 TU106 + GSP 模式有休眠恢复后成功交棒的实测，但这不能代替其他机器的系统侧检查。详见 [系统内验证](#ssdiag)。
 
@@ -220,7 +217,7 @@ sudo update-initramfs -u
 
 读回工具细节：Linux 下 `resource0` **只支持 mmap**，不支持 `read()`/`dd`——`dd` 会静默返回空，看起来像"PLM 已关"的假阴性；`tools/diag-unlock.py` 走的就是 mmap 路径。
 
-**先看日志的 `POST-GOP` 行，别急着怪驱动**：从 v2.1.11 起交棒尾部会再读一次 FEAT 三连（`POST-GOP: FEAT_PLM=… SS0=… SS1=…`）。位置在**控制台重建之后**——默认的 native-GOP 重建会 `StartImage` 卡自己的 GOP 驱动（`\tx-reconnect-legacy.txt` 路径改为重连原厂栈、不自己 StartImage），而此前的 `POST-FLR` 验证在它之前，所以两行合起来才能切分写入方：`POST-GOP` 已锁/已丢 = 丢在 bootmgfw 之前（卡自己的 GOP/devinit 或平台固件，Windows 驱动出局）；`POST-GOP` 完好、系统内被抹 = 驱动这一 pass 负责。这也是 [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164) 的取证入口。
+**先看日志的 `POST-GOP` 行，别急着怪驱动**：从 v2.1.11 起交棒尾部会再读一次 FEAT 三连（`POST-GOP: FEAT_PLM=… SS0=… SS1=…`）。位置在**控制台重建之后**——默认的 native-GOP 重建会 `StartImage` 卡自己的 GOP 驱动，而此前的 `POST-FLR` 验证在它之前，所以两行合起来才能切分写入方：`POST-GOP` 已锁/已丢 = 丢在 bootmgfw 之前（卡自己的 GOP/devinit 或平台固件，Windows 驱动出局）；`POST-GOP` 完好、系统内被抹 = 驱动这一 pass 负责。这也是 [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164) 的取证入口。
 
 <a id="gain"></a>
 
@@ -311,7 +308,7 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 
 第 6 行的特殊性：复位由**建立/重建隧道的 CM** 执行——USB4 主机上是 OS 侧 CM，发生在任何驱动绑定之前，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）；固件 CM 主机开机不触发此行（见雷电节分型），重插才触发。唯一出路是抑制那次拆建，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
-第 1、2 行是物理事件（掉电/复位后 devinit 重算回厂，契约见下节），第 3 行是驱动侧的平台条件分支（2026-11-21 定性，见上行注），第 5、7 行是我们自己代码里能改的（第 7 行已在 2026-11-08 默认关闭），第 6 行是 OS 侧旋钮（不在本工具内）——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
+第 1、2 行是物理事件（掉电/复位后 devinit 重算回厂，契约见下节），第 3 行是驱动侧的平台条件分支（2026-11-21 定性，见上行注），第 5、7 行是我们自己代码里能改的（第 7 行已在 2026-11-08 默认关闭），第 6 行是 OS 侧旋钮（不在本工具内）。
 
 **第 1 行已有两轴同抓的完整现场对**（2026-11-04，[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)，HP Victus 16 `25a2` 纯混合平台，`docs/evidence/issue37-hp-victus-25a2/`）：EFI 侧金丝雀设置并读回完好、交棒时卡 D0 → 系统内金丝雀清零 + FEAT 回厂推导值 + 根口 `00:01.0` PMCSR `D3`。FLR 被同日志排除（本链 `POST-FLR` 自证 GA10x 选择器活过 FLR），事件超出 FLR 即常规复位族，根口 D3 把形态压向第 1 行。对照组：TU106 桌面金丝雀 intact + 双端 D0（写入型才会长这样）；同为 GA107M 的 [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)（Linux）是无复位的 devinit 重写（金丝雀应完好）——同 die、不同平台、不同行。金丝雀表的第四格（`intact` + FEAT 完好）也已有首个现场实例（2026-11-05，[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109#issuecomment-6650530730)：同卡同 VBIOS 同子系统、B650 桌面，交棒与系统内均 `intact`、双端 D0、`UNLOCKED`）——"什么都没发生"同样是一条读数，它把卡/VBIOS/驱动从鉴别变量里踢了出去，只剩平台。
 
@@ -966,7 +963,7 @@ TX-ASSET-CACHE: cleared 9 entries, 84388324 bytes handed back to the firmware al
 ```
 
 - 老版本遇到本症状：确认盘根有 `tx-free-assets.txt`（零字节）再跑一次；v2.1.11+ 该标记已是空操作。
-- 需要看"不释放"的对照时放 `tx-keep-assets.txt`（零字节），日志会打 `cache left resident across the chain`。
+- 释放自 v2.1.11 起无条件执行（2026-11-25 起 `tx-keep-assets.txt` 对照臂亦退役，日志不再有 `cache left resident` 分支）。
 - 机制、三跑内存图与规范/EDK2 依据见 [交棒前的低位内存](handoff-lowmem.md)。
 
 <a id="reconnect"></a>
@@ -975,7 +972,7 @@ TX-ASSET-CACHE: cleared 9 entries, 84388324 bytes handed back to the firmware al
 
 部分 AMI 固件会在 GPU 事务完成后的 GOP 重连中卡死或复位。loader 对断开后仍存在的无路径 GOP 使用非递归厂商重连，链式加载前跳过 NVIDIA 显示功能；运行日志即时写盘。
 
-若仍停在 `RECONNECT: ConnectController ... begin` 或该阶段复位，完全断电恢复后，在 U 盘根放 `no-reconnect.txt` 跳过目标 GPU 重连。Windows Boot Manager 可自行建立控制台；跳过重连不代表跳过系统内验证。
+若仍停在 native-GOP 重建阶段（日志 `NATIVE-GOP` 行内）或该阶段复位，完全断电恢复后，在 U 盘根放 `tx-no-reconnect.txt`（或 tx.ini 写 `reconnect = off`）跳过目标 GPU 重连。Windows Boot Manager 可自行建立控制台；跳过重连不代表跳过系统内验证。
 
 Turing 若返回 `0x91`，或 EFI 成功但 GSP 交棒蓝屏，查 [兼容性矩阵](compatibility.md#device-16)，不要把所有黑屏都归为 GOP。平台证据见 [AMI 报告](ad106-asus-z790-windows-unlock.md)和 [X470 记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70)。
 

@@ -88,8 +88,8 @@ pub fn chain_load_bootmgfw(pre: Option<PreloadedOsLoader>) -> Result<()> {
     // mis-resolves its BCD (MSI/AMI GP66: "File: \BCD, 0xc0000034"),
     // returning SUCCESS lets the firmware's own BootOrder run Windows
     // Boot Manager natively - same power cycle, unlock intact.
-    if boot_volume_has(cstr16!(r"\tx-exit-fw.txt")) {
-        info!("CHAIN: \\tx-exit-fw.txt present - exiting to the firmware boot manager (no chain)");
+    if crate::config::exit_fw() {
+        info!("CHAIN: exit-fw arm present (marker or tx.ini) - exiting to the firmware boot manager (no chain)");
         return Ok(());
     }
     if let Some(pre) = pre.as_ref() {
@@ -429,13 +429,6 @@ pub fn boot_volume_read(path: &CStr16) -> Option<alloc::vec::Vec<u8>> {
         }
     }
     Some(out)
-}
-
-/// Does `path` exist on our own boot volume? Marker-file probe for the
-/// CONFIRM phase (`\i_know_what_i_am_doing.txt` armed mode) - presence is
-/// the signal, content is ignored.
-pub fn boot_volume_has(path: &CStr16) -> bool {
-    boot_volume_read(path).is_some()
 }
 
 /// First numeric token in a marker's content, clamped to `[min, max]`;
@@ -840,7 +833,7 @@ fn first_divergent_node(a: &[u8], b: &[u8]) -> usize {
 /// (missing file, unparsable content, no usable line) is None with the
 /// reason logged - default order, never a guess.
 fn pinned_chain_target() -> Option<alloc::string::String> {
-    let bytes = boot_volume_read(cstr16!(r"\chain-target.txt"))?;
+    let bytes = crate::config::content(crate::config::ContentArm::ChainTarget)?;
     let text = match core::str::from_utf8(&bytes) {
         Ok(t) => t,
         Err(_) => {
@@ -1723,8 +1716,8 @@ fn pe_header_ok(base: usize, size: u64) -> bool {
 /// LoadImage the OS loader now, before the transaction touches the GPU.
 /// None (with a logged reason) keeps the legacy post-transaction chain.
 pub fn preload_os_loader() -> Option<PreloadedOsLoader> {
-    if !boot_volume_has(cstr16!(r"\tx-preload.txt")) {
-        info!("CHAIN-PRE: no \\tx-preload.txt - preload is opt-in since #198, legacy chain path");
+    if !crate::config::flag(crate::config::FlagArm::Preload) {
+        info!("CHAIN-PRE: no preload arm (marker or tx.ini) - preload is opt-in since #198, legacy chain path");
         return None;
     }
     info!("CHAIN-PRE: pre-transaction loader preload begin");
