@@ -1,4 +1,9 @@
-//! ssdiag v0.8.11 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! ssdiag v0.8.12 - in-OS NVIDIA register diagnosis + separate-lock re-apply.
+//! v0.8.12 adds --bar1-scan (READ-ONLY): config control 0xBC0 (the hardware
+//! aperture the device decodes) + a 0xff-saturation boundary scan across the
+//! BAR1 aperture (16 dwords at 15 offsets, 256 MiB..31 GiB, through mapped
+//! windows) - measures the REAL usable BAR1 vs what the driver believes,
+//! for loader-side ReBAR writes followed by hibernate resumes.
 //! v0.8.11: --read-offset accepts range form A-B (inclusive, word step,
 //! cap 512) and printed reads are sorted+deduped.
 //! v0.8.10 adds --read-offset A (READ-ONLY probe, repeatable): read BAR0
@@ -3277,6 +3282,96 @@ fn mcfg_base_for(bus: u32) -> Option<u64> {
 }
 
 /// Read-only ReBAR extended-capability probe through ECAM. The driver only
+/// \--bar1-scan (v0.8.12, 2026-11-24 rebar bench line): measure the REAL
+/// usable BAR1 - the question "does the hardware aperture match what the
+/// driver believes" after loader-side ReBAR writes and hibernate resumes.
+/// Three read-only probes through the existing ECAM page + per-offset
+/// physical maps:
+///   1. config control 0xBC0 -> the hardware-selected aperture (the truth
+///      the device decodes), vs the driver's belief (nvidia-smi/GPU-Z);
+///   2. config 0x610 override -> whether the vendor advertise bits are
+///      still set or were cleared by driver init (the #211 end-state);
+///   3. aperture boundary scan: read 16 dwords at 15 offsets from 256 MiB
+///      to 31 GiB through mapped BAR1 windows - decoded VRAM reads back
+///      actual content, reads beyond the decode come back as master-abort
+///      0xffffffff on desktop x86; the 0xff-saturation point marks the real
+///      decode end. Read-only: never writes VRAM, so a resumed/live driver
+///      cannot be disturbed.
+fn bar1_scan_probe(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>) {
+    let Some(did) = dev_id_from(instance) else {
+        println!("BAR1-SCAN: no DEV_ in DeviceID - skipped");
+        return;
+    };
+    let Some((bus, dev, func)) = bdf else {
+        println!("BAR1-SCAN: bdf not derivable - skipped");
+        return;
+    };
+    let Some(mcfg) = mcfg_base_for(bus) else {
+        println!("BAR1-SCAN: no MCFG/MMCONFIG for bus {bus} - skipped");
+        return;
+    };
+    let ecam = mcfg + ((bus as u64) << 20) + ((dev as u64) << 15) + ((func as u64) << 12);
+    let va = match drv.map_physical(ecam, 1) {
+        Ok(va) => va,
+        Err(e) => {
+            println!("BAR1-SCAN: ECAM map failed ({e}) - skipped");
+            return;
+        }
+    };
+    let base = va as *const u8;
+    let rd = |off: u32| unsafe { (base.add(off as usize) as *const u32).read_volatile() };
+    let idword = rd(0);
+    let (vid, cdid) = (idword & 0xffff, (idword >> 16) & 0xffff);
+    if vid != 0x10de || cdid != did as u32 {
+        println!("BAR1-SCAN: ECAM page reads {vid:04x}:{cdid:04x}, expected 10de:{did:04X} - skipped");
+        drv.unmap_physical(va);
+        return;
+    }
+    let ctl = rd(0xbc0);
+    let idx = (ctl >> 8) & 0x3f;
+    println!(
+        "BAR1-SCAN: config control 0xbc0 = {ctl:#010x} -> hardware aperture {} MiB (size_idx {idx})",
+        1u32 << idx
+    );
+    println!("BAR1-SCAN: config 0x610 override = {:#010x} (cleared by driver init if not 0x?c80)", rd(0x610));
+    let lo = rd(0x14);
+    let hi = rd(0x18);
+    drv.unmap_physical(va);
+    let bar1 = (((hi as u64) << 32) | (lo as u64 & 0xffff_fff0)) & !0xf;
+    println!("BAR1-SCAN: BAR1 base = {bar1:#x} (cfg 0x14={lo:#010x} 0x18={hi:#010x})");
+    if bar1 == 0 {
+        println!("BAR1-SCAN: BAR1 unassigned - boundary scan skipped");
+        return;
+    }
+    println!("BAR1-SCAN: aperture boundary scan (16 dwords per offset; all-ff = beyond decode):");
+    let offs_mib: [u64; 15] = [256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 31744];
+    let mut last_decoded_mib: Option<u64> = None;
+    for &mib in &offs_mib {
+        let probe_pa = bar1 + (mib << 20);
+        let Ok(pva) = drv.map_physical(probe_pa, 1) else {
+            println!("BAR1-SCAN: +{mib:5} MiB: map failed");
+            continue;
+        };
+        let p = pva as *const u32;
+        let mut ff = 0usize;
+        for i in 0..16 {
+            if unsafe { p.add(i).read_volatile() } == 0xffff_ffff {
+                ff += 1;
+            }
+        }
+        drv.unmap_physical(pva);
+        let verdict = if ff == 16 { "undecoded (all-ff)" } else if ff == 0 { "decoded (no ff)" } else { "mixed" };
+        if ff != 16 {
+            last_decoded_mib = Some(mib);
+        }
+        println!("BAR1-SCAN: +{mib:5} MiB: {verdict} ({ff}/16 ff)");
+    }
+    match last_decoded_mib {
+        Some(m) => println!("BAR1-SCAN: real decode extends past +{m} MiB - compare with the control size and the driver's belief above"),
+        None => println!("BAR1-SCAN: no decoded region found at any offset - decode is smaller than 256 MiB"),
+    }
+}
+
 /// offers physical map/unmap, and config space on every modern x64 machine
 /// IS memory-mapped (MCFG/ECAM), so the probe needs no new driver surface:
 /// it maps exactly one 4 KiB page - the target function's own config space
@@ -5349,6 +5444,7 @@ fn validate_prom_bit_flags(prom_bit: bool, reapply: bool, fuserows: bool, has_po
 fn run() -> i32 {
     let mut reapply = false;
     let mut prom_bit = false;
+    let mut bar1_scan = false;
     let mut pokes: Vec<(u32, u32)> = Vec::new();
     let mut poke_off: Option<u32> = None;
     let mut read_offsets: Vec<u32> = Vec::new();
@@ -5367,6 +5463,7 @@ fn run() -> i32 {
         match a.as_str() {
             "--reapply" => reapply = true,
             "--prom-bit" => prom_bit = true,
+            "--bar1-scan" => bar1_scan = true,
             "--target-offset" => {
                 let v = args.next().unwrap_or_else(|| {
                     eprintln!("--target-offset requires a hex BAR0 offset, e.g. --target-offset 0x409664");
@@ -5498,6 +5595,13 @@ OPTIONS:
                    Same transport/risks class as --target-offset
                    minus the write (reads at parked/gated offsets return
                    badf poison, never hangs)
+  --bar1-scan      READ-ONLY: measure the real usable BAR1 - config control
+                   0xBC0 (hardware aperture) vs the 0xff-saturation boundary
+                   of the decoded region (16 dwords read at 15 offsets from
+                   256 MiB to 31 GiB through mapped BAR1 windows). Answers
+                   whether the hardware aperture matches what the driver
+                   believes, after loader-side ReBAR writes + hibernate
+                   resumes
   --fuserows[=A-B] WRITE MODE per card: physical fuse-row capture via the
                    guarded ga100-ff-tools read_rows protocol (FUSEADDR row
                    select + FUSECTRL CMD_READ only, latch checks, two
@@ -5763,6 +5867,9 @@ SSDIAG_COLOR=force pins on.",
         // works even for a parked card (config space answers regardless of
         // D0/MEM decode) - hence before the BAR0 walk, not after
         print_config_rebar(&drv, &g.id, g.bdf);
+        if bar1_scan {
+            bar1_scan_probe(&drv, &g.id, g.bdf);
+        }
         print_power_state(&drv, g.devinst, &g.id, g.bdf);
         print_rtd3_key(&g.id, g.devinst);
         let mut picked = walk_candidates(&drv, g);
