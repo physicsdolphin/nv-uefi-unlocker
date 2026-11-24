@@ -3297,6 +3297,96 @@ fn mcfg_base_for(bus: u32) -> Option<u64> {
 ///      0xffffffff on desktop x86; the 0xff-saturation point marks the real
 ///      decode end. Read-only: never writes VRAM, so a resumed/live driver
 ///      cannot be disturbed.
+/// \--bar1-scan-write (v0.8.13, 2026-11-24): the write-differentiate probe,
+/// LIVE-GPU version (no device disable). Four sample points spread across
+/// the aperture (+1G/+8G/+16G/+31G, each 0x800 into a 4 KiB page - page
+/// middles are data/filler territory, descriptor/page-table allocations
+/// prefer page starts). Per point: read original -> write ~original ->
+/// read back -> restore original -> confirm. Single dword in flight, tens
+/// of microseconds between the two reads of each point; the driver is
+/// never stalled. Decode+write discrimination: points decode if the flip
+/// sticks; points are INDEPENDENT storage if flipped values differ across
+/// points (an aliased aperture shows the same storage at truncated
+/// addresses, so cross-point value comparison after independent flips is
+/// the verdict). Corrupts at most 8 bytes of driver-managed VRAM for
+/// microseconds (restore-verified); a TDR during the window is the same
+/// recovery as any GPU fault (disable-enable / reboot).
+fn bar1_scan_write(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>) {
+    let Some(did) = dev_id_from(instance) else {
+        println!("BAR1-SCAN-W: no DEV_ in DeviceID - skipped");
+        return;
+    };
+    let Some((bus, dev, func)) = bdf else {
+        println!("BAR1-SCAN-W: bdf not derivable - skipped");
+        return;
+    };
+    let Some(mcfg) = mcfg_base_for(bus) else {
+        println!("BAR1-SCAN-W: no MCFG/MMCONFIG for bus {bus} - skipped");
+        return;
+    };
+    let ecam = mcfg + ((bus as u64) << 20) + ((dev as u64) << 15) + ((func as u64) << 12);
+    let va = match drv.map_physical(ecam, 1) {
+        Ok(va) => va,
+        Err(e) => {
+            println!("BAR1-SCAN-W: ECAM map failed ({e}) - skipped");
+            return;
+        }
+    };
+    let base = va as *const u8;
+    let rd = |off: u32| unsafe { (base.add(off as usize) as *const u32).read_volatile() };
+    let idword = rd(0);
+    if (idword & 0xffff) != 0x10de || ((idword >> 16) & 0xffff) != did as u32 {
+        println!("BAR1-SCAN-W: ECAM page mismatch - skipped");
+        drv.unmap_physical(va);
+        return;
+    }
+    let lo = rd(0x14);
+    let hi = rd(0x18);
+    let ctl = rd(0xbc0);
+    let idx = (ctl >> 8) & 0x3f;
+    drv.unmap_physical(va);
+    let bar1 = (((hi as u64) << 32) | (lo as u64 & 0xffff_fff0)) & !0xf;
+    println!("BAR1-SCAN-W: BAR1 base {bar1:#x}, aperture {} MiB (size_idx {idx}) - LIVE-GPU write-differentiate, 4 points x (read/flip/readback/restore/confirm)", 1u64 << idx);
+    let points_mib: [u64; 4] = [1024, 8192, 16384, 31744];
+    let mut flipped: Vec<(u64, u32)> = Vec::new();
+    for &mib in &points_mib {
+        let probe_pa = bar1 + (mib << 20) + 0x800;
+        let Ok(pva) = drv.map_physical(probe_pa, 1) else {
+            println!("BAR1-SCAN-W: +{mib:5} MiB: map failed");
+            continue;
+        };
+        let p = pva as *mut u32;
+        let orig = unsafe { p.read_volatile() };
+        let flip = !orig;
+        unsafe { p.write_volatile(flip) };
+        let rb = unsafe { p.read_volatile() };
+        unsafe { p.write_volatile(orig) };
+        let back = unsafe { p.read_volatile() };
+        drv.unmap_physical(pva);
+        let stuck = rb == flip;
+        let restored = back == orig;
+        println!(
+            "BAR1-SCAN-W: +{mib:5} MiB: orig {orig:#010x} -> flip {flip:#010x} -> rb {rb:#010x} -> restore {back:#010x} {} {}",
+            if stuck { "[flip STUCK = decode+write]" } else { "[flip lost = abort/RO/aliased-to-ro]" },
+            if restored { "[restore OK]" } else { "[RESTORE FAILED - 4 bytes altered]" }
+        );
+        if stuck {
+            flipped.push((mib, flip));
+        }
+    }
+    if flipped.len() >= 2 {
+        let distinct = flipped.iter().map(|(_, v)| *v).collect::<std::collections::BTreeSet<_>>().len();
+        println!(
+            "BAR1-SCAN-W: verdict: {}/4 points decode+write; {} distinct flipped values across points -> {}",
+            flipped.len(),
+            distinct,
+            if distinct == flipped.len() { "INDEPENDENT storage per point - real decoded aperture (no aliasing)" } else { "SHARED storage - aliased window (truncated addresses)" }
+        );
+    } else {
+        println!("BAR1-SCAN-W: verdict: fewer than 2 points accepted the flip - cannot discriminate aliasing; the aperture may be RO-mapped by the driver (BAR1 as write-combined display surface) or entirely windowed");
+    }
+}
+
 fn bar1_scan_probe(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>) {
     let Some(did) = dev_id_from(instance) else {
         println!("BAR1-SCAN: no DEV_ in DeviceID - skipped");
@@ -5442,6 +5532,7 @@ fn run() -> i32 {
     let mut reapply = false;
     let mut prom_bit = false;
     let mut bar1_scan = false;
+    let mut bar1_scan_write_flag = false;
     let mut pokes: Vec<(u32, u32)> = Vec::new();
     let mut poke_off: Option<u32> = None;
     let mut read_offsets: Vec<u32> = Vec::new();
@@ -5461,6 +5552,7 @@ fn run() -> i32 {
             "--reapply" => reapply = true,
             "--prom-bit" => prom_bit = true,
             "--bar1-scan" => bar1_scan = true,
+            "--bar1-scan-write" => bar1_scan_write_flag = true,
             "--target-offset" => {
                 let v = args.next().unwrap_or_else(|| {
                     eprintln!("--target-offset requires a hex BAR0 offset, e.g. --target-offset 0x409664");
@@ -5599,6 +5691,12 @@ OPTIONS:
                    whether the hardware aperture matches what the driver
                    believes, after loader-side ReBAR writes + hibernate
                    resumes
+  --bar1-scan-write LIVE-GPU write-differentiate (corrupts <=16 bytes of
+                   driver VRAM for microseconds, restore-verified): flips
+                   one dword at 4 offsets (+1G/+8G/+16G/+31G, page-middles)
+                   and compares the flipped values across points - distinct
+                   values = independent decoded storage, shared value =
+                   aliased window. Recovery on fault = disable-enable/reboot
   --fuserows[=A-B] WRITE MODE per card: physical fuse-row capture via the
                    guarded ga100-ff-tools read_rows protocol (FUSEADDR row
                    select + FUSECTRL CMD_READ only, latch checks, two
@@ -5866,6 +5964,9 @@ SSDIAG_COLOR=force pins on.",
         print_config_rebar(&drv, &g.id, g.bdf);
         if bar1_scan {
             bar1_scan_probe(&drv, &g.id, g.bdf);
+        }
+        if bar1_scan_write_flag {
+            bar1_scan_write(&drv, &g.id, g.bdf);
         }
         print_power_state(&drv, g.devinst, &g.id, g.bdf);
         print_rtd3_key(&g.id, g.devinst);
