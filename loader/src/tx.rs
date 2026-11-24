@@ -1871,23 +1871,17 @@ pub fn run_transaction(
     // the console stays however boot left it and bootmgfw self-establishes
     // (field-proven across four Z170 rounds: both native-GOP outcomes and
     // the zero-reconnect path all reached Windows). A wrong reconnect
-    // being worse than none is the design axiom here.
-    // `\tx-reconnect-legacy.txt` restores the old reconnect_all path
-    // (recursive + PR#13 non-recursive logic) as an escape hatch;
-    // `\tx-no-reconnect.txt` keeps its experimental skip for Turing.
+    // being worse than none is the design axiom here. The legacy
+    // recursive-reconnect escape hatch was retired with its marker family
+    // (2026-11-25); the skip for a misbehaving rebuild is
+    // `\tx-no-reconnect.txt` / `reconnect = off` (dark handoff).
     // Issue #261: if the target owned no GOP child at detach, the console
     // lived on another GPU (hybrid display) or nowhere - there is nothing
     // to rebuild, and loading the card's ROM GOP driver in that state just
     // returns SUCCESS without publishing a child. Skip the ~2 s attempt
     // and say so, instead of reporting a rebuild "failure".
-    if matches!(crate::config::reconnect(), txini::Reconnect::Off) {
+    if crate::config::reconnect_off() {
         info!("TX-tu10x: reconnect skipped (reconnect = off)");
-    } else if matches!(
-        crate::config::reconnect(),
-        txini::Reconnect::Legacy | txini::Reconnect::LegacyNonrec
-    ) {
-        info!("TX: legacy reconnect path (recursive + PR#13 logic)");
-        crate::tx_detach::reconnect_all(pci_handle);
     } else if !claim.target_gop_seen {
         info!("TX: native-GOP rebuild skipped - the target had no GOP child at detach (console lives on another GPU, or none was bound); nothing to rebuild, console left as firmware established it");
     } else if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
@@ -2112,14 +2106,8 @@ fn agitate_stages(
     // Console rebuild parity: the exact block from run_transaction
     // (default native-GOP rebuild from the card's own shadowed ROM; the
     // legacy reconnect and the Turing skip keep their markers).
-    if matches!(crate::config::reconnect(), txini::Reconnect::Off) {
+    if crate::config::reconnect_off() {
         info!("TX-AGITATE: reconnect skipped (reconnect = off)");
-    } else if matches!(
-        crate::config::reconnect(),
-        txini::Reconnect::Legacy | txini::Reconnect::LegacyNonrec
-    ) {
-        info!("TX-AGITATE: legacy reconnect path (recursive + PR#13 logic)");
-        crate::tx_detach::reconnect_all(pci_handle);
     } else if !claim.target_gop_seen {
         info!("TX-AGITATE: native-GOP rebuild skipped - the target had no GOP child at detach (console lives on another GPU, or none was bound)");
     } else if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {

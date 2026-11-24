@@ -220,28 +220,15 @@ pub fn quiet() -> bool {
         || ultrafast()
 }
 
-/// Reconnect family. The marker ladder below reproduces the pre-ini site
-/// logic exactly, including the inert corner: a bare `\no-reconnect.txt`
-/// (without `\tx-reconnect-legacy.txt`) only ever guarded the legacy
-/// reconnect, so it maps to `Auto` here, not `Off`.
+/// Reconnect family, reduced to the one question the sites ask: skip the
+/// native-GOP rebuild (dark handoff - bootmgfw self-establishes its
+/// console) or run it. The legacy recursive-reconnect path and its marker
+/// trio (tx-reconnect-legacy/nonrecursive/no-reconnect) were retired
+/// 2026-11-25 - see the removal note in tx_detach.rs.
 #[cfg(feature = "diag")]
-pub fn reconnect() -> Reconnect {
-    if let Some(v) = ini().and_then(|r| r.reconnect) {
-        return v;
-    }
-    if probe("\\tx-no-reconnect.txt") {
-        Reconnect::Off
-    } else if probe("\\tx-reconnect-legacy.txt") {
-        if probe("\\no-reconnect.txt") {
-            Reconnect::Off
-        } else if probe("\\tx-reconnect-nonrecursive.txt") {
-            Reconnect::LegacyNonrec
-        } else {
-            Reconnect::Legacy
-        }
-    } else {
-        Reconnect::Auto
-    }
+pub fn reconnect_off() -> bool {
+    ini().is_some_and(|r| r.reconnect == Some(Reconnect::Off))
+        || probe("\\tx-no-reconnect.txt")
 }
 
 // ---------------------------------------------------------------------------

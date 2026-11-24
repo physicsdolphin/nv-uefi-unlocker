@@ -82,13 +82,11 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-ignore-key.txt` | 幽灵键过滤:每行一个键,`#` 起注释,写法与 ABORT 日志行一致(`Special(LEFT)`、`Printable('z')`),或 `0x1A` / `scan 0x104`。列出的键在所有按键等待中视为未按下(CONFIRM、武装倒计时、链式加载选择器)。**Esc 永远不能被忽略。** 最多 8 项;无法解析的行会记录并跳过。卡键(EC 合成键、带键盘接口的 USB 鼠标/接收器)的免重编译方案:从自己的 `loader.log` 读出键值写入此文件 |
 | `chain-target.txt` | 第一个非空、非 `#` 行指定优先 EFI 路径，逐卷查找；找不到时记录日志并回退默认顺序。**固件 BootOrder 里有跨盘残留引导项时先看这条**：默认解析会按 BootOrder 取到别的盘上的旧 loader（[#204](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/204) 实例是另一块盘的 `\EFI\ubuntu\shimx64.efi`，事务全绿但链到 Linux），首行写 `\EFI\Microsoft\Boot\bootmgfw.efi` 即可钉死本机链载目标。制盘菜单可代写（Windows / Ubuntu / systemd-boot / 发行版 GRUB 与 shim / 自定义路径，默认不钉） |
 | `tx-preload.txt` | 启用预驱动预载链回（P2-7，TOTORONG 工艺）：事务前 LoadImage OS loader，交棒尾 PE 探针通过后直接 StartImage。**默认自 2026-11-09 起不预载**，走事务后固件 BootOrder 解析的旧链载路径——[#198](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/198) 九格矩阵：预载+脏卡与每一轮交棒后 logo 硬挂死逐一对应，而预载+干净卡（readonly）与无预载+脏卡（v2.1.5 run-10，无此特性）都活，默认回到久经田野的基线；预载原有的"FLR 后分配面退化时链载失败"鲁棒性动机已由固件 BootOrder 解析链（#128/#142）覆盖。需复现旧行为做 A/B 时加此标记；旧 `\tx-no-preload.txt` 退役，存在不再有任何效果 |
-| `no-reconnect.txt` | 跳过目标 GPU 的 GOP 重连，适用于事务后重连卡死或复位 |
-| `tx-reconnect-nonrecursive.txt` | 只把重连改为非递归、保留 vendor GOP 绑定（console 栈交给 bootmgfw 重建）；比 `no-reconnect.txt` 温和，适用于"能进系统但重连卡死"一族（[#52](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/52) X470、[Discussion #131](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/131) X99/C610 实证） |
+| `tx-no-reconnect.txt` / tx.ini `reconnect = off` | 跳过目标 GPU 的重连（native-GOP 重建），暗交棒——Windows Boot Manager 自建控制台。适用于事务后重建阶段挂死/复位（[#52](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/52)/[#35](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/35)/[#61](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/61) 家族）。旧 legacy 递归重连路径及其 marker 三件套（`tx-reconnect-legacy.txt`、`tx-reconnect-nonrecursive.txt`、`no-reconnect.txt`）已于 2026-11-25 整体退役 |
 | `i_know_what_i_am_doing.txt` | N 秒倒计时后自动运行，任意键中止；首行数字（0–30）可覆盖秒数，缺省 5。**0 = 不等待**：只读预备（枚举/选卡/资产预读进内存）一完成立即 PROCEED，中止窗=预备窗本身（预备期间按键仍中止）；自 v2.1.12-rc1 起 0 合法（此前钳到 1）。armed 路径在倒计时窗口内完成只读预备，自动运行从内存起跑 |
 | `tx-flush-lines.txt` | 首行数字（0–4096）覆盖日志计数 flush 频率（缺省 16 行/次；0=仅阶段标记行 flush）。调大减少 USB 偶发慢写停顿（2026-11-01 TU106 实测 4 次 ~1.2s 停顿全与 flush 对齐），代价是挂死时丢更多日志尾巴；阶段标记行始终 flush |
 | `tx-quiet.txt` | 安静模式（issue #38）：console 只显示裁决行（banner/确认/每卡目标与结果/HANDOFF/FINAL/CHAIN），`loader.log` 仍逐行全量记录；log 文件打不开时自动回退全量 console。慢 iGPU（~1 行/秒刷新）机器上把分钟级回显压到秒级；与 `i_know_what_i_am_doing.txt` 组合即全自动无人值守快速跑。事务期间画面停在最后一行属正常，不是卡死 |
 | `tx-gop-disconnect.txt` | 诊断开关：断开所有 GOP 句柄（含 iGPU）而非仅目标卡。**不要当提速手段用**——console 静默后无增益，且他卡 console 被杀后 loader 不会恢复它（依赖 bootmgfw 重建，存在 Code 12 风险形态，见 issue #35） |
-| `tx-reconnect-legacy.txt`（tx 构建） | **退出阀**：恢复旧版重连路径（递归 ConnectController + PR#13 自动非递归逻辑）。默认已改为 native-GOP console 重建（本卡影子 ROM 原厂 GOP），仅当新版在你的板上有异常时使用 |
 | `tx-native-gop.txt`（tx 构建） | **可选 pin**：native-GOP 已是默认行为，此 marker 不再是启用开关；首行写卷上 GOP 模块路径可指定用该模块替代本卡影子 ROM（兼容包形态），空/缺省=影子 ROM |
 | GOP 句柄序重排（**默认开启**，tx 构建，issue #228） | native-GOP 重建后 console 卡的 child 是**最新创建**的 GOP 句柄（排队尾），而 grub gfxterm / Linux efistub / bootmgr 都取**第一个** GOP（sink 盲）——多卡+无头 BMC 类拓扑上句柄序翻转后启动图形画到无头头上（#228 C621E 实证：grub/plymouth 全盲、Windows 登录才被驱动拉回）。console 重建成功后自动把 EDID-less 竞争者控制器驱动停/启一轮（新 child 追加队尾）让 console child 居首，竞争者功能保留。**四道门全绿才写**：verified child 枚举在位 + 带 EDID（sink 证明）+ 翻转在位 + 竞争者无 EDID 且非 console 卡自身；任一失败=响亮日志+零写入，术后读回。健康机负控实证：console 已居首=Noop 零写入。**范围=in-session 链**（每靴重放解锁→交棒→OS）；暖启动句柄序由固件重建自决 |
 | `tx-gop-no-reorder.txt`（tx 构建） | **退出阀**：跳过默认的 GOP 句柄序重排（GOP-ORDER dump 仍落日志）；仅当默认行为在你的板上有异常时使用 |
@@ -182,7 +180,7 @@ Turing 的 `gsp_boot_tu10x.bin` 是 proven GspRmBoot 归档的前 `0x6000` 字�
 
 **混合输出"无收益"族的机理与实证绕法（#171→[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)，2026-11-10）**：神舟 TX9 3070M（`249d`，混合输出/非独显直连）曾"进系统无解锁、算力无提升"（[#171](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/171)，已关）。**机理**：混合模式下进系统后厂商电源管理把 dGPU 置入 ACPI D3（甲族 AON 复位/断电路径），易失的解锁态随之被抹——另有独立用户同形印证（"混合模式把解锁状态抹了，改独显直连就好了"，B 站评论，弱证据仅作旁证）。**实证绕法 = HDMI 欺诈器（dummy plug）+ 系统内"复制显示器"模式**：让平台把 dGPU 当作"有显示活动"从而不停电；该法由报告者在维护者的 D3 诊断下自行猜想并本机验证成功（armed 全链绿 + ssdiag `UNLOCKED (override values live)`）。**硬前提：至少一个视频口原生从独显出线**——全部视频口都从 iGPU 出线的机器用不了这招，只能改独显直连（BIOS/MUX 有该项时）；两样都没有则此路不通。欺诈器本身是一次性小开销（十几元档，通用配件），对混合本用户完全可行。该记录无性能 A/B 与睡眠持久性数据；另注：3070M（Ampere）无需 Turing 的 GSP 注册表前置，开了也无害。**固件侧替代（2026-11-16 起实证）**：固件（含隐藏项）提供 ACPI D3 开关的机器，直接全局关闭即可从根上去掉这条断电路径——G614JV 实测解锁 100% 保留（[丢锁一节实例记录](#relock-acpid3)）；零独显直出、欺诈器用不上的机器优先找这个开关。
 
-**笔记本内屏与亮度（DDC-CI）**：部分笔记本上，旧版固件重连会在解锁后把内屏链路留在未训练状态——背光直接黑、DDC-CI 亮度控制失灵（一台拯救者 R7000 2024 实证；旧路径首次尝试即复现，v2.1.10 在同一台机上修复）。v2.1.10 起默认的 native-GOP 重建会重新 `StartImage` 本卡原厂 GOP 驱动，进系统前重跑一次链路训练，自动消除该故障。这类机器上退回 `tx-reconnect-legacy.txt` 会让它复现。
+**笔记本内屏与亮度（DDC-CI）**：部分笔记本上，旧版固件重连会在解锁后把内屏链路留在未训练状态——背光直接黑、DDC-CI 亮度控制失灵（一台拯救者 R7000 2024 实证；旧路径首次尝试即复现，v2.1.10 在同一台机上修复）。v2.1.10 起默认的 native-GOP 重建会重新 `StartImage` 本卡原厂 GOP 驱动，进系统前重跑一次链路训练，自动消除该故障。致病的旧 legacy 重连路径（`tx-reconnect-legacy.txt`）已于 2026-11-25 退役，此类机器上复现该症状请改用 `reconnect = off` 暗交棒。
 
 TU106 + GSP 模式有休眠恢复后成功交棒的实测，但这不能代替其他机器的系统侧检查。详见 [系统内验证](#ssdiag)。
 
@@ -221,7 +219,7 @@ sudo update-initramfs -u
 
 读回工具细节：Linux 下 `resource0` **只支持 mmap**，不支持 `read()`/`dd`——`dd` 会静默返回空，看起来像"PLM 已关"的假阴性；`tools/diag-unlock.py` 走的就是 mmap 路径。
 
-**先看日志的 `POST-GOP` 行，别急着怪驱动**：从 v2.1.11 起交棒尾部会再读一次 FEAT 三连（`POST-GOP: FEAT_PLM=… SS0=… SS1=…`）。位置在**控制台重建之后**——默认的 native-GOP 重建会 `StartImage` 卡自己的 GOP 驱动（`\tx-reconnect-legacy.txt` 路径改为重连原厂栈、不自己 StartImage），而此前的 `POST-FLR` 验证在它之前，所以两行合起来才能切分写入方：`POST-GOP` 已锁/已丢 = 丢在 bootmgfw 之前（卡自己的 GOP/devinit 或平台固件，Windows 驱动出局）；`POST-GOP` 完好、系统内被抹 = 驱动这一 pass 负责。这也是 [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164) 的取证入口。
+**先看日志的 `POST-GOP` 行，别急着怪驱动**：从 v2.1.11 起交棒尾部会再读一次 FEAT 三连（`POST-GOP: FEAT_PLM=… SS0=… SS1=…`）。位置在**控制台重建之后**——默认的 native-GOP 重建会 `StartImage` 卡自己的 GOP 驱动，而此前的 `POST-FLR` 验证在它之前，所以两行合起来才能切分写入方：`POST-GOP` 已锁/已丢 = 丢在 bootmgfw 之前（卡自己的 GOP/devinit 或平台固件，Windows 驱动出局）；`POST-GOP` 完好、系统内被抹 = 驱动这一 pass 负责。这也是 [#164](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/164) 的取证入口。
 
 <a id="gain"></a>
 
@@ -312,7 +310,7 @@ WPR2 是旁证：本次引导里唯一由 booter 自己写过的寄存器（暂�
 
 第 6 行的特殊性：复位由**建立/重建隧道的 CM** 执行——USB4 主机上是 OS 侧 CM，发生在任何驱动绑定之前，所以"接管之后再武装"没有主机写路径（`--reapply` 结构性无效，热插拔也一样）；固件 CM 主机开机不触发此行（见雷电节分型），重插才触发。唯一出路是抑制那次拆建，两套 OS 都已实测可行（正文给命令与代价）。取证走 chain 到 Linux + `modprobe.blacklist=nouveau,thunderbolt` + `tools/diag-unlock.py`（rEFInd 顶替 ISO 自带 GRUB、Secure Boot 可全程开着）。
 
-第 1、2 行是物理事件（掉电/复位后 devinit 重算回厂，契约见下节），第 3 行是驱动侧的平台条件分支（2026-11-21 定性，见上行注），第 5、7 行是我们自己代码里能改的（第 7 行已在 2026-11-08 默认关闭），第 6 行是 OS 侧旋钮（不在本工具内）——`\tx-reconnect-legacy.txt` 可以让交棒尾部改走重连原厂栈、不自己 `StartImage`。
+第 1、2 行是物理事件（掉电/复位后 devinit 重算回厂，契约见下节），第 3 行是驱动侧的平台条件分支（2026-11-21 定性，见上行注），第 5、7 行是我们自己代码里能改的（第 7 行已在 2026-11-08 默认关闭），第 6 行是 OS 侧旋钮（不在本工具内）。
 
 **第 1 行已有两轴同抓的完整现场对**（2026-11-04，[#37](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/37)，HP Victus 16 `25a2` 纯混合平台，`docs/evidence/issue37-hp-victus-25a2/`）：EFI 侧金丝雀设置并读回完好、交棒时卡 D0 → 系统内金丝雀清零 + FEAT 回厂推导值 + 根口 `00:01.0` PMCSR `D3`。FLR 被同日志排除（本链 `POST-FLR` 自证 GA10x 选择器活过 FLR），事件超出 FLR 即常规复位族，根口 D3 把形态压向第 1 行。对照组：TU106 桌面金丝雀 intact + 双端 D0（写入型才会长这样）；同为 GA107M 的 [#148](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/148)（Linux）是无复位的 devinit 重写（金丝雀应完好）——同 die、不同平台、不同行。金丝雀表的第四格（`intact` + FEAT 完好）也已有首个现场实例（2026-11-05，[#109](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/109#issuecomment-6650530730)：同卡同 VBIOS 同子系统、B650 桌面，交棒与系统内均 `intact`、双端 D0、`UNLOCKED`）——"什么都没发生"同样是一条读数，它把卡/VBIOS/驱动从鉴别变量里踢了出去，只剩平台。
 
@@ -976,7 +974,7 @@ TX-ASSET-CACHE: cleared 9 entries, 84388324 bytes handed back to the firmware al
 
 部分 AMI 固件会在 GPU 事务完成后的 GOP 重连中卡死或复位。loader 对断开后仍存在的无路径 GOP 使用非递归厂商重连，链式加载前跳过 NVIDIA 显示功能；运行日志即时写盘。
 
-若仍停在 `RECONNECT: ConnectController ... begin` 或该阶段复位，完全断电恢复后，在 U 盘根放 `no-reconnect.txt` 跳过目标 GPU 重连。Windows Boot Manager 可自行建立控制台；跳过重连不代表跳过系统内验证。
+若仍停在 native-GOP 重建阶段（日志 `NATIVE-GOP` 行内）或该阶段复位，完全断电恢复后，在 U 盘根放 `tx-no-reconnect.txt`（或 tx.ini 写 `reconnect = off`）跳过目标 GPU 重连。Windows Boot Manager 可自行建立控制台；跳过重连不代表跳过系统内验证。
 
 Turing 若返回 `0x91`，或 EFI 成功但 GSP 交棒蓝屏，查 [兼容性矩阵](compatibility.md#device-16)，不要把所有黑屏都归为 GOP。平台证据见 [AMI 报告](ad106-asus-z790-windows-unlock.md)和 [X470 记录](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/70)。
 

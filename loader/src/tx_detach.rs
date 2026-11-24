@@ -403,63 +403,15 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
 
 }
 
-/// Post-transaction GOP/console reconnect (TOTORONG craft): after the FLR
-/// returned the card to a cold state, recursively ConnectController so the
-/// firmware re-binds the vendor GOP/driver stack. Non-fatal: bootmgfw
-/// self-establishes its own console when it starts; this only restores the
-/// display earlier for machines where the dGPU is the primary adapter.
-pub fn reconnect_all(pci_handle: uefi::Handle) {
-    if matches!(crate::config::reconnect(), txini::Reconnect::Off) {
-        info!("RECONNECT: skipped (reconnect = off) - bootmgfw self-establishes its console");
-        return;
-    }
-    // Give the FLR-rebooted function a moment, then reconnect. Recursive by
-    // default (verified on single-GOP desktops). If a pathless GOP survived
-    // the detach (an AMI splitter child, ASUS Z790 + 2803), connect the
-    // vendor GOP driver only: the recursive connect re-binds the console
-    // stack over the stale child and the platform resets inside the call.
-    // bootmgfw locates the fresh vendor GOP on its own.
-    boot::stall(core::time::Duration::from_millis(200));
-    // Diagnostic switch (issues #35/#61): on a family of boards the
-    // recursive rebind deadlocks inside the firmware right here (detach
-    // leaves zero GOP handles -> stale_pathless_gop()=false ->
-    // recursive=true). The marker forces the vendor-GOP-only bind PR#13
-    // validated on the pathless-survivor shape and leaves the console
-    // stack to bootmgfw - the Z170-A control proved bootmgfw's own
-    // re-establishment suffices whenever it can bind at all.
-    // probe_file, NOT read_boot_file: the UI switches are zero-byte files
-    // by design, and read_boot_file refuses size==0 (issue #106 - a
-    // dropped EMPTY marker was silently ignored and the recursive hang
-    // came back).
-    let force_nonrec = matches!(crate::config::reconnect(), txini::Reconnect::LegacyNonrec);
-    let recursive = if force_nonrec {
-        info!("RECONNECT: \\tx-reconnect-nonrecursive.txt present - forcing NON-recursive (vendor GOP bind only; console stack left to bootmgfw)");
-        false
-    } else {
-        !stale_pathless_gop()
-    };
-    info!("RECONNECT: ConnectController (recursive={recursive}) begin");
-    match boot::connect_controller(pci_handle, &[], None, recursive) {
-        Ok(()) => info!("RECONNECT: ConnectController ok (recursive={recursive})"),
-        Err(e) => info!("RECONNECT: ConnectController failed: {:?} (bootmgfw will self-establish)", e.status()),
-    }
-    log_display_topology(pci_handle);
-}
-
-/// True if any GOP handle without a device path is still installed. Called
-/// after the detach, when the target's vendor GOP is gone: a pathless GOP
-/// left over is a firmware splitter/console child (AMI) that a recursive
-/// reconnect would re-bind over.
-pub fn stale_pathless_gop() -> bool {
-    let Ok(h) = boot::locate_handle_buffer(boot::SearchType::ByProtocol(&GraphicsOutput::GUID)) else {
-        return false;
-    };
-    let stale = h.iter().any(|&gop| device_path_bytes(gop).is_none());
-    if stale {
-        info!("RECONNECT: pathless GOP survived the detach - vendor GOP only (non-recursive)");
-    }
-    stale
-}
+// The legacy recursive-reconnect path (reconnect_all + stale_pathless_gop)
+// was REMOVED with its marker family (tx-reconnect-legacy.txt /
+// tx-reconnect-nonrecursive.txt / no-reconnect.txt, retired 2026-11-25):
+// it predated the native-GOP rebuild default, carried the #35/#61
+// recursive-rebind deadlock family and the R7000 DDC-CI untrained-panel
+// shape, and its field evidence (#52 / D#131 nonrecursive fixes) all
+// predates that default. The escape hatch for a misbehaving rebuild is
+// reconnect = off (dark handoff - bootmgfw self-establishes its console,
+// Z170-A control-proven).
 
 /// VGA forwarding bits (EDK2 PciIo.h): VGA_PALETTE_IO | VGA_MEMORY |
 /// VGA_IO. The 16-bit-decode variants are excluded - no board in the

@@ -30,7 +30,14 @@
 |---|---|---|
 | `output` | `normal` / `quiet` / `ultrafast` | `tx-quiet.txt`、`tx-ultrafast.txt` |
 | `log_commit` | `full` / `lines` / `off` | `tx-log-commit.txt`、`tx-log-commit-lines.txt` |
-| `reconnect` | `auto` / `legacy` / `legacy-nonrec` / `off` | `tx-reconnect-legacy.txt`、`tx-reconnect-nonrecursive.txt`、`tx-no-reconnect.txt`、`no-reconnect.txt` |
+| `reconnect` | `auto` / `off` | `tx-no-reconnect.txt` |
+
+> **退役（2026-11-25）**：legacy 递归重连路径整体删除，`tx-reconnect-legacy.txt`、
+> `tx-reconnect-nonrecursive.txt`、`no-reconnect.txt` 三 marker 一并退役（零探测，
+> 放在盘上无效果）。该路径早于 native-GOP 重建默认（v2.1.10），自带 #35/#61
+> 递归死锁家族与 R7000 DDC-CI 链路未训练形态；#52/D#131 的 nonrec 实证全部
+> 早于 native 默认。重建异常的逃生阀现在是 `reconnect = off`（暗交棒，
+> bootmgfw 自建控制台，Z170-A 对照已证）。
 
 ### 布尔臂（`= true` 可省略）
 

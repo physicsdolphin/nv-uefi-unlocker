@@ -171,18 +171,15 @@ pub enum LogCommit {
     Off,
 }
 
-/// Reconnect family (replaces the four-marker confusable set
-/// `\no-reconnect.txt` / `\tx-reconnect-legacy.txt` /
-/// `\tx-reconnect-nonrecursive.txt` / `\tx-no-reconnect.txt`). The marker
-/// combinations map onto these values with identical site behavior.
+/// Reconnect family: `Auto` = native-GOP rebuild (default), `Off` = dark
+/// handoff. The legacy recursive-reconnect path and its marker trio
+/// (tx-reconnect-legacy / tx-reconnect-nonrecursive / no-reconnect) were
+/// retired 2026-11-25 - they predated the native rebuild default and
+/// carried the #35/#61 deadlock family; `Off` is the escape hatch now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reconnect {
     /// Default: native-GOP rebuild on the gates the loader already applies.
     Auto,
-    /// Legacy recursive reconnect path.
-    Legacy,
-    /// Legacy path forced non-recursive (vendor-GOP bind only).
-    LegacyNonrec,
     /// No reconnect at all - dark handoff, bootmgfw self-establishes.
     Off,
 }
@@ -265,12 +262,7 @@ fn markers_for(key: &str) -> &'static [&'static str] {
         "select_bdf" => &["\\tx-select-bdf.txt"],
         "output" => &["\\tx-quiet.txt", "\\tx-ultrafast.txt"],
         "log_commit" => &["\\tx-log-commit.txt", "\\tx-log-commit-lines.txt"],
-        "reconnect" => &[
-            "\\tx-reconnect-legacy.txt",
-            "\\tx-reconnect-nonrecursive.txt",
-            "\\tx-no-reconnect.txt",
-            "\\no-reconnect.txt",
-        ],
+        "reconnect" => &["\\tx-no-reconnect.txt"],
         "dry_run" => &["\\tx-dry-run.txt"],
         "agitate_only" => &["\\tx-agitate-only.txt"],
         "fwsec_only" => &["\\tx-fwsec-only.txt"],
@@ -417,15 +409,10 @@ pub fn resolve(
                 );
             }
             "reconnect" => {
-                r.reconnect =
-                    enum_value(e, &["auto", "legacy", "legacy-nonrec", "off"], &mut errs).map(
-                        |s| match s {
-                            "legacy" => Reconnect::Legacy,
-                            "legacy-nonrec" => Reconnect::LegacyNonrec,
-                            "off" => Reconnect::Off,
-                            _ => Reconnect::Auto,
-                        },
-                    );
+                r.reconnect = enum_value(e, &["auto", "off"], &mut errs).map(|s| match s {
+                    "off" => Reconnect::Off,
+                    _ => Reconnect::Auto,
+                });
             }
             "dry_run" => r.dry_run = flag_value(e, &mut errs).unwrap_or(false),
             "agitate_only" => r.agitate_only = flag_value(e, &mut errs).unwrap_or(false),
@@ -650,12 +637,13 @@ mod tests {
 
     #[test]
     fn families_happy_and_typo() {
-        let r = resolve_ok("output = ultrafast\nlog_commit = lines\nreconnect = legacy-nonrec\n");
+        let r = resolve_ok("output = ultrafast\nlog_commit = lines\nreconnect = off\n");
         assert_eq!(r.output, Some(Output::Ultrafast));
         assert_eq!(r.log_commit, Some(LogCommit::Lines));
-        assert_eq!(r.reconnect, Some(Reconnect::LegacyNonrec));
-        let errs = resolve_err("output = fast\nlog_commit = always\nreconnect = none\n");
+        assert_eq!(r.reconnect, Some(Reconnect::Off));
+        let errs = resolve_err("output = fast\nlog_commit = always\nreconnect = legacy\n");
         assert_eq!(errs.len(), 3);
+        assert!(errs[2].contains("legacy")); // retired value names are refusals now
     }
 
     #[test]
@@ -721,10 +709,10 @@ mod tests {
         // double-set arm is reported even when the ini value is also junk
         let es = entries("reconnect = wat\n");
         let mut w = StdVec::new();
-        let mut set = |p: &str| p == "\\tx-reconnect-legacy.txt";
+        let mut set = |p: &str| p == "\\tx-no-reconnect.txt";
         let errs = resolve(&es, &mut set, &mut w).expect_err("both");
         assert!(errs.iter().any(|e| e.contains("both set the same arm")));
-        assert!(errs.iter().any(|e| e.contains("legacy-nonrec")));
+        assert!(errs.iter().any(|e| e.contains("auto"))); // enum error lists the allowed set
     }
 
     // ---- resolver: lists and unknowns ---------------------------------
