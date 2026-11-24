@@ -469,11 +469,15 @@ pub fn resolve(
                     "read" => Some(RebarSetting::Read),
                     "scan" => Some(RebarSetting::Scan),
                     _ => {
-                        // "<select>/<advertise>" - strict where the marker
-                        // parser silently defaults: 1..=19 / 0..=15.
+                        // Grammar is ALWAYS "<target>/<advertise>"; 0 on a
+                        // side = do not write that side, "0/0" = skip the
+                        // whole arm. Bare ("11") and half-slash ("9/", "/9")
+                        // forms are refused - with 0 meaning "skip", there is
+                        // no reason to keep three spellings for one intent.
+                        // target 1..=19, advertise 0..=15.
                         let Some((s, a)) = v.split_once('/') else {
                             errs.push(format!(
-                                "{INI_PATH} line {}: rebar wants 'read', 'scan' or '<select>/<advertise>', got '{v}'",
+                                "{INI_PATH} line {}: rebar wants 'read', 'scan' or '<target>/<advertise>' (0 = don't write that side, e.g. '{v}/0' or '0/0'), got '{v}'",
                                 e.line
                             ));
                             return None;
@@ -484,24 +488,39 @@ pub fn resolve(
                                 e.line
                             )
                         };
-                        let sel = match s.parse::<u32>() {
-                            Ok(n) if (1..=19).contains(&n) => n,
-                            _ => {
-                                errs.push(bad("select", s, 1, 19));
+                        let (sel, adv) = match (s.parse::<u32>(), a.parse::<u32>()) {
+                            (Ok(sel), Ok(adv))
+                                if (0..=19).contains(&sel) && (0..=15).contains(&adv) =>
+                            {
+                                (sel, adv)
+                            }
+                            (Ok(sel), _) if sel > 19 => {
+                                errs.push(bad("target", s, 0, 19));
                                 return None;
                             }
-                        };
-                        let adv = match a.parse::<u32>() {
-                            Ok(n) if n <= 15 => n,
-                            _ => {
+                            (_, Ok(adv)) if adv > 15 => {
                                 errs.push(bad("advertise", a, 0, 15));
                                 return None;
                             }
+                            _ => {
+                                errs.push(format!(
+                                    "{INI_PATH} line {}: rebar wants '<target>/<advertise>' as plain decimals, got '{v}'",
+                                    e.line
+                                ));
+                                return None;
+                            }
                         };
-                        Some(RebarSetting::Pair {
-                            select: sel,
-                            advertise: adv,
-                        })
+                        if sel == 0 && adv == 0 {
+                            // "0/0" = the whole rebar arm is skipped: no
+                            // claim, no SBR, no write. Represented as None
+                            // so the loader treats it exactly like absence.
+                            None
+                        } else {
+                            Some(RebarSetting::Pair {
+                                select: sel,
+                                advertise: adv,
+                            })
+                        }
                     }
                 });
             }
@@ -666,11 +685,28 @@ mod tests {
             resolve_ok("rebar = 11/9").rebar,
             Some(RebarSetting::Pair { select: 11, advertise: 9 })
         );
+        assert_eq!(
+            resolve_ok("rebar = 10/7").rebar,
+            Some(RebarSetting::Pair { select: 10, advertise: 7 })
+        );
+        // 0 = don't write that side; 0/0 = skip the whole arm (None)
+        assert_eq!(
+            resolve_ok("rebar = 11/0").rebar,
+            Some(RebarSetting::Pair { select: 11, advertise: 0 })
+        );
+        assert_eq!(
+            resolve_ok("rebar = 0/9").rebar,
+            Some(RebarSetting::Pair { select: 0, advertise: 9 })
+        );
+        assert_eq!(resolve_ok("rebar = 0/0").rebar, None);
         assert_eq!(resolve_ok("rebar_route = ecam").rebar_route, Some(RebarRoute::Ecam));
+        // bare / half-slash forms are refusals now (spell 0 explicitly)
         assert!(!resolve_err("rebar = 11").is_empty());
-        assert!(!resolve_err("rebar = 0/9").is_empty());
+        assert!(!resolve_err("rebar = 9/").is_empty());
+        assert!(!resolve_err("rebar = /9").is_empty());
         assert!(!resolve_err("rebar = 11/16").is_empty());
         assert!(!resolve_err("rebar = 20/9").is_empty());
+        assert!(!resolve_err("rebar = a/b").is_empty());
     }
 
     // ---- resolver: conflicts -----------------------------------------

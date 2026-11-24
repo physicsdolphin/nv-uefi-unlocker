@@ -1,7 +1,6 @@
 //! Booter publication + execution + selectors + FLR — final transaction
 //! segment, behavioral port of unlock_610.c (434-489, 749-800, 878-920,
 //! 1113-1432) and prep_610.c (boot_desc parse, booter patch, wpr_meta_pack).
-#![allow(dead_code)]
 
 
 use log::info;
@@ -19,14 +18,8 @@ pub const SS0_UNLOCK: u32 = 0x8888_8888;
 pub const SS1_UNLOCK: u32 = 0x8;
 pub const BTL1_MAGIC: u32 = 0x314C_5442;
 
-fn le16(d: &[u8], o: usize) -> u16 {
-    u16::from_le_bytes([d[o], d[o + 1]])
-}
 fn le32(d: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]])
-}
-fn wr32(d: &mut [u8], o: usize, v: u32) {
-    d[o..o + 4].copy_from_slice(&v.to_le_bytes());
 }
 fn wr64(d: &mut [u8], o: usize, v: u64) {
     d[o..o + 8].copy_from_slice(&v.to_le_bytes());
@@ -42,9 +35,6 @@ pub struct BootDesc {
     pub data_offset: u32,
     pub manifest_offset: u32,
     pub image_size: u32,
-    /// desc d7 (appVersion) — Turing writes it to GSP FALCON_OS after the
-    /// booter load (kgspBootstrap_TU102).
-    pub app_version: u32,
 }
 
 #[cfg(feature = "tx")]
@@ -68,7 +58,6 @@ pub fn boot_desc_parse(desc: &[u8], image_size: u32) -> Result<BootDesc, TxError
             data_offset: f(10),
             code_offset: f(12),
             image_size,
-            app_version: f(7),
         });
     }
     if desc.len() != 84
@@ -100,7 +89,6 @@ pub fn boot_desc_parse(desc: &[u8], image_size: u32) -> Result<BootDesc, TxError
         data_offset: f(10),
         code_offset: f(12),
         image_size,
-        app_version: f(7),
     })
 }
 
@@ -242,15 +230,10 @@ pub fn booter_patch_stock(image: &mut [u8], hdr: &BooterHdr, signatures: &[u8], 
     })
 }
 
-/// Replace the patch slot with the V67 payload image (the exploit vehicle).
-#[cfg(feature = "tx")]
-pub fn booter_patch_v67(image: &mut [u8], hdr: &BooterHdr, v67: &[u8]) -> Result<(), TxError> {
-    if v67.len() != V67_SIZE || hdr.patch_loc as usize + V67_SIZE > image.len() {
-        return Err(TxError::EInval);
-    }
-    image[hdr.patch_loc as usize..hdr.patch_loc as usize + V67_SIZE].copy_from_slice(v67);
-    Ok(())
-}
+// booter_patch_v67 (patch-slot image overlay) was removed 2026-11-25: the
+// live payload vehicle DMA's the V67 image as the SIGNATURE staging
+// (tx.rs copies it into sig_dma; the unbounded signature copy is the
+// exploit), so the image-slot variant had no callers.
 
 /// Radix: three-level page tables over the GSP image, carved from ONE
 /// contiguous DMA block (EFI-friendly variant of the per-page C allocator;
@@ -748,14 +731,6 @@ pub fn booter_fire_direct(gpu: &TxGpu, hdr: &BooterHdr, image: &[u8], meta_dma: 
     // PLM-locked + boot-stage scratch).
     info!("BOOTER-DIRECT: verdict deferred to POST-BOOT (mailbox0 may be input carrier or status code)");
     Ok(())
-}
-
-/// Cache flush for the C-reference fire shape (wbinvd before the portal
-/// verifies and again before START, mirroring the proven run).
-fn wbinvd_flush() {
-    // SAFETY: privileged instruction, no memory operands; boot-services
-    // single-threaded context.
-    unsafe { core::arch::asm!("wbinvd", options(nostack, preserves_flags)) };
 }
 
 // ---------------------------------------------------------------------------

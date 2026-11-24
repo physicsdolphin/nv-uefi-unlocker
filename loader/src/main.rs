@@ -601,8 +601,9 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
         let sbr_rung = config::flag(config::FlagArm::SbrGpu);
         let ecam_route = matches!(config::rebar_route(), txini::RebarRoute::Ecam);
         info!(
-            "TX: rebar pair arm (size_idx {rebar_idx}, advertise field {rebar_adv} (top idx {}), route {}, SBR {}) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off",
-            rebar_adv as i32 - 2,
+            "TX: rebar pair arm (target size_idx {}, advertise field {}, route {}, SBR {}) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off (0 = that side is NOT written)",
+            rebar_idx,
+            rebar_adv,
             if ecam_route { "ECAM-direct" } else { "XVE-MMIO mirror" },
             if sbr_rung { "yes" } else { "no" }
         );
@@ -620,6 +621,10 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                     }
                 }
                 if sbr_ok {
+                    // 0 on a side = that write is skipped; the ECAM route
+                    // never carried an advertise field (config 0xBC0 only),
+                    // so target=0 on ECAM degenerates to a claim+SBR-only
+                    // round trip (still a valid straps re-latch arm).
                     let pair = if ecam_route {
                         tx::run_rebar_ecam((g.seg, g.bus, g.dev, g.fun), rebar_idx)
                     } else {

@@ -2093,21 +2093,29 @@ pub fn run_rebar_mmio(gpu: &TxGpu, size_idx: u32, adv_field: u32) -> Result<(), 
     const CTL_OFF: u32 = 0x0008_8bc0;
     const FB_MASK: u32 = 0x0000_0f80;
     const SZ_MASK: u32 = 0x0000_3f00;
+    // 0 on a side = that write is skipped (the ini grammar spells the
+    // "don't touch" intent explicitly; the marker grammar keeps its
+    // legacy defaults).
+    let write_adv = adv_field != 0;
+    let write_sel = size_idx != 0;
     let fb_val = 0x0000_0800 | (adv_field << 7); // bit11=enable, bits[10:7]=field
 
     info!(
-        "REBAR: BEGIN (MMIO-mirror pair via XVE, readback each; advertise field {adv_field} (top size_idx {}), select size_idx {size_idx} = {} MiB aperture)",
-        adv_field as i32 - 2,
-        1u32 << size_idx
+        "REBAR: BEGIN (MMIO-mirror pair via XVE, readback each; advertise field {} {}, select {})",
+        adv_field,
+        if write_adv { alloc::format!("(top size_idx {})", adv_field as i32 - 2) } else { alloc::string::String::from("SKIPPED (0)") },
+        if write_sel { alloc::format!("size_idx {size_idx} = {} MiB aperture", 1u32 << size_idx) } else { alloc::string::String::from("size_idx SKIPPED (0)") }
     );
     let old_fb = gpu.read32(FB_OFF)?;
     info!("REBAR: mmio 0x88610 read {old_fb:#010x} (pre-write)");
-    let new_fb = (old_fb & !FB_MASK) | fb_val;
-    gpu.write32(FB_OFF, new_fb);
+    let new_fb = if write_adv { (old_fb & !FB_MASK) | fb_val } else { old_fb };
+    if write_adv {
+        gpu.write32(FB_OFF, new_fb);
+    }
     let rb_fb = gpu.read32(FB_OFF)?;
     let fb_ok = rb_fb == new_fb;
-    info!("REBAR: mmio 0x88610 wrote {new_fb:#010x} -> readback {rb_fb:#010x} {}", if fb_ok { "OK" } else { "MISMATCH" });
-    if !fb_ok {
+    info!("REBAR: mmio 0x88610 {} -> readback {rb_fb:#010x} {}", if write_adv { alloc::format!("wrote {new_fb:#010x}") } else { alloc::string::String::from("left untouched (adv=0)") }, if write_adv { if fb_ok { "OK" } else { "MISMATCH" } } else { "n/a" });
+    if write_adv && !fb_ok {
         return Err(TxError::EIO);
     }
 
@@ -2116,12 +2124,14 @@ pub fn run_rebar_mmio(gpu: &TxGpu, size_idx: u32, adv_field: u32) -> Result<(), 
 
     let old_ctl = gpu.read32(CTL_OFF)?;
     info!("REBAR: mmio 0x88bc0 read {old_ctl:#010x} (pre-write)");
-    let new_ctl = (old_ctl & !SZ_MASK) | (size_idx << 8);
-    gpu.write32(CTL_OFF, new_ctl);
+    let new_ctl = if write_sel { (old_ctl & !SZ_MASK) | (size_idx << 8) } else { old_ctl };
+    if write_sel {
+        gpu.write32(CTL_OFF, new_ctl);
+    }
     let rb_ctl = gpu.read32(CTL_OFF)?;
     let ctl_ok = rb_ctl == new_ctl;
-    info!("REBAR: mmio 0x88bc0 wrote {new_ctl:#010x} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if ctl_ok { "OK" } else { "MISMATCH" });
-    if !ctl_ok {
+    info!("REBAR: mmio 0x88bc0 {} (BAR1, size_idx {size_idx}) -> readback {rb_ctl:#010x} {}", if write_sel { alloc::format!("wrote {new_ctl:#010x}") } else { alloc::string::String::from("left untouched (target=0)") }, if write_sel { if ctl_ok { "OK" } else { "MISMATCH" } } else { "n/a" });
+    if write_sel && !ctl_ok {
         return Err(TxError::EIO);
     }
 
@@ -2204,6 +2214,15 @@ pub fn run_rebar_ecam(loc: (usize, usize, usize, usize), size_idx: u32) -> Resul
     }
     let mask = rd(0xbbc);
     info!("REBAR-ECAM: cfg 0xbbc BAR1 supported mask {mask:#010x} ({} sizes)", mask.count_ones());
+    // target=0 (the ini "don't write the control side" spelling) makes the
+    // ECAM route a claim+SBR-only round trip: the config 0xBC0 control is
+    // the only write this route carries, so skipping it means verify-only.
+    if size_idx == 0 {
+        info!("REBAR-ECAM: target=0 - cfg 0xbc0 control write SKIPPED (advertising still re-armed above; this route is verify-only for the control side)");
+        let mask2 = rd(0xbbc);
+        info!("REBAR-ECAM: FINAL mask {mask:#010x} -> {mask2:#010x}, ctl untouched");
+        return Ok(());
+    }
     let old_ctl = rd(0xbc0);
     info!("REBAR-ECAM: cfg 0xbc0 read {old_ctl:#010x} (pre-write)");
     let new_ctl = (old_ctl & !SZ_MASK) | (size_idx << 8);

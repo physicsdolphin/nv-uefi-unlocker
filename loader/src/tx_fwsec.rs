@@ -1,6 +1,5 @@
 //! FWSEC ignition phase (unlock_610.c 921-1026) + helpers (vbios_610.c,
 //! prep_610.c), no_std ports. Part of the `tx` feature.
-#![allow(dead_code)] // pre-wired ahead of the gate; behavior twin in sim/assets
 
 
 
@@ -105,12 +104,6 @@ fn find_expansion_offset(rom: &[u8]) -> Option<usize> {
 /// Compact BIT -> token 0x70 -> ucode table -> FWSEC walk (Ada V3 path).
 pub fn prom_find_fwsec(rom: &[u8], debug: bool) -> Option<FwsecInfo> {
     prom_find_ucode(rom, if debug { 0x45 } else { 0x85 })
-}
-
-/// Scrubber ucode (app 0x49) - the kernel runs it on SEC2 BEFORE FWSEC when
-/// BSI SCRUBBER_HANDOFF < DONE (kgspExecuteScrubberIfNeeded_AD102).
-pub fn prom_find_scrubber(rom: &[u8]) -> Option<FwsecInfo> {
-    prom_find_ucode(rom, 0x49)
 }
 
 fn prom_find_ucode(rom: &[u8], want_app: u8) -> Option<FwsecInfo> {
