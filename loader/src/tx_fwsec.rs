@@ -828,14 +828,14 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     // "<4GB locked" note concerns LOCKED-STATE BOOTER reads, never the FWSEC
     // BL. Meta/signature/radix keep the global >4GB gate.
     // \tx-fwsec-high-staging.txt restores the old high band for ablation.
-    let mut dma = if !crate::config::flag(crate::config::FlagArm::FwsecHighStaging) && crate::pci::high_staging() {
+    let mut dma = if crate::pci::high_staging() {
         let restore = crate::pci::high_staging();
         crate::pci::set_high_staging(false);
         let d = gpu.pci.dma_alloc(fw.image_size as usize);
         crate::pci::set_high_staging(restore);
         let d = d.map_err(|_| TxError::ENodev)?;
         info!(
-            "FWSEC-TU10X: staging allocated in the LOW band by default (dev={:#x}) - >=4GiB is unreachable on some platforms (issue #74); \\tx-fwsec-high-staging.txt restores high",
+            "FWSEC-TU10X: staging allocated in the LOW band by default (dev={:#x}) - >=4GiB is unreachable on some platforms (issue #74)",
             d.dev
         );
         d
@@ -868,7 +868,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     // TRANSCFG4 aperture to LOCAL_FB ((t4&!7)|4). The meta itself MUST stay
     // in sysmem (the booter reads it through the sysmem aperture - VRAM meta
     // reads back as garbage and exits 0x89, #89 measured). Default OFF.
-    let vram_staging = force_vram || crate::config::flag(crate::config::FlagArm::FwsecVramStaging);
+    let vram_staging = force_vram || crate::config::staging_vram_preset();
     if force_vram {
         info!("FWSEC-TU10X: forced VRAM staging (FWSEC-FALLBACK retry arm)");
     }
@@ -1002,7 +1002,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
         // the failure lands HERE (the #74 three-death-shapes: a silent FWSEC
         // image fetch) even though FWSEC staging is already LOW by default.
         info!(
-            "FWSEC-TU10X: known causes (issue #74 four-cell matrix): 1) BIOS VT-d/IOMMU ON - it kills staging DMA in BOTH bands, turn it OFF first (SVM/AMD-V and Intel VT-x verified harmless); 2) a bridge on the path without bus master (see the DMA-PATH lines); 3) band problems are unlikely here - FWSEC staging is already LOW by default (\\tx-fwsec-high-staging.txt is ablation only)"
+            "FWSEC-TU10X: known causes (issue #74 four-cell matrix): 1) BIOS VT-d/IOMMU ON - it kills staging DMA in BOTH bands, turn it OFF first (SVM/AMD-V and Intel VT-x verified harmless); 2) a bridge on the path without bus master (see the DMA-PATH lines); 3) band problems are unlikely here - FWSEC staging is already LOW by default"
         );
         let _ = dma.release(gpu.pci);
         return Err(TxError::EIO);

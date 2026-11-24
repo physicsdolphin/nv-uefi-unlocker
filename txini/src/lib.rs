@@ -190,6 +190,18 @@ pub enum RebarRoute {
     Ecam,
 }
 
+/// Staging family: the automatic retry ladders (booter-side
+/// STAGING-FALLBACK, FWSEC-side FWSEC-FALLBACK) own band selection; the
+/// one manual position is the VRAM preset for known aperture-dead hosts
+/// (#89/#275). tx-low-staging / tx-fwsec-high-staging were retired with
+/// this merge (2026-11-25) - both manual pins' failure classes are covered
+/// by the automatic ladders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Staging {
+    Auto,
+    Vram,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RebarSetting {
     Read,
@@ -211,11 +223,12 @@ pub struct Resolved {
     pub agitate_only: bool,
     pub fwsec_only: bool,
     pub exit_fw: bool,
+    // staging family (see Staging)
+    pub staging: Option<Staging>,
     // booleans
     pub no_log: bool,
     pub no_console: bool,
     pub relock: bool,
-    pub stop_on_failure: bool,
     pub force_continue: bool,
     pub preload: bool,
     pub ebs_watch: bool,
@@ -226,10 +239,6 @@ pub struct Resolved {
     pub sbr_gpu: bool,
     pub rebar_gop: bool,
     pub rebar_then_tx: bool,
-    pub low_staging: bool,
-    pub fwsec_high_staging: bool,
-    pub fwsec_vram_staging: bool,
-    pub keep_assets: bool,
     pub no_asset_cache: bool,
     // single-value arms
     /// `Some` = armed; the value is the countdown in seconds (0..=30).
@@ -242,7 +251,6 @@ pub struct Resolved {
     pub chain_target: Option<String>,
     pub prom_sha256: Option<String>,
     pub select_bdf: Option<String>,
-    pub sec_base: Option<String>,
     pub native_gop: Option<String>,
     pub rebar: Option<RebarSetting>,
     pub rebar_route: Option<RebarRoute>,
@@ -270,7 +278,6 @@ fn markers_for(key: &str) -> &'static [&'static str] {
         "no_log" => &["\\tx-no-log.txt"],
         "no_console" => &["\\tx-no-console.txt"],
         "relock" => &["\\tx-relock.txt"],
-        "stop_on_failure" => &["\\tx-stop-on-failure.txt"],
         "force_continue" => &["\\tx-force-continue.txt"],
         "preload" => &["\\tx-preload.txt"],
         "ebs_watch" => &["\\tx-ebs-watch.txt"],
@@ -283,17 +290,13 @@ fn markers_for(key: &str) -> &'static [&'static str] {
         "rebar_route" => &["\\tx-rebar-ecam.txt"],
         "rebar_gop" => &["\\tx-rebar-gop.txt"],
         "rebar_then_tx" => &["\\tx-rebar-then-tx.txt"],
-        "low_staging" => &["\\tx-low-staging.txt"],
-        "fwsec_high_staging" => &["\\tx-fwsec-high-staging.txt"],
-        "fwsec_vram_staging" => &["\\tx-fwsec-vram-staging.txt"],
-        "keep_assets" => &["\\tx-keep-assets.txt"],
+        "staging" => &["\\tx-fwsec-vram-staging.txt"],
         "no_asset_cache" => &["\\tx-no-asset-cache.txt"],
         "ignore_key" => &["\\tx-ignore-key.txt"],
         "input_reset" => &["\\input-reset.txt"],
         "gop_hide" => &["\\tx-gop-hide.txt"],
         "native_gop" => &["\\tx-native-gop.txt"],
         "fb_gb" => &["\\tu10x-fb-gb.txt"],
-        "sec_base" => &["\\tx-sec-base.txt"],
         "flush_lines" => &["\\tx-flush-lines.txt"],
         _ => &[],
     }
@@ -418,10 +421,15 @@ pub fn resolve(
             "agitate_only" => r.agitate_only = flag_value(e, &mut errs).unwrap_or(false),
             "fwsec_only" => r.fwsec_only = flag_value(e, &mut errs).unwrap_or(false),
             "exit_fw" => r.exit_fw = flag_value(e, &mut errs).unwrap_or(false),
+            "staging" => {
+                r.staging = enum_value(e, &["auto", "vram"], &mut errs).map(|s| match s {
+                    "vram" => Staging::Vram,
+                    _ => Staging::Auto,
+                });
+            }
             "no_log" => r.no_log = flag_value(e, &mut errs).unwrap_or(false),
             "no_console" => r.no_console = flag_value(e, &mut errs).unwrap_or(false),
             "relock" => r.relock = flag_value(e, &mut errs).unwrap_or(false),
-            "stop_on_failure" => r.stop_on_failure = flag_value(e, &mut errs).unwrap_or(false),
             "force_continue" => r.force_continue = flag_value(e, &mut errs).unwrap_or(false),
             "preload" => r.preload = flag_value(e, &mut errs).unwrap_or(false),
             "ebs_watch" => r.ebs_watch = flag_value(e, &mut errs).unwrap_or(false),
@@ -432,14 +440,6 @@ pub fn resolve(
             "sbr_gpu" => r.sbr_gpu = flag_value(e, &mut errs).unwrap_or(false),
             "rebar_gop" => r.rebar_gop = flag_value(e, &mut errs).unwrap_or(false),
             "rebar_then_tx" => r.rebar_then_tx = flag_value(e, &mut errs).unwrap_or(false),
-            "low_staging" => r.low_staging = flag_value(e, &mut errs).unwrap_or(false),
-            "fwsec_high_staging" => {
-                r.fwsec_high_staging = flag_value(e, &mut errs).unwrap_or(false)
-            }
-            "fwsec_vram_staging" => {
-                r.fwsec_vram_staging = flag_value(e, &mut errs).unwrap_or(false)
-            }
-            "keep_assets" => r.keep_assets = flag_value(e, &mut errs).unwrap_or(false),
             "no_asset_cache" => r.no_asset_cache = flag_value(e, &mut errs).unwrap_or(false),
             "i_know_what_i_am_doing" => {
                 // Bare key (or `key =`) = armed with the default countdown;
@@ -471,7 +471,6 @@ pub fn resolve(
             "chain_target" => r.chain_target = need_value(e, &mut errs).map(str::to_string),
             "prom_sha256" => r.prom_sha256 = need_value(e, &mut errs).map(str::to_string),
             "select_bdf" => r.select_bdf = need_value(e, &mut errs).map(str::to_string),
-            "sec_base" => r.sec_base = need_value(e, &mut errs).map(str::to_string),
             "native_gop" => r.native_gop = need_value(e, &mut errs).map(str::to_string),
             "rebar_route" => {
                 r.rebar_route =
@@ -735,13 +734,15 @@ mod tests {
 
     #[test]
     fn marker_only_knobs_are_unknown_keys() {
-        // spot-check the bench set stays out of the schema
+        // spot-check the bench set stays out of the schema (sec_base went
+        // back to marker-only with the 2026-11-25 schema trim)
         for k in [
             "tx-no-canary",
             "tx-ptimer-seed",
             "tx-no-flr",
             "tu10x-no-ss",
             "pre-flr-on",
+            "sec_base",
         ] {
             let mut w = StdVec::new();
             let raw = format!("{k}\n");

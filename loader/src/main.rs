@@ -28,8 +28,6 @@ mod timing;
 mod usbreset;
 #[cfg(feature = "diag")]
 mod tx;
-#[cfg(feature = "tx")]
-mod tx_policy;
 #[cfg(feature = "diag")]
 mod gop_native;
 #[cfg(feature = "diag")]
@@ -307,7 +305,7 @@ fn main() -> Status {
     };
 
     #[cfg(feature = "diag")]
-    let hard_stop = if let keywait::Confirm::Proceed = confirmed {
+    if let keywait::Confirm::Proceed = confirmed {
         // \tx-dry-run.txt (issue #146): skip the transaction entirely. Since
         // preload went opt-in (#198) the residency control is the PAIR
         // \tx-dry-run.txt + \tx-preload.txt: the loader is resident, but this
@@ -316,33 +314,21 @@ fn main() -> Status {
         // residency". (Measured: the dry-run log has no TX-ASSET-DIAG line.)
         if config::dry_run() {
             info!("TX-DRY-RUN: dry-run arm present (marker or tx.ini) - the GPU transaction is SKIPPED this boot (zero writes, no detach; preload residency control - assets are NOT read on this path, issue #146)");
-            false
         } else {
-            tx_phase(&gpus)
+            tx_phase(&gpus);
         }
     } else {
-        false
-    };
+        drop(confirmed);
+    }
     #[cfg(not(feature = "diag"))]
     {
         drop(confirmed);
     }
-    #[cfg(not(feature = "diag"))]
-    let hard_stop = false;
 
-    // Opt-in STOP-on-hard-failure (see tx_one_card / \tx-stop-on-failure.txt):
-    // a hard TX failure with that marker present means this session must not
-    // act on the card again or hand off on its own - the firmware may still
-    // be mid-operation. No further GPU interaction, no chain-load; recovery
-    // is manual (full power-off, remove the stick, normal boot).
-    if hard_stop {
-        info!("STOP: hard TX failure with \\tx-stop-on-failure.txt armed - halting without FLR, without trying another GPU, without chain-loading Windows");
-        info!("STOP: power off completely, remove the USB stick, then boot normally. Do not retry this session.");
-        logging::finish();
-        loop {
-            uefi::boot::stall(core::time::Duration::from_millis(500));
-        }
-    }
+    // The opt-in STOP-on-hard-failure halt (tx-stop-on-failure.txt) was
+    // retired 2026-11-25: the unwind path is now unconditional
+    // (emergency FLR + handoff + next card), so there is no post-phase
+    // halt branch here anymore.
 
     // Phase: EBS-WATCH (soft-lock family cross-review 2026-11-22, issues
     // #242/#278/#279): with \tx-ebs-watch.txt on the stick, wrap
@@ -453,16 +439,10 @@ enum CardOutcome {
     /// Reached `run_transaction`, whatever its outcome - upstream's existing
     /// "attempted" telemetry (issue #139).
     Attempted,
-    /// Opt-in `\tx-stop-on-failure.txt` is present and a genuine hard
-    /// failure occurred: the whole multi-GPU run stops here, and `main`
-    /// must not chain-load Windows either.
-    HardStop,
 }
 
-/// Returns `true` iff a `CardOutcome::HardStop` occurred, in which case the
-/// caller (`main`) must not chain-load Windows.
 #[cfg(feature = "diag")]
-fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
+fn tx_phase(gpus: &[pci::FoundGpu]) {
     // SLOT-REVIVE pre-pass (marker-gated, see revive.rs): revive dead
     // downstream slots through their root ports before target selection.
     // Inert without \tx-revive-dead-slot.txt (returns the input unchanged).
@@ -470,11 +450,10 @@ fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
     let targets = pci::select_tx_targets(&gpus);
     if targets.is_empty() {
         info!("TX: no transaction target (selection marker refused, or no supported GPU) - chain-loading unchanged Windows");
-        return false;
+        return;
     }
     tx::list_root_entries();
     let mut attempted = 0usize;
-    let mut hard_stop = false;
     for (i, g) in targets.iter().enumerate() {
         info!(
             "TX: ===== target {}/{}: 10de:{:04x} @ {:04x}:{:02x}:{:02x}.{} =====",
@@ -489,17 +468,6 @@ fn tx_phase(gpus: &[pci::FoundGpu]) -> bool {
         match tx_one_card(g) {
             CardOutcome::NotAttempted => {}
             CardOutcome::Attempted => attempted += 1,
-            CardOutcome::HardStop => {
-                attempted += 1;
-                hard_stop = true;
-                info!(
-                    "TX: hard stop on target {}/{} - the remaining {} target(s) will NOT run this session",
-                    i + 1,
-                    targets.len(),
-                    targets.len() - (i + 1)
-                );
-                break;
-            }
         }
     }
     let skipped = targets.len() - attempted;
@@ -519,22 +487,20 @@ nothing was written, nothing was detached"
     // (chainload::chain_load_bootmgfw -> tx::handoff_free_assets, default
     // since v2.1.11): the abort path and \tx-dry-run.txt need the same
     // hygiene, and CHAIN-MEMMAP logs the map after the free.
-    hard_stop
 }
 
 /// One card's full transaction. EALREADY/EWarm/EBusy/EClaimUnreadable are
 /// skip-class: nothing was torn down, the multi-GPU loop continues. A
-/// generic (hard) failure keeps the field-proven default (emergency FLR,
-/// continue to the next card) UNLESS the opt-in `\tx-stop-on-failure.txt`
-/// marker is present, in which case it becomes a `CardOutcome::HardStop`
-/// instead - see that file's doc comment and the `CardOutcome` enum above.
+/// generic (hard) failure runs the field-proven unwind (emergency FLR,
+/// bridge-BME release, handoff, next card) - the opt-in STOP variant was
+/// retired with \tx-stop-on-failure.txt on 2026-11-25.
 ///
 /// Returns `CardOutcome::Attempted` when the transaction was actually
 /// ATTEMPTED (the card was eligible, its asset set reached
 /// `run_transaction`, and - if the opt-in identity gate is configured - it
 /// was verified), `CardOutcome::NotAttempted` when the card was gated out
 /// before any GPU touch (no assets / no family mapping / PciIo open
-/// failure / identity gate refusal), and `CardOutcome::HardStop` as above.
+/// failure / identity gate refusal).
 /// `tx_phase` turns `Attempted`/`NotAttempted` into the summary and the
 /// `FINAL: 0 card(s) unlocked` verdict (issue #139).
 #[cfg(feature = "diag")]
@@ -929,67 +895,35 @@ so no transaction was attempted and nothing was written"
             tx::handoff_out(&pci);
             CardOutcome::Attempted
         }
-        // Generic/hard failure. Field-proven default (marker absent): run
-        // emergency_flr and hand off, same as always. Opt-in
-        // \tx-stop-on-failure.txt (see that file + CardOutcome::HardStop):
-        // per the safety-constitution discussion in the PR, a reset or a
-        // freed resource issued while the firmware may still be
-        // mid-operation is itself an uncontrolled write to a card whose
-        // state is no longer trusted - so with the marker present, do
-        // neither: no FLR, no handoff, no next card, no chain-load. This is
-        // a deliberate tradeoff against the default's guaranteed-boot
-        // behavior, which is why it is opt-in rather than a silent flip.
+        // Generic/hard failure: the field-proven path, now unconditional
+        // (the opt-in \tx-stop-on-failure.txt STOP variant was retired
+        // 2026-11-25 - zero field uptake across its lifetime): run
+        // emergency_flr on this card, hand off, continue to the next card.
         Err(e) => {
-            // The failure policy lives in tx_policy (pure, sim-tested); this
-            // arm is its EFI-side execution.
-            match tx_policy::hard_failure_action(config::flag(config::FlagArm::StopOnFailure)) {
-                tx_policy::HardFailureAction::Stop => {
-                    info!("TX: transaction failed: {e:?} - opt-in STOP (\\tx-stop-on-failure.txt present): no FLR, no handoff, no next card, no chain-load this session");
-                    // The claim muted the console mirror; the failure path's
-                    // re-enable lives in handoff_out - run it here too so the
-                    // frozen mid-transaction state is at least logged and
-                    // visible on whatever console surface still exists. The
-                    // GOP itself is NOT reconnected: that would be acting
-                    // again on a card whose state is no longer trusted - the
-                    // screen may stay dark and loader.log is the sole record.
-                    tx::handoff_out(&pci);
-                    // Bridge release = tx_policy::BridgeReleaseOnFailure::
-                    // Never on this path: clearing bus-master under
-                    // possibly-live DMA is the same uncontrolled write the
-                    // FLR would be, and the machine is about to halt for a
-                    // power cycle, so nothing downstream observes the bridges.
-                    CardOutcome::HardStop
-                }
-                tx_policy::HardFailureAction::FlrAndContinue => {
-                    info!("TX: transaction failed: {e:?} - NOT retrying this session");
-                    // Field report (issue #74): on a TB4/USB4 eGPU the unwind FLR can
-                    // leave the function off the bus afterwards - Windows then shows
-                    // CM_PROB_PHANTOM, fans stop, and the only recovery measured on
-                    // that seat is an AC cycle of the enclosure. Say so, or the first
-                    // person to see it concludes the card is dead.
-                    info!("TX: recovery note: if this card sits in an eGPU enclosure and disappears from the bus after this failure, power-cycle the enclosure (PSU off ~30 s); an internal card needs a normal power cycle");
-                    // Failure unwind: FLR wipes our half-states (engine resets,
-                    // BCR, DMA queues) so the Windows driver gets a cold-boot
-                    // card. Bridge release = tx_policy::AfterFlr on this path:
-                    // only AFTER the FLR - post-reset nothing can be in flight
-                    // through the bridges, so clearing is exactly as safe as on
-                    // the success tail; clearing earlier would be an
-                    // uncontrolled write under possibly-live DMA (booter 0x89
-                    // family), and never clearing would carry our bus-master
-                    // bits into Windows (dirty-BME handoff shape, #3/#9).
-                    tx::emergency_flr(g.handle);
-                    if let tx_policy::BridgeReleaseOnFailure::AfterFlr =
-                        tx_policy::bridge_release_on_failure(tx_policy::HardFailureAction::FlrAndContinue)
-                    {
-                        if let Some(bm) = bridge_master.as_mut() {
-                            bm.release();
-                            info!("TX: bridge BME restored after the failure FLR");
-                        }
-                    }
-                    tx::handoff_out(&pci);
-                    CardOutcome::Attempted
-                }
+            info!("TX: transaction failed: {e:?} - NOT retrying this session");
+            // Field report (issue #74): on a TB4/USB4 eGPU the unwind FLR can
+            // leave the function off the bus afterwards - Windows then shows
+            // CM_PROB_PHANTOM, fans stop, and the only recovery measured on
+            // that seat is an AC cycle of the enclosure. Say so, or the first
+            // person to see it concludes the card is dead.
+            info!("TX: recovery note: if this card sits in an eGPU enclosure and disappears from the bus after this failure, power-cycle the enclosure (PSU off ~30 s); an internal card needs a normal power cycle");
+            // Failure unwind: FLR wipes our half-states (engine resets,
+            // BCR, DMA queues) so the Windows driver gets a cold-boot card.
+            // Bridge release only AFTER the FLR - post-reset nothing can be
+            // in flight through the bridges, so clearing is exactly as safe
+            // as on the success tail; clearing earlier would be an
+            // uncontrolled write under possibly-live DMA (booter 0x89
+            // family), and never clearing would carry our bus-master bits
+            // into Windows (dirty-BME handoff shape, #3/#9). The old
+            // tx_policy module pinned this ordering; it retired with the
+            // STOP variant (single-decision enums with one value left).
+            tx::emergency_flr(g.handle);
+            if let Some(bm) = bridge_master.as_mut() {
+                bm.release();
+                info!("TX: bridge BME restored after the failure FLR");
             }
+            tx::handoff_out(&pci);
+            CardOutcome::Attempted
         }
     }
     }

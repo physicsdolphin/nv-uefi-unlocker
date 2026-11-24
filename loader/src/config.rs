@@ -21,7 +21,7 @@ use core::cell::UnsafeCell;
 use log::info;
 use txini::{LogCommit, Output, Resolved};
 #[cfg(feature = "diag")]
-use txini::{RebarRoute, RebarSetting, Reconnect};
+use txini::{RebarRoute, RebarSetting, Reconnect, Staging};
 use uefi::proto::media::file::{File, FileAttribute, FileMode};
 use uefi::{boot, cstr16, CStr16, CString16, Status};
 
@@ -257,6 +257,21 @@ pub fn exit_fw() -> bool {
     ini().is_some_and(|r| r.exit_fw) || probe("\\tx-exit-fw.txt")
 }
 
+/// Staging family: the automatic retry ladders own band selection
+/// (STAGING-FALLBACK retries the booter set LOW on the 0x89+intact-magic
+/// signature; FWSEC-FALLBACK re-ignites from VRAM on the #89/#275
+/// aperture-dead fingerprint). The one manual position left is the VRAM
+/// preset for KNOWN aperture-dead hosts - it skips the doomed sysmem
+/// attempt (and the fallback's function-level FLR cycle) instead of
+/// waiting for the ladder to fire. tx-low-staging.txt and
+/// tx-fwsec-high-staging.txt were retired with this merge (2026-11-25):
+/// the fallback ladders cover both manual pins' failure classes.
+#[cfg(feature = "diag")]
+pub fn staging_vram_preset() -> bool {
+    ini().is_some_and(|r| r.staging == Some(Staging::Vram))
+        || probe("\\tx-fwsec-vram-staging.txt")
+}
+
 // ---------------------------------------------------------------------------
 // Boolean arms (ini flag, else marker presence)
 // ---------------------------------------------------------------------------
@@ -269,7 +284,6 @@ pub enum FlagArm {
     NoLog,
     NoConsole,
     Relock,
-    StopOnFailure,
     ForceContinue,
     Preload,
     EbsWatch,
@@ -280,10 +294,6 @@ pub enum FlagArm {
     SbrGpu,
     RebarGop,
     RebarThenTx,
-    LowStaging,
-    FwsecHighStaging,
-    FwsecVramStaging,
-    KeepAssets,
     NoAssetCache,
 }
 
@@ -293,7 +303,6 @@ impl FlagArm {
             Self::NoLog => "\\tx-no-log.txt",
             Self::NoConsole => "\\tx-no-console.txt",
             Self::Relock => "\\tx-relock.txt",
-            Self::StopOnFailure => "\\tx-stop-on-failure.txt",
             Self::ForceContinue => "\\tx-force-continue.txt",
             Self::Preload => "\\tx-preload.txt",
             Self::EbsWatch => "\\tx-ebs-watch.txt",
@@ -304,10 +313,6 @@ impl FlagArm {
             Self::SbrGpu => "\\tx-sbr-gpu.txt",
             Self::RebarGop => "\\tx-rebar-gop.txt",
             Self::RebarThenTx => "\\tx-rebar-then-tx.txt",
-            Self::LowStaging => "\\tx-low-staging.txt",
-            Self::FwsecHighStaging => "\\tx-fwsec-high-staging.txt",
-            Self::FwsecVramStaging => "\\tx-fwsec-vram-staging.txt",
-            Self::KeepAssets => "\\tx-keep-assets.txt",
             Self::NoAssetCache => "\\tx-no-asset-cache.txt",
         }
     }
@@ -317,7 +322,6 @@ impl FlagArm {
             Self::NoLog => r.no_log,
             Self::NoConsole => r.no_console,
             Self::Relock => r.relock,
-            Self::StopOnFailure => r.stop_on_failure,
             Self::ForceContinue => r.force_continue,
             Self::Preload => r.preload,
             Self::EbsWatch => r.ebs_watch,
@@ -328,10 +332,6 @@ impl FlagArm {
             Self::SbrGpu => r.sbr_gpu,
             Self::RebarGop => r.rebar_gop,
             Self::RebarThenTx => r.rebar_then_tx,
-            Self::LowStaging => r.low_staging,
-            Self::FwsecHighStaging => r.fwsec_high_staging,
-            Self::FwsecVramStaging => r.fwsec_vram_staging,
-            Self::KeepAssets => r.keep_assets,
             Self::NoAssetCache => r.no_asset_cache,
         }
     }
@@ -348,16 +348,15 @@ pub fn flag(arm: FlagArm) -> bool {
 // Content arms (ini value(s) as content bytes, else the legacy marker read)
 // ---------------------------------------------------------------------------
 
-/// FbGb/SecBase are constructed only by diag-gated sites (select_bdf has
-/// its own bespoke accessors keeping the read_asset/boot_volume_read
-/// reader split, so it is not a variant here at all).
+/// FbGb is constructed only by diag-gated sites (select_bdf has its own
+/// bespoke accessors keeping the read_asset/boot_volume_read reader split,
+/// so it is not a variant here at all; sec_base went back to marker-only).
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum ContentArm {
     ChainTarget,
     PromSha256,
     FbGb,
-    SecBase,
     IgnoreKey,
     InputReset,
 }
@@ -368,7 +367,6 @@ impl ContentArm {
             Self::ChainTarget => "\\chain-target.txt",
             Self::PromSha256 => "\\tx-prom-sha256.txt",
             Self::FbGb => "\\tu10x-fb-gb.txt",
-            Self::SecBase => "\\tx-sec-base.txt",
             Self::IgnoreKey => "\\tx-ignore-key.txt",
             Self::InputReset => "\\input-reset.txt",
         }
@@ -382,7 +380,6 @@ impl ContentArm {
             Self::ChainTarget => r.chain_target.clone().map(String::into_bytes),
             Self::PromSha256 => r.prom_sha256.clone().map(String::into_bytes),
             Self::FbGb => r.fb_gb.map(|g| g.to_string().into_bytes()),
-            Self::SecBase => r.sec_base.clone().map(String::into_bytes),
             Self::IgnoreKey => (!r.ignore_key.is_empty()).then(|| joined(&r.ignore_key)),
             Self::InputReset => (!r.input_reset.is_empty()).then(|| joined(&r.input_reset)),
         }

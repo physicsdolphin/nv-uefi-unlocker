@@ -899,7 +899,7 @@ struct SecPlacement {
 fn sec_placement(hdr: &BooterHdr) -> SecPlacement {
     let default_dest = hdr.imem_ns_size.div_ceil(256) * 256;
     let mut p = SecPlacement { dest: default_dest, tag: hdr.app_code_off, bootvec: 0, bootvec_sec: false };
-    let override_txt = crate::config::content(crate::config::ContentArm::SecBase)
+    let override_txt = crate::tx::read_boot_file("\\tx-sec-base.txt")
         .and_then(|raw| parse_num_ascii(&raw))
         .filter(|v| *v != 0 && (*v & 0xff) == 0);
     if let Some(v) = override_txt {

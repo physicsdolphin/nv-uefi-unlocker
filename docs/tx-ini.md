@@ -31,10 +31,20 @@
 | `output` | `normal` / `quiet` / `ultrafast` | `tx-quiet.txt`、`tx-ultrafast.txt` |
 | `log_commit` | `full` / `lines` / `off` | `tx-log-commit.txt`、`tx-log-commit-lines.txt` |
 | `reconnect` | `auto` / `off` | `tx-no-reconnect.txt` |
+| `staging` | `auto` / `vram` | `tx-fwsec-vram-staging.txt` |
+
+> **staging 族说明（2026-11-25 收敛）**：自动重试梯（booter 侧 STAGING-FALLBACK、
+> FWSEC 侧 FWSEC-FALLBACK）拥有带选择权；`vram` 是唯一手动档——已知孔径失效宿主
+> （#89/#275 类）先手 VRAM，跳过注定失败的 sysmem 尝试与回退的 FLR 循环。
+> 手动带钉死臂 `tx-low-staging.txt`、`tx-fwsec-high-staging.txt` 已退役
+> （零探测，盘上惰性）——自动梯覆盖其全部失败类。
 
 > **退役（2026-11-25）**：legacy 递归重连路径整体删除，`tx-reconnect-legacy.txt`、
-> `tx-reconnect-nonrecursive.txt`、`no-reconnect.txt` 三 marker 一并退役（零探测，
-> 放在盘上无效果）。该路径早于 native-GOP 重建默认（v2.1.10），自带 #35/#61
+> `tx-reconnect-nonrecursive.txt`、`no-reconnect.txt` 一并退役；同轮退役的还有
+> `tx-stop-on-failure.txt`（失败路径无条件走 emergency FLR + 下一卡）、
+> `tx-keep-assets.txt`（资产释放无条件执行）、`tx-low-staging.txt`、
+> `tx-fwsec-high-staging.txt`（见上）。全部零探测、盘上惰性。
+> legacy 重连退役依据：早于 native-GOP 重建默认（v2.1.10），自带 #35/#61
 > 递归死锁家族与 R7000 DDC-CI 链路未训练形态；#52/D#131 的 nonrec 实证全部
 > 早于 native 默认。重建异常的逃生阀现在是 `reconnect = off`（暗交棒，
 > bootmgfw 自建控制台，Z170-A 对照已证）。
@@ -42,17 +52,16 @@
 ### 布尔臂（`= true` 可省略）
 
 `no_log`、`no_console`、`dry_run`、`agitate_only`、`fwsec_only`、`exit_fw`、
-`relock`、`stop_on_failure`、`force_continue`、`preload`、`ebs_watch`、
-`ebs_selftest`、`host_probe`、`acpi_dump`、`gop_no_reorder`、`sbr_gpu`、
-`rebar_gop`、`rebar_then_tx`、`low_staging`、`fwsec_high_staging`、
-`fwsec_vram_staging`、`keep_assets`、`no_asset_cache`
+`relock`、`force_continue`、`preload`、`ebs_watch`、`ebs_selftest`、
+`host_probe`、`acpi_dump`、`gop_no_reorder`、`sbr_gpu`、`rebar_gop`、
+`rebar_then_tx`、`no_asset_cache`
 
 （逐条语义见 FAQ 的 marker 表对应行；键名 = marker 名去掉 `tx-` 前缀和
 `.txt`，`tx-` 族外的 `input-reset.txt` → `input_reset`。）
 
 > 注意：`dry_run` / `agitate_only` / `fwsec_only` / `exit_fw` 是**四个独立布尔**，
 > 不是单选 `mode`——marker 世界的合法组合（如 dry-run + exit-fw）必须原样
-> 可表达。staging 三臂、资产驻留两臂同理保持独立。
+> 可表达。
 
 ### 值臂
 
@@ -63,7 +72,6 @@
 | `prom_sha256` | 64 位十六进制 | `tx-prom-sha256.txt` | 站点解析（不符 = 拒） |
 | `select_bdf` | BDF | `tx-select-bdf.txt` | 站点解析 |
 | `fb_gb` | GiB 1..=64 | `tu10x-fb-gb.txt` | ini 严格 |
-| `sec_base` | 256 对齐地址 | `tx-sec-base.txt` | 站点过滤 |
 | `native_gop` | 卷上 GOP 模块路径 | `tx-native-gop.txt` | 站点探测 |
 | `flush_lines` | 0..=4096 | `tx-flush-lines.txt` | ini 严格 |
 | `rebar` | `read` / `scan` / `<select>/<advertise>`（如 `11/9`） | `tx-rebar.txt`、`tx-rebar-read.txt`、`tx-rebar-scan.txt` | ini 严格（select 1..=19，advertise 0..=15） |
@@ -84,7 +92,8 @@
 `tx-no-pm-preflight.txt`、`tx-no-bridge-master.txt`、`tx-no-flr.txt`、
 `tx-require-d0.txt`、`tx-accept-warm-wpr2.txt`、`tu10x-no-ss.txt`、
 `pre-flr-on.txt`、`tx-revive-dead-slot.txt`、`tx-revive-force-sbr.txt`、
-`tx-gop-disconnect.txt`
+`tx-gop-disconnect.txt`、`tx-sec-base.txt`（booter SEC2 摆位研究旋钮，
+2026-11-25 退出 ini 回 marker-only）
 
 这些只在 evidence 指引里点名出现；写成 ini 键会得到 unknown-key 警告。
 零字节文件本身就是"你得知道它存在才能设"的使用门槛，保留。

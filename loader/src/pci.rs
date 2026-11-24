@@ -516,12 +516,8 @@ impl PciIo {
         // below 4GB elsewhere. The reference driver itself stages the meta
         // above 4GB (live dump 0x110BB0000) and passes a 64-bit mailbox
         // pair, so the high path is the driver-exact configuration.
-        // The low-staging arm (marker or tx.ini) forces the legacy PciIo
-        // path for A/B testing.
         if !TX_HIGH_STAGING.load(core::sync::atomic::Ordering::Relaxed) {
             info!("DMA alloc: family not gated for >4GB staging - legacy PciIo path");
-        } else if crate::config::flag(crate::config::FlagArm::LowStaging) {
-            info!("DMA alloc: low-staging arm - legacy sub-4GB PciIo path forced");
         } else if let Ok(b) = self.dma_alloc_high(len) {
             return Ok(b);
         } else {

@@ -800,16 +800,13 @@ fn asset_cache_disabled() -> bool {
 /// docs/handoff-lowmem.en.md.
 ///
 /// Runs on every path that reaches the chain (transaction, abort control and
-/// `\tx-dry-run.txt` alike); freeing is idempotent. `\tx-keep-assets.txt`
-/// opts out (A/B, and an escape hatch if a future machine ever wants the
-/// pre-warmed cache back). Pool backing pages are returned on drop, so this genuinely
+/// `\tx-dry-run.txt` alike); freeing is idempotent and unconditional since
+/// 2026-11-25 (the `\tx-keep-assets.txt` opt-out was retired - zero field
+/// uptake, and the carve-out below is why). Pool backing pages are returned
+/// on drop, so this genuinely
 /// shrinks the handoff map; CHAIN-MEMMAP right after is the read-back
 /// (constitution §1.1).
 pub fn handoff_free_assets() {
-    if crate::config::flag(crate::config::FlagArm::KeepAssets) {
-        info!("TX-ASSET-CACHE: keep-assets arm present - cache left resident across the chain");
-        return;
-    }
     clear_asset_cache();
 }
 
@@ -1054,8 +1051,7 @@ pub fn run_transaction(
     // driver-exact configuration. Gated to 'tu10x' so GA10x/Ada keep the
     // allocation path they were field-verified with. \tx-low-staging.txt
     // reverts even tu10x to the legacy path (A/B testing).
-    let high_staging = family_is_turing(assets.family)
-        && !crate::config::flag(crate::config::FlagArm::LowStaging);
+    let high_staging = family_is_turing(assets.family);
     crate::pci::set_high_staging(high_staging);
     info!("TX: >4GB staging gate: {high_staging} (family {})", assets.family);
 
@@ -1236,7 +1232,7 @@ pub fn run_transaction(
                 // when the marker already staged VRAM - there is no arm
                 // left to fall to.
                 if crate::tx_fwsec::fwsec_aperture_dead_signature(gpu)
-                    && !crate::config::flag(crate::config::FlagArm::FwsecVramStaging)
+                    && !crate::config::staging_vram_preset()
                 {
                     info!(
                         "FWSEC-FALLBACK: WPR2-never + empty-window + EXCI 0x3ff signature = the FBIF->sysmem aperture class (issues #89/#275) - one VRAM-staged retry after a function-level FLR"
@@ -1671,7 +1667,7 @@ pub fn run_transaction(
                     if magic_ok { "intact" } else { "CORRUPT (buffer-side)" });
             }
         } else {
-            info!("STAGING-FALLBACK: not attempted - staging already in the LOW band (\\tx-low-staging.txt or non-Turing gate)");
+            info!("STAGING-FALLBACK: not attempted - staging already in the LOW band (non-Turing gate)");
         }
     }
 
@@ -1971,8 +1967,7 @@ pub fn run_agitate_only(
     // Staging-band parity: make the same allocation-band decision the real
     // transaction makes (the DMA allocations below must land in the same
     // band the transaction would use).
-    let high_staging = family_is_turing(assets.family)
-        && !crate::config::flag(crate::config::FlagArm::LowStaging);
+    let high_staging = family_is_turing(assets.family);
     crate::pci::set_high_staging(high_staging);
     info!("TX-AGITATE: >4GB staging gate: {high_staging} (allocation-band parity)");
 
