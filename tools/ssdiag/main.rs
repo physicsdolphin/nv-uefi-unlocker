@@ -3345,7 +3345,8 @@ fn bar1_scan_probe(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>) {
     }
     println!("BAR1-SCAN: aperture boundary scan (16 dwords per offset; all-ff = beyond decode):");
     let offs_mib: [u64; 15] = [256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 31744];
-    let mut last_decoded_mib: Option<u64> = None;
+    let aperture_mib = 1u64 << idx;
+    println!("BAR1-SCAN: content samples below are NON-AUTHORITATIVE for decode: all-ff may be unwritten VRAM (ff content), and reads beyond the aperture may alias (address bits truncated, aperture repeats) or return non-ff abort data. The control 0xbc0 readback above is the authoritative aperture.");
     for &mib in &offs_mib {
         let probe_pa = bar1 + (mib << 20);
         let Ok(pva) = drv.map_physical(probe_pa, 1) else {
@@ -3360,16 +3361,12 @@ fn bar1_scan_probe(drv: &PmxDrv, instance: &str, bdf: Option<(u32, u32, u32)>) {
             }
         }
         drv.unmap_physical(pva);
-        let verdict = if ff == 16 { "undecoded (all-ff)" } else if ff == 0 { "decoded (no ff)" } else { "mixed" };
-        if ff != 16 {
-            last_decoded_mib = Some(mib);
-        }
-        println!("BAR1-SCAN: +{mib:5} MiB: {verdict} ({ff}/16 ff)");
+        let in_aperture = mib < aperture_mib;
+        let zone = if in_aperture { "inside" } else { "beyond" };
+        let verdict = if ff == 16 { "content=ff (unwritten VRAM or undecoded - ambiguous)" } else if ff == 0 { "content non-ff (aliasing/abort data possible beyond aperture - not decode proof)" } else { "mixed content" };
+        println!("BAR1-SCAN: +{mib:5} MiB [{zone}]: {verdict} ({ff}/16 ff)");
     }
-    match last_decoded_mib {
-        Some(m) => println!("BAR1-SCAN: real decode extends past +{m} MiB - compare with the control size and the driver's belief above"),
-        None => println!("BAR1-SCAN: no decoded region found at any offset - decode is smaller than 256 MiB"),
-    }
+    println!("BAR1-SCAN: authoritative aperture = the control 0xbc0 readback above; content samples are informational only (field-proven: +384 MiB inside a 512 MiB aperture read all-ff while +31 GiB beyond it read non-ff)");
 }
 
 /// offers physical map/unmap, and config space on every modern x64 machine
