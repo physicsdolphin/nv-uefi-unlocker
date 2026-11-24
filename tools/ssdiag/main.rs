@@ -2500,10 +2500,15 @@ fn verify_embedded_hash() -> Result<(), String> {
 
 /// Extract + service-create + start. Service name is OURS (SSDIAG_PMXDRV) so
 /// cleanup never touches a driver another tool deployed.
+///
+/// The extraction target carries the process id (2026-11-24: two ssdiag
+/// processes racing one fixed Temp path made the loser fail with os error 32
+/// while the winner's service held the file; a per-pid name lets concurrent
+/// invocations coexist and each cleanup remove only its own copy).
 fn deploy_driver() -> Result<(), String> {
     verify_embedded_hash()?;
 
-    let sys_path = std::env::temp_dir().join(TEMP_SYS);
+    let sys_path = std::env::temp_dir().join(format!("ssdiag-pmxdrv-{}.sys", std::process::id()));
     std::fs::write(&sys_path, PMXDRV_SYS)
         .map_err(|e| format!("extract to {} failed: {e}", sys_path.display()))?;
     let readback = std::fs::read(&sys_path).map_err(|e| format!("re-read failed: {e}"))?;
@@ -2667,7 +2672,7 @@ fn cleanup_driver() {
         }
         win::CloseServiceHandle(mgr);
     }
-    let sys_path = std::env::temp_dir().join(TEMP_SYS);
+    let sys_path = std::env::temp_dir().join(format!("ssdiag-pmxdrv-{}.sys", std::process::id()));
     // 50 ms grain over the same 2 s worst-case budget - the kernel releases
     // the image mapping with a small delay after the stop, and the coarse
     // 200 ms steps used to pay that delay in multiples
@@ -2677,6 +2682,9 @@ fn cleanup_driver() {
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
+    // Best-effort sweep of the legacy fixed name (pre-0.8.14 builds left it
+    // behind when a racing invocation died before cleanup).
+    let _ = std::fs::remove_file(std::env::temp_dir().join(TEMP_SYS));
 }
 
 fn ensure_driver() -> Result<PmxDrv, String> {
