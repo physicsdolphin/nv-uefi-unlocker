@@ -1874,14 +1874,14 @@ pub fn run_transaction(
     // being worse than none is the design axiom here.
     // `\tx-reconnect-legacy.txt` restores the old reconnect_all path
     // (recursive + PR#13 non-recursive logic) as an escape hatch;
-    // `\tu10x-no-reconnect.txt` keeps its experimental skip for Turing.
+    // `\tx-no-reconnect.txt` keeps its experimental skip for Turing.
     // Issue #261: if the target owned no GOP child at detach, the console
     // lived on another GPU (hybrid display) or nowhere - there is nothing
     // to rebuild, and loading the card's ROM GOP driver in that state just
     // returns SUCCESS without publishing a child. Skip the ~2 s attempt
     // and say so, instead of reporting a rebuild "failure".
-    if family_is_turing(assets.family) && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
-        info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
+    if family_is_turing(assets.family) && crate::tx::probe_file("\\tx-no-reconnect.txt") {
+        info!("TX-tu10x: reconnect skipped (tx-no-reconnect marker)");
     } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
         info!("TX: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
         crate::tx_detach::reconnect_all(pci_handle);
@@ -2108,8 +2108,8 @@ fn agitate_stages(
     // Console rebuild parity: the exact block from run_transaction
     // (default native-GOP rebuild from the card's own shadowed ROM; the
     // legacy reconnect and the Turing skip keep their markers).
-    if family_is_turing(assets.family) && crate::tx::probe_file("\\tu10x-no-reconnect.txt") {
-        info!("TX-tu10x: reconnect skipped (tu10x-no-reconnect marker)");
+    if family_is_turing(assets.family) && crate::tx::probe_file("\\tx-no-reconnect.txt") {
+        info!("TX-tu10x: reconnect skipped (tx-no-reconnect marker)");
     } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
         info!("TX-AGITATE: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
         crate::tx_detach::reconnect_all(pci_handle);
