@@ -256,6 +256,29 @@ ablation 轮（成功配方 + 仅加重连）：**Code 12**，且案发现场完
   DxgkDdiMapCpuHostAperture，微软正式接口）= "2MB used" 窗口重指向的官方
   机制；NVML BAR1 语义同源。计算负载不受窗口模式影响（实测）。
 
+## 轮十五（同日）：select 阶梯（暗交棒配方）——预算阈值得出，Code 43=驱动 init 早期拒绝
+
+无 GOP（已证配方）下的 select 阶梯，Windows 侧终态：
+
+| select | 结果 | 判读 |
+|---|---|---|
+| 10（1G） | **32G BAR1** | Windows 无视 select、按 advertisement 重仲裁 |
+| 11（2G） | **32G BAR1** | 同上 |
+| 12（4G） | Code 43 黑屏 → RDP 禁用-启用 → GPU 正常 + **BAR1=4G** | 驱动 init 撞到失控态（早期拒绝），重 init 后恢复——**且恢复后尊重了 select=4G** |
+| 13（8G） | 同 12 形（RDP 重启处理），外推同 4G | 同上 |
+
+判读：
+- **预算阈值在 select 11 与 12 之间（2G 可 / 4G 起初放不下）**——Above-4G 预算
+  边界与成功轮"32G 放得下"并观，说明预算竞争是**树内时变**的（其它设备的
+  Above-4G 占用决定当轮余量），非固定值；
+- **Code 43 = 驱动 init 早期拒绝**，恢复后 select 被尊重（4G 落地）——
+  GSP-RM 对"init 期 BAR 几何异动"敏感，二次 init 接受；
+- **50HX 谱系对照**：select 尊重只在"设备安静、驱动从未见过失控态"时成立；
+  advertisement 主导（10/11 → 32G）vs select 尊重（12 → 4G after rescue）的
+  分裂 = 仲裁器在"预算紧张"时退回 select（最小需求优先），"预算充裕"时
+  追 advertisement 最大档。
+- **配方不变**：select 10/11（32G 交付）；field 9。GOP 重连除名维持。
+
 ## 轮十三（同日）：复现性考古收口——所有失败 boot 归因完毕，配方确定性复现 ×2
 
 A 轮（原始行为二进制重建 + select idx10 + SBR + 冷启动）**32G 逐位复现**
