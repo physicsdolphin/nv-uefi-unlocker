@@ -665,7 +665,26 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                     };
                     match pair {
                         Ok(()) => {
-                            info!("SELECTOR RESULT: rebar pair written and readback-verified - chaining to Windows boot enumeration (dark handoff)");
+                            // \tx-rebar-gop.txt (2026-11-24 ablation): the only
+                            // variable vs the proven dark-handoff recipe - a
+                            // native-GOP rebuild after the pair, before the
+                            // handoff. The 9/9 round (isolated build) hinted
+                            // the reconnect state makes Windows honor the
+                            // control select (512M respected where dark
+                            // handoff re-arbitrated up to 32G); this marker
+                            // isolates that variable on the proven config.
+                            let gop_reconnect = tx::probe_file("\\tx-rebar-gop.txt");
+                            info!(
+                                "SELECTOR RESULT: rebar pair written and readback-verified - {} before chaining",
+                                if gop_reconnect { "rebuilding the console GOP (\\tx-rebar-gop.txt ablation)" } else { "dark handoff" }
+                            );
+                            if gop_reconnect {
+                                if let Err(e) =
+                                    crate::gop_native::recover(g.handle, gpu.pci, claim.initial_attrs)
+                                {
+                                    info!("REBAR: native-GOP recovery failed ({e}) - chaining dark (Windows driver will re-enable the display)");
+                                }
+                            }
                         }
                         Err(e) => {
                             info!("REBAR: pair failed ({e:?}) - handing off unchanged; no reset on this path, power-off clears any partial write");
