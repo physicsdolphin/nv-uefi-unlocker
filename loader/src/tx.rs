@@ -1117,7 +1117,14 @@ pub fn run_transaction(
     // removed; this window matches the Ampere chain's own FLR discipline.
     // On false the chain aborts: the card is freshly reset and nothing
     // unlocked, so no unwinding is due.
-    if !crate::revive::sbr_gpu_in_transaction(gpu, &claim.baseline) {
+    // 2026-11-24 rebar merge: SKIPPED when the rebar pair already landed
+    // this boot (\tx-rebar-then-tx.txt flow) - a second SBR re-latches
+    // ReBAR config away from the written pair (field-proven: BAR1 config
+    // re-wound to the 8G-aligned default mid-transaction, killing the BAR
+    // at handoff) and Turing's chain needs no reset anyway (FLR skipped).
+    if crate::tx::probe_file("\\tx-rebar-then-tx.txt") {
+        info!("TX-tu10x: in-transaction SBR SKIPPED (\\tx-rebar-then-tx.txt: the rebar pair already landed this boot; a second SBR re-latches ReBAR config and kills the BAR)");
+    } else if !crate::revive::sbr_gpu_in_transaction(gpu, &claim.baseline) {
         return Err(TxError::EIO);
     }
 
