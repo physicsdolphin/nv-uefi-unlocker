@@ -570,14 +570,27 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     //   re-latched, BAR/command restored from the claim baseline).
     // Every flow: NO FLR, no post-write reset - the pair must survive into
     // Windows' boot enumeration; recovery = power-off.
-    let rebar_idx = chainload::boot_volume_read(uefi::cstr16!(r"\tx-rebar.txt"))
+    let rebar_raw = chainload::boot_volume_read(uefi::cstr16!(r"\tx-rebar.txt"))
         .map(|c| {
             let s: alloc::string::String = c.iter().map(|&b| b as char).collect();
-            s.trim().parse::<u32>().ok()
+            s
         })
-        .flatten()
+        .unwrap_or_default();
+    let mut rebar_parts = rebar_raw.trim().split('/');
+    // content: "<select_idx>" or "<select_idx>/<advertise_field>" -
+    // select = the ReBAR control write (advisory; Windows re-arbitrates),
+    // advertise = the 0x610 field[10:7] value (the real ceiling; 9 = 32G,
+    // 13 = 512G per the 2026-11-24 field map).
+    let rebar_idx = rebar_parts
+        .next()
+        .and_then(|p| p.parse::<u32>().ok())
         .filter(|&n| (1..=19).contains(&n))
         .unwrap_or(13);
+    let rebar_adv = rebar_parts
+        .next()
+        .and_then(|p| p.parse::<u32>().ok())
+        .filter(|&n| n <= 15)
+        .unwrap_or(9);
 
     if tx::probe_file("\\tx-rebar-read.txt") {
         info!("TX: \\tx-rebar-read.txt present - rung 0: read-only rebar-face probe (config side proven, MMIO side experimental; hang there = the isolation answer)");
@@ -626,7 +639,8 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
         let sbr_rung = tx::probe_file("\\tx-sbr-gpu.txt");
         let ecam_route = tx::probe_file("\\tx-rebar-ecam.txt");
         info!(
-            "TX: \\tx-rebar.txt present (size_idx {rebar_idx}, route {}, SBR {}) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off",
+            "TX: \\tx-rebar.txt present (size_idx {rebar_idx}, advertise field {rebar_adv} (top idx {}), route {}, SBR {}) - claiming first (11-22 discipline), NO FLR, NO post-write reset; recovery = power-off",
+            rebar_adv as i32 - 2,
             if ecam_route { "ECAM-direct" } else { "XVE-MMIO mirror" },
             if sbr_rung { "yes" } else { "no" }
         );
@@ -647,7 +661,7 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                     let pair = if ecam_route {
                         tx::run_rebar_ecam((g.seg, g.bus, g.dev, g.fun), rebar_idx)
                     } else {
-                        tx::run_rebar_mmio(&gpu, rebar_idx)
+                        tx::run_rebar_mmio(&gpu, rebar_idx, rebar_adv)
                     };
                     match pair {
                         Ok(()) => {

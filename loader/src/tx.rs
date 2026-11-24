@@ -2249,18 +2249,22 @@ pub fn probe_rebar_reads(pci: &crate::pci::PciIo, gpu: &TxGpu) {
 /// logged BEFORE each write (a hang leaves the pre-state in the log). NO
 /// reset / NO FLR may follow: the pair must survive into Windows' boot
 /// enumeration.
-pub fn run_rebar_mmio(gpu: &TxGpu, size_idx: u32) -> Result<(), TxError> {
+pub fn run_rebar_mmio(gpu: &TxGpu, size_idx: u32, adv_field: u32) -> Result<(), TxError> {
     const FB_OFF: u32 = 0x0008_8610;
     const CAP_OFF: u32 = 0x0008_8bbc;
     const CTL_OFF: u32 = 0x0008_8bc0;
     const FB_MASK: u32 = 0x0000_0f80;
-    const FB_VAL: u32 = 0x0000_0c80;
     const SZ_MASK: u32 = 0x0000_3f00;
+    let fb_val = 0x0000_0800 | (adv_field << 7); // bit11=enable, bits[10:7]=field
 
-    info!("REBAR: BEGIN (MMIO-mirror pair via XVE, readback each; size_idx {size_idx} = {} MiB aperture)", 1u32 << size_idx);
+    info!(
+        "REBAR: BEGIN (MMIO-mirror pair via XVE, readback each; advertise field {adv_field} (top size_idx {}), select size_idx {size_idx} = {} MiB aperture)",
+        adv_field as i32 - 2,
+        1u32 << size_idx
+    );
     let old_fb = gpu.read32(FB_OFF)?;
     info!("REBAR: mmio 0x88610 read {old_fb:#010x} (pre-write)");
-    let new_fb = (old_fb & !FB_MASK) | FB_VAL;
+    let new_fb = (old_fb & !FB_MASK) | fb_val;
     gpu.write32(FB_OFF, new_fb);
     let rb_fb = gpu.read32(FB_OFF)?;
     let fb_ok = rb_fb == new_fb;
