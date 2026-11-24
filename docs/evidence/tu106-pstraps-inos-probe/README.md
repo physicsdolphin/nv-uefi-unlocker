@@ -271,6 +271,12 @@ ablation 轮（成功配方 + 仅加重连）：**Code 12**，且案发现场完
   **可活**——tamper 判据精化为单行：**死条件 = advertise 超出厂域而 select 停在
   厂值**（8/7、8/9、8/4 全是 advertise>厂域 的 8/x；8/2 的 advertise 不超厂值
   =整体呈厂态形状，GSP-RM 视为合法）。原厂值不能接受高于原厂的 advertise。
+- **8/2 回退补测：禁用后 CPU 渲染回退正常**——回退判据与 tamper 判据**同构**：
+  回退死的条件同样是"advertise 超出厂域"（8/2 厂域内广告 = BasicDisplay 认得
+  这个设备）。两个判据共享同一根因形态：**GSP-RM 和 Windows 显示回退路径都以
+  "advertise 是否越出厂域"为合法设备形状的判据**——厂域内怎么写都合法且全部
+  系统路径正常；越域则是 tamper（GSP-RM 拒）+ 回退失败（BasicDisplay 不认）
+  双杀。
 
 **安全域（本台架）**：select ∈ {9,10,11} × advertise = 9（field 9=32G 上限内）
 —— 即 `11/9` 为上限档（2G select/32G advertise=32G 交付）、`9/9` 保守档。
