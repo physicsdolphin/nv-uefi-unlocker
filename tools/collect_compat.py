@@ -258,7 +258,15 @@ def collect(path: str, fields: dict, verdicts: list,
                 continue
             km = KV_RE.match(line)
             if km:
-                name, val = km.group(1).strip(), int(km.group(2), 16)
+                name, value = km.group(1).strip(), km.group(2)
+                tail = line[km.end():].lstrip()
+                if tail.startswith("=") and line[km.end(1):km.start(2)].isspace():
+                    # NAME offset= value：等号右侧缺失或畸形时，地址不能充当读数。
+                    rhs = re.match(r"=\s*(0x[0-9a-fA-F]{1,8})\b", tail)
+                    if not rhs:
+                        continue
+                    value = rhs.group(1)
+                val = int(value, 16)
                 for key in CANONICAL:
                     if key.lower() in name.lower():
                         fields.setdefault(name, {"value": val, "bucket": ""})
