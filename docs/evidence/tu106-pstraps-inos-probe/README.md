@@ -203,3 +203,13 @@ PLM 挡，待实卡；Ada 本有 CYA/CFG 64G payload 链（cf3566d0）。
 修正：GSP-RM 重写回厂位形，广告位消失而窗口持有。
 **WDDM 行为旁证（owner 实测）**：5G+ 显存计算的进程 BAR1 工作集仅 2MB——
 **窗口重指向模式**，CPU 侧暴露面极小，休眠态计算负载存活自洽。
+**官方引用（2MB 窗口 = WDDM 正式机制）**：WDDM 2.0 起的 **CPU Host Aperture**
+（learn.microsoft.com/windows-hardware/drivers/display/cpu-host-aperature；
+VidMm 经可编程 CPU host aperture 访问 local memory 段，驱动以 DXGK_CPUHOSTAPERTURE
+caps 声明、OS 经 DxgkDdiMapCpuHostAperture 映射/移出分配——"2MB used"=当前映射
+工作集）；NVIDIA 语义=NVML nvmlDeviceGetBAR1MemoryInfo（"BAR1 is used to map the
+FB so that it can be directly accessed by the CPU or by 3rd party devices (P2P)"，
+docs.nvidia.com/deploy/nvml-api）。性能分层：计算负载（GPU 内部+DMA 通路）不受
+影响（实测存活）；窗口重指向的开销只在 CPU 直访密集模式（remap 寄存器写/次）；
+48G 4090 需 ≥64G 的刚需=CPU 可达性（远端显存 DMA-only 不可见），field 13=512G
+广告直接解决。
