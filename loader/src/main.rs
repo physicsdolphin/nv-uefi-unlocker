@@ -636,6 +636,15 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
     }
 
     if tx::probe_file("\\tx-rebar.txt") {
+        // \tx-rebar-then-tx.txt (2026-11-24): run the rebar pair AND the full
+        // unlock transaction in one boot. The pair lands inside the
+        // claim+SBR window (same as the rebar-only flow), the claim is
+        // released, and this function FALLS THROUGH to the transaction
+        // below - which re-claims fresh. Turing's unlock chain skips FLR
+        // (FEAT PLM does not survive it), so nothing in the transaction
+        // resets the pair away; the SS selectors + the 32G window land
+        // together at the Windows handoff.
+        let rebar_then_tx = tx::probe_file("\\tx-rebar-then-tx.txt");
         let sbr_rung = tx::probe_file("\\tx-sbr-gpu.txt");
         let ecam_route = tx::probe_file("\\tx-rebar-ecam.txt");
         info!(
@@ -665,14 +674,6 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                     };
                     match pair {
                         Ok(()) => {
-                            // \tx-rebar-gop.txt (2026-11-24 ablation): the only
-                            // variable vs the proven dark-handoff recipe - a
-                            // native-GOP rebuild after the pair, before the
-                            // handoff. The 9/9 round (isolated build) hinted
-                            // the reconnect state makes Windows honor the
-                            // control select (512M respected where dark
-                            // handoff re-arbitrated up to 32G); this marker
-                            // isolates that variable on the proven config.
                             let gop_reconnect = tx::probe_file("\\tx-rebar-gop.txt");
                             info!(
                                 "SELECTOR RESULT: rebar pair written and readback-verified - {} before chaining",
@@ -697,7 +698,14 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                     }
                 }
                 drop(claim);
-                tx::handoff_out(&pci);
+                if rebar_then_tx {
+                    info!("REBAR: \\tx-rebar-then-tx.txt present - claim released, FALLING THROUGH to the full unlock transaction (fresh claim inside; Turing skips FLR so the pair survives the chain)");
+                    // Fall through: no handoff_out, no return - the tx flow
+                    // below re-claims and runs the V67 chain normally.
+                } else {
+                    tx::handoff_out(&pci);
+                    return CardOutcome::Attempted;
+                }
             }
             Err(e) => {
                 info!("REBAR: claim failed ({e:?}) - refusing to write against a firmware-bound card (the 11-22 soft-lock class); handing off untouched");
