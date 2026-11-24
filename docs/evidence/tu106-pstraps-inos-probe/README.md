@@ -214,6 +214,30 @@ docs.nvidia.com/deploy/nvml-api）。性能分层：计算负载（GPU 内部+DM
 48G 4090 需 ≥64G 的刚需=CPU 可达性（远端显存 DMA-only 不可见），field 13=512G
 广告直接解决。
 
+## 轮十二（同日）：Code 12 风暴归因 + 512M 端到端交付 + GOP 重连并入
+
+- **Code 12 风暴归因 = 固件资源表漂移**：成功轮参数（10/9）复现失败、多档全
+  Code 12，**BIOS 载入默认值后立即恢复**——多轮 SBR/异常引导搅乱了 POST 期
+  BAR 分配表。现场处置纪律：**Code 12 风暴 → BIOS 载默认值**（非 Windows 侧）。
+- **预算阶梯实测（Z170-A）**：512M/1G 交付、2G+ Code 12——Above-4G 预算硬上限
+  ~1G（老板限制非机制限制；现代板预算大得多）。**Windows 尊重 select 值**
+  （1G 轮=1G、512M 轮=512M，逐位一致）——pci.sys 是"预算内尊重建议"型仲裁，
+  非无脑取最大（32G 成功轮=当时 32G 放得下）。
+- **Code 43 负控（8/9）**：select=256M（与厂态同值）+ 广告改写 → GSP-RM 仍拒
+  ——ReBAR control 被非固件代理改写本身留 tamper 判据；禁用-启用可恢复。
+- **GOP 重连并入 rebar 分支（新 build）**：pair 后 native-GOP 恢复全绿
+  （console rebound 3840x2160、IO|MEM Enable、display path verified）——
+  "黑屏到登录屏"成本消除。
+- **512M 端到端交付**：select idx9 → Windows 分配 512M @ 0xc0000000（32 位
+  空间够用不搬家），control 读回逐位一致；0x610=0x1001（驱动 init 重写回厂形）
+  ——#211 标准终态再现。
+- **--bar1-scan 边界扫描歧义（field-proven）**：+384 MiB（512M 孔径内）读
+  all-ff=未写入 VRAM 内容；+31 GiB（孔径外）读 non-ff=aliasing/abort 数据——
+  **内容采样非解码判据**，权威孔径=config control 0xbc0 读回。ssdiag 已改
+  （verdict 降级 informational + zone 标注 inside/beyond）。
+- **板阈值修正**：512M/1G 运行时改锁后 UAC 仍致死（早前轮），但**引导期分配**
+  512M/1G 稳定——阈值属于运行时态，交付态（引导期分配）无此限制。
+
 ## 轮十一（同日）：SBR 必要性消融——**SBR 硬必要**，无 SBR 轮死于首次 XVE 读
 
 A/B 单变量（同参数 10/9，仅去 SBR）：`REBAR: BEGIN` 后 4ms 内硬死（单核吃满），
