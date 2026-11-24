@@ -256,6 +256,16 @@ ablation 轮（成功配方 + 仅加重连）：**Code 12**，且案发现场完
   DxgkDdiMapCpuHostAperture，微软正式接口）= "2MB used" 窗口重指向的官方
   机制；NVML BAR1 语义同源。计算负载不受窗口模式影响（实测）。
 
+## 轮二十一（同日）：模式无关性补验——GSP 态重连轮 Code 12，pci.sys 层结论跨模式成立
+
+10/7 + GOP 重连 + GSP 态（首次 GSP 列重平衡实验）：**Code 12，资源分配失败**——
+与 legacy 态同款（轮十四）。确认：**重平衡/A167 抢窗/预算拒绝全是 pci.sys 层行为，
+与驱动模式无关**（GSP-RM 在枚举期不在场）。模式无关清单更新：EFI 写入侧 ✓、
+pci.sys 仲裁层 ✓、重平衡污染 ✓。**GSP 专属剩余疑问收窄为**：Code 43 族
+（GSP-RM tamper 判据）与 select 上限族在 GSP 态的接受域。
+marker 改名：`\tu10x-no-reconnect.txt` → `\tx-no-reconnect.txt`（语义从未
+die-specific；旧名不再识别）。
+
 ## 轮二十（2026-11-24 深夜）：合并交付达成——SS 解锁 + BAR1 32G 同 boot
 
 环境勘误先行：多轮测试的驱动模式被"卸载设备清注册表键"搅动（EnableGpuFirmware
