@@ -23,8 +23,12 @@
 //! `mode` key in the first sketch and un-merged again - in the marker
 //! world they are independent booleans and field combinations
 //! (dry-run + exit-fw) are legal, so collapsing them would change
-//! behavior. Same for the staging trio and the asset-residency pair:
-//! independent axes, independent keys.
+//! behavior. The staging axis is not a key at all: the automatic retry
+//! ladders (STAGING-FALLBACK / FWSEC-FALLBACK) own band selection
+//! end-to-end and the manual VRAM preset was retired 2026-11-25 - its
+//! only saving (one failed attempt + one function-level FLR) happens
+//! behind the already-dark detached screen, imperceptible to the
+//! operator.
 
 #![no_std]
 
@@ -190,18 +194,6 @@ pub enum RebarRoute {
     Ecam,
 }
 
-/// Staging family: the automatic retry ladders (booter-side
-/// STAGING-FALLBACK, FWSEC-side FWSEC-FALLBACK) own band selection; the
-/// one manual position is the VRAM preset for known aperture-dead hosts
-/// (#89/#275). tx-low-staging / tx-fwsec-high-staging were retired with
-/// this merge (2026-11-25) - both manual pins' failure classes are covered
-/// by the automatic ladders.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Staging {
-    Auto,
-    Vram,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RebarSetting {
     Read,
@@ -223,8 +215,6 @@ pub struct Resolved {
     pub agitate_only: bool,
     pub fwsec_only: bool,
     pub exit_fw: bool,
-    // staging family (see Staging)
-    pub staging: Option<Staging>,
     // booleans
     pub no_log: bool,
     pub no_console: bool,
@@ -290,7 +280,6 @@ fn markers_for(key: &str) -> &'static [&'static str] {
         "rebar_route" => &["\\tx-rebar-ecam.txt"],
         "rebar_gop" => &["\\tx-rebar-gop.txt"],
         "rebar_then_tx" => &["\\tx-rebar-then-tx.txt"],
-        "staging" => &["\\tx-fwsec-vram-staging.txt"],
         "no_asset_cache" => &["\\tx-no-asset-cache.txt"],
         "ignore_key" => &["\\tx-ignore-key.txt"],
         "input_reset" => &["\\input-reset.txt"],
@@ -421,12 +410,6 @@ pub fn resolve(
             "agitate_only" => r.agitate_only = flag_value(e, &mut errs).unwrap_or(false),
             "fwsec_only" => r.fwsec_only = flag_value(e, &mut errs).unwrap_or(false),
             "exit_fw" => r.exit_fw = flag_value(e, &mut errs).unwrap_or(false),
-            "staging" => {
-                r.staging = enum_value(e, &["auto", "vram"], &mut errs).map(|s| match s {
-                    "vram" => Staging::Vram,
-                    _ => Staging::Auto,
-                });
-            }
             "no_log" => r.no_log = flag_value(e, &mut errs).unwrap_or(false),
             "no_console" => r.no_console = flag_value(e, &mut errs).unwrap_or(false),
             "relock" => r.relock = flag_value(e, &mut errs).unwrap_or(false),

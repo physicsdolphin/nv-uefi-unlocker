@@ -31,19 +31,18 @@
 | `output` | `normal` / `quiet` / `ultrafast` | `tx-quiet.txt`、`tx-ultrafast.txt` |
 | `log_commit` | `full` / `lines` / `off` | `tx-log-commit.txt`、`tx-log-commit-lines.txt` |
 | `reconnect` | `auto` / `off` | `tx-no-reconnect.txt` |
-| `staging` | `auto` / `vram` | `tx-fwsec-vram-staging.txt` |
 
-> **staging 族说明（2026-11-25 收敛）**：自动重试梯（booter 侧 STAGING-FALLBACK、
-> FWSEC 侧 FWSEC-FALLBACK）拥有带选择权；`vram` 是唯一手动档——已知孔径失效宿主
-> （#89/#275 类）先手 VRAM，跳过注定失败的 sysmem 尝试与回退的 FLR 循环。
-> 手动带钉死臂 `tx-low-staging.txt`、`tx-fwsec-high-staging.txt` 已退役
-> （零探测，盘上惰性）——自动梯覆盖其全部失败类。
+> **staging 不是键（2026-11-25 终态）**：自动重试梯（booter 侧 STAGING-FALLBACK、
+> FWSEC 侧 FWSEC-FALLBACK）端到端拥有带选择权，无任何手动档。三个历史 marker
+> （`tx-low-staging.txt`、`tx-fwsec-high-staging.txt`、`tx-fwsec-vram-staging.txt`）
+> 全部退役（零探测，盘上惰性）——VRAM 预设的唯一收益（省一次失败尝试 + 一次
+> 函数级 FLR）发生在 GOP 已断、屏幕已黑的窗口内，操作者无感知。
 
 > **退役（2026-11-25）**：legacy 递归重连路径整体删除，`tx-reconnect-legacy.txt`、
 > `tx-reconnect-nonrecursive.txt`、`no-reconnect.txt` 一并退役；同轮退役的还有
 > `tx-stop-on-failure.txt`（失败路径无条件走 emergency FLR + 下一卡）、
-> `tx-keep-assets.txt`（资产释放无条件执行）、`tx-low-staging.txt`、
-> `tx-fwsec-high-staging.txt`（见上）。全部零探测、盘上惰性。
+> `tx-keep-assets.txt`（资产释放无条件执行）与 staging 三 marker（见上）。
+> 全部零探测、盘上惰性。
 > legacy 重连退役依据：早于 native-GOP 重建默认（v2.1.10），自带 #35/#61
 > 递归死锁家族与 R7000 DDC-CI 链路未训练形态；#52/D#131 的 nonrec 实证全部
 > 早于 native 默认。重建异常的逃生阀现在是 `reconnect = off`（暗交棒，

@@ -1228,12 +1228,8 @@ pub fn run_transaction(
                 // re-arm (issue #156 rc2 field: flr_phase restores command
                 // WITHOUT BME and the BL fetch needs bus master) + a single
                 // VRAM-staged re-ignition. A retry that fails again takes
-                // the canonical failure path: single shot, no loop. Skipped
-                // when the marker already staged VRAM - there is no arm
-                // left to fall to.
-                if crate::tx_fwsec::fwsec_aperture_dead_signature(gpu)
-                    && !crate::config::staging_vram_preset()
-                {
+                // the canonical failure path: single shot, no loop.
+                if crate::tx_fwsec::fwsec_aperture_dead_signature(gpu) {
                     info!(
                         "FWSEC-FALLBACK: WPR2-never + empty-window + EXCI 0x3ff signature = the FBIF->sysmem aperture class (issues #89/#275) - one VRAM-staged retry after a function-level FLR"
                     );

@@ -21,7 +21,7 @@ use core::cell::UnsafeCell;
 use log::info;
 use txini::{LogCommit, Output, Resolved};
 #[cfg(feature = "diag")]
-use txini::{RebarRoute, RebarSetting, Reconnect, Staging};
+use txini::{RebarRoute, RebarSetting, Reconnect};
 use uefi::proto::media::file::{File, FileAttribute, FileMode};
 use uefi::{boot, cstr16, CStr16, CString16, Status};
 
@@ -255,21 +255,6 @@ pub fn fwsec_only() -> bool {
 
 pub fn exit_fw() -> bool {
     ini().is_some_and(|r| r.exit_fw) || probe("\\tx-exit-fw.txt")
-}
-
-/// Staging family: the automatic retry ladders own band selection
-/// (STAGING-FALLBACK retries the booter set LOW on the 0x89+intact-magic
-/// signature; FWSEC-FALLBACK re-ignites from VRAM on the #89/#275
-/// aperture-dead fingerprint). The one manual position left is the VRAM
-/// preset for KNOWN aperture-dead hosts - it skips the doomed sysmem
-/// attempt (and the fallback's function-level FLR cycle) instead of
-/// waiting for the ladder to fire. tx-low-staging.txt and
-/// tx-fwsec-high-staging.txt were retired with this merge (2026-11-25):
-/// the fallback ladders cover both manual pins' failure classes.
-#[cfg(feature = "diag")]
-pub fn staging_vram_preset() -> bool {
-    ini().is_some_and(|r| r.staging == Some(Staging::Vram))
-        || probe("\\tx-fwsec-vram-staging.txt")
 }
 
 // ---------------------------------------------------------------------------
