@@ -1,6 +1,7 @@
 # nv-uefi-unlocker 之 老黄刀法回退器   · [常见问题 FAQ](docs/faq.md)
 
 ## UPDATE:2026/11/12 UTC+8 不是哥们，怎么给老黄职位也回退了？？！！
+## UPDATE:2026/11/24 UTC+8 原来给老黄写0x88888888就离职了，写0x00000000就复职了
 
 [中文](README.md) | [English](README.en.md)
 
