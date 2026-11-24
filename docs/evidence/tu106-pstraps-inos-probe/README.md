@@ -238,6 +238,19 @@ docs.nvidia.com/deploy/nvml-api）。性能分层：计算负载（GPU 内部+DM
 - **板阈值修正**：512M/1G 运行时改锁后 UAC 仍致死（早前轮），但**引导期分配**
   512M/1G 稳定——阈值属于运行时态，交付态（引导期分配）无此限制。
 
+## 轮十三（同日）：复现性考古收口——所有失败 boot 归因完毕，配方确定性复现 ×2
+
+A 轮（原始行为二进制重建 + select idx10 + SBR + 冷启动）**32G 逐位复现**
+（0x2000000000-0x27FFFFFFF，与首战同地址同尺寸；设备管理器"大量内存范围"在案）。
+**Code 12 风暴全归因**（每个失败 boot 都有了名字）：无 SBR 轮=硬死（XVE reset-gated）；
+PciIo config 轮=UNSUPPORTED fail-closed；风暴轮 Code 12=固件资源表漂移（干净引导
+自愈）+ 大 select 撞 Above-4G 预算；9/8=control tamper 判据（Code 43）。
+**新发现的分裂（待下次验证）**：一次孤立 build（GOP 重连代码**从未提交**——编辑
+只在工作树、后被 checkout 抹掉，教训入档）在 9/9 轮暴露"select 尊重"行为
+（选 512M 给 512M），而暗交棒 build 同参数语义下 Windows 按 advertisement 重仲裁
+（选 1G 给 32G）——重连态可能抑制 pci.sys 向上重仲裁。**交付配方=暗交棒 build
+（973eb3f3/后续同源）+ select idx10 + SBR**，32G 确定性复现 ×2。
+
 ## 轮十一（同日）：SBR 必要性消融——**SBR 硬必要**，无 SBR 轮死于首次 XVE 读
 
 A/B 单变量（同参数 10/9，仅去 SBR）：`REBAR: BEGIN` 后 4ms 内硬死（单核吃满），
