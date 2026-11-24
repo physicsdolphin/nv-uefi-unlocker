@@ -315,10 +315,12 @@ aperture 窗口化。别名判别转交 disable 版——**但 disable 引出全
 |---|---|---|
 | 厂态 256M | ✅ CPU 渲染回退（framebuffer 仍从 GPU 输出） | — |
 | 11/9（32G） | ❌ 黑屏有背光 | ❌ RDP 卡死 |
-| 11/7（128M） | ✅ 可恢复 | ✅ |
+| 11/7（**8G**=advertised 上限 idx13） | ✅ 可恢复 | ✅ |
 | 8/7（Code 43 后 256M） | ❌ 不能回退（反常） | ✅ |
 
-- **回退能力与 BAR1 尺寸负相关**（256M/128M 可、32G 不可）：BasicDisplay 回退
+（勘误：11/7 的实际孔径=8192 MiB——advertised field 7 的 top idx=13=8GiB，
+field 编码 v+6；此前误标 128M。）
+- **回退能力与 BAR1 尺寸负相关**（256M/8G 可、32G 不可）：BasicDisplay 回退
   需在释放态重建 framebuffer+重配扫描——32G 孔径下该路径失败（legacy VGA/BIOS
   翻译在新孔径下变化，或 BasicDisplay 无权触发 PCI 重平衡）；
 - **8/7 反常**：256M 也不能回退 → 除尺寸外，**驱动是否干净释放**是第二维度
