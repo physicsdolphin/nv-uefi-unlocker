@@ -136,6 +136,16 @@ class CollectCompatTests(unittest.TestCase):
                     "WPR2_LO": {"value": 0x2000, "bucket": ""},
                 })
 
+    def test_ssdiag_offset_field_uses_recorded_value(self):
+        gpu, = self.profile(["WPR2_LO  0x001fa824= 0x1ffffe00"])["gpus"]
+        self.assertEqual(gpu["fields"]["WPR2_LO"]["value"], 0x1ffffe00)
+
+    def test_ssdiag_offset_without_valid_value_is_ignored(self):
+        for rhs in ("", "unavailable", "0x123456789", "0x12junk"):
+            with self.subTest(rhs=rhs):
+                gpu, = self.profile([f"WPR2_LO  0x001fa824= {rhs}"])["gpus"]
+                self.assertNotIn("WPR2_LO", gpu["fields"])
+
     def test_empty_input_stays_unknown(self):
         profile = self.profile(["SAMPLE FEAT_OVR_PLM = not-a-value"])
         gpu, = profile["gpus"]
