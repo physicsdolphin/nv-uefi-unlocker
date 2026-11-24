@@ -270,8 +270,8 @@ pub fn after_console_rebound(console_child: Handle) {
         return;
     };
 
-    // \tx-gop-hide.txt first (operator intent overrides the auto path).
-    if let Some(raw) = crate::tx::read_boot_file("\\tx-gop-hide.txt") {
+    // gop-hide arm first (operator intent overrides the auto path).
+    if let Some(raw) = crate::config::gop_hide_list() {
         let text = String::from_utf8_lossy(&raw);
         run_hide(console_child, &handles, &text);
         return;
@@ -281,10 +281,11 @@ pub fn after_console_rebound(console_child: Handle) {
     // first = Noop), and the demote path only ever runs on the actual flip
     // with EDID sink proof on the console child - "start with the display
     // output the machine itself chose" is the boot-native semantics.
-    // \tx-gop-no-reorder.txt opts out; the legacy enable marker
-    // \tx-gop-reorder.txt is still accepted and is now a no-op.
-    if crate::tx::probe_file("\\tx-gop-no-reorder.txt") {
-        info!("GOP-REORDER: \\tx-gop-no-reorder.txt present - ordering surgery skipped (opt-out)");
+    // \tx-gop-no-reorder.txt opts out (the old enable-side marker
+    // \tx-gop-reorder.txt was retired with this default and is no longer
+    // documented).
+    if crate::config::flag(crate::config::FlagArm::GopNoReorder) {
+        info!("GOP-REORDER: gop-no-reorder arm present - ordering surgery skipped (opt-out)");
         return;
     }
     run_reorder(console_child, &handles);

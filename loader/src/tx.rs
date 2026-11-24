@@ -782,7 +782,7 @@ fn asset_cache_disabled() -> bool {
     if ASSET_CACHE_OFF_PROBED.swap(true, Ordering::Relaxed) {
         return ASSET_CACHE_OFF.load(Ordering::Relaxed);
     }
-    let off = probe_file(r"\tx-no-asset-cache.txt");
+    let off = crate::config::flag(crate::config::FlagArm::NoAssetCache);
     ASSET_CACHE_OFF.store(off, Ordering::Relaxed);
     if off {
         info!("TX-ASSET-CACHE: \\tx-no-asset-cache.txt present - read-through cache disabled (nothing asset-sized stays resident)");
@@ -802,13 +802,12 @@ fn asset_cache_disabled() -> bool {
 /// Runs on every path that reaches the chain (transaction, abort control and
 /// `\tx-dry-run.txt` alike); freeing is idempotent. `\tx-keep-assets.txt`
 /// opts out (A/B, and an escape hatch if a future machine ever wants the
-/// pre-warmed cache back); `\tx-free-assets.txt` is still accepted and is now
-/// a no-op. Pool backing pages are returned on drop, so this genuinely
+/// pre-warmed cache back). Pool backing pages are returned on drop, so this genuinely
 /// shrinks the handoff map; CHAIN-MEMMAP right after is the read-back
 /// (constitution §1.1).
 pub fn handoff_free_assets() {
-    if probe_file(r"\tx-keep-assets.txt") {
-        info!("TX-ASSET-CACHE: \\tx-keep-assets.txt present - cache left resident across the chain");
+    if crate::config::flag(crate::config::FlagArm::KeepAssets) {
+        info!("TX-ASSET-CACHE: keep-assets arm present - cache left resident across the chain");
         return;
     }
     clear_asset_cache();
@@ -1045,9 +1044,9 @@ pub fn run_transaction(
     // failure, continue the unwind with a selector probe instead of
     // aborting. Default OFF; see the FORCE-CONTINUE banner at the failure
     // site for what the experiment can and cannot show.
-    let force_continue = probe_file("\\tx-force-continue.txt");
+    let force_continue = crate::config::flag(crate::config::FlagArm::ForceContinue);
     if force_continue {
-        info!("TX: force-continue marker present - booter-stage failures fall through to the selector probe");
+        info!("TX: force-continue arm present - booter-stage failures fall through to the selector probe");
     }
 
     // Above-4GB staging gate (issues #14/#16): Turing booters exit 0x91 on
@@ -1055,7 +1054,8 @@ pub fn run_transaction(
     // driver-exact configuration. Gated to 'tu10x' so GA10x/Ada keep the
     // allocation path they were field-verified with. \tx-low-staging.txt
     // reverts even tu10x to the legacy path (A/B testing).
-    let high_staging = family_is_turing(assets.family) && !probe_file("\\tx-low-staging.txt");
+    let high_staging = family_is_turing(assets.family)
+        && !crate::config::flag(crate::config::FlagArm::LowStaging);
     crate::pci::set_high_staging(high_staging);
     info!("TX: >4GB staging gate: {high_staging} (family {})", assets.family);
 
@@ -1072,11 +1072,11 @@ pub fn run_transaction(
     // GA10x/Ada always shipped gate-open; Turing now joins them.
     // \tx-relock.txt restores the legacy closing write for all three
     // families - the GA10x/Ada arm of that marker has never been benched.
-    let tx_relock = probe_file("\\tx-relock.txt");
+    let tx_relock = crate::config::flag(crate::config::FlagArm::Relock);
     if tx_relock {
-        info!("TX: \\tx-relock.txt present - the FEAT gate gets RELOCKED at handoff (legacy shape)");
+        info!("TX: relock arm present - the FEAT gate gets RELOCKED at handoff (legacy shape)");
     } else if family_is_turing(assets.family) {
-        info!("TX: FEAT gate stays OPEN at handoff (default since 2026-11-08; \\tx-relock.txt restores the legacy relock)");
+        info!("TX: FEAT gate stays OPEN at handoff (default since 2026-11-08; the relock arm restores the legacy relock)");
     }
 
     // Resume-entry preflight FIRST, before anything is detached or written:
@@ -1122,8 +1122,8 @@ pub fn run_transaction(
     // ReBAR config away from the written pair (field-proven: BAR1 config
     // re-wound to the 8G-aligned default mid-transaction, killing the BAR
     // at handoff) and Turing's chain needs no reset anyway (FLR skipped).
-    if crate::tx::probe_file("\\tx-rebar-then-tx.txt") {
-        info!("TX-tu10x: in-transaction SBR SKIPPED (\\tx-rebar-then-tx.txt: the rebar pair already landed this boot; a second SBR re-latches ReBAR config and kills the BAR)");
+    if crate::config::flag(crate::config::FlagArm::RebarThenTx) {
+        info!("TX-tu10x: in-transaction SBR SKIPPED (rebar_then_tx arm: the rebar pair already landed this boot; a second SBR re-latches ReBAR config and kills the BAR)");
     } else if !crate::revive::sbr_gpu_in_transaction(gpu, &claim.baseline) {
         return Err(TxError::EIO);
     }
@@ -1159,7 +1159,7 @@ pub fn run_transaction(
         // probe_file, not read_boot_file: these are UI switches (zero-byte
         // files by design); read_boot_file refuses size==0, so a dropped
         // EMPTY marker was silently ignored (issue #106).
-        if probe_file("\\tx-host-probe.txt") {
+        if crate::config::flag(crate::config::FlagArm::HostProbe) {
             host_probe_reference(gpu);
         }
         if probe_file("\\tx-ptimer-seed.txt") {
@@ -1236,7 +1236,7 @@ pub fn run_transaction(
                 // when the marker already staged VRAM - there is no arm
                 // left to fall to.
                 if crate::tx_fwsec::fwsec_aperture_dead_signature(gpu)
-                    && !crate::tx::probe_file("\\tx-fwsec-vram-staging.txt")
+                    && !crate::config::flag(crate::config::FlagArm::FwsecVramStaging)
                 {
                     info!(
                         "FWSEC-FALLBACK: WPR2-never + empty-window + EXCI 0x3ff signature = the FBIF->sysmem aperture class (issues #89/#275) - one VRAM-staged retry after a function-level FLR"
@@ -1276,8 +1276,8 @@ pub fn run_transaction(
     // dead end for in-OS recovery. Everything AFTER this line (booter DMA,
     // radix, WprMeta, fires, selectors) is what the driver would NOT have
     // seen on a stock boot - exactly the delta under test.
-    if crate::tx::probe_file("\\tx-fwsec-only.txt") {
-        info!("TX-FWSEC-ONLY: marker present - handing off after the FWSEC stage (no booter, no selectors, no canary, NO FLR anywhere including the failure path)");
+    if crate::config::fwsec_only() {
+        info!("TX-FWSEC-ONLY: arm present - handing off after the FWSEC stage (no booter, no selectors, no canary, NO FLR anywhere including the failure path)");
         crate::tx_detach::restore_vga(gpu.pci, claim.initial_attrs);
         if let Err(e) = crate::gop_native::recover(pci_handle, gpu.pci, claim.initial_attrs) {
             info!("TX-FWSEC-ONLY: native-GOP recovery failed: {e} - console left to bootmgfw (a wrong reconnect is worse than none)");
@@ -1880,10 +1880,13 @@ pub fn run_transaction(
     // to rebuild, and loading the card's ROM GOP driver in that state just
     // returns SUCCESS without publishing a child. Skip the ~2 s attempt
     // and say so, instead of reporting a rebuild "failure".
-    if family_is_turing(assets.family) && crate::tx::probe_file("\\tx-no-reconnect.txt") {
-        info!("TX-tu10x: reconnect skipped (tx-no-reconnect marker)");
-    } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
-        info!("TX: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
+    if matches!(crate::config::reconnect(), txini::Reconnect::Off) {
+        info!("TX-tu10x: reconnect skipped (reconnect = off)");
+    } else if matches!(
+        crate::config::reconnect(),
+        txini::Reconnect::Legacy | txini::Reconnect::LegacyNonrec
+    ) {
+        info!("TX: legacy reconnect path (recursive + PR#13 logic)");
         crate::tx_detach::reconnect_all(pci_handle);
     } else if !claim.target_gop_seen {
         info!("TX: native-GOP rebuild skipped - the target had no GOP child at detach (console lives on another GPU, or none was bound); nothing to rebuild, console left as firmware established it");
@@ -1974,7 +1977,8 @@ pub fn run_agitate_only(
     // Staging-band parity: make the same allocation-band decision the real
     // transaction makes (the DMA allocations below must land in the same
     // band the transaction would use).
-    let high_staging = family_is_turing(assets.family) && !probe_file("\\tx-low-staging.txt");
+    let high_staging = family_is_turing(assets.family)
+        && !crate::config::flag(crate::config::FlagArm::LowStaging);
     crate::pci::set_high_staging(high_staging);
     info!("TX-AGITATE: >4GB staging gate: {high_staging} (allocation-band parity)");
 
@@ -2108,10 +2112,13 @@ fn agitate_stages(
     // Console rebuild parity: the exact block from run_transaction
     // (default native-GOP rebuild from the card's own shadowed ROM; the
     // legacy reconnect and the Turing skip keep their markers).
-    if family_is_turing(assets.family) && crate::tx::probe_file("\\tx-no-reconnect.txt") {
-        info!("TX-tu10x: reconnect skipped (tx-no-reconnect marker)");
-    } else if crate::tx::probe_file("\\tx-reconnect-legacy.txt") {
-        info!("TX-AGITATE: \\tx-reconnect-legacy.txt present - legacy reconnect path (recursive + PR#13 logic)");
+    if matches!(crate::config::reconnect(), txini::Reconnect::Off) {
+        info!("TX-AGITATE: reconnect skipped (reconnect = off)");
+    } else if matches!(
+        crate::config::reconnect(),
+        txini::Reconnect::Legacy | txini::Reconnect::LegacyNonrec
+    ) {
+        info!("TX-AGITATE: legacy reconnect path (recursive + PR#13 logic)");
         crate::tx_detach::reconnect_all(pci_handle);
     } else if !claim.target_gop_seen {
         info!("TX-AGITATE: native-GOP rebuild skipped - the target had no GOP child at detach (console lives on another GPU, or none was bound)");

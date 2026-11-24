@@ -414,7 +414,7 @@ pub fn layout_from_registers(
                     // hatch when the register decode is gated or implausible.
                     // Plain decimal GiB; everything downstream (vga/frts/wpr/
                     // heap) keys off this one number.
-                    let override_mib = crate::tx::read_boot_file("\\tu10x-fb-gb.txt")
+                    let override_mib = crate::config::content(crate::config::ContentArm::FbGb)
                         .and_then(|b| core::str::from_utf8(&b).ok().map(str::trim).and_then(|s| s.parse::<u64>().ok()))
                         .filter(|g| *g >= 1 && *g <= 64);
                     match override_mib {
@@ -828,7 +828,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     // "<4GB locked" note concerns LOCKED-STATE BOOTER reads, never the FWSEC
     // BL. Meta/signature/radix keep the global >4GB gate.
     // \tx-fwsec-high-staging.txt restores the old high band for ablation.
-    let mut dma = if !crate::tx::probe_file("\\tx-fwsec-high-staging.txt") && crate::pci::high_staging() {
+    let mut dma = if !crate::config::flag(crate::config::FlagArm::FwsecHighStaging) && crate::pci::high_staging() {
         let restore = crate::pci::high_staging();
         crate::pci::set_high_staging(false);
         let d = gpu.pci.dma_alloc(fw.image_size as usize);
@@ -868,7 +868,7 @@ pub fn fwsec_ignite_tu10x(gpu: &TxGpu, layout: &LayoutOut, bl: &[u8], force_vram
     // TRANSCFG4 aperture to LOCAL_FB ((t4&!7)|4). The meta itself MUST stay
     // in sysmem (the booter reads it through the sysmem aperture - VRAM meta
     // reads back as garbage and exits 0x89, #89 measured). Default OFF.
-    let vram_staging = force_vram || crate::tx::probe_file("\\tx-fwsec-vram-staging.txt");
+    let vram_staging = force_vram || crate::config::flag(crate::config::FlagArm::FwsecVramStaging);
     if force_vram {
         info!("FWSEC-TU10X: forced VRAM staging (FWSEC-FALLBACK retry arm)");
     }

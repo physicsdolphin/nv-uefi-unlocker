@@ -1,9 +1,6 @@
 //! Version banner (TOTORONG-style phase banner).
 
 use log::info;
-// The only cstr16 use sits inside the tx-only banner block.
-#[cfg(feature = "tx")]
-use uefi::cstr16;
 
 pub fn print(version: &str) {
     info!("==================================================");
@@ -14,7 +11,7 @@ pub fn print(version: &str) {
         // Armed mode flips the confirm semantics: a countdown auto-runs and
         // ANY key aborts, so the space/enter/30s-timeout prompt would
         // describe a flow that cannot happen - print it only unarmed.
-        let armed = crate::chainload::boot_volume_has(cstr16!(r"\i_know_what_i_am_doing.txt"));
+        let armed = crate::config::armed().is_some();
         // Quiet mode (issue #38): a compact banner with PROMPT-tagged lines
         // so the console whitelist keeps the actionable text on slow GOPs.
         // The full banner stays byte-identical to previous releases.

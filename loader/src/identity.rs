@@ -50,7 +50,7 @@ pub fn measure(pci: &PciIo) -> Option<[u8; 32]> {
 /// placeholder value in the file, boot once (read-only build or
 /// tx-select-bdf-pinned card), copy the logged IDENTITY: value back.
 pub fn measure_if_enrolled(pci: &PciIo) -> bool {
-    if crate::chainload::boot_volume_read(uefi::cstr16!(r"\tx-prom-sha256.txt")).is_none() {
+    if crate::config::content(crate::config::ContentArm::PromSha256).is_none() {
         return false;
     }
     measure(pci).is_some()
@@ -78,8 +78,7 @@ pub enum IdentityOutcome<'a> {
 
 #[cfg(feature = "diag")]
 pub fn authorize(pci: &PciIo) -> IdentityOutcome<'_> {
-    let Some(raw) = crate::chainload::boot_volume_read(uefi::cstr16!(r"\tx-prom-sha256.txt"))
-    else {
+    let Some(raw) = crate::config::content(crate::config::ContentArm::PromSha256) else {
         return IdentityOutcome::NotConfigured;
     };
     let Some(expected) = identity_core::parse_reference(&raw) else {

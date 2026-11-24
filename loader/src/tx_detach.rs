@@ -409,8 +409,8 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
 /// self-establishes its own console when it starts; this only restores the
 /// display earlier for machines where the dGPU is the primary adapter.
 pub fn reconnect_all(pci_handle: uefi::Handle) {
-    if crate::tx::probe_file("\\no-reconnect.txt") {
-        info!("RECONNECT: skipped (\\no-reconnect.txt) - bootmgfw self-establishes its console");
+    if matches!(crate::config::reconnect(), txini::Reconnect::Off) {
+        info!("RECONNECT: skipped (reconnect = off) - bootmgfw self-establishes its console");
         return;
     }
     // Give the FLR-rebooted function a moment, then reconnect. Recursive by
@@ -431,7 +431,7 @@ pub fn reconnect_all(pci_handle: uefi::Handle) {
     // by design, and read_boot_file refuses size==0 (issue #106 - a
     // dropped EMPTY marker was silently ignored and the recursive hang
     // came back).
-    let force_nonrec = crate::tx::probe_file("\\tx-reconnect-nonrecursive.txt");
+    let force_nonrec = matches!(crate::config::reconnect(), txini::Reconnect::LegacyNonrec);
     let recursive = if force_nonrec {
         info!("RECONNECT: \\tx-reconnect-nonrecursive.txt present - forcing NON-recursive (vendor GOP bind only; console stack left to bootmgfw)");
         false

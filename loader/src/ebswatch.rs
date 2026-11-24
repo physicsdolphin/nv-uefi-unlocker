@@ -59,11 +59,8 @@ use uefi_raw::table::boot::MemoryDescriptor;
 
 /// `\ebs-watch.log` on the boot stick (our volume; the ESP stays untouched).
 const WATCH_PATH: &CStr16 = cstr16!(r"\ebs-watch.log");
-/// Marker: install the wrapper + checkpoints.
-const WATCH_MARKER: &CStr16 = cstr16!(r"\tx-ebs-watch.txt");
-/// Marker: self-test (implies the watch). GetMemoryMap + ExitBootServices
-/// from the loader itself, then park. Power-cycle after.
-const SELFTEST_MARKER: &CStr16 = cstr16!(r"\tx-ebs-selftest.txt");
+// The watch/selftest marker consts moved to config::flag(FlagArm::EbsWatch /
+// EbsSelftest) - marker file or tx.ini key, double-set refused (issue #290).
 
 const EBS_GROUP: uefi::Guid = guid!("27abf055-b1b8-4c26-8048-748f37baa2df");
 const BEFORE_EBS_GROUP: uefi::Guid = guid!("8be0e274-3970-4b44-80c5-1ab9502f3bfc");
@@ -659,8 +656,8 @@ unsafe fn fix_gbs_crc(bt: *mut uefi_raw::table::boot::BootServices) {
 /// Marker probe + full install. Called from `main` right before the chain;
 /// inert (one marker probe) on every stick that does not opt in.
 pub fn install_if_marker() {
-    let watch = crate::chainload::boot_volume_has(WATCH_MARKER);
-    let selftest = crate::chainload::boot_volume_has(SELFTEST_MARKER);
+    let watch = crate::config::flag(crate::config::FlagArm::EbsWatch);
+    let selftest = crate::config::flag(crate::config::FlagArm::EbsSelftest);
     if !watch && !selftest {
         return;
     }
@@ -745,7 +742,7 @@ pub fn install_if_marker() {
 /// (boot services are gone; only the raw channels run) - a power cycle ends
 /// the session.
 pub fn selftest_if_marker() -> bool {
-    if !crate::chainload::boot_volume_has(SELFTEST_MARKER) {
+    if !crate::config::flag(crate::config::FlagArm::EbsSelftest) {
         return false;
     }
     info!("EBS-SELFTEST: beginning self-call of the wrapped ExitBootServices (the log/screen show the ENTER/BEFORE/NOTIFY/RETURN sequence live)");

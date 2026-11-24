@@ -243,7 +243,7 @@ fn locate_source(gpu: &PciIo) -> Result<(Vec<u8>, alloc::string::String), &'stat
     // Every step below is bracketed by its own flushed line (NATIVE-GOP
     // is a flush marker, issue #128 run 11): a hang must land BETWEEN two
     // lines instead of after the last one.
-    if let Some(content) = crate::tx::read_boot_file("\\tx-native-gop.txt") {
+    if let Some(content) = crate::config::native_gop_name() {
         let name = String::from_utf8_lossy(&content)
             .lines()
             .next()

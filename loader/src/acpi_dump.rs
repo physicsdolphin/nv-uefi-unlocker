@@ -19,7 +19,8 @@ use uefi::proto::media::file::{Directory, File, FileAttribute, FileMode};
 use uefi::table::cfg::ConfigTableEntry;
 use uefi::{cstr16, CStr16};
 
-const MARKER: &CStr16 = cstr16!(r"\tx-acpi-dump.txt");
+// The acpi-dump marker const moved to config::flag(FlagArm::AcpiDump) -
+// marker file or tx.ini key, double-set refused (issue #290).
 const OUT_DIR: &CStr16 = cstr16!(r"\acpi");
 
 /// Per-table and total caps: AML tables are a few hundred KiB at most;
@@ -36,10 +37,10 @@ const NEEDLES: [&[u8]; 14] = [
 ];
 
 pub fn run_if_marker() {
-    if !crate::chainload::boot_volume_has(MARKER) {
+    if !crate::config::flag(crate::config::FlagArm::AcpiDump) {
         return;
     }
-    info!("ACPI-DUMP: \\tx-acpi-dump.txt present - dumping firmware tables to \\acpi\\ (read-only)");
+    info!("ACPI-DUMP: arm present (tx-acpi-dump, marker or tx.ini) - dumping firmware tables to \\acpi\\ (read-only)");
 
     let Some(rsdp) = find_rsdp() else {
         info!("ACPI-DUMP: no RSDP in the config table - nothing to dump");

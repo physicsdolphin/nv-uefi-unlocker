@@ -584,7 +584,7 @@ fn sbr_cycle(port: &PciIo) {
 /// the only success criterion). On false the transaction aborts with the
 /// card freshly reset and nothing unlocked.
 pub fn sbr_gpu_in_transaction(gpu: &crate::tx::TxGpu, baseline: &[u32]) -> bool {
-    if !crate::tx::probe_file("\\tx-sbr-gpu.txt") {
+    if !crate::config::flag(crate::config::FlagArm::SbrGpu) {
         return true;
     }
     info!(

@@ -19,7 +19,7 @@ use uefi::mem::memory_map::MemoryMap as _;
 #[cfg(feature = "diag")]
 use uefi::mem::memory_map::MemoryType;
 use uefi::proto::unsafe_protocol;
-use uefi::{cstr16, Identify, Status};
+use uefi::{Identify, Status};
 
 pub const NVIDIA_VENDOR_ID: u16 = 0x10de;
 
@@ -1036,7 +1036,7 @@ pub fn select_tx_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
     // Err (zero-byte/corrupt/short read) must NOT fall through to the
     // default - a broken pin silently unlocking every card is the worst
     // outcome for a pin switch, so refuse alongside the unparsable case.
-    match crate::tx::read_asset("\\tx-select-bdf.txt") {
+    match crate::config::select_bdf_tx() {
         Err(_) => {
             info!("ENUMERATE: tx-select-bdf.txt present but unreadable (zero-byte/corrupt) - refusing to guess, TX skipped");
             alloc::vec::Vec::new()
@@ -1117,7 +1117,7 @@ fn parse_bdf(raw: &[u8]) -> Option<(usize, usize, usize, usize)> {
 /// that is an accepted, lower-stakes tradeoff: the worst a corrupt marker can
 /// do here is skip or retarget a register dump, not touch anything.
 pub fn select_sample_targets(all: &[FoundGpu]) -> alloc::vec::Vec<FoundGpu> {
-    match crate::chainload::boot_volume_read(cstr16!(r"\tx-select-bdf.txt")) {
+    match crate::config::select_bdf_sample() {
         None => all.first().into_iter().cloned().collect(),
         Some(raw) => match parse_bdf(&raw) {
             Some(bdf) => all
