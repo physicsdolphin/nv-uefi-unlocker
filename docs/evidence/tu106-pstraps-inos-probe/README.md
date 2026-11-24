@@ -160,3 +160,46 @@ selection（control 读回一致）。剩 Windows 引导枚举的"接取"环节�
 （关快速启动+完整关机）重验；冷启动若仍 256M，剩余杠杆=loader 内清 BAR1 分配
 （0x88014/0x88018 归零 → Windows 仲裁器按新 size 重新分配）——未实装，待冷启动
 结果决定。
+
+## 轮九（同日）：冷启动终局——**Windows 接取成功，BAR1 = 32 GiB**
+
+冷启动（hiberboot 关闭）后完整链路打通：
+
+- Windows pci.sys 按 ReBAR cap 仲裁，**取 advertisement 内最大可容纳档**（我们写的
+  control=idx10 只是建议值——Windows 是主动分配者，掩码开到 32G 且 64 位窗口放得
+  下 → 选 idx15=32G 并自写 control）；ssdiag：`current 32768 MiB (size_idx 15)`；
+- **终态与 #211 GA102 20G 改卡逐字同形**：驱动/GSP-RM 初始化后清 0x610 override 位
+  → cap 广告回落 3 档（0x1c00）而窗口持有 idx15——ssdiag 读数（supported 3 档 +
+  current 32G）= 该已记录标准终态的 TU106 复现；
+- GPU-Z：Resizable BAR **Enabled**、"enabled in BIOS: Yes"（终态与原生 ReBAR 机器
+  不可区分）；nvidia-smi：FB Total 8192 MiB / BAR1 Total 32768 MiB；owner 确认
+  Windows 稳定运行。32G 孔径对 8G 显存无害（CPU 窗口 ≠ VRAM 容量，驱动只在 VRAM
+  内映射）——20G 改卡社区跑 32G BAR 是日常形态；
+- **易失重放哲学自洽**：温重启洗 config → 回 256M 原厂态；插盘引导 → loader 重写
+  → 回 32G。不插盘零痕迹；
+- 已知成本：claim 后 GOP 不重建 → 黑屏至登录屏（tx 流程的 native-GOP 恢复机制
+  可后续并入）；
+- **未竟组合**：rebar 模式目前**替代**解锁事务（互斥 marker）；Turing 解锁链本就
+  跳过 FLR（FEAT PLM 不过 FLR）→ rebar 对可 ride-along 在 tx 窗口尾部（booter
+  后、交棒前），一次引导同时拿解锁+32G BAR——待立项。若要精确限档（如 1G/8G），
+  需 override 字段 bits[10:7] 非 9 值的编码（当前 9=全开 10 档）——未解。
+
+## 轮十（同日）：字段编码地图 + --bar1-scan 硬件裁决——休眠恢复自愈、512G 可达
+
+**字段编码地图（\tx-rebar-scan.txt，claim+SBR 窗口内 0..15 全扫）**：
+`field v = top size_idx(v+6)` 线性到 **field 13 = idx19 = 512 GiB**（field 14 饱和
+同 13；field 15 退化 3 档）——**advertisement 可达 512G，>32G 编码存在**（4090
+48G 需 ≥64G=field 13 起）。cap-mirror（0x88bbc）写探针 read-only——field 是唯一
+且足够的杠杆。Ada 侧注意：XVE 区 PLM closed（0x88ff4 badf），0x610 直写可能吃
+PLM 挡，待实卡；Ada 本有 CYA/CFG 64G payload 链（cf3566d0）。
+
+**--bar1-scan（ssdiag 0.8.12）休眠恢复会话裁决——幻象模型死亡**：
+`control 0xbc0 = 0xf01 (32G)`、BAR1 base = **0x2000000000**（Windows 给 32G 窗的
+64 位分配）、边界扫描 **31G+ 全 decoded（0/16 ff）**——硬件孔径真实 32G、驱动
+信念一致，**无幻象**。修正后的生命周期模型：SBR 洗 control（rung-1 实测 0x801）
+→ Windows 仲裁自写 0xf01+分配 → **休眠保存把 config 状态收进内核镜像 → resume
+回写 → 硬件 re-latch** → 32G 跨休眠持有。唯一清除=不插盘冷启/断电。
+0x610 恢复后读 0x1001（厂值形状，非清零）——#211 "override 被清" 的 TU106 细节
+修正：GSP-RM 重写回厂位形，广告位消失而窗口持有。
+**WDDM 行为旁证（owner 实测）**：5G+ 显存计算的进程 BAR1 工作集仅 2MB——
+**窗口重指向模式**，CPU 侧暴露面极小，休眠态计算负载存活自洽。
