@@ -267,8 +267,10 @@ ablation 轮（成功配方 + 仅加重连）：**Code 12**，且案发现场完
 **advertise（field）**：
 - **上限与 Windows pci 相关**：本机=32GB（idx15）——advertise 超过（field≥10）
   → pci 分配损坏 + Code 12（A167 57.7G 残留窗同位复现=确定性失败中间态）；
-- **下限未测**（advertise 压到厂域内=field≤2 的行为未知；8/2 类判据分离样本
-  留档待测）。
+- **下限已测（8/2 活）**：advertise 压回厂域（field 2=256M 上限）时 select=8
+  **可活**——tamper 判据精化为单行：**死条件 = advertise 超出厂域而 select 停在
+  厂值**（8/7、8/9、8/4 全是 advertise>厂域 的 8/x；8/2 的 advertise 不超厂值
+  =整体呈厂态形状，GSP-RM 视为合法）。原厂值不能接受高于原厂的 advertise。
 
 **安全域（本台架）**：select ∈ {9,10,11} × advertise = 9（field 9=32G 上限内）
 —— 即 `11/9` 为上限档（2G select/32G advertise=32G 交付）、`9/9` 保守档。
