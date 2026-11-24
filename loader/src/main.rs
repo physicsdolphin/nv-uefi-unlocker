@@ -635,16 +635,17 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
         return CardOutcome::Attempted;
     }
 
+    // \tx-rebar-then-tx.txt (2026-11-24): run the rebar pair AND the full
+    // unlock transaction in one boot. The pair lands inside the claim+SBR
+    // window (same as the rebar-only flow), the claim is released, and
+    // control FALLS THROUGH the rebar if-block to the transaction below -
+    // which re-claims fresh. Turing's unlock chain skips FLR (FEAT PLM does
+    // not survive it), so nothing in the transaction resets the pair away;
+    // the SS selectors + the 32G window land together at the handoff.
+    // Declared here so the flag survives past the rebar if-block's match
+    // scope (the fall-through must cross it).
+    let rebar_then_tx = tx::probe_file("\\tx-rebar-then-tx.txt");
     if tx::probe_file("\\tx-rebar.txt") {
-        // \tx-rebar-then-tx.txt (2026-11-24): run the rebar pair AND the full
-        // unlock transaction in one boot. The pair lands inside the
-        // claim+SBR window (same as the rebar-only flow), the claim is
-        // released, and this function FALLS THROUGH to the transaction
-        // below - which re-claims fresh. Turing's unlock chain skips FLR
-        // (FEAT PLM does not survive it), so nothing in the transaction
-        // resets the pair away; the SS selectors + the 32G window land
-        // together at the Windows handoff.
-        let rebar_then_tx = tx::probe_file("\\tx-rebar-then-tx.txt");
         let sbr_rung = tx::probe_file("\\tx-sbr-gpu.txt");
         let ecam_route = tx::probe_file("\\tx-rebar-ecam.txt");
         info!(
@@ -700,8 +701,10 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                 drop(claim);
                 if rebar_then_tx {
                     info!("REBAR: \\tx-rebar-then-tx.txt present - claim released, FALLING THROUGH to the full unlock transaction (fresh claim inside; Turing skips FLR so the pair survives the chain)");
-                    // Fall through: no handoff_out, no return - the tx flow
-                    // below re-claims and runs the V67 chain normally.
+                    // Fall through: no handoff_out, and NOT the match-tail
+                    // return below - control must leave this whole if-block
+                    // to reach the transaction code. The flag escapes the
+                    // match scope, so it is re-derived at the function level.
                 } else {
                     tx::handoff_out(&pci);
                     return CardOutcome::Attempted;
@@ -712,7 +715,11 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
                 tx::handoff_out(&pci);
             }
         }
-        return CardOutcome::Attempted;
+        if !rebar_then_tx {
+            return CardOutcome::Attempted;
+        }
+        // rebar_then_tx: control reaches here having released the claim -
+        // continue below into the asset prechecks and run_transaction.
     }
 
     // Per-family asset selection by PCI device ID - see asset_family.
