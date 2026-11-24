@@ -197,8 +197,8 @@ pub struct PmEntry {
 /// still in the function, and everything the transaction relies on (BAR
 /// decode, claim guards, FLR) is only defined in D0. Read PMCSR first, say
 /// so loudly, then bring the function to D0 with a verified readback.
-/// `\tx-require-d0.txt` on the boot volume turns the warning into an abort
-/// (nothing has been written yet at that point, so the run is a no-op).
+/// (The \tx-require-d0.txt abort variant was retired 2026-11-25 - the loud
+/// log line plus the forced, readback-verified D0 IS the field triage.)
 pub fn pm_preflight(pci: &PciIo) -> Result<PmEntry, &'static str> {
     let Some(cap) = pci.pm_cap() else {
         info!("PM: no power-management capability - D-state not evaluable");
@@ -209,10 +209,6 @@ pub fn pm_preflight(pci: &PciIo) -> Result<PmEntry, &'static str> {
     info!("PM: entry PMCSR={before:#06x} state=D{} (cap@{cap:#04x})", before & 0x3);
     if warm {
         info!("PM: WARM ENTRY (resume/fast-startup handoff, not a POST): the previous session's device context is still in this function; the unlock may not survive the Windows handoff");
-        if crate::tx::probe_file("\\tx-require-d0.txt") {
-            info!("PM: \\tx-require-d0.txt present - aborting before any GPU write (use Restart, or cold boot, and re-run)");
-            return Err("warm entry with require-D0 switch set");
-        }
     }
     let after_cur = pci.pmcsr(cap);
     if !pci.pmcsr_force_d0(cap) {
@@ -235,7 +231,7 @@ pub struct Claim {
     pub initial_attrs: Option<u64>,
     /// True when at least one GOP handle belonged to the target during the
     /// detach (and was therefore disconnected), or the forced
-    /// `\tx-gop-disconnect.txt` path tore down every GOP handle. False means
+    /// `\gop-disconnect-all.txt` path tore down every GOP handle. False means
     /// the target never owned a console child this boot, so the native-GOP
     /// rebuild has nothing to restore (issue #261: hybrid-display laptops
     /// where the firmware console lives on the iGPU).
@@ -289,13 +285,14 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     // Intel VGA in PCI enumeration, yet the GOP was declared "not on the
     // target GPU"), so v2.1.0-pre..v2.1.2 left the console connected where
     // v0.2.0 disconnected it - the only transaction-path delta on the
-    // machine that flipped 0x91 -> unlocked. \tx-gop-disconnect.txt forces
+    // machine that flipped 0x91 -> unlocked. \gop-disconnect-all.txt (renamed
+    // from tx-gop-disconnect 2026-11-25 - the name never said ALL) forces
     // the v0.2.0 behavior (disconnect every GOP handle) so the GOP variable
     // can be tested one boot per side on otherwise identical code.
     let force_gop_disconnect =
-        crate::tx::probe_file("\\tx-gop-disconnect.txt");
+        crate::tx::probe_file("\\gop-disconnect-all.txt");
     if force_gop_disconnect {
-        info!("DETACH: \\tx-gop-disconnect.txt present - disconnecting every GOP handle (v0.2.0 behavior)");
+        info!("DETACH: \\gop-disconnect-all.txt present - disconnecting every GOP handle (v0.2.0 behavior)");
     }
     // The SLOT-REVIVE arm may have disconnected a dead slot's console GOP
     // before its own SBR (revive.rs): seed the flag from it so the

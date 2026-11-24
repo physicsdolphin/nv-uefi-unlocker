@@ -175,15 +175,16 @@ pub enum LogCommit {
     Off,
 }
 
-/// Reconnect family: `Auto` = native-GOP rebuild (default), `Off` = dark
-/// handoff. The legacy recursive-reconnect path and its marker trio
-/// (tx-reconnect-legacy / tx-reconnect-nonrecursive / no-reconnect) were
-/// retired 2026-11-25 - they predated the native rebuild default and
-/// carried the #35/#61 deadlock family; `Off` is the escape hatch now.
+/// Reconnect family: `On` = native-GOP rebuild, `Off` = dark handoff.
+/// Default is `On` EXCEPT when a rebar arm is active (the pair + any GOP
+/// reconnect is the proven Code 12 family - the loader then defaults to
+/// the dark handoff without asking; rebar_gop remains the explicit
+/// opt-in for that ablation shape). The legacy recursive-reconnect path
+/// and its marker trio were retired 2026-11-25.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reconnect {
-    /// Default: native-GOP rebuild on the gates the loader already applies.
-    Auto,
+    /// Native-GOP rebuild on the gates the loader already applies.
+    On,
     /// No reconnect at all - dark handoff, bootmgfw self-establishes.
     Off,
 }
@@ -401,9 +402,9 @@ pub fn resolve(
                 );
             }
             "reconnect" => {
-                r.reconnect = enum_value(e, &["auto", "off"], &mut errs).map(|s| match s {
+                r.reconnect = enum_value(e, &["on", "off"], &mut errs).map(|s| match s {
                     "off" => Reconnect::Off,
-                    _ => Reconnect::Auto,
+                    _ => Reconnect::On,
                 });
             }
             "dry_run" => r.dry_run = flag_value(e, &mut errs).unwrap_or(false),
@@ -694,7 +695,7 @@ mod tests {
         let mut set = |p: &str| p == "\\tx-no-reconnect.txt";
         let errs = resolve(&es, &mut set, &mut w).expect_err("both");
         assert!(errs.iter().any(|e| e.contains("both set the same arm")));
-        assert!(errs.iter().any(|e| e.contains("auto"))); // enum error lists the allowed set
+        assert!(errs.iter().any(|e| e.contains("off"))); // enum error lists the allowed set
     }
 
     // ---- resolver: lists and unknowns ---------------------------------

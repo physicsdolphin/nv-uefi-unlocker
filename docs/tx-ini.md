@@ -30,7 +30,7 @@
 |---|---|---|
 | `output` | `normal` / `quiet` / `ultrafast` | `tx-quiet.txt`、`tx-ultrafast.txt` |
 | `log_commit` | `full` / `lines` / `off` | `tx-log-commit.txt`、`tx-log-commit-lines.txt` |
-| `reconnect` | `auto` / `off` | `tx-no-reconnect.txt` |
+| `reconnect` | `on` / `off` | `tx-no-reconnect.txt` | off=跳过 native-GOP 重建，暗交棒；**默认 on，rebar 臂激活时默认 off**（对写+重连=已证 Code 12 族） |
 
 > **staging 不是键（2026-11-25 终态）**：自动重试梯（booter 侧 STAGING-FALLBACK、
 > FWSEC 侧 FWSEC-FALLBACK）端到端拥有带选择权，无任何手动档。三个历史 marker
@@ -41,12 +41,17 @@
 > **退役（2026-11-25）**：legacy 递归重连路径整体删除，`tx-reconnect-legacy.txt`、
 > `tx-reconnect-nonrecursive.txt`、`no-reconnect.txt` 一并退役；同轮退役的还有
 > `tx-stop-on-failure.txt`（失败路径无条件走 emergency FLR + 下一卡）、
-> `tx-keep-assets.txt`（资产释放无条件执行）与 staging 三 marker（见上）。
-> 全部零探测、盘上惰性。
+> `tx-keep-assets.txt`（资产释放无条件执行）、staging 三 marker（见上）、
+> `tx-meta-in-vram.txt`（#89 证伪轴）、`tx-sec2-c-load.txt`（#17/#62 C 参照火，
+> 连函数删除）、`tx-sec-base.txt`/`tx-bootvec-sec.txt`（nsstub 摆位季）、
+> `tx-no-bridge-master.txt`（BME 使能无条件）、`pre-flr-on.txt`（pre-FLR 实验
+> 完结，kernel-matching 流终胜，函数删除）、`tx-accept-warm-wpr2.txt`（温 WPR2
+> 逃逸口；宪法正确恢复=断电）、`tx-require-d0.txt`（warm 入口的响亮日志+强制
+> D0 读回即是现场分辨）。全部零探测、盘上惰性。
 > legacy 重连退役依据：早于 native-GOP 重建默认（v2.1.10），自带 #35/#61
 > 递归死锁家族与 R7000 DDC-CI 链路未训练形态；#52/D#131 的 nonrec 实证全部
 > 早于 native 默认。重建异常的逃生阀现在是 `reconnect = off`（暗交棒，
-> bootmgfw 自建控制台，Z170-A 对照已证）。
+> bootmgfw 自建控制台，Z170-A 对照已证；rebar 激活时已是默认）。
 
 ### 布尔臂（`= true` 可省略）
 
@@ -86,13 +91,10 @@
 
 ## 故意不进 ini 的（台架/消融旋钮，marker-only）
 
-`tx-no-canary.txt`、`tx-ptimer-seed.txt`、`tx-meta-in-vram.txt`、
-`tx-sec2-c-load.txt`、`tx-bootvec-sec.txt`、`tx-no-gsp-halt-gate.txt`、
-`tx-no-pm-preflight.txt`、`tx-no-bridge-master.txt`、`tx-no-flr.txt`、
-`tx-require-d0.txt`、`tx-accept-warm-wpr2.txt`、`tu10x-no-ss.txt`、
-`pre-flr-on.txt`、`tx-revive-dead-slot.txt`、`tx-revive-force-sbr.txt`、
-`tx-gop-disconnect.txt`、`tx-sec-base.txt`（booter SEC2 摆位研究旋钮，
-2026-11-25 退出 ini 回 marker-only）
+`tx-no-canary.txt`、`tx-ptimer-seed.txt`、`tx-no-gsp-halt-gate.txt`、
+`tx-no-pm-preflight.txt`、`tx-no-flr.txt`、`tu10x-no-ss.txt`、
+`tx-revive-dead-slot.txt`、`tx-revive-force-sbr.txt`、
+`gop-disconnect-all.txt`（2026-11-25 自 tx-gop-disconnect 改名——原名没说 ALL）
 
 这些只在 evidence 指引里点名出现；写成 ini 键会得到 unknown-key 警告。
 零字节文件本身就是"你得知道它存在才能设"的使用门槛，保留。

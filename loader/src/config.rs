@@ -222,13 +222,22 @@ pub fn quiet() -> bool {
 
 /// Reconnect family, reduced to the one question the sites ask: skip the
 /// native-GOP rebuild (dark handoff - bootmgfw self-establishes its
-/// console) or run it. The legacy recursive-reconnect path and its marker
-/// trio (tx-reconnect-legacy/nonrecursive/no-reconnect) were retired
-/// 2026-11-25 - see the removal note in tx_detach.rs.
+/// console) or run it. Precedence: explicit ini value, then the
+/// tx-no-reconnect marker, then the rebar-aware default - an ACTIVE rebar
+/// arm defaults to off (the rebar pair + any GOP reconnect is the proven
+/// Code 12 family: pci rebalances over the freshly enlarged BAR),
+/// everything else defaults to on. The legacy recursive-reconnect path
+/// and its marker trio were retired 2026-11-25 - see the removal note in
+/// tx_detach.rs.
 #[cfg(feature = "diag")]
 pub fn reconnect_off() -> bool {
-    ini().is_some_and(|r| r.reconnect == Some(Reconnect::Off))
-        || probe("\\tx-no-reconnect.txt")
+    if let Some(v) = ini().and_then(|r| r.reconnect) {
+        return v == Reconnect::Off;
+    }
+    if probe("\\tx-no-reconnect.txt") {
+        return true;
+    }
+    rebar().is_some()
 }
 
 // ---------------------------------------------------------------------------
