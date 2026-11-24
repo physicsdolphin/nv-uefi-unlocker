@@ -256,6 +256,31 @@ ablation 轮（成功配方 + 仅加重连）：**Code 12**，且案发现场完
   DxgkDdiMapCpuHostAperture，微软正式接口）= "2MB used" 窗口重指向的官方
   机制；NVML BAR1 语义同源。计算负载不受窗口模式影响（实测）。
 
+## 轮二十（2026-11-24 深夜）：合并交付达成——SS 解锁 + BAR1 32G 同 boot
+
+环境勘误先行：多轮测试的驱动模式被"卸载设备清注册表键"搅动（EnableGpuFirmware
+缺失=legacy 态），部分判读混了 GSP/legacy 两列；四边界中 pci.sys 层（advertise
+预算、A167 尸体、重平衡）与驱动模式无关（结论保持），GSP-RM 边界（Code 43 族）
+已按模式分列重验中。
+
+**合并流程首战全绿**（`\tx-rebar.txt`=11/9 + `tx-rebar-then-tx.txt` +
+`tx-sbr-gpu.txt` + `tu10x-no-reconnect.txt`，build 95d0c91e）：
+rebar claim+SBR 窗口 pair 落地 → claim 释放 → 落穿 → V67 事务完整链
+（**事务侧 SBR 跳过**——首战曾暴露第二发 SBR 把 ReBAR config 重锁存回默认、
+BAR 交棒即死的 bug：bookkeeping BAR1 MISMATCH 0xc0000000 vs 0x80000000 铁证；
+修复=\tx-rebar-then-tx.txt 在场时 in-transaction SBR skipped，7084103）→
+SS0/SS1 写入 → no-reconnect → 暗交棒。
+**Windows 终态：VERDICT UNLOCKED + CANARY intact + BAR1 32768 MiB (idx15)**
+——SS 解锁与 32G BAR1 同 boot 双收益，交付形态完整。
+
+**新发现（legacy 模式轮，待 GSP 复验）**：
+- 事件查看器在解锁+BAR legacy 轮出现 `UCodeReset TDR` + `Variable String too
+  Large` + `GPU recovery action changed from 0x0 to 0x1 (PF FLR)`——**TDR 风暴
+  后卡进系统时仍是 unlocked** → "Turing FEAT PLM 不耐受 FLR"的保守假设被动摇：
+  AON 域可能实测耐受 TDR 级 PF FLR（若 FLR 真发生）。待 GSP 态复验+受控 FLR
+  实验定谳；
+- SBR 角色定版：**rebar 专用配套**（pair 前置），与 SS 解锁永久解耦。
+
 ## 轮十九（同日）：A167 替罪羊假设否决——需求窗才是本体，64G 池是硬墙
 
 禁用 A167（清掉 57.7G 残留窗假说）后重测：
