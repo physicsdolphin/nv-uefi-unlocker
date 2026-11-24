@@ -23,7 +23,7 @@
 | 有 GB20x booter 吗？ | **公开不存在。** `kgspGetBinArchiveBooterLoadUcode` 只为 TU102/TU116/GA100/GA102/AD102 开分支，其余落共享 fallback；开放模块里该 fallback 是 NULL 桩，真实映像只在闭源 `nv-kernel.o` |
 | debug 镜像能当后门吗？ | **不能。** GB202 debug/prod FMC 的 `UCODE_IMAGE`/`UCODE_HASH` 逐字节相同（密文也一样），只有 96 B `UCODE_SIG` 不同，且**没有多签名槽表**可降级 |
 | 解 FMC 呢？ | 失败且已穷尽一条路线：MD5-IV 置换族 `16!` 全搜 × 两种容器 × 五种模式，零命中；换用真实 RISC-V 码评分器后仍无键 |
-| 还开着什么？ | ①suspend/resume 信任面（SR 状态 205.875 MiB/卡，熵 7.9998）；②FSP/FMC 解析器（host 输入按对齐/精确值/边界/认证四类检查，heap 有 11 档 lever）；③每 SM selector（只探过全局 FEAT 块；GB206 TPC floorsweeping 的跨卡只读对照采集已开——[D#216](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/216)：5060 Laptop `2d59` 实测 13 TPC/26 SM，征集桌面 5060 Ti `2d04` 同协议六值样本，Linux 只读采集器与贡献指南在其链接仓库） |
+| 还开着什么？ | ①suspend/resume 信任面（SR 状态 205.875 MiB/卡，熵 7.9998）；②FSP/FMC 解析器（host 输入按对齐/精确值/边界/认证四类检查，heap 有 11 档 lever）；③每 SM selector（只探过全局 FEAT 块；GB206 TPC floorsweeping 的跨卡只读对照采集已开——[D#216](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/216)：5060 Laptop `2d59` 实测 13 TPC/26 SM，征集桌面 5060 Ti `2d04` 同协议六值样本，Linux 只读采集器与贡献指南在其链接仓库）；移动 GB206 `2d58` 已由 [#283](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/283) 补采（36 SM/18 TPC、L2 32 MiB 闭合 OQ #19、SB+HVCI 下零写只读），HMMA 归一化 0.51× 与 §1.2 一致 |
 | 本项目能做什么？ | 只读：efi SAMPLE、ssdiag、diag-unlock 都已覆盖该块（本轮）。事务：不能跑，等待 PL3 执行原语 |
 
 ## 1. 钳制与门：与 Ada 同形，但读出的不是 Ada 语义
@@ -82,6 +82,10 @@ Blackwell 的码→速率律不同：
   消费者全是 ECC 能力位，没有一个读速率。
 
 所以打印行必须同时给原始字和"字段（非速率）"标注，**不要**按 Ada 律把 3 解成 1/8。
+
+### 1.3 移动 GB206（`2d58`）与桌面同形
+
+[#283](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/283) 在 Framework Laptop 16（RTX 5070 Laptop，`10de:2d58`，SUBSYS `000ef111`，VBIOS `98.06.3e.00.0a`，驱动 596.49，36 SM/18 TPC）上给出只读复核：`PMC_BOOT_0=0x1b6000a1`、`FEAT_OVR_PLM=0xfffffb8f`、`FEAT_READOUT_1=0x00c36180`、`FUSE_SS_FMLA32=3` / `IMLA1/2/4=3` 与桌面 GB206 逐字相同；出厂 `FEAT_SS0=0x04675077` / `FEAT_SS1=0x00043000`（enable 位全清）。时钟归一化 HMMA 实测 `993.01` vs `510.63 FLOP/SM/cycle`（**0.514×**），与 §1.2 的"selector 3 约半速"一致。2026-11-23 追加的 `--prom-bit` 全量只读轮（零写、临时驱动无残留）把同一 FEAT/fuse/PLM 块与 GB202、GB203M、GB205、桌面 GB206 逐字节对齐，并把 OQ #19 的 GB206 L2 预测闭合为 **4 LTC × 4/4 切片 × 2 MiB = 32 MiB**（驱动 `L2_CACHE_SIZE = 33,554,432 B`）；该轮在 Secure Boot + HVCI + VulnerableDriverBlocklist 全开下完成。无 EFI/事务。
 
 ## 2. 真正的断点：引导链少了 SEC2 这一段
 
@@ -258,5 +262,6 @@ SAMPLE：
   工具 MIT/GPL-2.0），87 次实验的负结果与四层密钥表。
 - booter 调度与"缺 debug booter"：`phiraml/gpu-unlock-blackwell`（MIT）。
 - GB202/GB203M 对照值与跨部件样本：`JustAResearcher/gpu-unlock-ada` issue #12。
+- 移动 GB206 `2d58` 只读样本与 L2 闭合：[#283](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/283)（2026-11-22/23，零写；含 `--prom-bit` 全量元数据）。
 - 免责：以上均为读数与静态证据，没有 50 系的成功解锁；本仓不在事务路径上
   支持 50 系，直到出现上面的第一块砖。
