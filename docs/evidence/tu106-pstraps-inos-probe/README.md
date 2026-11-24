@@ -256,6 +256,26 @@ ablation 轮（成功配方 + 仅加重连）：**Code 12**，且案发现场完
   DxgkDdiMapCpuHostAperture，微软正式接口）= "2MB used" 窗口重指向的官方
   机制；NVML BAR1 语义同源。计算负载不受窗口模式影响（实测）。
 
+## 轮十八（同日）：安全域四边界定版（owner 压缩判据，全数据矩阵兑现）
+
+**select（目标）**：
+- **上限与固件+显存相关**：本机（2070/固件态）≥4096M（idx12）→ Code 43
+  （12/9 的 43 归入此族：非放置失败，就是 select 上限族——4G 恰过线）；
+- **下限=不能与出厂最大值一致**：select=8（256M 厂值）→ Code 43 无条件
+  （8/7、8/9、8/4 三发全 43；"select 离厂域"=tamper 判据的精确形状）。
+
+**advertise（field）**：
+- **上限与 Windows pci 相关**：本机=32GB（idx15）——advertise 超过（field≥10）
+  → pci 分配损坏 + Code 12（A167 57.7G 残留窗同位复现=确定性失败中间态）；
+- **下限未测**（advertise 压到厂域内=field≤2 的行为未知；8/2 类判据分离样本
+  留档待测）。
+
+**安全域（本台架）**：select ∈ {9,10,11} × advertise = 9（field 9=32G 上限内）
+—— 即 `11/9` 为上限档（2G select/32G advertise=32G 交付）、`9/9` 保守档。
+判据意义：GSP-RM 的 tamper 检测=**select 不得回厂值**（单变量，无需组合
+自洽性假设）；pci.sys 的拒绝条件=**advertised 对齐需求窗 > Above-4G 池余量**
+（select 不参与拒绝，只做预算内建议）。
+
 ## 轮十五（同日）：select 阶梯（暗交棒配方）——预算阈值得出，Code 43=驱动 init 早期拒绝
 
 无 GOP（已证配方）下的 select 阶梯，Windows 侧终态：
