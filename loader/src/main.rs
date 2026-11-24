@@ -586,6 +586,42 @@ fn tx_one_card(g: &pci::FoundGpu) -> CardOutcome {
         return CardOutcome::Attempted;
     }
 
+    if tx::probe_file("\\tx-rebar-scan.txt") {
+        let sbr_rung = tx::probe_file("\\tx-sbr-gpu.txt");
+        info!("TX: \\tx-rebar-scan.txt present - 0x610 field-encoding sweep + cap-mirror write probe (route {}, zero BAR-assignment writes; recovery = power-off)", if sbr_rung { "claim+SBR" } else { "claim" });
+        match crate::tx_detach::detach_and_claim(g.handle) {
+            Ok(claim) => {
+                info!("REBAR-SCAN: claimed (GOP off, screen dark by design)");
+                let mut sbr_ok = true;
+                if sbr_rung {
+                    let baseline = claim.baseline.clone();
+                    sbr_ok = revive::sbr_gpu_in_transaction(&gpu, &baseline);
+                    if sbr_ok {
+                        info!("REBAR-SCAN: SBR complete, device verified alive");
+                    } else {
+                        info!("REBAR-SCAN: SBR left the device unverifiable - halting without chain-load (power off completely, remove the stick, boot normally)");
+                    }
+                }
+                if sbr_ok {
+                    tx::run_rebar_fieldscan(&gpu);
+                    info!("SELECTOR RESULT: field sweep complete - see REBAR-SCAN lines above");
+                } else {
+                    logging::finish();
+                    loop {
+                        boot::stall(core::time::Duration::from_millis(500));
+                    }
+                }
+                drop(claim);
+                tx::handoff_out(&pci);
+            }
+            Err(e) => {
+                info!("REBAR-SCAN: claim failed ({e:?}) - refusing to touch a firmware-bound card; handing off untouched");
+                tx::handoff_out(&pci);
+            }
+        }
+        return CardOutcome::Attempted;
+    }
+
     if tx::probe_file("\\tx-rebar.txt") {
         let sbr_rung = tx::probe_file("\\tx-sbr-gpu.txt");
         let ecam_route = tx::probe_file("\\tx-rebar-ecam.txt");

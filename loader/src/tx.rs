@@ -2377,6 +2377,43 @@ pub fn run_rebar_ecam(loc: (usize, usize, usize, usize), size_idx: u32) -> Resul
     Ok(())
 }
 
+/// \tx-rebar-scan.txt (2026-11-24 bench question: "can the advertisement go
+/// past 32G? 4090-48G wants >=64G"): map the 0x610 FB-override field encoding
+/// and probe whether the ReBAR supported-mask register itself is host
+/// writable, both inside the claim(+SBR) window. The field at bits[10:7] is
+/// 4 bits wide; value 9 (=0xC80) is the NV_30_DXE constant that opens 10
+/// sizes topping at idx15=32G. Values 0..15 swept with the mask read after
+/// each - if any value opens bits >=20 (64G+), the advertisement extends.
+/// The cap-mirror (0x88bbc) has only ever been read - one write probe tells
+/// whether the advertisement is directly host-controllable (in which case
+/// the size ceiling is the cap format's bit23=512G, not the field's).
+/// Read-only wrt the BAR assignment; everything washes at the next reset.
+pub fn run_rebar_fieldscan(gpu: &TxGpu) {
+    info!("REBAR-SCAN: 0x610 field[10:7] sweep (bit11=enable), mask read after each value");
+    for v in 0..16u32 {
+        let val = 0x800 | (v << 7);
+        gpu.write32(0x0008_8610, val);
+        let fb = gpu.read32(0x0008_8610).unwrap_or(0xffff_ffff);
+        let mask = gpu.read32(0x0008_8bbc).unwrap_or(0xffff_ffff);
+        let max_idx = 31i32 - mask.leading_zeros() as i32 - 4;
+        info!(
+            "REBAR-SCAN: field {v:2} -> 0x88610 {fb:#010x}, mask {mask:#010x} ({} sizes, top size_idx {max_idx})",
+            mask.count_ones()
+        );
+    }
+    let m0 = gpu.read32(0x0008_8bbc).unwrap_or(0xffff_ffff);
+    gpu.write32(0x0008_8bbc, m0 | 0x0030_0000);
+    let m1 = gpu.read32(0x0008_8bbc).unwrap_or(0xffff_ffff);
+    info!(
+        "REBAR-SCAN: cap-mirror write probe {m0:#010x} -> |0x300000 (bits 20/21 = 64G/128G) -> readback {m1:#010x} {}",
+        if m1 == m0 | 0x0030_0000 { "WRITABLE - advertisement is host-controllable" } else { "read-only (dropped)" }
+    );
+    gpu.write32(0x0008_8610, 0x0000_0c80);
+    let fb = gpu.read32(0x0008_8610).unwrap_or(0xffff_ffff);
+    let mask = gpu.read32(0x0008_8bbc).unwrap_or(0xffff_ffff);
+    info!("REBAR-SCAN: restored 0x88610=0xc80 (readback {fb:#010x}), final mask {mask:#010x}");
+}
+
 /// Last observable state before the chain-load, in one line. Everything the
 /// Windows side will later read back is logged here so the two records can be
 /// compared directly (a mismatch after boot localizes the consumer that undid
