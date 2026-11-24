@@ -121,3 +121,42 @@ owner 实测（勘误我方"live resize 协议违规"初判——机制是**尺�
   从第一天就以大窗初始化，无运行时改锁、无 UAC 脆弱性）= 唯一交付形态；
   尺寸必须做成**逐板参数**（本台板 1G；现代板 8G+ 待别的平台验）。
   4G=idx12→0x0c01 / 8G=idx13→0x0d01 留档备 loader 用。
+
+## 轮七（同日）：loader `\tx-rebar.txt` EFI 阶段首战——死在首次 XVE 触碰；系统内全方向关门
+
+- **EFI 阶段（复位后、console 活渲染、无驱动）**：size_idx 13 → `REBAR: BEGIN` 后
+  硬死（CPU 单核吃满）；size_idx 10 → 同位死、死得慢些。日志粒度限制：BEGIN 与
+  首条读回行之间夹读+写+读回三步，死点未分辨——但这是本 boot **首次 XVE 页
+  （0x88xxxx）访问**（FEAT/PMC 早读全活），嫌疑=EFI console 正经 BAR1 活渲染
+  （逐行画屏），孔径页状态变化撞活显示引擎。loader 代码已加细粒度日志+只读探针
+  模式（下一轮分辨）。
+- **系统内全方向关门（收口）**：缩到 128M 也死（UAC 卡死 + Ctrl+Shift+Win+B 内核
+  死）——运行时改锁在放大/缩小×全尺寸档全部不稳定，**in-OS 路线正式关闭**。
+- **GPU-Z 前提表**：Above 4G Decode=Yes、GPU 硬件支持=Yes、BIOS ReBAR=No
+  （Z170 无原生 ReBAR=ReBarUEFI 类模块的存在理由）——平台侧无毛病。
+- 剩余假想路（阶梯）：①只读探针分辨 EFI 期 XVE 可达性（零写，下一轮）；②若读
+  活→claim 变体（GOP 断开后写，杀掉活渲染因子）；③若写能落→Windows 引导枚举
+  是否接 control（ReBarUEFI 同机制）。每步硬死风险真实（reset 键曾失效），按
+  ladder 走、不跳步。
+
+## 轮八（同日）：rung 1 全绿——claim+SBR 窗口内 MMIO 写入侧打通
+
+loader.log（`\tx-rebar.txt`=10 + `\tx-sbr-gpu.txt`，双路线 build）：
+
+```
+claim → SBR (设备验证存活, config 基线恢复) →
+REBAR: mmio 0x88610 read 0x00000000 (pre-write)      ← SBR 洗净后全新值（非 0x1001：VSEC 域复位默认 0）
+REBAR: mmio 0x88610 wrote 0xc80 -> readback 0xc80 OK  ← XVE 页在 claimed+SBR 窗口可用（第一轮 hang 根因=firmware-bound 态，11-22 教训精确复现）
+REBAR: mmio 0x88bbc BAR1 supported mask 0x000ffc00 (10 sizes)
+REBAR: mmio 0x88bc0 wrote 0xa01 (BAR1, size_idx 10) -> readback OK
+```
+
+**写入侧三要素全部闭环**：可达性（claim 窗口解决）、advertisement（mask 10 档）、
+selection（control 读回一致）。剩 Windows 引导枚举的"接取"环节。
+**路由淘汰记录**：PciIo 扩展 config（>0x100）本固件 UNSUPPORTED（rung-2 轮读回
+门 fail-closed 拦截，无盲写）——config 直写路线出局，MMIO 镜像在纪律窗口内复用。
+**Windows 侧首报 256M**：该 boot 为休眠恢复（hiberboot）——resume 不重枚举 PCI，
+内核镜像带旧分配恢复，任何引导期写入都不可能在 resume 中生效。待完整冷启动
+（关快速启动+完整关机）重验；冷启动若仍 256M，剩余杠杆=loader 内清 BAR1 分配
+（0x88014/0x88018 归零 → Windows 仲裁器按新 size 重新分配）——未实装，待冷启动
+结果决定。
