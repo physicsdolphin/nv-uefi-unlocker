@@ -22,10 +22,20 @@ Usage:
 Scope: the repeatable --log is for the artifacts of ONE boot session
 (loader.log plus its same-boot ssdiag output). Merging logs from
 different boot sessions is undefined behavior: same-named SAMPLE fields
-resolve last-log-wins in input order (and a SAMPLE beats a same-named
-ssdiag KV line regardless of order), so never combine multiple boots
-into one profile and then compare its register values (found in PR #258
-review, three rc3/rc4 logs of issue #251).
+resolve last-wins inside their bucket in input order (and a SAMPLE
+beats a same-named ssdiag KV line regardless of order), so never
+combine multiple boots into one profile and then compare its register
+values (found in PR #258 review, three rc3/rc4 logs of issue #251).
+
+Field attribution (issue #299): an ssdiag per-card header ("===== GPU
+1/2: PCI\\VEN_10DE&DEV_2504&... =====") opens that device's section and
+every field line until the next single-device header lands in that
+device's bucket - GPU records no longer copy the first section's fields.
+Headerless fields (loader.log, pre-section dumps) stay shared across all
+GPU records, and a device-attributed value overrides a same-named
+shared one. Out of scope by design: sections naming several distinct
+NVIDIA ids keep the previous section instead of guessing, and
+same-device-id sections share one bucket.
 
 Output schema nvuu-compat-profile/2; sources carry per-file SHA-256 so a
 profile can be checked against the attached logs later.
@@ -209,8 +219,11 @@ def open_log(path: str):
     return open(path, "r", encoding=enc, errors="replace")
 
 
-def collect(path: str, fields: dict, verdicts: list,
+def collect(path: str, fields_by_device: dict, verdicts: list,
             hints: set, display_ids: set, non_display_bdfs: dict) -> None:
+    # fields_by_device maps device id (int) -> field bucket; the None key is
+    # the shared bucket for headerless logs (loader.log, pre-section dumps).
+    current_did = None  # section context: per-file, reset between --log inputs
     with open_log(path) as f:
         for line in f:
             em = PCI_ENUM_RE.search(line)
@@ -237,19 +250,27 @@ def collect(path: str, fields: dict, verdicts: list,
                     hints.add((did, (m.group(2) or "").lower()))
                 # ssdiag per-card headers carry "PCI\VEN_10DE&DEV_1F07" - the
                 # colon form does not appear there, so without this branch a
-                # pure-ssdiag log contributed no device id at all
+                # pure-ssdiag log contributed no device id at all. A header
+                # names exactly one NVIDIA device: it opens that device's
+                # section for field attribution (issue #299). A line naming
+                # several distinct ids keeps the previous section (no guess).
+                win_dids = []
                 for m in WINDOWS_NVIDIA_PCI_RE.finditer(line):
                     did = int(m.group(1), 16)
                     if f"{did:04x}" in NON_DISPLAY_IDS:
                         continue
+                    win_dids.append(did)
                     hints.add((did, ""))
+                if len(set(win_dids)) == 1:
+                    current_did = win_dids[0]
             sm = SAMPLE_RE.search(line)
             if sm:
                 name, val = sm.group(1).strip(), int(sm.group(2), 16)
                 bucket = sm.group(3) or ""
                 for key in CANONICAL:
                     if key.lower() in name.lower():
-                        fields[name] = {"value": val, "bucket": bucket}
+                        fields_by_device.setdefault(current_did, {})[name] = \
+                            {"value": val, "bucket": bucket}
                         break
                 continue
             vm = VERDICT_RE.search(line)
@@ -269,7 +290,8 @@ def collect(path: str, fields: dict, verdicts: list,
                 val = int(value, 16)
                 for key in CANONICAL:
                     if key.lower() in name.lower():
-                        fields.setdefault(name, {"value": val, "bucket": ""})
+                        fields_by_device.setdefault(current_did, {})\
+                            .setdefault(name, {"value": val, "bucket": ""})
                         break
 
 
@@ -286,7 +308,7 @@ def main() -> int:
     ap.add_argument("--out", default="compat-profile.json")
     args = ap.parse_args()
 
-    fields: dict = {}
+    fields_by_device: dict = {}
     verdicts: list = []
     hints: set = set()
     display_ids: set = set()
@@ -295,7 +317,7 @@ def main() -> int:
     inv_gpus: dict = {}
     sources = []
     for path in args.log:
-        collect(path, fields, verdicts, hints, display_ids, non_display_bdfs)
+        collect(path, fields_by_device, verdicts, hints, display_ids, non_display_bdfs)
     for path in args.log:
         collect_inventory(path, inv_platform, inv_gpus, non_display_bdfs)
         sources.append({"file": path, "sha256": sha256_file(path)})
@@ -303,6 +325,7 @@ def main() -> int:
     devids.update(did for did, bdf in hints
                   if not conflicts_with_non_display(did, bdf, non_display_bdfs))
 
+    shared_fields = fields_by_device.get(None, {})
     gpus = []
     for d in sorted(devids):
         did = f"{d:04x}"
@@ -316,12 +339,16 @@ def main() -> int:
             "vbios": inv.get("vbios", ""),
             "driver": inv.get("driver", ""),
             "bdf": inv.get("bdf") or (args.bdf if len(devids) == 1 else ""),
-            "fields": fields,
+            # device-attributed fields win over same-named shared ones (#299)
+            "fields": {**shared_fields, **fields_by_device.get(d, {})},
         })
     if not gpus:
+        merged: dict = {}
+        for bucket in fields_by_device.values():
+            merged.update(bucket)
         gpus = [{"device_id": "unknown", "family": "", "family_verdict": "",
                  "desc": "", "subsys": "", "vbios": "", "driver": "",
-                 "bdf": args.bdf, "fields": fields}]
+                 "bdf": args.bdf, "fields": merged}]
 
     profile = {
         "schema": "nvuu-compat-profile/2",
@@ -335,7 +362,8 @@ def main() -> int:
     }
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(profile, f, ensure_ascii=False, indent=2)
-    print(f"profile: {args.out}  gpus={len(gpus)} fields={len(fields)} "
+    field_total = len({name for bucket in fields_by_device.values() for name in bucket})
+    print(f"profile: {args.out}  gpus={len(gpus)} fields={field_total} "
           f"verdicts={len(verdicts)} platform_keys={len(inv_platform)}")
     for g in gpus:
         print(f"  {g['device_id']}  {g['family']}"

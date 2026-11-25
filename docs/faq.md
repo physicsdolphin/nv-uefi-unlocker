@@ -76,7 +76,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 
 | 标记文件 | 行为 |
 | --- | --- |
-| `tx-require-d0.txt` | 入口非 D0 时中止，不进行 GPU 写入或复位 |
+| `tx-require-d0.txt` | **已退役**（2026-11-25 大扫除，[#298](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/298)）：强制 D0+读回确认本就是无条件默认行为，直接中止臂连同函数删除（#296）；老盘上此 marker 无任何效果，见 [tx-ini 退役节](tx-ini.md) |
 | `tx-select-bdf.txt` | 内容为 `bb:dd.f` 或 `dddd:bb:dd.f`，仅处理匹配的卡；解析失败或目标缺失时不选其他卡 |
 | `input-reset.txt` | CONFIRM 前的可选"按设备"USB 端口复位：每行 `usb VVVV:PPPP`（十六进制 VID:PID，`#` 起注释）。列出的设备在位时调用一次 UsbPortReset 并等 1.5s 重枚举——对付固件 USB 栈一起来就持续上报幽灵键的设备（带键盘接口的 USB 鼠标/接收器）；端口复位对部分设备无效（已实测），此时由 INPUT-SETTLE 的幽灵键抑制兜底。伴随每个 USB 接口一行 `USB-INV` 枚举，用于定位是谁在报键 |
 | `tx-ignore-key.txt` | 幽灵键过滤:每行一个键,`#` 起注释,写法与 ABORT 日志行一致(`Special(LEFT)`、`Printable('z')`),或 `0x1A` / `scan 0x104`。列出的键在所有按键等待中视为未按下(CONFIRM、武装倒计时、链式加载选择器)。**Esc 永远不能被忽略。** 最多 8 项;无法解析的行会记录并跳过。卡键(EC 合成键、带键盘接口的 USB 鼠标/接收器)的免重编译方案:从自己的 `loader.log` 读出键值写入此文件 |
@@ -102,7 +102,7 @@ maker 不带参数运行时自动识别制盘机上的 NVIDIA 显卡代际，只
 | `tx-exit-fw.txt` | **退出阀**（[PR #209](https://github.com/physicsdolphin/nv-uefi-unlocker/pull/209)，issue #208 A 线）：跳过链式 `bootmgfw`，事务完成后直接交回固件引导管理器、由固件按 BootOrder 原生引导 Windows。适用于链载 `bootmgfw` 报 `\BCD` 0xc0000034 的机器（MSI GP66 11UG/AMI 实证：路径/卷/映像字节全精确仍死=bootmgfw 内部启动上下文差异，只能让固件自己拉）。**前提**：固件持久 BootOrder 里 Windows Boot Manager 须排在 U 盘之前，否则循环回 U 盘；一次性启动菜单进入则正常落穿。中止路径（30 秒超时/按错键）同样过此检查，marker 存在时中止也交回固件——链路坏掉的机器上这反而是更好行为（链载会落到 Recovery 屏）。marker 同置时事务前预载自动跳过 |
 | `tx-revive-dead-slot.txt`（tx 构建） | **死槽复活阶梯**（[#276](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/276)，现场验证 2026-11-23）：对枚举读 vendor 0xffff 的死槽执行——ROM 身份门（固件缓存影子的 PCIR 读 vendor/device，只对 N 卡执行并打印死槽身份；无 ROM 的设备一律 decline）→ 杠杆阶梯 PMCSR→D0 / 清 Link Disable / **总线号恢复**（重编号族）/ **Secondary Bus Reset**（每级读回验证，复活只认 vendor 读回）。死槽自有 console GOP 在任何复位前自动断联（GOP 绑定态 SBR=黑屏卡死，台架实证）。复活后从固件簿记（GetBarAttributes）恢复 BAR，**复活槽保留候选表、同 boot 交易**。无 ROM 的死槽（桥类）会被身份门 decline |
 | `tx-revive-force-sbr.txt`（tx 构建） | **FORCE-SBR 强推档**：对「悖论端口」（端口全绿但子端 0xffff、总线号一致）绕过保守 decline 强制 SBR。台架三连阴性教训在档：软死桥扛过 SBR（链路重训、config 仍死）——对软死设备无效，对真断电/链路关闭设备才有效 |
-| `tx-sbr-gpu.txt`（tx 构建） | **GPU-SBR 纪律窗口实验**：事务内（detach+claim 之后、FWSEC 之前——驱动已断/console 已静默/零解锁）对目标卡父口强制 Secondary Bus Reset，claim-baseline 全量 config 恢复 + MMIO 芯片身份实证后事务继续。**GPU 的 SBR 只能在 GOP 断联后执行**（GOP 绑定态 SBR=黑屏卡死）——本版为结构性保证。桌面诊断/研究用 |
+| `tx-sbr-gpu.txt` | **已退役**（2026-11-25 大扫除，[#298](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/298)）：SBR 内建进所有 rebar 臂——XVE 页 reset-gated 是硬前提不是旋钮，纯解锁 boot 的事务内 SBR 实验臂同轮退役（#296）；老盘上此 marker 无任何效果，见 [tx-ini 退役节](tx-ini.md) |
 | PORT-DIAG（无条件） | 无 marker：枚举时每个 PCI-PCI 桥/根口一行寄存器快照（PMCSR/LnkCap/LnkCtl/LnkSta/Bridge Control + **当前**总线号），死功能行（vendor 0xffff）无条件记录。判别「链路真关闭（D3hot/LinkDisable/L2L3-Ready）vs 总线号隐藏（DLLLA=1 + 当前 bus ≠ 句柄创建 bus）」两家族——[#276](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/276) 现场即由它裁决 |
 
 无自动运行标记时，事务只接受空格或回车确认，其他键或 30 秒超时均中止。链回顺序为 Windows Boot Manager → 受支持的 Linux shim/grub/systemd-boot/Limine → 通用 `EFI/BOOT/BOOTX64.EFI`；最后一档提供 5 秒按键退出窗口。慢速 console 的提速走 `tx-quiet.txt` 的 console 白名单（issue #38），不做异步输出——UEFI 引导服务单线程，GOP 文本渲染本身是同步调用，异步提不了吞吐；每行日志带 `[+ms]` 阶段计时前缀，回显耗时与事务等待在 `loader.log` 里直接可分。
@@ -174,7 +174,7 @@ Turing 的 `gsp_boot_tu10x.bin` 是 proven GspRmBoot 归档的前 `0x6000` 字�
 | dGPU 处于 D3cold，BAR0 全 `0xffffffff` | 改用能给 dGPU 上电并初始化的启动路径 |
 | 休眠恢复或 D3 门控入口 | 优先重启；不要仅凭 EFI 成功判断系统内仍有效 |
 
-固件可能只初始化负责显示的 GPU；本工具不能通过 ACPI `_PS0` / PR3 给完全断电的 dGPU 上电。非 D0 入口会触发 PM 预检，请求 D0 并读回确认；`tx-require-d0.txt` 可改为直接中止。
+固件可能只初始化负责显示的 GPU；本工具不能通过 ACPI `_PS0` / PR3 给完全断电的 dGPU 上电。非 D0 入口会触发 PM 预检，请求 D0 并读回确认——这就是现场分辨（原 `tx-require-d0.txt` 直接中止臂已随 2026-11-25 大扫除退役，marker 无任何效果）。
 
 **混合输出"无收益"族的机理与实证绕法（#171→[#224](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/224)，2026-11-10）**：神舟 TX9 3070M（`249d`，混合输出/非独显直连）曾"进系统无解锁、算力无提升"（[#171](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/171)，已关）。**机理**：混合模式下进系统后厂商电源管理把 dGPU 置入 ACPI D3（甲族 AON 复位/断电路径），易失的解锁态随之被抹——另有独立用户同形印证（"混合模式把解锁状态抹了，改独显直连就好了"，B 站评论，弱证据仅作旁证）。**实证绕法 = HDMI 欺诈器（dummy plug）+ 系统内"复制显示器"模式**：让平台把 dGPU 当作"有显示活动"从而不停电；该法由报告者在维护者的 D3 诊断下自行猜想并本机验证成功（armed 全链绿 + ssdiag `UNLOCKED (override values live)`）。**硬前提：至少一个视频口原生从独显出线**——全部视频口都从 iGPU 出线的机器用不了这招，只能改独显直连（BIOS/MUX 有该项时）；两样都没有则此路不通。欺诈器本身是一次性小开销（十几元档，通用配件），对混合本用户完全可行。该记录无性能 A/B 与睡眠持久性数据；另注：3070M（Ampere）无需 Turing 的 GSP 注册表前置，开了也无害。**固件侧替代（2026-11-16 起实证）**：固件（含隐藏项）提供 ACPI D3 开关的机器，直接全局关闭即可从根上去掉这条断电路径——G614JV 实测解锁 100% 保留（[丢锁一节实例记录](#relock-acpid3)）；零独显直出、欺诈器用不上的机器优先找这个开关。
 

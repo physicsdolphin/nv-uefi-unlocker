@@ -110,14 +110,14 @@ i_know_what_i_am_doing = 5
 ```
 
 TU106 合并交付形态（SS 解锁 + BAR1 32G 同 boot，对应 marker 组合
-`tx-rebar.txt`=11/9 + `tx-rebar-then-tx.txt` + `tx-sbr-gpu.txt` +
-`tx-no-reconnect.txt`）：
+`tx-rebar.txt`=11/9 + `tx-rebar-then-tx.txt` + `tx-no-reconnect.txt`；
+SBR 无需单独 marker——2026-11-25 起 SBR 内建进所有 rebar 臂，旧
+`sbr_gpu` 键与 `tx-sbr-gpu.txt` 已随上方退役节删除，残留文件/键零效果）：
 
 ```ini
 i_know_what_i_am_doing = 5
 rebar = 11/9
 rebar_then_tx
-sbr_gpu
 reconnect = off
 ```
 

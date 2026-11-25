@@ -146,6 +146,72 @@ class CollectCompatTests(unittest.TestCase):
                 gpu, = self.profile([f"WPR2_LO  0x001fa824= {rhs}"])["gpus"]
                 self.assertNotIn("WPR2_LO", gpu["fields"])
 
+    def test_two_device_sections_keep_their_own_fields(self):
+        profile = self.profile([
+            r"===== GPU 1/2: PCI\VEN_10DE&DEV_2504&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000011",
+            r"===== GPU 2/2: PCI\VEN_10DE&DEV_28E0&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000022",
+        ])
+        by_id = {g["device_id"]: g for g in profile["gpus"]}
+        self.assertEqual(by_id["10de:2504"]["fields"]["WPR2_LO"]["value"], 0x11)
+        self.assertEqual(by_id["10de:28e0"]["fields"]["WPR2_LO"]["value"], 0x22)
+
+    def test_section_field_attribution_is_order_independent(self):
+        profile = self.profile([
+            r"===== GPU 1/2: PCI\VEN_10DE&DEV_28E0&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000022",
+            r"===== GPU 2/2: PCI\VEN_10DE&DEV_2504&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000011",
+        ])
+        by_id = {g["device_id"]: g for g in profile["gpus"]}
+        self.assertEqual(by_id["10de:2504"]["fields"]["WPR2_LO"]["value"], 0x11)
+        self.assertEqual(by_id["10de:28e0"]["fields"]["WPR2_LO"]["value"], 0x22)
+
+    def test_section_without_fields_gets_no_neighbors_fields(self):
+        profile = self.profile([
+            r"===== GPU 1/2: PCI\VEN_10DE&DEV_2504&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000011",
+            r"===== GPU 2/2: PCI\VEN_10DE&DEV_28E0&SUBSYS_000110DE =====",
+        ])
+        by_id = {g["device_id"]: g for g in profile["gpus"]}
+        self.assertEqual(by_id["10de:28e0"]["fields"], {})
+
+    def test_disjoint_section_field_names_do_not_cross_contaminate(self):
+        profile = self.profile([
+            r"===== GPU 1/2: PCI\VEN_10DE&DEV_2504&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000011",
+            r"===== GPU 2/2: PCI\VEN_10DE&DEV_28E0&SUBSYS_000110DE =====",
+            "  FEAT_OVR_PLM           0x00823804= 0xffffff8f",
+        ])
+        by_id = {g["device_id"]: g for g in profile["gpus"]}
+        self.assertEqual(set(by_id["10de:2504"]["fields"]), {"WPR2_LO"})
+        self.assertEqual(set(by_id["10de:28e0"]["fields"]), {"FEAT_OVR_PLM"})
+
+    def test_headerless_fields_stay_shared_and_attributed_fields_win(self):
+        profile = self.profile([
+            "  WPR2_LO                0x001fa824= 0x00000033",
+            r"===== GPU 1/2: PCI\VEN_10DE&DEV_2504&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000011",
+            r"===== GPU 2/2: PCI\VEN_10DE&DEV_28E0&SUBSYS_000110DE =====",
+        ])
+        by_id = {g["device_id"]: g for g in profile["gpus"]}
+        self.assertEqual(by_id["10de:2504"]["fields"]["WPR2_LO"]["value"], 0x11)
+        self.assertEqual(by_id["10de:28e0"]["fields"]["WPR2_LO"]["value"], 0x33)
+
+    def test_multi_device_header_keeps_previous_section(self):
+        profile = self.profile([
+            r"===== GPU 1/2: PCI\VEN_10DE&DEV_2504&SUBSYS_000110DE =====",
+            "  WPR2_LO                0x001fa824= 0x00000011",
+            "FOUND target PCI\\VEN_10DE&DEV_2504 and PCI\\VEN_10DE&DEV_28E0",
+            "  FEAT_OVR_PLM           0x00823804= 0xffffff8f",
+        ])
+        by_id = {g["device_id"]: g for g in profile["gpus"]}
+        self.assertEqual(by_id["10de:2504"]["fields"]["WPR2_LO"]["value"], 0x11)
+        self.assertEqual(by_id["10de:2504"]["fields"]["FEAT_OVR_PLM"]["value"],
+                         0xffffff8f)
+        self.assertEqual(by_id["10de:28e0"]["fields"], {})
+
     def test_empty_input_stays_unknown(self):
         profile = self.profile(["SAMPLE FEAT_OVR_PLM = not-a-value"])
         gpu, = profile["gpus"]
