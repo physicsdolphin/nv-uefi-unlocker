@@ -19,7 +19,7 @@
 | SS0/SS1 SM 速率 | 配置层 | tu10x/tu11x/ga102/ad102 | FP16/BF16/TF32 1.5–2.6× 实测 | **在树**（四族预设已进 falcgen `--gate ss`，钉 SHA 自测） |
 | AD102 BAR1 size（2^n） | 配置层 | ad102 | BAR1 上限 24/48G → 64G（vLLM TP8 实证） | 构造已并入 falcgen `--gate bar1`（64G=实证档；其余 2^n 档 UNPROVEN）；**实机仍欠 2684 卡验证（M5 门）** |
 | CMP PCIe Gen2 | 配置层 | Turing CMP（50HX 实证） | 链路 Gen1→Gen2 2× | 研究档：Turing 帧预算 2 写封顶，第三写（XP3G）进不去——突破=pivot 重排（数周级） |
-| Turing BAR1 (ReBAR) | strap 层 | tu10x/tu11x | BAR1 至 64GiB | **不需要载荷**（PSTRAPS DXE 枚举期写，NvStrapsReBar 实证）——独立立项行 |
+| Turing BAR1 (ReBAR) | strap 层 | tu10x/tu11x | BAR1 至 64GiB | **已交付（2026-11-24 TU106 实机全链）**：loader `\tx-rebar.txt`（claim+SBR 窗口内 XVE 镜像写 0x610 advertise+0xBC0 select，NV_30_DXE 模板）→ Windows 仲裁器按 advertisement 取最大可容纳档（TU106 8GB 卡实测拿到 idx15=32G，#211 GA102 同形终态）——PSTRAPS DXE 路线之外的第二载具，免 BIOS 改、每次引导重放；发布公告 [D#293](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/293) |
 | XP3G 域 | 配置层 | GA102 拒写 / TU102 可开 | 未定 | 采样登记（OQ#12） |
 | TPC/L2 影子复活 | 熔丝层 | 全族 | — | 关闭：eff=熔丝\|软件，软件只能**加**禁用（aajax L2 复活实验失败） |
 | SM 数量 | 熔丝层 | 全族 | — | 关闭（PR #55 无证据；论文三轴也不含它） |
