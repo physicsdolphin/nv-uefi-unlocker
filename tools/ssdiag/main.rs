@@ -5302,8 +5302,12 @@ const FUSE_CMD_MASK: u32 = 0x3;
 /// Bounded busy-wait per row: volatile MMIO reads are ~ns, so 2^20 without
 /// idle means the controller is not following the protocol - abort, not spin.
 const FUSE_SPIN_LIMIT: u32 = 1 << 20;
-/// Address-field sanity cap (envytools-era 9-bit fuse address; GA100 512).
-/// A Turing dump without readable IFF gets this as its hard bound.
+/// Address-field sanity cap for dies with NO readable IFF (envytools-era
+/// 9-bit fuse address; GA100 512). Dies WITH a readable IFF_RECORD use the
+/// per-die decoded bound instead - Ada IFF reaches row 831 (0x33f), and a
+/// hardcoded 512 here aborted exactly the AD102 IFF-pool capture it was
+/// meant to guard (issue #237 round 9: FUSEROWS 831 outside the 512-row
+/// address field).
 const FUSE_MAX_ROWS: u32 = 512;
 
 fn fuse_ctrl(base: u32) -> u32 { base }
@@ -5411,13 +5415,9 @@ fn fuse_row_dump(
         println!("  {} FUSEADDR {saved:#010x} unreadable - no writes performed", red("FUSEROWS ABORT:"));
         return (Vec::new(), false);
     }
-    if saved >= FUSE_MAX_ROWS {
-        println!(
-            "  {} FUSEADDR {saved} outside the {FUSE_MAX_ROWS}-row address field - controller not in the expected state, no writes performed",
-            red("FUSEROWS ABORT:")
-        );
-        return (Vec::new(), false);
-    }
+    // IFF first: the per-die decoded bound is the sane pre-check for the
+    // resting FUSEADDR - a hardcoded 512-row cap aborted Ada's 832-row
+    // domain at the exact capture it exists to enable (issue #237 round 9).
     let iff = rd(fuse_iff(base));
     let iff_readable = !(iff & 0xffff0000 == 0xbadf0000 || iff == 0xFFFF_FFFF);
     let (first, last_row) = if iff_readable {
@@ -5432,15 +5432,32 @@ fn fuse_row_dump(
         match range {
             None => (0, last),
             Some((a, b)) if b <= last => (a, b),
+            // Explicit over-domain range: read-class, rows past LAST come
+            // back junk (or mirror), never harm - the latch check still
+            // catches a controller that refuses addresses. Owner bench
+            // question (issue #237 round 9 follow-up): let it through with
+            // a loud notice instead of refusing.
             Some((a, b)) => {
-                println!("  {} range {a:#x}-{b:#x} exceeds the IFF domain 0..{last}", red("FUSEROWS ABORT:"));
-                return (Vec::new(), false);
+                println!(
+                    "  {}: explicit range {a:#x}-{b:#x} extends past the IFF domain 0..{last} - out-of-domain rows read junk, not harm",
+                    red("FUSEROWS DEGRADED:")
+                );
+                (a, b)
             }
         }
     } else {
-        // No IFF on this die: domain unverified. An explicit range is
-        // mandatory; out-of-domain rows read junk, not harm (read-class),
-        // and the latch check catches a controller that refuses addresses.
+        // No IFF on this die: domain unverified. The resting FUSEADDR gets
+        // only the conservative cap (no per-die bound exists to check it
+        // against), an explicit range is mandatory; out-of-domain rows read
+        // junk, not harm (read-class), and the latch check catches a
+        // controller that refuses addresses.
+        if saved >= FUSE_MAX_ROWS {
+            println!(
+                "  {} FUSEADDR {saved} outside the {FUSE_MAX_ROWS}-row address cap (IFF unreadable, no per-die bound) - controller not in the expected state, no writes performed",
+                red("FUSEROWS ABORT:")
+            );
+            return (Vec::new(), false);
+        }
         let Some((a, b)) = range else {
             println!("  {} IFF_RECORD {iff:#010x} unreadable and no explicit range given - pass --fuserows=A-B (capped at {FUSE_MAX_ROWS} rows); no writes performed", red("FUSEROWS ABORT:"));
             return (Vec::new(), false);
