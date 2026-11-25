@@ -1272,12 +1272,11 @@ foreach ($sec in @("fwimage_ga10x.bin", "fwsignature_ga10x.bin",
     }
 }
 
-$expected += "BOOTX64.EFI"
-Copy-Item $BootEfi (Join-Path $Out "BOOTX64.EFI") -Force
-
-# The firmware only auto-boots \EFI\BOOT\BOOTX64.EFI; a flat copy of $Out puts the
-# executable at the root and the boot menu silently bounces back (issue #142). Emit
-# the real path too, so "copy the contents" is literally sufficient.
+# The firmware only auto-boots \EFI\BOOT\BOOTX64.EFI (issue #142). Emit the
+# real path ONLY: a flat copy in $Out (the pre-#142 shape) misled stick-makers
+# into copying the executable to the volume root, where it is dead weight and
+# reads like a second loader. "Copy the contents" now yields exactly the
+# bootable shape and nothing else.
 New-Item -ItemType Directory -Force -Path (Join-Path $Out "EFI/BOOT") | Out-Null
 Copy-Item $BootEfi (Join-Path $Out "EFI/BOOT/BOOTX64.EFI") -Force
 

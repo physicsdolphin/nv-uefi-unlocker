@@ -1057,9 +1057,6 @@ for fam in "${FAMILIES[@]}"; do
     esac
 done
 
-cp -f "$BOOT_EFI" "$OUT/BOOTX64.EFI"
-expected+=("BOOTX64.EFI")
-
 # ---------- intermediates off the root ----------
 # The full GSP ELFs (gsp_ga10x.bin / gsp_tu10x.bin) are extraction
 # INTERMEDIATES: gsp-sections has consumed them and the loader reads only
@@ -1080,8 +1077,11 @@ for sec in fwimage_ga10x.bin fwsignature_ga10x.bin fwimage_ad10x.bin fwsignature
     [ -f "$OUT/$sec" ] && rm -f -- "$OUT/$sec"
 done
 
-# Firmware only auto-boots \EFI\BOOT\BOOTX64.EFI; a flat copy of $OUT leaves the
-# executable at the root and the boot menu bounces back (issue #142).
+# Firmware only auto-boots \EFI\BOOT\BOOTX64.EFI (issue #142). Emit the real
+# path ONLY: a flat copy in $Out (the pre-#142 shape) misled stick-makers into
+# copying the executable to the volume root, where it is dead weight and reads
+# like a second loader. "Copy the contents" now yields exactly the bootable
+# shape and nothing else.
 mkdir -p "$OUT/EFI/BOOT"
 cp -f "$BOOT_EFI" "$OUT/EFI/BOOT/BOOTX64.EFI"
 
