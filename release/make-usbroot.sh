@@ -64,6 +64,9 @@
 #                     or "off"; "" asks the menu - Windows / GRUB /
 #                     systemd-boot / Ubuntu / shim / custom path, default
 #                     no pin
+#   --legacy-markers  pre-tx.ini layout: individual marker files instead of
+#                     the consolidated \tx.ini (older release binaries;
+#                     never mix with the ini on one stick)
 #   --no-marker-prompt  skip the interactive marker ask
 #   -h | --help       this text
 #
@@ -115,17 +118,23 @@ NO_INSTALL_PROMPT=0
 INSTALL_TO=""
 # Confirm-gate choice at build time (issue #259). "" = the interactive ask
 # decides (its default keeps the loader's 30s keypress confirm); "off" pins
-# that default non-interactively; 0-30 arms auto-run (i_know_what_i_am_doing.txt
-# = the seconds; 0 = no wait, loader v2.1.12-rc1+). QUIET writes tx-quiet.txt,
-# ULTRAFAST=1 writes tx-ultrafast.txt (verified-machine speed profile), and
-# CHAIN_TARGET pins the handoff ("" = ask the menu's y/N for the Windows pin,
-# "off" = skip, otherwise a volume-relative EFI path, issue #204).
+# that default non-interactively; 0-30 arms auto-run (i_know_what_i_am_doing
+# = the seconds in \tx.ini; 0 = no wait, loader v2.1.12-rc1+). QUIET writes
+# output = quiet, ULTRAFAST=1 writes output = ultrafast (verified-machine
+# speed profile), and CHAIN_TARGET pins the handoff ("" = ask the menu's y/N
+# for the Windows pin, "off" = skip, otherwise a volume-relative EFI path,
+# issue #204). LEGACY_MARKERS=1 writes the individual pre-tx.ini marker
+# files instead of the consolidated \tx.ini - the two shapes must never mix
+# on one stick (an ini arm plus its marker file is a boot refusal).
 # A normal build stays UNARMED (AGENTS.deploy.md handoff doctrine).
 AUTO_RUN=""
 QUIET=0
 ULTRAFAST=0
 CHAIN_TARGET=""
 NO_MARKER_PROMPT=0
+LEGACY_MARKERS=0
+USE_INI=1
+INI_LINES=()
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # Windows-hosted bash (Git Bash/MSYS) can run .exe pipelines, not Linux ELF;
@@ -265,6 +274,7 @@ while [ $# -gt 0 ]; do
         --ultrafast)       ULTRAFAST=1; shift ;;
         --chain-target)    CHAIN_TARGET="${2:?missing value for $1}"; shift 2 ;;
         --chain-target=*)  CHAIN_TARGET="${1#*=}"; shift ;;
+        --legacy-markers)  LEGACY_MARKERS=1; USE_INI=0; shift ;;
         --no-marker-prompt) NO_MARKER_PROMPT=1; shift ;;
         -h|--help)         usage ;;
         *) die "unknown option: $1 (see --help)" ;;
@@ -1105,6 +1115,16 @@ marker_offer() {
        && [ -z "$CHAIN_TARGET" ] && [ "$NO_MARKER_PROMPT" -eq 0 ] && [ -t 0 ]; then
         menu_interactive=1
     fi
+    # Config shape ask (ini default, issue #290): interactive only; scripted
+    # runs take --legacy-markers as-is. The two shapes must never mix on one
+    # stick (an ini arm plus its marker file is a boot refusal).
+    if [ "$menu_interactive" -eq 1 ]; then
+        log "[config] config shape: \\tx.ini (single file, docs/tx-ini.md) is the default;"
+        log "[config]   legacy individual marker files only matter for pre-tx.ini binaries."
+        local lans=""
+        read -r lans || lans=""
+        case "${lans,,}" in y|yes) USE_INI=0; log "[config] legacy marker layout selected" ;; esac
+    fi
     local seconds=""
     if [ -n "$AUTO_RUN" ]; then
         # Explicit flag wins and skips the ask.
@@ -1143,10 +1163,16 @@ marker_offer() {
         fi
     fi
     if [ -n "$seconds" ]; then
-        printf '%s\n' "$seconds" > "$OUT/i_know_what_i_am_doing.txt"
-        MARKER_FILES+=("i_know_what_i_am_doing.txt")
-        log "[marker] ARMED: i_know_what_i_am_doing.txt = ${seconds}s countdown auto-run, any key aborts"
-        [ "$seconds" = "0" ] && log "[marker]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
+        if [ "$USE_INI" -eq 1 ]; then
+            INI_LINES+=("i_know_what_i_am_doing = $seconds")
+            log "[ini] ARMED: i_know_what_i_am_doing = ${seconds}s countdown auto-run, any key aborts"
+            [ "$seconds" = "0" ] && log "[ini]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
+        else
+            printf '%s\n' "$seconds" > "$OUT/i_know_what_i_am_doing.txt"
+            MARKER_FILES+=("i_know_what_i_am_doing.txt")
+            log "[marker] ARMED: i_know_what_i_am_doing.txt = ${seconds}s countdown auto-run, any key aborts"
+            [ "$seconds" = "0" ] && log "[marker]   0 = no wait - needs loader v2.1.12-rc1 or newer (older clamps to 1s)"
+        fi
     fi
     local want_quiet=0
     if [ "$QUIET" -eq 1 ]; then
@@ -1157,11 +1183,16 @@ marker_offer() {
         case "${qans,,}" in y|yes) want_quiet=1 ;; esac
     fi
     if [ "$want_quiet" -eq 1 ]; then
-        : > "$OUT/tx-quiet.txt"
-        MARKER_FILES+=("tx-quiet.txt")
-        log "[marker] quiet console enabled (tx-quiet.txt - loader.log stays full)"
+        if [ "$USE_INI" -eq 1 ]; then
+            INI_LINES+=("output = quiet")
+            log "[ini] quiet console enabled (output = quiet - loader.log stays full)"
+        else
+            : > "$OUT/tx-quiet.txt"
+            MARKER_FILES+=("tx-quiet.txt")
+            log "[marker] quiet console enabled (tx-quiet.txt - loader.log stays full)"
+        fi
     elif [ "$QUIET" -eq 0 ] && [ -n "$AUTO_RUN" ]; then
-        log "[marker] quiet console not requested (--quiet writes tx-quiet.txt)"
+        log "[marker] quiet console not requested (--quiet enables it)"
     fi
     # Chain-target pin (issue #204): a handoff-shape declaration, not a GPU
     # knob - the loader falls back to the default chain order when the
@@ -1244,9 +1275,14 @@ marker_offer() {
         fi
     fi
     if [ -n "$chain_path" ]; then
-        printf '%s\n' "$chain_path" > "$OUT/chain-target.txt"
-        MARKER_FILES+=("chain-target.txt")
-        log "[marker] chain pinned: chain-target.txt = $chain_path"
+        if [ "$USE_INI" -eq 1 ]; then
+            INI_LINES+=("chain_target = $chain_path")
+            log "[ini] chain pinned: chain_target = $chain_path"
+        else
+            printf '%s\n' "$chain_path" > "$OUT/chain-target.txt"
+            MARKER_FILES+=("chain-target.txt")
+            log "[marker] chain pinned: chain-target.txt = $chain_path"
+        fi
     fi
     # Ultrafast profile: the one speed option whose default must stay No -
     # it skips the diagnostic stages that make a FIRST run debuggable
@@ -1266,10 +1302,28 @@ marker_offer() {
         case "${uans,,}" in y|yes) want_fast=1 ;; esac
     fi
     if [ "$want_fast" -eq 1 ]; then
-        : > "$OUT/tx-ultrafast.txt"
-        MARKER_FILES+=("tx-ultrafast.txt")
-        log "[marker] ultrafast enabled (tx-ultrafast.txt - verdict read-backs still run)"
-        [ "$want_quiet" -eq 1 ] && log "[marker]   ultrafast folds quiet - tx-quiet.txt alongside is redundant"
+        if [ "$USE_INI" -eq 1 ]; then
+            INI_LINES+=("output = ultrafast")
+            log "[ini] ultrafast enabled (output = ultrafast - verdict read-backs still run)"
+            [ "$want_quiet" -eq 1 ] && log "[ini]   ultrafast folds quiet - the earlier output = quiet line is overridden"
+        else
+            : > "$OUT/tx-ultrafast.txt"
+            MARKER_FILES+=("tx-ultrafast.txt")
+            log "[marker] ultrafast enabled (tx-ultrafast.txt - verdict read-backs still run)"
+            [ "$want_quiet" -eq 1 ] && log "[marker]   ultrafast folds quiet - tx-quiet.txt alongside is redundant"
+        fi
+    fi
+    if [ "$USE_INI" -eq 1 ]; then
+        if [ "${#INI_LINES[@]}" -gt 0 ]; then
+            {
+                printf '# \\tx.ini - consolidated stick config (docs/tx-ini.md; marker files stay valid for arms not set here)\r\n'
+                printf '%s\r\n' "${INI_LINES[@]}"
+            } > "$OUT/tx.ini"
+            MARKER_FILES+=("tx.ini")
+            log "[ini] wrote tx.ini with ${#INI_LINES[@]} arm(s): ${INI_LINES[*]}"
+        else
+            log "[ini] no arms selected - no tx.ini written (all-default stick)"
+        fi
     fi
 }
 marker_offer
