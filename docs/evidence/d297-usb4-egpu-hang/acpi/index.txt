@@ -1,0 +1,30 @@
+# ACPI table dump (tx-acpi-dump). Raw AML; decompile on a dev box:
+#   iasl -d dsdt.aml ssdt-*.aml
+# Index lines: <SIG> len=.. checksum=ok|BAD <file> creator=.. then
+# NAME=hits@offset for every keyword found. _PR3 on the root port's
+# device means a power resource exists; check whether _ON/_OFF are idempotent.
+SSDT len=908 checksum=ok ssdt-00.aml creator=INTL _HID=1@0x68 _DSM=1@0x1ad _STA=1@0x378 written
+SSDT len=1531 checksum=ok ssdt-01.aml creator=INTL written
+SSDT len=427 checksum=ok ssdt-02.aml creator=INTL written
+SSDT len=916 checksum=ok ssdt-03.aml creator=INTL written
+SSDT len=5664 checksum=ok ssdt-04.aml creator=INTL _PR3=30@0x389 written
+SSDT len=4937 checksum=ok ssdt-05.aml creator=INTL _PR3=30@0x3ce written
+SSDT len=4027 checksum=ok ssdt-06.aml creator=INTL _PR3=30@0x1b9 written
+SSDT len=15304 checksum=ok ssdt-07.aml creator=INTL _PR3=30@0x1c1 written
+SSDT len=1435 checksum=ok ssdt-08.aml creator=INTL written
+SSDT len=4795 checksum=ok ssdt-09.aml creator=INTL _HID=1@0x11d _STA=1@0x154 written
+SSDT len=1114 checksum=ok ssdt-0a.aml creator=INTL _HID=1@0x35 _DSM=1@0x3d0 _STA=2@0x148 written
+SSDT len=70 checksum=ok ssdt-0b.aml creator=INTL written
+SSDT len=9979 checksum=ok ssdt-0c.aml creator=INTL _ADR=17@0x14c1 _DSM=2@0x2295 _PS0=1@0x26b4 _PS3=1@0x26bb _DOD=1@0x333 written
+SSDT len=40170 checksum=ok ssdt-0d.aml creator=INTL _PR3=7@0x1e4b _ON_=3@0x1790 _OFF=5@0x17c1 _ADR=32@0x1bf4 _DSM=27@0x1e9c _STA=19@0x1749 _PS0=38@0x1cf9 _PS3=18@0x1d7c written
+SSDT len=31769 checksum=ok ssdt-0e.aml creator=INTL _PR3=13@0x2d3b _ON_=20@0x193e _OFF=35@0x194b PRST=1@0x4b GPIO=5@0x29de _STA=25@0x1931 _PS0=8@0x2fa3 _PS3=8@0x3018 written
+SSDT len=131 checksum=ok ssdt-0f.aml creator=INTL _HID=1@0x70 _STA=1@0x7b written
+SSDT len=4823 checksum=ok ssdt-10.aml creator=INTL _ADR=2@0x77b _STA=2@0x783 written
+SSDT len=20203 checksum=ok ssdt-11.aml creator=INTL _PR3=20@0x3a6 _HID=7@0x917 _DSM=1@0x932 _STA=10@0x5b9 written
+SSDT len=24130 checksum=ok ssdt-12.aml creator=INTL _ADR=48@0x1028 _DSM=8@0x10ef _PS0=40@0x1078 _PS3=56@0x10ac written
+SSDT len=4118 checksum=ok ssdt-13.aml creator=INTL _ADR=10@0x914 _HID=1@0x26b _CID=1@0x275 _DSM=1@0xf60 _STA=1@0x456 written
+SSDT len=11550 checksum=ok ssdt-14.aml creator=INTL _PR3=1@0xa0b _ON_=6@0xad _OFF=6@0xba _ADR=2@0x52 _HID=1@0x1dc5 GPIO=1@0x2a2f _DSM=2@0xd01 _STA=8@0xa0 _PS0=1@0xdbc _PS3=1@0xdfc written
+SSDT len=302 checksum=ok ssdt-15.aml creator=INTL _HID=1@0x40 _CID=1@0x51 written
+SSDT len=6342 checksum=ok ssdt-16.aml creator=INTL written
+SSDT len=10451 checksum=ok ssdt-17.aml creator=INTL _PR3=30@0x984 written
+DSDT len=420655 checksum=ok dsdt.aml _ON_=12@0x11837 _OFF=18@0x1183e PRST=10@0x9556 _ADR=456@0x609e _HID=137@0x4839 _CID=13@0xaa1d GPIO=6@0x49121 _DSM=176@0xb5ae _STA=81@0x4d71 _PS0=118@0xef93 _PS3=118@0xefbe _DOD=1@0x32d0a written
