@@ -236,7 +236,8 @@ override_en 抑制 cap 广告）保持。evidence：docs/evidence/tu106-pstraps-
    0x8200e0/0x8200e4、PMU 0x100b10/0x100b38/0x100b84、FBPA 0x9a0148/0x9a0168/
    0x9a0554）host 写 0xffffffff 全部静默丢弃，读回逐位保持原值（0xffffff8f/
    0xffffff88/0xffffffcf 三形状一致，无 sticky 位——与 FEAT 0xef erratum 形成
-   closed/open 两态对照）。**"开门只能由 payload 干"从推断变为实测边界**：
+   closed/open 两态对照；三值的**位图级含义**——写 nibble 各保留哪些层级——见
+   [plm-and-rate-decode.md](plm-and-rate-decode.md)）。**"开门只能由 payload 干"从推断变为实测边界**：
    系统内级联开门不存在；寄存器按所在块 PLM 过滤（SS0/SS1 bench 的粘住面），
    而 PLM 寄存器本身恒 L3。顺带含义：§2.3 矿卡 gen2 的"载荷内开 XP3G PLM0"
    没有免 payload 替代路径。evidence：docs/evidence/tu106-plm-cascade-probe/。

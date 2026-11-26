@@ -1,5 +1,9 @@
 # 寄存器冷值表（M1 采样产出，按族分节）
 
+> 本文表里反复出现的 `0xffffff8f`/`0xffffffef`/`0xffffffcf` 与 SS0 的 `0/8/9/a/b` 等值的
+> **位图级解码**（读/写 nibble、层级位图、速率码）见
+> [plm-and-rate-decode.md](plm-and-rate-decode.md)——补缺文档，2026-11-26。
+
 > 勘误（2026-10-28）：TU106 表中的 13/13 BADF 来自 `0x823xxx`；Turing 真 FEAT 地址是 PLM `0x409650`、SS0 `0x409664`、SS1 `0x40966c`，后续部分样本在这些地址可读。CRC32 为采样指纹，逐卡 SHA-256 校验待实现。28e1 的 0x89 现已定位为[桥 BME 问题](bridge-bme-root-cause.md)。表尾 WPR2 lo/hi=0/0 来自旧任务书，实测冷态空窗口为 lo=`0x1ffffe00`、hi=0。表中原始采样值保留。
 
 > 每次实机采样后把 `\loader.log` 的 SAMPLE 段誊入对应节，保留原始日志于

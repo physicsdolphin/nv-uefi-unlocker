@@ -33,5 +33,9 @@ ssdiag 0.8.16：`--fuserows` 输出每行附 op 角色（`[WRITE_IMM <addr>]` /
 `[value of WRITE_IMM <addr>]` / `[RMW <addr>]` / `[and-mask|or-mask of RMW <addr>]`），
 operand 用回扫配头，孤立头只孤立自身不污染窗口；池前缘裸词无注记（开放规则可辨）。
 
+姊妹篇：op 流目标（配置寄存器）的**权限模型与位图解码**（PLM nibble、SS0 速率码、
+BAR0=PRI 投影、与 VFI 攻击面谱系的对照）见
+[docs/plm-and-rate-decode.md](../../plm-and-rate-decode.md)。
+
 数据源：issue #237 评论 7189687218（AD102 解码+4090 捕获附件）；
 docs/evidence/{ad107-28e0,ga106-2504,tu106-1f07,tu117-1f83}/fuserows*.log。
