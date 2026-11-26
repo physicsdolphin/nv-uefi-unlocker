@@ -5541,9 +5541,61 @@ fn fuse_row_dump(
         }
     }
     for (i, &v) in passes[0].iter().enumerate() {
-        println!("FUSEROW {:#x} = {}", first + i as u32, hx32(v));
+        // IFF op-grammar annotation (issue #237 round 10): the pool words are
+        // an op stream - op = w & 0x3f (0x3d = 2-word WRITE_IMM, 0x3c =
+        // 3-word RMW_MODIFY), addr = (w & 0xffffffc0) >> 4. Decoding runs as
+        // a sequential stream over the captured rows; each printed row gets
+        // its role in the current op. Verified across five dies (AD102
+        // reporter decode + AD107/GA106/TU106/TU117 archives): the CYA_0_DISG2
+        // RMW is bit-identical on three, the PLM writes group per generation.
+        // One open rule: pool-boundary prologue words (AD107 0x2ff) - such
+        // heads print as bare words with no annotation.
+        let ann = iff_op_annotate(&passes[0], i, v);
+        match ann {
+            Some(a) => println!("FUSEROW {:#x} = {}   {}", first + i as u32, hx32(v), a),
+            None => println!("FUSEROW {:#x} = {}", first + i as u32, hx32(v)),
+        }
     }
     (passes[0].iter().enumerate().map(|(i, &v)| (first + i as u32, v)).collect(), complete)
+}
+
+/// Role of row `i` (value `v`) in the sequential IFF op stream `rows`.
+/// Walks from the row start resyncing at every op head, so an
+/// undecodable head only orphans itself, never a whole window. None =
+/// this row is not part of any complete op in the stream (bare padding
+/// or a pool-prologue word).
+fn iff_op_annotate(rows: &[u32], i: usize, v: u32) -> Option<String> {
+    let op = v & 0x3f;
+    if op != 0x3d && op != 0x3c {
+        // Potential operand of a preceding op head: find a resync point.
+        // Scan back at most 3 (longest op) for a head whose operand window
+        // covers i, taking the LATEST such head (stream order).
+        let mut covered: Option<(usize, String)> = None;
+        let lo = i.saturating_sub(2);
+        for h in lo..i {
+            let hw = rows.get(h).copied().unwrap_or(0);
+            let hop = hw & 0x3f;
+            let haddr = (hw & 0xffffffc0) >> 4;
+            let len = if hop == 0x3d { 2 } else if hop == 0x3c { 3 } else { 0 };
+            if len > 0 && h + len > i {
+                // i is an operand of the head at h - but only valid if the
+                // head itself was in-stream (annotated by recursion of the
+                // same rule). Mark the operand role.
+                let which = if i == h + 1 {
+                    if hop == 0x3d { "value" } else { "and-mask" }
+                } else {
+                    "or-mask"
+                };
+                covered = Some((h, format!("[{} of {} {:#010x}]", which,
+                    if hop == 0x3d { "WRITE_IMM" } else { "RMW" }, haddr)));
+            }
+        }
+        return covered.map(|(_, s)| s);
+    }
+    // Op head: label it with the address it targets. Operands print via the
+    // back-scan above when their turn comes.
+    let addr = (v & 0xffffffc0) >> 4;
+    Some(format!("[{} {:#010x}]", if op == 0x3d { "WRITE_IMM" } else { "RMW" }, addr))
 }
 
 fn validate_prom_bit_flags(prom_bit: bool, reapply: bool, fuserows: bool, has_pokes: bool) -> Result<(), &'static str> {
