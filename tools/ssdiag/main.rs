@@ -5485,8 +5485,21 @@ fn fuse_row_dump(
                 break 'passes;
             }
             wr(fuse_addr(base), row);
-            if rd(fuse_addr(base)) != row {
-                fail = Some(format!("pass {} row {row}: FUSEADDR did not latch", p + 1));
+            if rd(fuse_addr(base)) != row && row != 0 {
+                // Distinguish the two failure shapes: a PLM-gated fuse block
+                // (GB20x: FUSECTRL_PLM write nibble closes PL0 - host writes
+                // dropped, row 0 only "works" because the resting address
+                // already is 0) vs a controller-state anomaly.
+                let fcp = rd(base + 0xF8);
+                let fcp_readable = !(fcp & 0xffff0000 == 0xbadf0000 || fcp == 0xFFFF_FFFF);
+                if fcp_readable && (fcp >> 4) & 1 == 0 {
+                    fail = Some(format!(
+                        "pass {} row {row}: FUSEADDR did not latch - FUSECTRL_PLM {fcp:#010x} has PL0-write CLOSED: the fuse-block registers are PLM-gated against host writes (GB20x family shape; the row dump needs a controller with host-write enabled, e.g. GA10x/Turing)",
+                        p + 1
+                    ));
+                } else {
+                    fail = Some(format!("pass {} row {row}: FUSEADDR did not latch", p + 1));
+                }
                 break 'passes;
             }
             wr(fuse_ctrl(base), FUSE_CMD_READ);

@@ -1394,6 +1394,10 @@ def fuse_ctrl(base):
     return base
 
 
+def fuse_ctrl_plm(base):
+    return base + 0xF8
+
+
 def fuse_addr(base):
     return base + 0x4
 
@@ -1523,8 +1527,20 @@ def fuse_row_dump(bar, rng, base=FUSE_BASE_GA100_LAYOUT):
                 fail = f"pass {p + 1} row {row}: {err}"
                 break
             bar.wr(fuse_addr(base), row)
-            if bar.rd(fuse_addr(base)) != row:
-                fail = f"pass {p + 1} row {row}: FUSEADDR did not latch"
+            if bar.rd(fuse_addr(base)) != row and row != 0:
+                # Distinguish the two failure shapes: a PLM-gated fuse block
+                # (GB20x: FUSECTRL_PLM write nibble closes PL0 - host writes
+                # dropped, row 0 only "works" because the resting address
+                # already is 0) vs a controller-state anomaly.
+                fcp = bar.rd(fuse_ctrl_plm(base))
+                if not (fcp & 0xFFFF0000 == 0xBADF0000 or fcp == 0xFFFF_FFFF) and not (fcp >> 4) & 1:
+                    fail = (f"pass {p + 1} row {row}: FUSEADDR did not latch - "
+                            f"FUSECTRL_PLM {fcp:#010x} has PL0-write CLOSED: the fuse-block "
+                            f"registers are PLM-gated against host writes (GB20x family shape; "
+                            f"the row dump needs a controller with host-write enabled, e.g. "
+                            f"GA10x/Turing)")
+                else:
+                    fail = f"pass {p + 1} row {row}: FUSEADDR did not latch"
                 break
             bar.wr(fuse_ctrl(base), FUSE_CMD_READ)
             err = _fuse_wait_idle(bar, base)
