@@ -1832,6 +1832,11 @@ pub fn run_agitate_only(
     // event itself the wedge?
     if stage == txini::AgitateStage::DisconnectOnly {
         info!("TX-AGITATE: stage=DisconnectOnly - running the disconnects ONLY");
+        // D#297 readout (the arm's diagnostic payload): full
+        // reference-count inventory around EVERY disconnect - the
+        // per-driver delta is the Stop() casualty list (H-CM vs H-Stop
+        // discriminator); the PRE dump is the binding state at wedge time
+        // if the machine dies inside a call.
         let gop_handles = uefi::boot::locate_handle_buffer(
             uefi::boot::SearchType::ByProtocol(&<GraphicsOutput as Identify>::GUID),
         );
@@ -1839,14 +1844,18 @@ pub fn run_agitate_only(
         if let Ok(handles) = gop_handles {
             for h in handles.iter() {
                 if crate::tx_detach::gop_belongs_to_target(*h, pci_handle) {
+                    crate::tx_detach::log_handle_inventory("DISCONNECT-ONLY-PRE-GOP", *h);
                     info!("TX-AGITATE: DisconnectOnly - disconnecting target GOP {:?}", h);
                     let _ = uefi::boot::disconnect_controller(*h, None, None);
+                    crate::tx_detach::log_handle_inventory("DISCONNECT-ONLY-POST-GOP", *h);
                     disconnected += 1;
                 }
             }
         }
         info!("TX-AGITATE: DisconnectOnly - disconnecting the PCI handle");
+        crate::tx_detach::log_handle_inventory("DISCONNECT-ONLY-PRE-PCI", pci_handle);
         let _ = uefi::boot::disconnect_controller(pci_handle, None, None);
+        crate::tx_detach::log_handle_inventory("DISCONNECT-ONLY-POST-PCI", pci_handle);
         info!("TX-AGITATE: DisconnectOnly - {disconnected} GOP handle(s) + PCI handle disconnected; zero writes performed");
         crate::logging::unmute_console();
         info!("TX-AGITATE: DisconnectOnly complete - handing back via the configured exit path");
@@ -1859,7 +1868,10 @@ pub fn run_agitate_only(
     }
     let claim = match crate::tx_detach::detach_and_claim_opts(
         pci_handle,
-        crate::tx_detach::ClaimOpts { enable_command: !endpoint_command_off },
+        crate::tx_detach::ClaimOpts {
+            enable_command: !endpoint_command_off,
+            disconnect: stage != txini::AgitateStage::NoDisconnect,
+        },
     ) {
         Ok(c) => c,
         Err(e) => {
@@ -1867,8 +1879,12 @@ pub fn run_agitate_only(
             return Err(TxError::ENodev);
         }
     };
-    info!("TX-AGITATE: detach+claim ok (DisconnectController + EXCLUSIVE claim exercised{}; screen dark by design)",
-        if endpoint_command_off { ", COMMAND IO|MEM|BME held OUT" } else { " + COMMAND IO|MEM|BME" });
+    if stage == txini::AgitateStage::NoDisconnect {
+        info!("TX-AGITATE: detach+claim ok (claim-first: EXCLUSIVE claim + COMMAND IO|MEM|BME on the UNTOUCHED driver stack, ZERO DisconnectController calls; screen alive - the console was never torn down; native-GOP rebuild held OUT with the disconnects)");
+    } else {
+        info!("TX-AGITATE: detach+claim ok (DisconnectController + EXCLUSIVE claim exercised{}; screen dark by design)",
+            if endpoint_command_off { ", COMMAND IO|MEM|BME held OUT" } else { " + COMMAND IO|MEM|BME" });
+    }
 
     let mut live: alloc::vec::Vec<crate::pci::DmaBuffer> = alloc::vec![];
     let inner = agitate_stages(gpu, assets, pci_handle, bridge_slot, &claim, &mut live, stage);
@@ -1988,7 +2004,13 @@ fn agitate_stages(
     // Console rebuild parity: the exact block from run_transaction
     // (default native-GOP rebuild from the card's own shadowed ROM; the
     // legacy reconnect and the Turing skip keep their markers).
-    if crate::config::reconnect_off() {
+    // Claim-first (NoDisconnect) holds the rebuild OUT: the console was
+    // never disconnected, and a rebuild StartImage would tear driver
+    // bindings back down - silently reintroducing the call path the arm
+    // holds out. The invariant is zero DisconnectController calls.
+    if !claim.rebuild_allowed {
+        info!("TX-AGITATE: native-GOP rebuild held OUT (stage=NoDisconnect) - the console was never disconnected; a rebuild would tear bindings back down");
+    } else if crate::config::reconnect_off() {
         info!("TX-AGITATE: reconnect skipped (reconnect = off: explicit arm, or the rebar-aware default)");
     } else if !claim.target_gop_seen {
         info!("TX-AGITATE: native-GOP rebuild skipped - the target had no GOP child at detach (console lives on another GPU, or none was bound)");

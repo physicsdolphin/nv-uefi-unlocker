@@ -43,6 +43,7 @@ pub fn print(version: &str) {
     {
         info!(" ** DIAG BUILD: SURGERY ONLY - NO GPU-WRITE PATHS COMPILED **");
         info!(" \\tx-agitate-only.txt = full-surgery zero-GPU-write control;");
+        info!(" \\tx.ini agitate_stage = ... = surgery-element ablation ladder (docs/tx-ini.md);");
         info!(" \\tx-ebs-watch.txt = ExitBootServices observer; transaction code is not compiled in");
     }
     #[cfg(not(any(feature = "tx", feature = "diag")))]

@@ -74,9 +74,15 @@
 `full` / `no_bridge_bme`（-桥 BME，rc7 已证伪臂，复现锚）/ `no_endpoint_command`
 （-GPU COMMAND 写，IO|MEM|BME 不动卡，BAR 读预期 garbage）/ `no_dma`（-DMA
 churn）/ `disconnect_only`（只做断连：GOP 目标句柄+PCI 句柄，无 claim/COMMAND/
-DMA/BME/重建）。每级都是完整手术的 leave-one-out（disconnect_only 除外=最小
-臂）；全部零 GPU 写。与 `agitate_only` 同设=INI-REFUSED（二义性拒跑）；本键
-为 ini-only（无 marker 双胞胎，诊断 profile 专用）。
+DMA/BME/重建；**rc10 起每次断连前后打全量协议引用计数清单**——逐驱动 open
+信息 + 所属镜像 base+size，即 Stop() 伤亡名单，H-CM vs H-Stop 判别读数）/
+`no_disconnect`（rc10 新增，**claim-first**：-全部 DisconnectController 调用，
+EXCLUSIVE claim 直接打在未动驱动栈上；claim 被 BLOCK 时打阻塞者清单并中止——
+不回退到断连，回退等于重新引入被测调用路径；native-GOP 重建随断连一起 held
+OUT；活 = "断连是 claim 前置"在该机上被证伪）。每级都是完整手术的
+leave-one-out（disconnect_only 除外=最小臂）；全部零 GPU 写。与 `agitate_only`
+同设=INI-REFUSED（二义性拒跑）；本键为 ini-only（无 marker 双胞胎，诊断
+profile 专用）。
 
 ### 值臂
 

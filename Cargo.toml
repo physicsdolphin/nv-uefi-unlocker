@@ -13,7 +13,7 @@ default-members = ["assets", "sim", "romcore", "txini"]
 #   cargo build --release --manifest-path tools/falcgen/Cargo.toml
 
 [workspace.package]
-version = "2.1.12-rc8"
+version = "2.1.12-rc9"
 edition = "2021"
 license = "GPL-2.0-only"
 

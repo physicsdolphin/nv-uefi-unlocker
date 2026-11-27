@@ -682,13 +682,15 @@ fn t_agitate_only_alloc_fail_unwinds_no_writes() {
 #[test]
 fn t_agitate_stage_ladder_per_level() {
     // The D#297 ablation ladder: every stage keeps the zero-write contract,
-    // peels exactly one surgery element, and unwinds clean.
-    for (stage, name, expect_allocs) in [
-        (0u8, "full", 6usize),
-        (1, "no_bridge_bme", 6),
-        (2, "no_endpoint_command", 6),
-        (3, "no_dma", 0),
-        (4, "disconnect_only", 0),
+    // peels exactly one surgery element, and unwinds clean. Each level
+    // carries its claim-note fragment (the per-level arm-effective judge).
+    for (stage, name, expect_allocs, claim_note) in [
+        (0u8, "full", 6usize, Some("detach+claim ok")),
+        (1, "no_bridge_bme", 6, Some("detach+claim ok")),
+        (2, "no_endpoint_command", 6, Some("detach+claim ok")),
+        (3, "no_dma", 0, Some("detach+claim ok")),
+        (4, "disconnect_only", 0, Some("disconnect_only")),
+        (5, "no_disconnect", 6, Some("claim-first")),
     ] {
         let mut gpu = FakeGpu::new_locked_cold(None);
         let mut tx = Transaction::new(&mut gpu, Faults::default());
@@ -700,20 +702,19 @@ fn t_agitate_stage_ladder_per_level() {
             "{name}: no unlock phase may fire: {report:?}"
         );
         assert!(report.unwind_clean && report.bme_restored, "{name}: unwind clean: {report:?}");
-        let claim_line = tx.log().iter().any(|l| l.contains("detach+claim ok"));
+        let claim_line = tx.log().iter().any(|l| l.contains(claim_note.unwrap()));
         drop(tx);
         assert!(gpu.writes.is_empty(), "{name}: writes ledger must stay empty: {:?}", gpu.writes);
         assert_eq!(report.dma_pages_allocated, expect_allocs, "{name} alloc parity");
-        if stage <= 2 {
-            assert!(claim_line, "{name}: claim line expected at this level");
-        }
+        assert!(claim_line, "{name}: claim note '{}' expected at this level", claim_note.unwrap());
     }
 }
 
 #[test]
 fn t_agitate_stage_disconnect_only_minimal() {
     // Disconnect-only: no COMMAND analog (bme stays false), zero allocations,
-    // unwind clean - the H2 minimal arm.
+    // unwind clean - the H2 minimal arm. The inventory notes are the arm's
+    // readout (Stop() casualty list).
     let mut gpu = FakeGpu::new_locked_cold(None);
     let mut tx = Transaction::new(&mut gpu, Faults::default());
     tx.agitate_only = true;
@@ -722,6 +723,38 @@ fn t_agitate_stage_disconnect_only_minimal() {
     assert!(!report.bme_restored == false || report.bme_restored, "bme never set: {report:?}");
     assert_eq!(report.dma_pages_allocated, 0);
     assert!(tx.log().iter().any(|l| l.contains("disconnect_only")));
+    assert!(
+        tx.log().iter().any(|l| l.contains("inventory PRE/POST")),
+        "the inventory readout note must be present: {:?}",
+        tx.log()
+    );
+    drop(tx);
+    assert!(gpu.writes.is_empty(), "{:?}", gpu.writes);
+}
+
+#[test]
+fn t_agitate_stage_no_disconnect_claim_first() {
+    // Stage 5 (claim-first): zero DisconnectController analogs - the
+    // EXCLUSIVE claim lands straight on the untouched stack, DMA and
+    // bridge-BME parity hold, the rebuild is held out with the disconnects,
+    // and the zero-write contract is intact.
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.agitate_only = true;
+    tx.agitate_stage = 5;
+    let report = tx.run().expect("no_disconnect");
+    assert!(report.bme_restored, "COMMAND analog runs (bme set, then cleared): {report:?}");
+    assert_eq!(report.dma_pages_allocated, 6, "full-minus-disconnect keeps DMA parity");
+    let log = tx.log();
+    assert!(log.iter().any(|l| l.contains("claim-first")), "claim-first note: {log:?}");
+    assert!(
+        log.iter().any(|l| l.contains("held OUT (stage=NoDisconnect)")),
+        "rebuild held out with the disconnects: {log:?}"
+    );
+    assert!(
+        !log.iter().any(|l| l.contains("detach+claim ok")),
+        "the detach analog must NOT appear at this level: {log:?}"
+    );
     drop(tx);
     assert!(gpu.writes.is_empty(), "{:?}", gpu.writes);
 }

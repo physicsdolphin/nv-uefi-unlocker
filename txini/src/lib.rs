@@ -214,6 +214,16 @@ pub enum AgitateStage {
     /// the PCI handle); no claim, no COMMAND, no DMA, no BME, no
     /// rebuild. Tests the DisconnectController event itself.
     DisconnectOnly,
+    /// Leave-one-out: the DisconnectController calls are the element held
+    /// OUT (claim-first, D#297 ladder round 2). The EXCLUSIVE claim is
+    /// attempted straight on the untouched driver stack - if a driver
+    /// blocks it the arm logs the per-driver open inventory (each blocker
+    /// resolved to its owning image) and aborts; a fallback to
+    /// disconnecting would reintroduce the call path under test. The
+    /// native-GOP rebuild is held out with it: the console was never torn
+    /// down, and a rebuild StartImage would tear bindings back down.
+    /// Boot under this arm = disconnect falsified as necessary for claim.
+    NoDisconnect,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -450,7 +460,14 @@ pub fn resolve(
             "agitate_stage" => {
                 r.agitate_stage = enum_value(
                     e,
-                    &["full", "no_bridge_bme", "no_endpoint_command", "no_dma", "disconnect_only"],
+                    &[
+                        "full",
+                        "no_bridge_bme",
+                        "no_endpoint_command",
+                        "no_dma",
+                        "disconnect_only",
+                        "no_disconnect",
+                    ],
                     &mut errs,
                 )
                 .map(|s| match s {
@@ -458,6 +475,7 @@ pub fn resolve(
                     "no_endpoint_command" => AgitateStage::NoEndpointCommand,
                     "no_dma" => AgitateStage::NoDma,
                     "disconnect_only" => AgitateStage::DisconnectOnly,
+                    "no_disconnect" => AgitateStage::NoDisconnect,
                     _ => AgitateStage::Full,
                 });
                 if r.agitate_stage.is_some() && r.agitate_only {

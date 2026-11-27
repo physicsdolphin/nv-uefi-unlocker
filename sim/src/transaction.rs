@@ -151,9 +151,10 @@ pub struct Transaction<'a> {
     pub agitate_only: bool,
     /// Surgery-element ablation level for the agitate control (D#297):
     /// 0 = full, 1 = -bridge BME (the rc7-falsified anchor), 2 = -endpoint
-    /// COMMAND, 3 = -DMA churn, 4 = disconnects only. Every level is
-    /// zero-GPU-write by contract; the tests pin the per-level
-    /// surgery-element inventory.
+    /// COMMAND, 3 = -DMA churn, 4 = disconnects only, 5 = claim-first
+    /// (disconnects held OUT; the rebuild is held out with them - the
+    /// console was never torn down). Every level is zero-GPU-write by
+    /// contract; the tests pin the per-level surgery-element inventory.
     pub agitate_stage: u8,
     /// Loader analog of \tx-fwsec-only.txt (issue #286 residue bracket):
     /// the transaction stops right after the FWSEC stage - no booter, no
@@ -759,9 +760,11 @@ impl<'a> Transaction<'a> {
     fn run_agitate(&mut self) -> Result<Report, PhaseError> {
         // Stage 4 (disconnects only): the minimal arm - the disconnects,
         // then straight to the unwind. No claim, no COMMAND, no DMA, no
-        // BME, no rebuild.
+        // BME, no rebuild. The loader arm now carries the full
+        // reference-count inventory around every disconnect (PRE/POST per
+        // driver) - the H-CM vs H-Stop readout; modeled as a note.
         if self.agitate_stage == 4 {
-            self.note("agitate[disconnect_only]: disconnects done (GOP target-owned + PCI); zero writes performed");
+            self.note("agitate[disconnect_only]: disconnects done (GOP target-owned + PCI, reference-count inventory PRE/POST each); zero writes performed");
             let unwound = self.unwind(Ok(()));
             return unwound.map(|_| Report {
                 dma_pages_allocated: self.dma_allocs,
@@ -789,7 +792,14 @@ impl<'a> Transaction<'a> {
         if self.agitate_stage != 2 {
             self.bme_set = true;
         }
-        self.note("agitate: detach+claim ok (COMMAND IO|MEM|BME - config space, not BAR0)");
+        // Stage 5 (claim-first): no disconnect analog at all - the EXCLUSIVE
+        // claim lands straight on the untouched stack (loader: ACCESS_DENIED
+        // would dump the blocker inventory and abort, no fallback).
+        if self.agitate_stage == 5 {
+            self.note("agitate[no_disconnect]: claim-first - EXCLUSIVE claim on the UNTOUCHED stack (zero DisconnectController calls)");
+        } else {
+            self.note("agitate: detach+claim ok (COMMAND IO|MEM|BME - config space, not BAR0)");
+        }
         // Allocation parity: the transaction's five buffers + the radix
         // block, at the same stage, all released unwritten. Stage 3
         // (-DMA) holds the churn out: the TBT-DMA-remap candidate peel.
@@ -800,7 +810,14 @@ impl<'a> Transaction<'a> {
         }
         self.note("agitate: DMA allocs ok (5 buffers + radix block, parity with run_transaction)");
         self.note("agitate: bridge BME enabled (config space, parity)");
-        self.note("agitate: native-GOP rebuild + reconnect (UEFI driver-model surgery, parity)");
+        // Stage 5: the rebuild is held OUT with the disconnects - a rebuild
+        // StartImage would tear driver bindings back down, silently
+        // reintroducing the call path the arm holds out.
+        if self.agitate_stage == 5 {
+            self.note("agitate: native-GOP rebuild held OUT (stage=NoDisconnect) - console was never torn down");
+        } else {
+            self.note("agitate: native-GOP rebuild + reconnect (UEFI driver-model surgery, parity)");
+        }
         // The unwind must be the transaction's own: free everything, restore
         // BME - a control that leaks would not be comparable to the real run.
         let unwound = self.unwind(Ok(()));

@@ -13,7 +13,7 @@ use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams};
 use uefi::proto::console::gop::GraphicsOutput;
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::loaded_image::LoadedImage;
-use uefi::{Handle, Identify};
+use uefi::{guid, Handle, Identify};
 
 use crate::pci::PciIo;
 
@@ -148,6 +148,66 @@ fn log_openers(label: &str, handle: Handle, guid: &uefi::Guid) {
     }
 }
 
+/// Spec GUIDs the inventory names by hand (no wrapper type in this uefi
+/// crate for these). DriverBinding is the one that matters for the D#297
+/// readout: every driver bound to the handle carries it, and it is the
+/// binding a DisconnectController Stop() pass tears down.
+const GUID_DRIVER_BINDING: uefi::Guid = guid!("ce345171-ba0b-11d2-8e4f-00a0c9697239");
+const GUID_COMPONENT_NAME: uefi::Guid = guid!("107a772c-d5e1-11d4-9a46-0090273fc14d");
+const GUID_COMPONENT_NAME2: uefi::Guid = guid!("6a7a5cff-e8d9-4f70-bada-75ab3025ce14");
+const GUID_BUS_OVERRIDE: uefi::Guid = guid!("3bc1b285-8a15-4a3a-8ae8-a4ac028f685d");
+
+/// Full reference-count inventory of a handle: every installed protocol
+/// (named where known, GUID bytes otherwise) plus, for each, the
+/// OpenProtocolInformation entries - agent/controller/attributes/count with
+/// the agent resolved to its image base+size. This is the D#297 H-CM vs
+/// H-Stop readout: the per-driver delta around a DisconnectController call
+/// IS the Stop() casualty list, and the PRE dump is the binding state at
+/// wedge time if the machine dies inside the call. Read-only by
+/// construction.
+pub fn log_handle_inventory(label: &str, handle: Handle) {
+    let per = match boot::protocols_per_handle(handle) {
+        Ok(per) => per,
+        Err(e) => {
+            info!("DIAG {label}: {handle:?} protocols_per_handle failed {e:?}");
+            return;
+        }
+    };
+    info!(
+        "DIAG {label}: {handle:?} {} protocol(s) installed (reference-count inventory, read-only)",
+        per.len()
+    );
+    for g in per.iter() {
+        let guid: &uefi::Guid = g;
+        let name = if *guid == PciIo::GUID {
+            "PciIo"
+        } else if *guid == GraphicsOutput::GUID {
+            "GraphicsOutput"
+        } else if *guid == <DevicePath as Identify>::GUID {
+            "DevicePath"
+        } else if *guid == <LoadedImage as Identify>::GUID {
+            "LoadedImage"
+        } else if *guid == GUID_DRIVER_BINDING {
+            "DriverBinding"
+        } else if *guid == GUID_COMPONENT_NAME {
+            "ComponentName"
+        } else if *guid == GUID_COMPONENT_NAME2 {
+            "ComponentName2"
+        } else if *guid == GUID_BUS_OVERRIDE {
+            "BusSpecificDriverOverride"
+        } else {
+            ""
+        };
+        let shown = if name.is_empty() {
+            alloc::format!("{guid}")
+        } else {
+            alloc::format!("{name} {guid}")
+        };
+        info!("DIAG {label}:   protocol {shown}");
+        log_openers(&alloc::format!("{label}/openers"), handle, guid);
+    }
+}
+
 /// Read-only display topology: every GOP handle with its device-path
 /// length, target ownership and GOP openers, plus the PciIo openers on the
 /// GPU. Pathless GOPs (firmware splitters / ConSplitter) are skipped by the
@@ -175,7 +235,7 @@ fn log_display_topology(pci_handle: Handle) {
     }
 }
 
-fn config_snapshot(pci: &PciIo) -> alloc::vec::Vec<u32> {
+pub(crate) fn config_snapshot(pci: &PciIo) -> alloc::vec::Vec<u32> {
     let mut c = vec![0u32; 16];
     for (i, slot) in c.iter_mut().enumerate() {
         *slot = pci.config_read_u32((i * 4) as u32);
@@ -236,20 +296,34 @@ pub struct Claim {
     /// rebuild has nothing to restore (issue #261: hybrid-display laptops
     /// where the firmware console lives on the iGPU).
     pub target_gop_seen: bool,
+    /// False only under the claim-first ablation (`ClaimOpts::disconnect`
+    /// = false, the D#297 `no_disconnect` ladder level): the console was
+    /// never torn down, so the native-GOP rebuild must also stay out - a
+    /// rebuild StartImage would tear driver bindings back down, silently
+    /// reintroducing the DisconnectController path the arm holds out.
+    pub rebuild_allowed: bool,
 }
 
 /// Options for [`detach_and_claim`]. `enable_command = false` (the D#297
 /// `no_endpoint_command` ablation) keeps the EXCLUSIVE claim and the
 /// config baseline but holds the endpoint COMMAND writes out: the card's
 /// IO|MEM|BME stay off, every downstream BAR read returns garbage, and
-/// the MEM-decode abort below is skipped by design.
+/// the MEM-decode abort below is skipped by design. `disconnect = false`
+/// (the `no_disconnect` claim-first ablation) holds ALL DisconnectController
+/// calls out instead: console and vendor drivers stay bound, the console
+/// mirror is never muted, and the EXCLUSIVE claim is attempted straight on
+/// the untouched stack (on ACCESS_DENIED the blocker inventory is dumped).
 pub struct ClaimOpts {
     pub enable_command: bool,
+    pub disconnect: bool,
 }
 
 impl Default for ClaimOpts {
     fn default() -> Self {
-        Self { enable_command: true }
+        Self {
+            enable_command: true,
+            disconnect: true,
+        }
     }
 }
 
@@ -321,7 +395,22 @@ pub fn detach_and_claim_opts(
     // transaction's NATIVE-GOP rebuild still runs for a slot the arm
     // revived - without the seed the #261 skip logic would see "no console
     // child this boot" and leave the revived card's console unrebuilt.
-    let mut target_gop_seen = crate::revive::revive_disconnected_gop();
+    // Claim-first ablation (D#297 ladder `no_disconnect`): zero
+    // DisconnectController calls anywhere - the GOP stages and the stage-3
+    // PCI disconnect below are all held out, the console mirror is never
+    // muted, and the EXCLUSIVE claim below is attempted straight on the
+    // untouched stack. The PRE inventory is the binding state the claim
+    // meets; on ACCESS_DENIED the blocker dump names each holder.
+    let mut target_gop_seen = if opts.disconnect {
+        crate::revive::revive_disconnected_gop()
+    } else {
+        info!(
+            "DETACH: disconnect = off (claim-first ablation) - zero DisconnectController calls this round; console and vendor drivers stay bound, console mirror stays live"
+        );
+        log_handle_inventory("CLAIM-FIRST-PRE", pci_handle);
+        true
+    };
+    if opts.disconnect {
     if let Ok(h) = gop_handles {
         for i in 0..h.len() {
             let gop = h[i];
@@ -358,6 +447,11 @@ pub fn detach_and_claim_opts(
     }
 
     // Stage 3: the vendor GPU driver (nvgop) on the PCI handle.
+    // D#297 readout: full reference-count inventory around the disconnect -
+    // the per-driver delta IS the Stop() casualty list (the H-CM vs H-Stop
+    // discriminator); the PRE dump is the binding state at wedge time if
+    // the machine dies inside the call.
+    log_handle_inventory("PRE-DISCONNECT", pci_handle);
     let before = open_count(pci_handle);
     let st = boot::disconnect_controller(pci_handle, None, None);
     let after = open_count(pci_handle);
@@ -367,7 +461,9 @@ pub fn detach_and_claim_opts(
         before,
         after
     );
+    log_handle_inventory("POST-DISCONNECT", pci_handle);
     log_display_topology(pci_handle);
+    }
 
     // Exclusive claim: re-open EXCLUSIVE (this fails while any other driver
     // still holds the PCI I/O protocol - the TOTORONG acceptance gate).
@@ -388,10 +484,23 @@ pub fn detach_and_claim_opts(
         Ok(p) => p,
         Err(e) => {
             info!("DETACH: EXCLUSIVE claim failed {:?} (a driver still holds the device?)", e.status());
+            if !opts.disconnect {
+                // The claim-first verdict branch: the untouched stack DOES
+                // block the claim. The dump below names every holder
+                // (attributes 0x10 BY_DRIVER / 0x20 EXCLUSIVE, agent
+                // resolved to its image) - the fix surface is unbinding
+                // THAT driver, not the blanket DisconnectController the
+                // ladder just falsified.
+                log_handle_inventory("CLAIM-BLOCKERS", pci_handle);
+                info!("DETACH: claim-first verdict: the untouched stack BLOCKS the claim - blockers above; disconnecting was the legacy workaround for exactly these holders");
+            }
             return Err("exclusive claim failed");
         }
     };
     info!("DETACH: PciIo EXCLUSIVE claimed");
+    if !opts.disconnect {
+        info!("DETACH: claim-first verdict: the untouched stack did NOT block the claim - DisconnectController was NOT required to claim (D#297 finding; disconnect falsified as a claim prerequisite on this boot)");
+    }
 
     // Restore IO|MEM|BME: try the Attributes API first (ClaimRestore),
     // then fall back to a raw PCI_COMMAND write - the driver's stop path
@@ -429,7 +538,7 @@ pub fn detach_and_claim_opts(
     if opts.enable_command && baseline[1] & 0x2 == 0 {
         return Err("PCI command MEMORY bit did not stick after both enable paths");
     }
-    Ok(Claim { baseline, initial_attrs, target_gop_seen })
+    Ok(Claim { baseline, initial_attrs, target_gop_seen, rebuild_allowed: opts.disconnect })
 
 }
 
