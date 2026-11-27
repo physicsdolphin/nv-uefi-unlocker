@@ -1477,9 +1477,11 @@ def fuse_row_dump(bar, rng, base=FUSE_BASE_GA100_LAYOUT):
     if saved & 0xFFFF0000 == 0xBADF0000 or saved == 0xFFFF_FFFF:
         print(f"  FUSEROWS ABORT: FUSEADDR {saved:#010x} unreadable - no writes performed")
         return False
-    if saved >= FUSE_MAX_ROWS:
-        print(f"  FUSEROWS ABORT: FUSEADDR {saved} outside the {FUSE_MAX_ROWS}-row address field - no writes performed")
-        return False
+    # IFF first (issue #237 round 9, ported from ssdiag 0.8.15): the per-die
+    # decoded bound is the sane pre-check for the resting FUSEADDR - a
+    # hardcoded GA100 512-row cap aborted Ada's 832-row domain (A6000 GA102:
+    # 576 rows) at the exact capture it exists to enable. FUSE_MAX_ROWS now
+    # guards only dies with NO readable IFF.
     iff = bar.rd(fuse_iff(base))
     iff_readable = not (iff & 0xFFFF0000 == 0xBADF0000 or iff == 0xFFFF_FFFF)
     if iff_readable:
@@ -1492,11 +1494,16 @@ def fuse_row_dump(bar, rng, base=FUSE_BASE_GA100_LAYOUT):
         else:
             ra, rb = rng
             if rb > last:
-                print(f"  FUSEROWS ABORT: range {ra:#x}-{rb:#x} exceeds the IFF domain 0..{last}")
-                return False
+                # Explicit over-domain range: read-class, rows past LAST
+                # read junk (or the controller refuses the latch - TU106
+                # bench, row LAST+1), never harm. Degrade, don't refuse.
+                print(f"  FUSEROWS DEGRADED: explicit range {ra:#x}-{rb:#x} extends past the IFF domain 0..{last} - out-of-domain rows read junk, not harm")
             first, last_row = ra, rb
     else:
         # No IFF on this die: domain unverified; explicit range mandatory.
+        if saved >= FUSE_MAX_ROWS:
+            print(f"  FUSEROWS ABORT: FUSEADDR {saved} outside the {FUSE_MAX_ROWS}-row address cap (IFF unreadable, no per-die bound) - no writes performed")
+            return False
         if rng == "all" or rng is None:
             print(f"  FUSEROWS ABORT: IFF_RECORD {iff:#010x} unreadable and no explicit range given - pass --fuserows=A-B (capped at {FUSE_MAX_ROWS} rows); no writes performed")
             return False
@@ -1548,8 +1555,33 @@ def fuse_row_dump(bar, rng, base=FUSE_BASE_GA100_LAYOUT):
         for i in mismatches[:16]:
             print(f"    row {first + i:#x}: pass1 {passes[0][i]:#010x} pass2 {passes[1][i]:#010x}")
     for i, v in enumerate(passes[0]):
-        print(f"FUSEROW {first + i:#x} = {v:#010x}")
+        ann = _iff_op_annotate(passes[0], i, v)
+        if ann:
+            print(f"FUSEROW {first + i:#x} = {v:#010x}   {ann}")
+        else:
+            print(f"FUSEROW {first + i:#x} = {v:#010x}")
     return complete
+
+
+def _iff_op_annotate(rows: list, i: int, v: int):
+    """IFF op-grammar role of row i (value v) in the sequential stream
+    (issue #237 round 10, ssdiag 0.8.16 parity): op = w & 0x3f (0x3d =
+    2-word WRITE_IMM, 0x3c = 3-word RMW), addr = (w & 0xffffffc0) >> 4.
+    Operand rows back-scan to their head; an undecodable head orphans
+    only itself."""
+    op = v & 0x3F
+    if op not in (0x3D, 0x3C):
+        for h in range(max(0, i - 2), i):
+            hw = rows[h]
+            hop = hw & 0x3F
+            ln = 2 if hop == 0x3D else 3 if hop == 0x3C else 0
+            if ln and h + ln > i:
+                which = "value" if i == h + 1 and hop == 0x3D else ("and-mask" if i == h + 1 else "or-mask")
+                kind = "WRITE_IMM" if hop == 0x3D else "RMW"
+                return f"[{which} of {kind} {(hw & 0xFFFFFFC0) >> 4:#010x}]"
+        return None
+    addr = (v & 0xFFFFFFC0) >> 4
+    return f"[{'WRITE_IMM' if op == 0x3D else 'RMW'} {addr:#010x}]"
 
 
 # --- Read-only VBIOS PROM BIT / ucode table metadata walker (ssdiag parity) ---
