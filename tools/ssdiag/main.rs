@@ -5494,7 +5494,7 @@ fn fuse_row_dump(
                 let fcp_readable = !(fcp & 0xffff0000 == 0xbadf0000 || fcp == 0xFFFF_FFFF);
                 if fcp_readable && (fcp >> 4) & 1 == 0 {
                     fail = Some(format!(
-                        "pass {} row {row}: FUSEADDR did not latch - FUSECTRL_PLM {fcp:#010x} has PL0-write CLOSED: the fuse-block registers are PLM-gated against host writes (GB20x family shape; the row dump needs a controller with host-write enabled, e.g. GA10x/Turing)",
+                        "pass {} row {row}: FUSEADDR did not latch - FUSECTRL_PLM {fcp:#010x} has PL0-write CLOSED: the fuse-block registers are PLM-gated against host writes (observed on GB20x professional parts; the row dump needs a controller with host-write enabled, e.g. GA10x/Turing)",
                         p + 1
                     ));
                 } else {
@@ -5608,7 +5608,27 @@ fn iff_op_annotate(rows: &[u32], i: usize, v: u32) -> Option<String> {
     // Op head: label it with the address it targets. Operands print via the
     // back-scan above when their turn comes.
     let addr = (v & 0xffffffc0) >> 4;
-    Some(format!("[{} {:#010x}]", if op == 0x3d { "WRITE_IMM" } else { "RMW" }, addr))
+    // Semantic tag for the known-target heads (issue #237 rounds 10-11):
+    // the pool writes PLM-class registers with classic permission values,
+    // the PJTAG priv-content chain, and a few recurring config registers.
+    // Unknown addresses stay untagged - the tag is a reading aid, not a
+    // decode claim.
+    let tag = if op == 0x3d {
+        match addr {
+            // PLM writes: the value operand is a classic permission word
+            0x0000e224 | 0x00021068 | 0x00118fec | 0x00118ffc => " (PLM)",
+            // GC6_AON pair, always <- 0 in the observed pools
+            0x0011839c | 0x001183a0 => " (GC6_AON)",
+            _ => "",
+        }
+    } else {
+        match addr {
+            // CYA_0_DISG2 close: bit-identical mask on AD102/AD107/GA106
+            0x0008c2c0 => " (CYA_0_DISG2)",
+            _ => "",
+        }
+    };
+    Some(format!("[{} {:#010x}{}]", if op == 0x3d { "WRITE_IMM" } else { "RMW" }, addr, tag))
 }
 
 fn validate_prom_bit_flags(prom_bit: bool, reapply: bool, fuserows: bool, has_pokes: bool) -> Result<(), &'static str> {

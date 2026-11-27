@@ -1536,9 +1536,9 @@ def fuse_row_dump(bar, rng, base=FUSE_BASE_GA100_LAYOUT):
                 if not (fcp & 0xFFFF0000 == 0xBADF0000 or fcp == 0xFFFF_FFFF) and not (fcp >> 4) & 1:
                     fail = (f"pass {p + 1} row {row}: FUSEADDR did not latch - "
                             f"FUSECTRL_PLM {fcp:#010x} has PL0-write CLOSED: the fuse-block "
-                            f"registers are PLM-gated against host writes (GB20x family shape; "
-                            f"the row dump needs a controller with host-write enabled, e.g. "
-                            f"GA10x/Turing)")
+                            f"registers are PLM-gated against host writes (observed on GB20x "
+                            f"professional parts; the row dump needs a controller with "
+                            f"host-write enabled, e.g. GA10x/Turing)")
                 else:
                     fail = f"pass {p + 1} row {row}: FUSEADDR did not latch"
                 break
@@ -1597,7 +1597,16 @@ def _iff_op_annotate(rows: list, i: int, v: int):
                 return f"[{which} of {kind} {(hw & 0xFFFFFFC0) >> 4:#010x}]"
         return None
     addr = (v & 0xFFFFFFC0) >> 4
-    return f"[{'WRITE_IMM' if op == 0x3D else 'RMW'} {addr:#010x}]"
+    # Semantic tag for the known-target heads (issue #237 rounds 10-11):
+    # PLM-class writes, the GC6_AON pair, the CYA_0_DISG2 close. Unknown
+    # addresses stay untagged - a reading aid, not a decode claim.
+    if op == 0x3D:
+        tag = {0x0000E224: " (PLM)", 0x00021068: " (PLM)",
+               0x00118FEC: " (PLM)", 0x00118FFC: " (PLM)",
+               0x0011839C: " (GC6_AON)", 0x001183A0: " (GC6_AON)"}.get(addr, "")
+    else:
+        tag = {0x0008C2C0: " (CYA_0_DISG2)"}.get(addr, "")
+    return f"[{'WRITE_IMM' if op == 0x3D else 'RMW'} {addr:#010x}{tag}]"
 
 
 # --- Read-only VBIOS PROM BIT / ucode table metadata walker (ssdiag parity) ---
