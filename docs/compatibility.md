@@ -85,6 +85,8 @@
 
 **同 ID 另一台（FA507UV）的同机双模式对照（[#292](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/292)，2026-11-23/24）**：ASUS TUF Gaming A15 FA507UV（Ryzen 7 8845H，BIOS `FA507UV.313`）用官方 v2.1.11 + ssdiag 0.8.9 在同一台机分别跑混合与 Armoury Crate Ultimate（独显直连）：**混合模式** TX/HANDOFF 全绿（`SS0=0x88888888`/`SS1=0x8`、POST-FLR、canary set、双 D0），但 native-GOP 报 `no rom image`（console 不在目标卡，Windows 仍正常启动），进系统 `NOT_UNLOCKED`、canary `0/0` cleared、PLM/SS 回厂、READOUT `0x00410080`，全部基准 ≈1.0×；**独显直连** native-GOP 从 150528 B shadowed ROM 完整恢复，基准前后 ssdiag 都 `UNLOCKED`（PLM `0xffffffff`、SS `0x88888888`/`0x8`、READOUT 0、canary intact），配对 A/B TF32 1.797×/FP16 1.833–1.905×/BF16 1.857–1.954×/FP8 1.777×/120 s soak 1.688×，FP32 0.981×、INT8 1.001×、D2D 1.026×、Qwen LoRA 1.059×。与 D#284 合并看：**`28e0` 的混合模式重锁是两台独立机器的可复现形态**（本机 RTD3 未抑制，MUX 相关复位仍不能排除），独显直连则是稳定成功路径。边界：每种模式仅一次真实 TX；直连缺零写 ABORT 对照（原计划被 Space 在 5179 ms 提前确认）；ssdiag 早期两次 `StartService failed 1450`（临时驱动残留已清理）；睡眠/休眠/重复冷启/长稳未测；测试后仍留在直连、SB off、C: BitLocker 挂起；证据包 110 份脱敏文本 175621 B（`b1742171…`）。
 
+**维护者机内驱动升级保留（2026-11-28 补录，G614JV 4060L `28e0`）**：同一台 G614JV 在 Windows 内把 NVIDIA 驱动从 610 系更新到 621.40，更新后解锁保留，补上 `28e0` 的驱动升级轮样本。边界如实：未记录升级是否重启/重放、当时生效的 RTD3 旋钮（固件 ACPI D3 全局关闭 vs 驱动级 `EnableRuntimePowerManagement=0`）与保留判据；按易失模型，若升级中重启则必须有 U 盘/内置分区重放，不能读作跨重启保留；仅覆盖 in-OS 升级，不覆盖干净重装。机制与升级后复查纪律见 FAQ [G614JV 实例记录](faq.md#relock-winrtd3)。
+
 <a id="device-2"></a>
 
 ### AD107 · 4060 2882 / 4060 Laptop 28a0 / 4050M 28e1
