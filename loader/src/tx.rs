@@ -11,6 +11,8 @@ use log::info;
 use uefi::boot::stall;
 
 use crate::pci::PciIo;
+use uefi::Identify;
+use uefi::proto::console::gop::GraphicsOutput;
 
 /// Falcon engine bases (BAR0 offsets).
 pub mod eng {
@@ -1794,8 +1796,10 @@ pub fn run_agitate_only(
     assets: &TxAssets,
     pci_handle: uefi::Handle,
     bridge_slot: &mut Option<crate::pci::BridgeMaster>,
+    stage: Option<txini::AgitateStage>,
 ) -> Result<(), TxError> {
-    info!("TX-AGITATE: BEGIN (surgery stages: preflight detach claim layout-read dma bridge handoff-dump gop-rebuild vga unwind; ZERO BAR0 writes by contract)");
+    let stage = stage.unwrap_or(txini::AgitateStage::Full);
+    info!("TX-AGITATE: BEGIN stage={stage:?} (surgery stages: preflight detach claim layout-read dma bridge handoff-dump gop-rebuild vga unwind; ZERO BAR0 writes by contract; the stage name names the element held OUT)");
 
     // Staging-band parity: make the same allocation-band decision the real
     // transaction makes (the DMA allocations below must land in the same
@@ -1817,17 +1821,57 @@ pub fn run_agitate_only(
 
     // The surgery proper: console + vendor drivers off the device, EXCLUSIVE
     // claim, IO|MEM|BME via COMMAND, config baseline captured.
-    let claim = match crate::tx_detach::detach_and_claim(pci_handle) {
+    // NoEndpointCommand/DisconnectOnly hold the endpoint COMMAND writes out
+    // (the D#297 ablation axis): the claim stays EXCLUSIVE, the baseline is
+    // still captured (config reads need no decode), and every downstream
+    // BAR read is expected garbage - labeled in the log.
+    // DisconnectOnly: the minimal arm - the disconnects ONLY, then back to
+    // the caller. No EXCLUSIVE claim, no COMMAND, no DMA, no BME, no
+    // rebuild; the console mirror unmutes on the way out (bootmgfw
+    // self-establishes). This is the H2 test: is the DisconnectController
+    // event itself the wedge?
+    if stage == txini::AgitateStage::DisconnectOnly {
+        info!("TX-AGITATE: stage=DisconnectOnly - running the disconnects ONLY");
+        let gop_handles = uefi::boot::locate_handle_buffer(
+            uefi::boot::SearchType::ByProtocol(&<GraphicsOutput as Identify>::GUID),
+        );
+        let mut disconnected = 0usize;
+        if let Ok(handles) = gop_handles {
+            for h in handles.iter() {
+                if crate::tx_detach::gop_belongs_to_target(*h, pci_handle) {
+                    info!("TX-AGITATE: DisconnectOnly - disconnecting target GOP {:?}", h);
+                    let _ = uefi::boot::disconnect_controller(*h, None, None);
+                    disconnected += 1;
+                }
+            }
+        }
+        info!("TX-AGITATE: DisconnectOnly - disconnecting the PCI handle");
+        let _ = uefi::boot::disconnect_controller(pci_handle, None, None);
+        info!("TX-AGITATE: DisconnectOnly - {disconnected} GOP handle(s) + PCI handle disconnected; zero writes performed");
+        crate::logging::unmute_console();
+        info!("TX-AGITATE: DisconnectOnly complete - handing back via the configured exit path");
+        return Ok(());
+    }
+    let endpoint_command_off =
+        matches!(stage, txini::AgitateStage::NoEndpointCommand | txini::AgitateStage::DisconnectOnly);
+    if endpoint_command_off {
+        info!("TX-AGITATE: endpoint COMMAND writes held OUT this round (stage={stage:?}) - BAR reads downstream will be garbage by design");
+    }
+    let claim = match crate::tx_detach::detach_and_claim_opts(
+        pci_handle,
+        crate::tx_detach::ClaimOpts { enable_command: !endpoint_command_off },
+    ) {
         Ok(c) => c,
         Err(e) => {
             info!("TX-AGITATE: detach+claim FAILED: {e}");
             return Err(TxError::ENodev);
         }
     };
-    info!("TX-AGITATE: detach+claim ok (DisconnectController + EXCLUSIVE claim + COMMAND IO|MEM|BME exercised; screen dark by design)");
+    info!("TX-AGITATE: detach+claim ok (DisconnectController + EXCLUSIVE claim exercised{}; screen dark by design)",
+        if endpoint_command_off { ", COMMAND IO|MEM|BME held OUT" } else { " + COMMAND IO|MEM|BME" });
 
     let mut live: alloc::vec::Vec<crate::pci::DmaBuffer> = alloc::vec![];
-    let inner = agitate_stages(gpu, assets, pci_handle, bridge_slot, &claim, &mut live);
+    let inner = agitate_stages(gpu, assets, pci_handle, bridge_slot, &claim, &mut live, stage);
 
     // Unconditional cleanup, success or not. No FLR in either arm.
     for mut b in live {
@@ -1860,7 +1904,12 @@ fn agitate_stages(
     bridge_slot: &mut Option<crate::pci::BridgeMaster>,
     claim: &crate::tx_detach::Claim,
     live: &mut alloc::vec::Vec<crate::pci::DmaBuffer>,
+    stage: txini::AgitateStage,
 ) -> Result<(), TxError> {
+    // DisconnectOnly never reaches here (run_agitate_only returns early);
+    // the gates below peel the remaining elements out of the full pass.
+    let dma_off = stage == txini::AgitateStage::NoDma;
+    let bridge_off = stage == txini::AgitateStage::NoBridgeBme;
     // Entry-state record (read-only).
     let gfw = gpu.read32_raw(regs::GFW_BOOT);
     let wpr_hi = gpu.read32_raw(regs::WPR2_HI);
@@ -1899,6 +1948,9 @@ fn agitate_stages(
             }
         }
     };
+    if dma_off {
+        info!("TX-AGITATE: DMA allocations held OUT this round (stage=NoDma) - the TBT-DMA-remap candidate is peeled");
+    } else {
     alloc_one(live, assets.booter.len(), "booter")?;
     alloc_one(live, assets.stock_sig.len().max(4096), "sig")?;
     alloc_one(live, crate::tx_booter::WPR_META_SIZE, "meta")?;
@@ -1914,12 +1966,19 @@ fn agitate_stages(
             return Err(TxError::ENodev);
         }
     }
+    }
 
     // Bridge bus-master parity (config-space writes on the bridges - part of
-    // the surgery; unconditional, see the transaction-side note).
+    // the surgery; the NoBridgeBme stage peels them - the rc7-falsified arm,
+    // kept as a reproduction anchor in the ladder).
+    if bridge_off {
+        info!("TX-AGITATE: bridge BME held OUT this round (stage=NoBridgeBme) - the falsified arm, reproduction anchor");
+        *bridge_slot = None;
+    } else {
     crate::pci::log_dma_path("before-bridge-bme", gpu.pci);
     *bridge_slot = Some(crate::pci::BridgeMaster::enable(gpu.pci));
     crate::pci::log_dma_path("after-bridge-bme", gpu.pci);
+    }
 
     // Read-only handoff PCI snapshot (same gate as the transaction).
     if !crate::ultrafast() {

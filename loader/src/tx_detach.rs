@@ -238,10 +238,32 @@ pub struct Claim {
     pub target_gop_seen: bool,
 }
 
+/// Options for [`detach_and_claim`]. `enable_command = false` (the D#297
+/// `no_endpoint_command` ablation) keeps the EXCLUSIVE claim and the
+/// config baseline but holds the endpoint COMMAND writes out: the card's
+/// IO|MEM|BME stay off, every downstream BAR read returns garbage, and
+/// the MEM-decode abort below is skipped by design.
+pub struct ClaimOpts {
+    pub enable_command: bool,
+}
+
+impl Default for ClaimOpts {
+    fn default() -> Self {
+        Self { enable_command: true }
+    }
+}
+
 /// Staged detach + exclusive claim. Returns the config-space baseline
 /// taken while exclusively owned (drift reference for the
 /// post-transaction check).
 pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
+    detach_and_claim_opts(pci_handle, ClaimOpts::default())
+}
+
+pub fn detach_and_claim_opts(
+    pci_handle: Handle,
+    opts: ClaimOpts,
+) -> Result<Claim, &'static str> {
     info!("DETACH: staged console/driver detach begin (TOTORONG craft)");
     log_display_topology(pci_handle);
     // Attributes BEFORE the claim rewrites them - read on the still-bound
@@ -375,13 +397,22 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
     // then fall back to a raw PCI_COMMAND write - the driver's stop path
     // cleared MEMORY/BME, and this firmware's Attributes(Enable) is a
     // no-op while detached (observed: MEM=false after enable).
-    pci.attributes_enable(0x0007);
-    let cmd = pci.config_read_u16(0x04);
-    if cmd & 0x7 != 0x7 {
-        info!("DETACH: Attributes(Enable) no-op (cmd={cmd:#06x}) - raw COMMAND write");
-        pci.cfg_write_u16(0x04, 0x0007);
-        let cmd2 = pci.config_read_u16(0x04);
-        info!("DETACH: raw COMMAND write result cmd={cmd2:#06x}");
+    // The no_endpoint_command ablation holds ALL of this out (D#297):
+    // the card keeps whatever COMMAND state the firmware left, its BARs
+    // stay un-decoded, and every later BAR read returns garbage - logged
+    // as expected, never as a failure.
+    if opts.enable_command {
+        pci.attributes_enable(0x0007);
+        let cmd = pci.config_read_u16(0x04);
+        if cmd & 0x7 != 0x7 {
+            info!("DETACH: Attributes(Enable) no-op (cmd={cmd:#06x}) - raw COMMAND write");
+            pci.cfg_write_u16(0x04, 0x0007);
+            let cmd2 = pci.config_read_u16(0x04);
+            info!("DETACH: raw COMMAND write result cmd={cmd2:#06x}");
+        }
+    } else {
+        let cmd = pci.config_read_u16(0x04);
+        info!("DETACH: endpoint COMMAND writes held OUT (ablation) - cmd stays {cmd:#06x}");
     }
     let baseline = config_snapshot(&pci);
     info!(
@@ -393,7 +424,9 @@ pub fn detach_and_claim(pci_handle: Handle) -> Result<Claim, &'static str> {
         baseline[1] & 0x4 != 0
     );
     // BAR0 reads return garbage until MEMORY decode is back. Verify - 1.1.
-    if baseline[1] & 0x2 == 0 {
+    // (Skipped under the no_endpoint_command ablation: the garbage BARs
+    // ARE the experiment.)
+    if opts.enable_command && baseline[1] & 0x2 == 0 {
         return Err("PCI command MEMORY bit did not stick after both enable paths");
     }
     Ok(Claim { baseline, initial_attrs, target_gop_seen })

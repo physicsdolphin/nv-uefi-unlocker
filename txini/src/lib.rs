@@ -189,6 +189,33 @@ pub enum Reconnect {
     Off,
 }
 
+/// Agitate surgery-element ablation ladder (D#297: the USB4-eGPU form
+/// hangs under the zero-write surgery; bridge BME was falsified as the
+/// wedge by the reporter's own rc7 round, so the ladder peels the
+/// remaining surgery elements one at a time). Every value is a
+/// leave-one-out variant of the full surgery EXCEPT `DisconnectOnly`,
+/// which is a minimal-only arm (just the disconnects). All values are
+/// zero-GPU-write by the agitate contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgitateStage {
+    /// The full surgery as-is (same shape `agitate_only = true` gets).
+    Full,
+    /// Full surgery minus the bridge bus-master enables (the rc7
+    /// falsified arm, kept as a reproduction anchor).
+    NoBridgeBme,
+    /// Full surgery minus the GPU endpoint COMMAND enable (IO|MEM|BME
+    /// stay off on the card; BAR reads downstream return garbage by
+    /// design and the log labels them).
+    NoEndpointCommand,
+    /// Full surgery minus the host-side DMA allocations (the ~100 MB
+    /// churn; tests the TBT-DMA-remap `_DSM` candidate).
+    NoDma,
+    /// Minimal arm: the disconnects only (GOP handles if target-owned +
+    /// the PCI handle); no claim, no COMMAND, no DMA, no BME, no
+    /// rebuild. Tests the DisconnectController event itself.
+    DisconnectOnly,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RebarRoute {
     Mmio,
@@ -214,6 +241,10 @@ pub struct Resolved {
     // early-exit arms (independent booleans by design - see module docs)
     pub dry_run: bool,
     pub agitate_only: bool,
+    /// `Some` = the agitate control runs with this surgery-element
+    /// ablation level. Mutually exclusive with `agitate_only` (a
+    /// double-set is an INI refusal - ambiguous by construction).
+    pub agitate_stage: Option<AgitateStage>,
     pub fwsec_only: bool,
     pub exit_fw: bool,
     // booleans
@@ -263,6 +294,7 @@ fn markers_for(key: &str) -> &'static [&'static str] {
         "reconnect" => &["\\tx-no-reconnect.txt"],
         "dry_run" => &["\\tx-dry-run.txt"],
         "agitate_only" => &["\\tx-agitate-only.txt"],
+        "agitate_stage" => &[],
         "fwsec_only" => &["\\tx-fwsec-only.txt"],
         "exit_fw" => &["\\tx-exit-fw.txt"],
         "no_log" => &["\\tx-no-log.txt"],
@@ -406,7 +438,35 @@ pub fn resolve(
                 });
             }
             "dry_run" => r.dry_run = flag_value(e, &mut errs).unwrap_or(false),
-            "agitate_only" => r.agitate_only = flag_value(e, &mut errs).unwrap_or(false),
+            "agitate_only" => {
+                r.agitate_only = flag_value(e, &mut errs).unwrap_or(false);
+                if r.agitate_only && r.agitate_stage.is_some() {
+                    errs.push(format!(
+                        "{} line {}: 'agitate_only' and 'agitate_stage' set the same arm - keep 'agitate_stage' only",
+                        INI_PATH, e.line
+                    ));
+                }
+            }
+            "agitate_stage" => {
+                r.agitate_stage = enum_value(
+                    e,
+                    &["full", "no_bridge_bme", "no_endpoint_command", "no_dma", "disconnect_only"],
+                    &mut errs,
+                )
+                .map(|s| match s {
+                    "no_bridge_bme" => AgitateStage::NoBridgeBme,
+                    "no_endpoint_command" => AgitateStage::NoEndpointCommand,
+                    "no_dma" => AgitateStage::NoDma,
+                    "disconnect_only" => AgitateStage::DisconnectOnly,
+                    _ => AgitateStage::Full,
+                });
+                if r.agitate_stage.is_some() && r.agitate_only {
+                    errs.push(format!(
+                        "{} line {}: 'agitate_stage' and 'agitate_only' set the same arm - keep 'agitate_stage' only",
+                        INI_PATH, e.line
+                    ));
+                }
+            }
             "fwsec_only" => r.fwsec_only = flag_value(e, &mut errs).unwrap_or(false),
             "exit_fw" => r.exit_fw = flag_value(e, &mut errs).unwrap_or(false),
             "no_log" => r.no_log = flag_value(e, &mut errs).unwrap_or(false),

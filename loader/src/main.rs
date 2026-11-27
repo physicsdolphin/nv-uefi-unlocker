@@ -818,10 +818,14 @@ so no transaction was attempted and nothing was written"
     if config::fwsec_only() {
         info!("TX: fwsec-only arm present (marker or tx.ini) - the transaction stops after the FWSEC stage (no booter, no selectors, no FLR; issue #286 residue bracket)");
     }
-    if config::agitate_only() {
-        info!("TX: agitate-only arm present (marker or tx.ini) - full-surgery zero-write control instead of the transaction (see run_agitate_only's contract)");
+    let agitate_stage = config::agitate_stage();
+    if config::agitate_only() || agitate_stage.is_some() {
+        match agitate_stage {
+            Some(stage) => info!("TX: agitate stage arm present (tx.ini 'agitate_stage') - surgery-element ablation level {stage:?} instead of the transaction"),
+            None => info!("TX: agitate-only arm present (marker or tx.ini) - full-surgery zero-write control instead of the transaction (see run_agitate_only's contract)"),
+        }
         let mut agitate_bridge = None;
-        let outcome = tx::run_agitate_only(&gpu, &assets, g.handle, &mut agitate_bridge);
+        let outcome = tx::run_agitate_only(&gpu, &assets, g.handle, &mut agitate_bridge, agitate_stage);
         match outcome {
             Ok(()) => {
                 info!("SELECTOR RESULT: agitate-only control complete (zero GPU writes by contract)");

@@ -149,6 +149,12 @@ pub struct Transaction<'a> {
     /// host writes to the GPU. The zero-write contract is asserted by the
     /// tests against FakeGpu::writes (the host-write ledger).
     pub agitate_only: bool,
+    /// Surgery-element ablation level for the agitate control (D#297):
+    /// 0 = full, 1 = -bridge BME (the rc7-falsified anchor), 2 = -endpoint
+    /// COMMAND, 3 = -DMA churn, 4 = disconnects only. Every level is
+    /// zero-GPU-write by contract; the tests pin the per-level
+    /// surgery-element inventory.
+    pub agitate_stage: u8,
     /// Loader analog of \tx-fwsec-only.txt (issue #286 residue bracket):
     /// the transaction stops right after the FWSEC stage - no booter, no
     /// selectors, no canary arm, no FLR anywhere (failure path included).
@@ -192,6 +198,7 @@ impl<'a> Transaction<'a> {
             warm_wpr2_marker: false,
             no_flr: false,
             agitate_only: false,
+            agitate_stage: 0,
             fwsec_only: false,
             staging_high: false,
             staging_fallback_used: false,
@@ -750,17 +757,46 @@ impl<'a> Transaction<'a> {
     /// guard classification and every unlock phase are out of the control's
     /// scope by contract.
     fn run_agitate(&mut self) -> Result<Report, PhaseError> {
+        // Stage 4 (disconnects only): the minimal arm - the disconnects,
+        // then straight to the unwind. No claim, no COMMAND, no DMA, no
+        // BME, no rebuild.
+        if self.agitate_stage == 4 {
+            self.note("agitate[disconnect_only]: disconnects done (GOP target-owned + PCI); zero writes performed");
+            let unwound = self.unwind(Ok(()));
+            return unwound.map(|_| Report {
+                dma_pages_allocated: self.dma_allocs,
+                dma_pages_freed: self.dma_frees,
+                fwsec_fired: false,
+                booter_fired: false,
+                marker_seen: false,
+                halt_seen: false,
+                plm_open_verified: false,
+                selectors_written: false,
+                bme_restored: !self.bme_set,
+                flr_done: false,
+                signature_restored: true,
+                unwind_clean: self.dma_live == 0 && !self.bme_set,
+            });
+        }
         // detach+claim analog: COMMAND IO|MEM|BME is config space (not
         // MMIO) - the model has no config space, so it is the bme_set flag.
         // claim()'s guards are deliberately skipped: they classify GPU
         // state; the control is surgery-only.
+        // Stage 2 (-endpoint COMMAND): the COMMAND writes are held OUT -
+        // bme_set stays false (the model's COMMAND analog), the GPU BARs
+        // stay un-decoded (downstream reads are garbage by design).
         self.bme_was_dirty = true;
-        self.bme_set = true;
+        if self.agitate_stage != 2 {
+            self.bme_set = true;
+        }
         self.note("agitate: detach+claim ok (COMMAND IO|MEM|BME - config space, not BAR0)");
         // Allocation parity: the transaction's five buffers + the radix
-        // block, at the same stage, all released unwritten.
-        for _ in 0..6 {
-            self.alloc_dma_page()?;
+        // block, at the same stage, all released unwritten. Stage 3
+        // (-DMA) holds the churn out: the TBT-DMA-remap candidate peel.
+        if self.agitate_stage != 3 {
+            for _ in 0..6 {
+                self.alloc_dma_page()?;
+            }
         }
         self.note("agitate: DMA allocs ok (5 buffers + radix block, parity with run_transaction)");
         self.note("agitate: bridge BME enabled (config space, parity)");

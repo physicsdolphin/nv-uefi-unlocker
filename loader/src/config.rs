@@ -21,7 +21,7 @@ use core::cell::UnsafeCell;
 use log::info;
 use txini::{LogCommit, Output, Resolved};
 #[cfg(feature = "diag")]
-use txini::{RebarRoute, RebarSetting, Reconnect};
+use txini::{AgitateStage, RebarRoute, RebarSetting, Reconnect};
 use uefi::proto::media::file::{File, FileAttribute, FileMode};
 use uefi::{boot, cstr16, CStr16, CString16, Status};
 
@@ -255,6 +255,15 @@ pub fn dry_run() -> bool {
 #[cfg(feature = "diag")]
 pub fn agitate_only() -> bool {
     ini().is_some_and(|r| r.agitate_only) || probe("\\tx-agitate-only.txt")
+}
+
+/// The agitate ablation level: `Some` = the agitate control runs with
+/// this surgery-element stage (ini-only; the ladder is a diag-profile
+/// instrument, so it deliberately has no marker twin). `None` = key not
+/// set - the loader then falls back to the plain `agitate_only` arm.
+#[cfg(feature = "diag")]
+pub fn agitate_stage() -> Option<AgitateStage> {
+    ini().and_then(|r| r.agitate_stage)
 }
 
 #[cfg(feature = "diag")]

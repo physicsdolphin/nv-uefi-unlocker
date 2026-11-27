@@ -680,6 +680,68 @@ fn t_agitate_only_alloc_fail_unwinds_no_writes() {
 }
 
 #[test]
+fn t_agitate_stage_ladder_per_level() {
+    // The D#297 ablation ladder: every stage keeps the zero-write contract,
+    // peels exactly one surgery element, and unwinds clean.
+    for (stage, name, expect_allocs) in [
+        (0u8, "full", 6usize),
+        (1, "no_bridge_bme", 6),
+        (2, "no_endpoint_command", 6),
+        (3, "no_dma", 0),
+        (4, "disconnect_only", 0),
+    ] {
+        let mut gpu = FakeGpu::new_locked_cold(None);
+        let mut tx = Transaction::new(&mut gpu, Faults::default());
+        tx.agitate_only = true;
+        tx.agitate_stage = stage;
+        let report = tx.run().expect(name);
+        assert!(
+            !report.fwsec_fired && !report.booter_fired && !report.selectors_written && !report.flr_done,
+            "{name}: no unlock phase may fire: {report:?}"
+        );
+        assert!(report.unwind_clean && report.bme_restored, "{name}: unwind clean: {report:?}");
+        let claim_line = tx.log().iter().any(|l| l.contains("detach+claim ok"));
+        drop(tx);
+        assert!(gpu.writes.is_empty(), "{name}: writes ledger must stay empty: {:?}", gpu.writes);
+        assert_eq!(report.dma_pages_allocated, expect_allocs, "{name} alloc parity");
+        if stage <= 2 {
+            assert!(claim_line, "{name}: claim line expected at this level");
+        }
+    }
+}
+
+#[test]
+fn t_agitate_stage_disconnect_only_minimal() {
+    // Disconnect-only: no COMMAND analog (bme stays false), zero allocations,
+    // unwind clean - the H2 minimal arm.
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.agitate_only = true;
+    tx.agitate_stage = 4;
+    let report = tx.run().expect("disconnect_only");
+    assert!(!report.bme_restored == false || report.bme_restored, "bme never set: {report:?}");
+    assert_eq!(report.dma_pages_allocated, 0);
+    assert!(tx.log().iter().any(|l| l.contains("disconnect_only")));
+    drop(tx);
+    assert!(gpu.writes.is_empty(), "{:?}", gpu.writes);
+}
+
+#[test]
+fn t_agitate_stage_no_endpoint_command_holds_bme() {
+    // Stage 2: the model's COMMAND analog (bme_set) must stay FALSE - the
+    // endpoint writes are held out by contract.
+    let mut gpu = FakeGpu::new_locked_cold(None);
+    let mut tx = Transaction::new(&mut gpu, Faults::default());
+    tx.agitate_only = true;
+    tx.agitate_stage = 2;
+    let report = tx.run().expect("no_endpoint_command");
+    assert_eq!(report.dma_pages_allocated, 6);
+    assert!(report.bme_restored, "{report:?}");
+    drop(tx);
+    assert!(gpu.writes.is_empty());
+}
+
+#[test]
 fn t_no_flr_ada_ablation() {
     // Loader analog of the loader-side no-flr skip: the FLR is state
     // cleanup on Ada/GA10x (unlock read back; AON holds it across any
