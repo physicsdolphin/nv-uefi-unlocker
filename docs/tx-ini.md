@@ -57,7 +57,7 @@
 
 ### 布尔臂（`= true` 可省略）
 
-`no_log`、`no_console`、`dry_run`、`agitate_only`、`fwsec_only`、`exit_fw`、
+`no_log`、`no_console`、`dry_run`、`agitate_only`、`agitate_stage`、`fwsec_only`、`exit_fw`、
 `relock`、`force_continue`、`preload`、`ebs_watch`、`ebs_selftest`、
 `host_probe`、`acpi_dump`、`gop_no_reorder`、`rebar_gop`、
 `rebar_then_tx`、`no_asset_cache`
@@ -68,6 +68,15 @@
 > 注意：`dry_run` / `agitate_only` / `fwsec_only` / `exit_fw` 是**四个独立布尔**，
 > 不是单选 `mode`——marker 世界的合法组合（如 dry-run + exit-fw）必须原样
 > 可表达。
+
+### `agitate_stage`（D#297 手术元素消融阶梯，诊断 profile 专用）
+
+`full` / `no_bridge_bme`（-桥 BME，rc7 已证伪臂，复现锚）/ `no_endpoint_command`
+（-GPU COMMAND 写，IO|MEM|BME 不动卡，BAR 读预期 garbage）/ `no_dma`（-DMA
+churn）/ `disconnect_only`（只做断连：GOP 目标句柄+PCI 句柄，无 claim/COMMAND/
+DMA/BME/重建）。每级都是完整手术的 leave-one-out（disconnect_only 除外=最小
+臂）；全部零 GPU 写。与 `agitate_only` 同设=INI-REFUSED（二义性拒跑）；本键
+为 ini-only（无 marker 双胞胎，诊断 profile 专用）。
 
 ### 值臂
 
