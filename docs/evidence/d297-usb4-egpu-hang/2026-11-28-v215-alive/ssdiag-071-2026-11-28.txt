@@ -1,0 +1,348 @@
+===== ssdiag inventory v0.7.1 (read-only; no admin, no driver) =====
+OS:      Windows 11 26H2 build 26300.9974
+CPU:     Intel(R) Core(TM) Ultra 9 285H (family 6 model 0xc5 stepping 2, 16 cores / 16 threads)
+BOARD:   LENOVO 21RUA00JCD (board: LENOVO 21RUA00JCD)
+BIOS:    R2WET44W (1.26 ) (06/30/2026)
+CHASSIS: laptop/portable (SMBIOS chassis type 10)
+RAM: 65013 MiB physical, 2 SMBIOS slots
+RAM SLOT: Controller0-ChannelA-DIMM0 0 MiB @ 6400 MT/s (SK Hynix HMCG88AHBVA327N)
+RAM SLOT: Controller1-ChannelA-DIMM0 0 MiB @ 6400 MT/s (SK Hynix HMCG88AHBVA327N)
+DISK: #0 SAMSUNG MZVLC2T0HBLD-00BLL - 1907.7 GiB
+PART: disk 0 @ 1 MiB size 260 MiB (no letter) FAT32 "SYSTEM" free 213 MiB / 256 MiB
+PART: disk 0 @ 277 MiB size 499.9 GiB C: NTFS "Windows" free 71.0 GiB / 499.9 GiB
+PART: disk 0 @ 500.2 GiB size 1305.0 GiB D: NTFS "Data" free 122.2 GiB / 1305.0 GiB
+PART: disk 0 @ 1805.2 GiB size 480 MiB E: FAT32 "NVUNLOCK" free 392 MiB / 476 MiB
+PART: disk 0 @ 1905.7 GiB size 1.9 GiB (no letter) NTFS "WinRE_DRV" free 1.0 GiB / 1.9 GiB
+PCI DEV: High Definition Audio 控制器 (10de:22bb)
+PCI DEV: Intel (R) LPC Controller/eSPI Controller - 7702 (8086:7702)
+PCI DEV: Intel (R) SMBus - 7722 (8086:7722)
+PCI DEV: Intel (R) SPI (flash) controller - 7723 (8086:7723)
+PCI DEV: Intel(R) AI Boost (8086:7d1d)
+PCI DEV: Intel(R) Arc(TM) 140T GPU (32GB) (8086:7d51)
+PCI DEV: Intel(R) Ethernet Connection (24) I219-V (8086:57a1)
+PCI DEV: Intel(R) GNA Scoring Accelerator module (8086:774c)
+PCI DEV: Intel(R) Innovation Platform Framework Processor Participant (8086:7d03)
+PCI DEV: Intel(R) Management Engine Interface #1 (8086:7770)
+PCI DEV: Intel(R) Platform Monitoring Technology (PMT) Driver (8086:7d0d)
+PCI DEV: Intel(R) Serial IO I2C Host Controller - 7778 (8086:7778)
+PCI DEV: Intel(R) Serial IO I2C Host Controller - 7779 (8086:7779)
+PCI DEV: Intel(R) Wi-Fi 7 BE201 320MHz (8086:7740)
+PCI DEV: NVIDIA GeForce RTX 4070 Ti SUPER (10de:2705)
+PCI DEV: NVIDIA GeForce RTX 5050 Laptop GPU (10de:2d98)
+PCI DEV: PCI Express 上游交换机端口 (1b21:2461)
+PCI DEV: PCI Express 下游交换机端口 (1b21:2461)
+PCI DEV: PCI Express 根端口 (8086:7738)
+PCI DEV: PCI Express 根端口 (8086:774d)
+PCI DEV: PCI Express 根端口 (8086:7ec4)
+PCI DEV: PCI Express 根端口 (8086:7ec6)
+PCI DEV: PCI Express 根端口 (8086:7ecb)
+PCI DEV: PCI Express 根端口 (8086:7ecc)
+PCI DEV: PCI 标准 RAM 控制器 (8086:777f)
+PCI DEV: PCI 标准主机 CPU 桥 (8086:7d06)
+PCI DEV: USB4(TM) 主机路由器 (Microsoft) (8086:7ec2)
+PCI DEV: USB4(TM) 主机路由器 (Microsoft) (8086:7ec3)
+PCI DEV: 标准 NVM Express 控制器 (144d:a810)
+PCI DEV: 符合 USB xHCI 的主机控制器 (8086:777d)
+PCI DEV: 符合 USB xHCI 的主机控制器 (8086:7ec0)
+PCI DEV: 英特尔® 智音技术总线 (8086:7728)
+GPU 1: NVIDIA GeForce RTX 4070 Ti SUPER
+GPU 1 PCI: 10de:2705 SUBSYS 141C196E BDF 52:00.0
+GPU 1 family: ad10x (Ada) - IN-SCOPE (unlock transaction family)
+GPU 1 VBIOS: 95.03.45.80.cb (nvapi)
+GPU 1 driver: 32.0.16.2101 (621.01), dated 10-19-2026; EnableGpuFirmware unset (LEGACY mode)
+GPU 2: NVIDIA GeForce RTX 5050 Laptop GPU
+GPU 2 PCI: 10de:2d98 SUBSYS 513617AA BDF 01:00.0
+GPU 2 family: outside the tu10x/ga10x/ad10x families - OUT-OF-SCOPE
+GPU 2 VBIOS: unknown (nvapi unavailable or no bus match)
+GPU 2 driver: 32.0.16.2101 (621.01), dated 10-19-2026; EnableGpuFirmware unset (LEGACY mode)
+===== end inventory =====
+PLATFORM: vulnerable-driver blocklist = ON
+PLATFORM: core isolation (HVCI)       = OFF
+PLATFORM: HVCI runtime (CodeIntegrity) = clear
+PLATFORM: Secure Boot                 = OFF
+PLATFORM: blocklist/HVCI gate is ON, but that alone refuses nothing here.
+  The pinned pmxdrv hash is NOT on the current Microsoft blocklist (checked
+  2026-11 against the OS-delivered and downloadable policies); it loads or
+  fails on the signature gate above, not on this one.
+NOTE: a signed kernel driver is installed for the duration of the probe; SCM logs
+      a driver install (event 7045) and managed/EDR machines may alert on it.
+USB4: Usb4HostRouter Start = 3 (Manual)
+USB4: Usb4DeviceRouter Start = 4 (Disabled)
+USB4: node USB4\ROOT_DEVICE_ROUTER&VID_8086&PID_7EC2\4&1d408544&0&0
+USB4: node USB4\VID_0000&PID_0000\5&53cbbaa&0&1
+USB4: node USB4\VID_174C&PID_2463\5&53cbbaa&0&1
+USB4: node USB4\VIRTUAL_POWER_PDO\4&1d408544&0&0
+USB4: node USB4\VID_174C&PID_2461\5&53cbbaa&0&1
+USB4: node USB4\VIRTUAL_POWER_PDO\4&1d99f77a&0&0
+USB4: device-router driver DISABLED - the takeover reset is suppressed; expect the unlock to survive the handoff
+ADVISORY: laptop chassis - the volatile unlock can drop on sleep/RTD3/MUX events; note the display mode (hybrid vs dGPU-direct) when reporting (FAQ: losing the unlock)
+2 NVIDIA GPU function(s) discovered
+===== GPU 1/2: PCI\VEN_10DE&DEV_2705&SUBSYS_141C196E&REV_A1\6&35ce86f&0&0000003A =====
+ranges:
+  94000000-94ffffff (16 MiB)
+  4240000000-424fffffff (256 MiB)
+  4250000000-4251ffffff (32 MiB)
+config-space ReBAR (bus 82 dev 0 fn 0): cap @0x0bb0 - 3 resizable BAR(s)
+  BAR0 supported [16M] current 16 MiB (size_idx 4)
+  BAR1 supported [16G/8G/4G/2G/1G/512M/256M/128M/64M] current 256 MiB (size_idx 8)
+  BAR3 supported [32M] current 32 MiB (size_idx 5)
+config-space link caps (bus 82 dev 0 fn 0): LnkCap max Gen4 x16 | LnkSta Gen2 x4 (downgraded) | LnkCap2 [Gen1,Gen2,Gen3,Gen4] | LnkCtl2 TLS Gen4
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 51:00.0 VEN_1B21&DEV_2461 PMCSR = D0 (0x0000) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: 94000000
+--- core/debug block ---
+PMC_BOOT_0             = 0x193000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0x00003ff8
+GFW_PLM                = 0x00008b8f
+GFW_SCRATCH            = 0x000003ff
+BSI_SCRATCH15          = 0x621021b7
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x1ffffe00
+WPR2_HI                = 0x00000000
+MMU_PLM                = 0x0045cb8f
+MMU_LOCK_LO            = 0x1ffffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0x00000020
+GSP_EXCI               = 0x00009f11
+SEC2_CPUCTL            = 0x00000020
+SEC2_MBOX0             = 0x00000000
+SEC2_MBOX1             = 0x00000000
+SEC2_EXCI              = 0x00008b11
+FUSE_VER_DECODE        = 0x00000001
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0xbadf5040 (closed (non-standard))
+  turing 0x4096xx      SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  turing 0x4096xx      READOUT   = 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  PLM       = 0xffffffff (OPEN)
+  0x823xxx amp/ada/gb  SS0       = 0x88888888 [0* 0* 0* 0* 0* 0* 0* 0*]
+  0x823xxx amp/ada/gb  SS1       = 0x00000008 [0*]
+  0x823xxx amp/ada/gb  READOUT_1 = 0x00000000 [full speed]
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0x0004cb8f (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0x0004cb8f (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0xffffff0f (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0x00000028
+  ad1x 64g-bar1   AD1X_CFG               = 0x80000008
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0xffffff8f (closed (stock))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0x0007fc00
+  ada fuse/tpc    FUSE_CTRL              = 0xe0040000
+  ada fuse/tpc    FUSE_ADDR              = 0x0000033f
+  ada fuse/tpc    FUSE_REG_50            = 0x033f02e3
+  ada fuse/tpc    FUSE_REG_54            = 0x00000118
+  ada fuse/tpc    FUSE_DEBUGCTRL         = 0x00400000
+  ada fuse/tpc    DISABLE_FUSE_PROG      = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    OPT_GPC_DISABLE        = 0x00000008
+  ada fuse/tpc    OPT_GPC_DEFECTIVE      = 0x00000000
+  ada fuse/tpc    CTRL_OPT_9C8           = 0x00000000
+--- tpc (per-GPC floorsweep; STATUS bit n = TPC n of that GPC) ---
+  GPC0 CTRL=0x00000000 STATUS=0x00000001 [TPC0]
+  GPC1 CTRL=0x00000000 STATUS=0x00000001 [TPC0]
+  GPC2 CTRL=0x00000000 STATUS=0x00000000 []
+  GPC3 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  GPC4 CTRL=0x00000000 STATUS=0x00000000 []
+  GPC5 CTRL=0x00000000 STATUS=0x00000000 []
+  GPC6 CTRL=0x00000000 STATUS=0x00000004 [TPC2]
+  GPC7 CTRL=0x00000000 STATUS=0x0000003f [TPC0 TPC1 TPC2 TPC3 TPC4 TPC5]
+  OPT_GPC_DISABLE=0x00000008 (bit per GPC)  OPT_GPC_DEFECTIVE=0x00000000 (bit per GPC)
+  bank A 0x008203a0..: 0x00000001 0x00000000 0x00000001 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000000
+  bank B 0x008205c0.. (+4 = OPT_GPC_DEFECTIVE above): 0x00000001 0x00000000 0x00000000 0x00000000 0xbadf5040 0x00000000 0x00000000 0x00000000
+  verdict: 15 TPC(s) fused off in 5 GPC(s), no defect bit on them - override candidates (write path out of scope)
+--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---
+  LNKCAP             = 0x00456904
+  LNKCTL_LNKSTA      = 0x10420040
+  LNKCAP2            = 0x0180001e
+  LNKCTL2_LNKSTA2    = 0x001e0004
+  PRIV_MISC_1        = 0x20b60500
+  VSEC_DEVICE        = 0x00001801
+  VSEC_HIERARCHY     = 0x00001001
+  XVE_OVR_LTSSM      = 0x00000000
+  XVE_B_PLM          = 0xffffff8f (closed (stock))
+  XVE_D0_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D4_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_D8_PLM         = 0xffffffcf (closed (non-standard))
+  XVE_C_PLM          = 0xffffff8f (closed (stock))
+  LINK_CONFIG_0      = 0x80584c00
+  PL_LINK_RATE       = 0x00040000
+  CYA_0_DISG2        = 0x00000000
+  XP3G_STATUS0       = 0x00000001
+  XP3G_STATUS3       = 0x00a0000c
+  XP3G_OVR0          = 0x00000000
+  XP3G_OVR3          = 0x00000000
+  XP3G_VAL0          = 0x00000000
+  XP3G_VAL3          = 0x00000000
+  XP3G_PLM0          = 0xffffff8f (closed (stock))
+  XP3G_PLM4          = 0xffffffcf
+  XP3G_PLM8          = 0xffffffcf
+  XP3G_PLMC          = 0xffffffcf
+  OPT_GPC_DISABLE    = 0x00000008
+  OPT_MAGIC          = 0x00a0000c
+  OPT_GEN23          = 0x00000000
+  OPT_GEN3           = 0x00000000
+  L2_CANDIDATE       = 0x00000081
+  L2_SW_MASK         = 0x00000000
+  L2_EFF_MASK        = 0x00000081
+      GA100_SM_OVR 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+     GA100_SM_STAT 0x00000001 0x00000001 0x00000000 0x0000003f 0x00000000 0x00000000 0x00000004 0x0000003f
+--- ampere/ada FEAT sweep (M1 cluster) ---
+                         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+                   value 0xffffff8f 0x00100083 0x00888888 0x00aaaaaa 0x00000233 0x00000000 0x00000001 0x0000000a 0x00004b8f
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0xffffff8f  0x008200d4=0xfffffffc
+  0x008200d8=0xffffff8f  0x008200dc=0xffffff8f
+  0x008200e0=0xffffff8f  0x008200e4=0xffffff8f
+  0x008200e8=0xfffffffc  0x008200ec=0xfffffffc
+  0x008200f0=0xfffffffc  0x008200f4=0xffffff8f
+  0x008200fc=0xffffffff [OPEN]  0x00823800=0xffffff8f
+  0x00823804=0xffffffff [OPEN]  0x00823b00=0x00004b8f
+  0x009a0008=0xbadf5040 [PRIV_VIOLATION]  0x009a000c=0x00004b8f
+  0x009a0148=0xffffff0f  0x009a014c=0xffffff8f
+  0x009a0168=0xffffffcf  0x009a03f0=0xbadf5040 [PRIV_VIOLATION]
+  0x009a0554=0xffffffcf  0x009a0bfc=0x1b30393b
+  0x00100b10=0xffffff8f  0x00100b38=0xffffff8f
+  0x00100b84=0xffffff88  0x00100b9c=0xffffffcf
+FUSE_OPT_FEATURE_OVR   = 0x00000000
+FUSE_VER               = 0x00000001
+VERDICT [ada]: UNLOCKED (override values live)
+CANARY: cleared + SS live - a reset happened but the AON island survived it (FLR/SBR class, not a rail-off)
+
+===== GPU 2/2: PCI\VEN_10DE&DEV_2D98&SUBSYS_513617AA&REV_A1\0F7E25B9FF2DB04800 =====
+ranges:
+  90000000-93ffffff (64 MiB)
+  4000000000-41ffffffff (8192 MiB)
+  4200000000-4201ffffff (32 MiB)
+config-space ReBAR (bus 1 dev 0 fn 0): cap @0x0134 - 1 resizable BAR(s)
+  BAR1 supported [8G/4G/2G/1G/512M/256M/128M/64M] current 8192 MiB (size_idx 13)
+config-space link caps (bus 1 dev 0 fn 0): LnkCap max Gen5 x16 | LnkSta Gen1 x8 (downgraded) | LnkCap2 [Gen1,Gen2,Gen3,Gen4,Gen5] | LnkCtl2 TLS Gen5
+POWER: card PMCSR = D0 (0x0008)
+POWER: root port 00:01.0 VEN_8086&DEV_7ECC PMCSR = D0 (0x0000) -> rail intact (only D3cold of the port runs _OFF)
+BAR0: 90000000
+--- core/debug block ---
+PMC_BOOT_0             = 0x1b7000a1
+PSTRAPS_SET0           = 0x00400080
+PSTRAPS_SET1           = 0x02013000
+FB_SIZE_MIB            = 0x00001fd7
+GFW_PLM                = 0x00008b8f
+GFW_SCRATCH            = 0x00000000
+BSI_SCRATCH15          = 0x000001bf
+VGA_WORKSPACE          = 0x00000001
+WPR2_LO                = 0x01fcc800
+WPR2_HI                = 0x01fd5000
+MMU_PLM                = 0x0884cb8f
+MMU_LOCK_LO            = 0x000ffff0
+MMU_LOCK_HI            = 0x00000000
+GSP_CPUCTL             = 0xbadf5720 [BADF]
+GSP_EXCI               = 0xbadf5720 [BADF]
+SEC2_CPUCTL            = 0x00000010
+SEC2_MBOX0             = 0x63e01000
+SEC2_MBOX1             = 0x94000010
+SEC2_EXCI              = 0xbadf5720 [BADF]
+FUSE_VER_DECODE        = 0x00000002
+CANARY_A/B (loader-written)  = 0x00000000/0x00000000 -> cleared
+  PSTRAPS: BAR1 index 0 = 64MiB   BAR0 = 16MiB   BAR3 = 2xBAR0   override_en = 0
+--- FEAT cluster (all mapped families, cross-visibility) ---
+  turing 0x4096xx      PLM       = 0x8087cbcf (closed (non-standard))
+  turing 0x4096xx      SS0       = 0xbadf5040 [. r4 . r5 ?7* ?5* 1/4* 1/8*]
+  turing 0x4096xx      READOUT   = 0xbadf5040 [PRIV_VIOLATION]
+  turing 0x4096xx      SS1       = 0xbadf5040 [.]
+  0x823xxx amp/ada/gb  PLM       = 0xfffffb8f (closed (PL3-only writes))
+  0x823xxx amp/ada/gb  SS0       = 0x01464077 [r7 r7 . r4 r6 r4 r1 .]
+  0x823xxx amp/ada/gb  SS1       = 0x00070001 [r1]
+  0x823xxx amp/ada/gb  READOUT_1 = 0x00c36180 [fields 0 0 3 0 3 3 0 3 0 - not rates]
+--- blackwell fuse/aux block (read-only; selectors are fuse mirrors) ---
+  FUSE_EN_SW_OVERRIDE        = 0x00000000
+  FUSE_SS_PLM                = 0xfffffbff
+  SECURE_FEAT_OVR_QUADRO_WR  = 0x00000002
+  FUSE_SS_DP                 = 0x00000000
+  FUSE_SS_FFMA               = 0x00000000
+  FUSE_SS_FMLA16             = 0x00000000
+  FUSE_SS_FMLA32             = 0x00000003
+  FUSE_SS_IMLA0              = 0x00000000
+  FUSE_SS_IMLA1              = 0x00000003
+  FUSE_SS_IMLA2              = 0x00000003
+  FUSE_SS_IMLA3              = 0x00000000
+  FUSE_SS_IMLA4              = 0x00000003
+  READOUT_1 fields (imla0 fmla16 fmla32 ffma imla1 imla2 imla3 imla4 DP) = 0 0 3 0 3 3 0 3 0
+  note: on Blackwell selector 3 measures ~HALF rate, not the Ada 1/8 - trust the raw word, not the Ada rate law
+  note: FUSE_EN_SW_OVERRIDE=0 gates CTRL_OPT floorsweep only; FUSE_FEAT_OVR_DIS=0 leaves the override path open; FUSE_SS_PLM is NOT the effective gate
+--- family-specific lines (safe reads; badf on the wrong die is expected) ---
+  ada 4-write     WPR_PLM                = 0x0884cb8f (closed (non-standard))
+  ada 4-write     WPR_CFG_PLM            = 0x00008b8f (closed (non-standard))
+  ada 4-write     FBPA_PLM               = 0x80842bcf (closed (non-standard))
+  ad1x 64g-bar1   AD1X_CYA               = 0xbadf1100 [UNDECODED]
+  ad1x 64g-bar1   AD1X_CFG               = 0xbadf1100 [UNDECODED]
+  ad1x 64g-bar1   AD1X_XVE_PLM           = 0xbadf1100 (closed (non-standard))
+  ad1x 64g-bar1   AD1X_BAR1_CAP_MIRROR   = 0xbadf1100 [UNDECODED]
+  ada fuse/tpc    FUSE_CTRL              = 0xe0440100
+  ada fuse/tpc    FUSE_ADDR              = 0x00000000
+  ada fuse/tpc    FUSE_REG_50            = 0x0459043b
+  ada fuse/tpc    FUSE_REG_54            = 0x00000118
+  ada fuse/tpc    FUSE_DEBUGCTRL         = 0x00000000
+  ada fuse/tpc    DISABLE_FUSE_PROG      = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    OPT_GPC_DISABLE        = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    OPT_GPC_DEFECTIVE      = 0xbadf5040 [PRIV_VIOLATION]
+  ada fuse/tpc    CTRL_OPT_9C8           = 0xbadf5040 [PRIV_VIOLATION]
+--- pcie/gen2 probe (field round 3 union: cmp50hx patch04 + cmpunlocker 0007 + bar1 + L2) ---
+  LNKCAP             = 0xbadf1100 [UNDECODED]
+  LNKCTL_LNKSTA      = 0xbadf1100 [UNDECODED]
+  LNKCAP2            = 0xbadf1100 [UNDECODED]
+  LNKCTL2_LNKSTA2    = 0xbadf1100 [UNDECODED]
+  PRIV_MISC_1        = 0xbadf1100 [UNDECODED]
+  VSEC_DEVICE        = 0xbadf1100 [UNDECODED]
+  VSEC_HIERARCHY     = 0xbadf1100 [UNDECODED]
+  XVE_OVR_LTSSM      = 0xbadf1100 [UNDECODED]
+  XVE_B_PLM          = 0xbadf1100 (closed (non-standard))
+  XVE_D0_PLM         = 0xbadf1100 (closed (non-standard))
+  XVE_D4_PLM         = 0xbadf1100 (closed (non-standard))
+  XVE_D8_PLM         = 0xbadf1100 (closed (non-standard))
+  XVE_C_PLM          = 0xbadf1100 (closed (non-standard))
+  LINK_CONFIG_0      = 0xbadf5040 [PRIV_VIOLATION]
+  PL_LINK_RATE       = 0xbadf5040 [PRIV_VIOLATION]
+  CYA_0_DISG2        = 0xbadf5040 [PRIV_VIOLATION]
+  XP3G_STATUS0       = 0xbadf1100 [UNDECODED]
+  XP3G_STATUS3       = 0xbadf1100 [UNDECODED]
+  XP3G_OVR0          = 0xbadf1100 [UNDECODED]
+  XP3G_OVR3          = 0xbadf1100 [UNDECODED]
+  XP3G_VAL0          = 0xbadf1100 [UNDECODED]
+  XP3G_VAL3          = 0xbadf1100 [UNDECODED]
+  XP3G_PLM0          = 0xbadf1100 (closed (non-standard))
+  XP3G_PLM4          = 0xbadf1100 [UNDECODED]
+  XP3G_PLM8          = 0xbadf1100 [UNDECODED]
+  XP3G_PLMC          = 0xbadf1100 [UNDECODED]
+  OPT_GPC_DISABLE    = 0xbadf5040 [PRIV_VIOLATION]
+  OPT_MAGIC          = 0xbadf5040 [PRIV_VIOLATION]
+  OPT_GEN23          = 0xbadf5040 [PRIV_VIOLATION]
+  OPT_GEN3           = 0xbadf5040 [PRIV_VIOLATION]
+  L2_CANDIDATE       = 0x00000001
+  L2_SW_MASK         = 0x00000000
+  L2_EFF_MASK        = 0x00000000
+      GA100_SM_OVR 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+     GA100_SM_STAT 0x000000e0 0x000000e0 0x000000ff 0x000000ff 0x000000ff 0x000000ff 0x000000ff 0x000000ff
+--- ampere/ada FEAT sweep (M1 cluster) ---
+                         0x00823800 0x00823808 0x0082380c 0x00823810 0x00823814 0x00823824 0x00823828 0x0082382c 0x00823b00
+                   value 0xfffffb8f 0x00100383 0x00888888 0xaa2a2aaa 0x00000233 0x00000003 0x00000001 0x022aaaaa 0xfffffb8f
+--- PLM survey (cmp170hx 26-register union) ---
+  0x008200d0=0xfffffb8f  0x008200d4=0xfffffbfc
+  0x008200d8=0xfffffb8f  0x008200dc=0xfffffb8f
+  0x008200e0=0x00800b8f  0x008200e4=0x00800b8f
+  0x008200e8=0xfffffbfc  0x008200ec=0xfffffbfc
+  0x008200f0=0xfffffbfc  0x008200f4=0x00800b8f
+  0x008200fc=0xfffffbff  0x00823800=0xfffffb8f
+  0x00823804=0xfffffb8f  0x00823b00=0xfffffb8f
+  0x009a0008=0xffffff8f  0x009a000c=0x00004b8f
+  0x009a0148=0x80842bcf  0x009a014c=0x82802bcf
+  0x009a0168=0xffffffcf  0x009a03f0=0xffffff8f
+  0x009a0554=0xffffffcf  0x009a0bfc=0x22202f1d
+  0x00100b10=0xbadf1100 [UNDECODED]  0x00100b38=0xbadf1100 [UNDECODED]
+  0x00100b84=0xbadf1100 [UNDECODED]  0x00100b9c=0xbadf1100 [UNDECODED]
+FUSE_OPT_FEATURE_OVR   = 0x00000000
+FUSE_VER               = 0x00000002
+VERDICT [blackwell-gb2]: NOT_UNLOCKED
+FAMILY NOTE: Blackwell has no SEC2 stage and no GB20x booter - the transaction path cannot run on this die; the FEAT block is read-only here (docs/blackwell-gb20x-status.md)
+FAMILY NOTE: nonzero SS0/SS1 are pre-driver shadow state, not an unlock - enable bits clear means the fused selectors are in force
+CANARY: cleared + SS gone - a reset hit this boot after the EFI handoff (expected anonymous relock)
+driver service removed (remove-when-done)

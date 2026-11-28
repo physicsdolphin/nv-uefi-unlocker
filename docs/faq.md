@@ -545,6 +545,15 @@ Turing 的交棒自 2026-11-08 起默认**门开**（与 Ampere/Ada 一致；TU1
 
 **2026-11-22 机理级更新（[#239](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/239) ebs-watch A/B）**：rc5 `	x-ebs-watch.txt` 在该机拿到了**真机挂死的阶段定位**——TB-on 轮色块=黄（NOTIFY，已过内存图校验进入扇出）有、绿（RETURN）无、蓝（BEFORE）无（Insyde 与 AMI 一样不发 BeforeEBS 组）；TB-off 轮同路径黄→绿完整返回。两轮 ebs-watch 文件逐字节等价（各恰好一次预算内 INVALID_PARAMETER 自扰、gmm 计数逐位相同）→ **"雷电后台活动让 MapKey 失效、反复重试"类机理被证伪**；楔子=**扇出尾段（NOTIFY→RETURN 间隙），且仅 TB-on**。下一判别轮=`	x-agitate-only.txt`+`	x-ebs-watch.txt`+TB-on（区分"活态解锁 GPU×雷电" vs "loader 手术×雷电"）。证据：`docs/evidence/issue239-tb-hang-ebswatch/`。
 
+### 隧道直挂 eGPU 形态：挂点在固件 BM 阶段、保持靠 RTD3 抑制（2026-11-28，D#297）
+
+USB4 隧道**直挂** eGPU（ASM2464PD，非独立 JHL 桥；[D#297](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/297)）与上面"关 BIOS 雷电"两例不同形，该机已有一组实测结论（N=1，判别轮仍在跑）：
+
+- **零写手术臂的"挂"不在 loader 里**：rc7/rc9 每轮日志都走到 `FINAL: read-only run complete` 正常闭合（exit-fw 轮的 reconnect pass/LoadImage 根本不会跑——exit-fw 分支在 LoadImage 之前就返回）。挂点 = **Exit() 之后的固件 BM/BDS 引导阶段**（ebs-watch 全程无 `EBS-ENTER` 佐证）。v2.1.5 全事务同机同天能进系统：它没有 exit-fw 功能（marker 惰性）、直接链载 bootmgfw、无 ebs-watch patch——死/活差集 = {FWBM 返回路径, gBS patch, 术后状态}，判别矩阵见 [D#297 2026-11-28 回复](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/297#discussioncomment-19968113)。
+- **DisconnectController 在该机无操作**：断连前后协议清单逐行相同（17 opener 零卸载、零 Stop()）——"解绑楔子"类机理在该机不成立；"对句柄的任何操作都楔住"也被同机全事务轮证伪。
+- **解锁保持 = RTD3 抑制**：交棒后解锁被冲的来源是 Windows 驱动对该 eGPU 的**运行时 D3 停放**；`EnableRuntimePowerManagement=0`（设备驱动键）抑制后同会话 UNLOCKED 稳定保持（PLM 开、SS live、AON 扛过复位）。该形态当前可用组合：**全事务构建 + RTD3 抑制**（D#297 实测 UNLOCKED）。
+- **增益语义**：dense FP16/BF16 精确 2.0×（SS 半速钳制解除）；4070 Ti Super 锁态实测 89.4 TFLOPS、满速 ≈176–178（"180 多"多为 FP16-accum/稀疏口径）。
+
 <a id="secureboot"></a>
 
 ## Secure Boot 开着能用吗？
