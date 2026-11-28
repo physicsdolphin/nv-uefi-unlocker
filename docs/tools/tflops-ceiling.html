@@ -69,7 +69,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
 <div class="hd">
   <div>
     <div class="tl" id="gc-h1">理论解锁上限 · GTX 9 – RTX 50 桌面 + 笔记本 + 专业卡/数据中心对照</div>
-    <div class="sub" id="gc-sub">dense TFLOPS · FP32 累加 · 不含稀疏 · 笔记本取最高 boost，未按 OEM TGP 折算</div>
+    <div class="sub" id="gc-sub">dense TFLOPS · 张量页按白皮书原始行取值（累加精度见页内说明）· 不含稀疏 · 笔记本取最高 boost，未按 OEM TGP 折算</div>
   </div>
   <button id="gc-lang" type="button" title="Switch language">EN</button>
 </div>
@@ -119,7 +119,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
     zh:{
       docTitle:"理论解锁上限 · GTX 9 – RTX 50 桌面 / 笔记本 / 专业卡 / 数据中心参考",
       h1:"理论解锁上限 · GTX 9 – RTX 50 桌面 + 笔记本 + 专业卡/数据中心对照",
-      sub:"dense TFLOPS · FP32 累加 · 不含稀疏 · 笔记本取最高 boost，未按 OEM TGP 折算",
+      sub:"dense TFLOPS · 张量页按白皮书原始行取值（累加精度见页内说明）· 不含稀疏 · 笔记本取最高 boost，未按 OEM TGP 折算",
       tabsLabel:"精度",lang:"EN",langTitle:"Switch to English",
       stock:"显示出厂现值",mob:"含笔记本",cmp:"比较模式",r50:"含参考行",pd:"专业卡/数据中心",log:"对数刻度",
       lg:["出厂（钳制）","9/10/16 系（不可解锁）","20 系","30 系","30/40 系 / 解锁后上限","参考行（50 系 / 专业卡 / 数据中心）"],
@@ -129,7 +129,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
       jrA:"出厂第",jrB:" → 现第",peak:"该精度最高 ",peakNone:"该精度无可用型号",
       notes:{f:"FP32 走 CUDA 核，出厂即全速，解锁不改变它。",
         t:"TF32 仅 30/40 系具备。消费 30/40 系的架构速率都是 FP32 的两倍、出厂一律砍回 1× FP32（GeForce 的著名怪象：出厂 TF32 与 FP32 同值），解锁才回到 2× FP32；30 系这条锁此前被误判为不存在，2026-11-06 由 #194（3070 Ti 17.0→37.5）与本机 3080 12 GB（约 35→69）实测推翻。专业卡、数据中心与 50 系对照行为出厂全速（† 不翻倍）。",
-        h:"FP16 为张量核 dense 值：出厂格取白皮书「FP32 累加」行（被钳制的那条），解锁格取「FP16 累加」全速行——20 系 4×→8× FP32，30 系 2×→4×；40 系两条累加路径同速，故出厂 2×、解锁 4×（实测：解锁后 3080 约 130 TFLOPS，即 FP16 累加全速）。9/10/16 系无张量核（10 系按 FP32 模拟值列出、16 系为 CUDA 核 2×，均仅作参考）。",
+        h:"FP16 为张量核 dense 值：出厂格取白皮书「FP32 累加」行（被钳制的那条），解锁格取「FP16 累加」全速行——20 系 4×→8× FP32，30/40 系 2×→4×（40 系的 FP16 累加行仍是 FP32 累加行的 2×；实测 2757 的 f16/f32 88.8→177.4 TF/s，同机 f16/f16 对照 177.3→177.7，1.00×）。9/10/16 系无张量核（10 系按 FP32 模拟值列出、16 系为 CUDA 核 2×，均仅作参考）。",
         b:"BF16 仅 30 系起具备；消费 30/40 系出厂半速，专业卡与数据中心为全速。",
         e:"FP8 仅 40 系起具备（四代张量核）；消费 40 系出厂钳制在半速，专业卡与数据中心为全速。"},
       ft:["数值 = SM × 每 SM 每时钟 FMA × 2 × 加速频率。解锁 = 恢复白皮书全速，钳制路径 ×2；不含稀疏。",
@@ -144,12 +144,12 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
         "笔记本行取该型号最高 boost，未按 OEM TGP 折算——解锁后受功耗墙压制更狠；Max-Q 变体未单列。RTX 2050 实为 GA107（Ampere）硅片，故有 TF32/BF16；RTX 5050（桌面 GB207-300 与笔记本）均为 GB207 参考行，不在本工具解锁范围内。",
         "比较模式：点击卡片行选中你的卡（可多选，再点取消）——选中卡按解锁后数值排位并高亮，其余卡按出厂值排位；行内徽标显示排位变化，切到其他精度页签可带着同一组选择继续比较。",
         "条形默认对数刻度，数量级相差几个世纪的卡才都读得出来（线性刻度下 CMP 的 0.2 TFLOPS 只剩一根线）；关掉「对数刻度」即按线性绘制，读数仍以右侧数值为准。"],
-      foot:"数据来源：Wikipedia 各代桌面/移动/专业/数据中心规格表与 NVIDIA RTX Spark 官方规格页 × <code>docs/theoretical-uplift.md</code> 的逐 SM 速率模型；解锁值 = 白皮书全速，被钳制路径 ×2，不含稀疏；9/10/16 系、50 系、专业卡、移动工作站与数据中心为出厂参考；张量速率逐族只按白皮书原始表取值（20 系 FP16/BF16 出厂 = FP32 的 4×、解锁 8×；30 系出厂 2×、解锁 4×；40 系出厂 2×、解锁 4×；专业卡与数据中心不钳制，按架构全速取值），移动与桌面同族同值。实际到手受功耗墙、带宽与库路由削减。"
+      foot:"数据来源：Wikipedia 各代桌面/移动/专业/数据中心规格表与 NVIDIA RTX Spark 官方规格页 × <code>docs/theoretical-uplift.md</code> 的逐 SM 速率模型；解锁值 = 白皮书全速，被钳制路径 ×2，不含稀疏；9/10/16 系、50 系、专业卡、移动工作站与数据中心为出厂参考；张量速率逐族只按白皮书原始表取值（20 系 FP16 出厂 = FP32 的 4×、解锁 8×；30 系出厂 2×、解锁 4×；40 系出厂 2×、解锁 4×；专业卡与数据中心不钳制，按架构全速取值），移动与桌面同族同值。实际到手受功耗墙、带宽与库路由削减。"
     },
     en:{
       docTitle:"Theoretical post-unlock ceiling · GTX 9 – RTX 50 desktop / laptop / pro / datacenter reference",
       h1:"Theoretical post-unlock ceiling · GTX 9 – RTX 50 desktop + laptop + pro/datacenter reference",
-      sub:"dense TFLOPS · FP32 accumulate · no sparsity · laptops take the highest boost clock, not derated per OEM TGP",
+      sub:"dense TFLOPS · tensor tabs use the whitepaper rows (accumulation precision noted per tab) · no sparsity · laptops take the highest boost clock, not derated per OEM TGP",
       tabsLabel:"Precision",lang:"中文",langTitle:"切换到中文",
       stock:"Show as-shipped",mob:"Include laptops",cmp:"Comparison mode",r50:"Include reference rows",pd:"Pro & datacenter",log:"Log scale",
       lg:["As-shipped (clamped)","9/10/16 series (no unlock)","RTX 20","RTX 30","RTX 30/40 / post-unlock ceiling","Reference (RTX 50 / pro / datacenter)"],
@@ -159,7 +159,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
       jrA:"as-shipped #",jrB:" → now #",peak:"fastest for this precision: ",peakNone:"no model offers this precision",
       notes:{f:"FP32 runs on the CUDA cores; it is full speed as shipped and unlock does not change it.",
         t:"TF32 exists from RTX 30 on (9/10/16 series have no tensor units). Consumer 30- and 40-series parts both run at twice FP32 architecturally and both are halved at the factory to 1× FP32 (the well-known GeForce oddity: stock TF32 equals FP32); unlock is what restores 2× FP32. The 30-series clamp was previously judged not to exist; it was refuted on 2026-11-06 by #194 (3070 Ti 17.0→37.5) and a local 3080 12 GB run (~35→69). Pro cards, datacenter and the RTX 50 reference rows ship at the full architectural rate (†, no doubling).",
-        h:"FP16 is the tensor-core dense figure: the as-shipped cell takes the whitepaper's FP32-accumulate row (the clamped one) and the unlocked cell its FP16-accumulate full-rate row — 4x→8x FP32 on the 20 series, 2x→4x on the 30 series; on the 40 series both accumulate paths run at the same rate, so 2x as shipped and 4x unlocked (measured: an unlocked 3080 reads ~130 TFLOPS, i.e. the FP16-accumulate full rate). 10/16 series have no tensor cores (the 10-series figure is the FP32 emulation, the 16-series one the CUDA-core 2× path; both reference only).",
+        h:"FP16 is the tensor-core dense figure: the as-shipped cell takes the whitepaper's FP32-accumulate row (the clamped one) and the unlocked cell its FP16-accumulate full-rate row — 4x→8x FP32 on the 20 series, 2x→4x on the 30 and 40 series (on the 40 series the FP16-accumulate row is still 2x the FP32-accumulate row; 2757 measured f16/f32 88.8→177.4 TF/s with the same machine's f16/f16 control flat at 177.3→177.7, 1.00x). 9/10/16 series have no tensor cores (the 10-series figure is FP32 emulation, the 16-series one the CUDA-core 2× path; both reference only).",
         b:"BF16 exists from RTX 30 on; consumer 30/40 is half speed as shipped, pro cards and datacenter are full speed.",
         e:"FP8 exists from RTX 40 on (fourth-gen tensor cores); consumer 40 is clamped to half speed as shipped, pro cards and datacenter are full speed."},
       ft:["Value = SM × FMA per SM per clock × 2 × boost clock. Unlock = restore the whitepaper full rate, ×2 on the clamped path; no sparsity.",
@@ -174,7 +174,7 @@ footer{max-width:960px;margin:12px auto 24px;font-size:12px;color:var(--muted-fo
         "Laptop rows take the model's highest boost clock, not derated per OEM TGP — after unlock they hit the power wall harder; Max-Q variants are not split out. The RTX 2050 is really a GA107 (Ampere) die, hence TF32/BF16; and the RTX 5050 (desktop GB207-300 and laptop alike) is a GB207 reference row outside this tool’s unlock scope.",
         "Comparison mode: click a card row to select it (multi-select, click again to clear) — selected cards rank and highlight by post-unlock figures, the rest by as-shipped values; the inline badge shows the rank change, and switching precision tabs carries the same selection.",
         "Bars default to a logarithmic scale so cards orders of magnitude apart stay readable (on a linear scale the 0.2 TFLOPS CMP cards collapse to a line); switch “Log scale” off for linear bars — always read the number on the right."],
-      foot:"Sources: Wikipedia desktop/mobile/pro/datacenter spec tables and NVIDIA's RTX Spark spec page × the per-SM rate model in <code>docs/theoretical-uplift.en.md</code>; unlock values are the whitepaper full rate, ×2 on clamped paths, no sparsity; 9/10/16 series, RTX 50, pro, mobile-workstation and datacenter rows are as-shipped reference; tensor rates are taken per family straight from the whitepaper tables only (20 series FP16/BF16 4x FP32 as shipped, 8x unlocked; 30 series 2x, 4x unlocked; 40 series 2x, 4x unlocked; pro and datacenter unclamped at the architectural rate) - mobile and desktop share the same per-family ratio. Real results are cut by the power wall, bandwidth and library routing."
+      foot:"Sources: Wikipedia desktop/mobile/pro/datacenter spec tables and NVIDIA's RTX Spark spec page × the per-SM rate model in <code>docs/theoretical-uplift.en.md</code>; unlock values are the whitepaper full rate, ×2 on clamped paths, no sparsity; 9/10/16 series, RTX 50, pro, mobile-workstation and datacenter rows are as-shipped reference; tensor rates are taken per family straight from the whitepaper tables only (20 series FP16 4x FP32 as shipped, 8x unlocked; 30 series 2x, 4x unlocked; 40 series 2x, 4x unlocked; pro and datacenter unclamped at the architectural rate) - mobile and desktop share the same per-family ratio. Real results are cut by the power wall, bandwidth and library routing."
     }
   };
   var CHIP_EN={"GB202-865-A1 · 96 GB · 300 W":"GB202-865-A1 · 96 GB · 300 W","TU106（TU106 标准版换芯）":"TU106 (standard TU106 re-die)","GA107/GA106 双芯":"GA107/GA106 dual die","GA106 · 亦有 GA104 变体":"GA106 · also a GA104 variant","GA104（GA106 标准版换芯）":"GA104 (standard GA106 re-die)","GA107（Ampere 硅片）":"GA107 (Ampere die)","TU106 · 亦有 TU104 变体":"TU106 · also a TU104 variant","AD103 · 亦有 AD102 变体（同规格）":"AD103 · also an AD102 variant (same specs)","TU106-100 · 2176 核":"TU106-100 · 2176 cores","TU102-100 · 3584 核":"TU102-100 · 3584 cores","GA104-100 · 3840 核":"GA104-100 · 3840 cores","GA100-105F · 4480 核":"GA100-105F · 4480 cores","GB202GL · 84 GB · 中国特供":"GB202GL · 84 GB · China-only","GP102 · 24 GB · 无显示输出":"GP102 · 24 GB · no display output","GP102-100 · 5/10 GB · 无显示输出":"GP102-100 · 5/10 GB · no display output","GP104-100 · 4/8 GB · 无显示输出":"GP104-100 · 4/8 GB · no display output","GP106-100 · 6 GB · 无显示输出":"GP106-100 · 6 GB · no display output"};
