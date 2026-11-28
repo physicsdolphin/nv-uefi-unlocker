@@ -552,7 +552,7 @@ USB4 隧道**直挂** eGPU（ASM2464PD，非独立 JHL 桥；[D#297](https://git
 - **零写手术臂的"挂"不在 loader 里**：rc7/rc9 每轮日志都走到 `FINAL: read-only run complete` 正常闭合（exit-fw 轮的 reconnect pass/LoadImage 根本不会跑——exit-fw 分支在 LoadImage 之前就返回）。挂点 = **Exit() 之后的固件 BM/BDS 引导阶段**（ebs-watch 全程无 `EBS-ENTER` 佐证）。v2.1.5 全事务同机同天能进系统：它没有 exit-fw 功能（marker 惰性）、直接链载 bootmgfw、无 ebs-watch patch——死/活差集 = {FWBM 返回路径, gBS patch, 术后状态}，判别矩阵见 [D#297 2026-11-28 回复](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/297#discussioncomment-19968113)。
 - **DisconnectController 在该机无操作**：断连前后协议清单逐行相同（17 opener 零卸载、零 Stop()）——"解绑楔子"类机理在该机不成立；"对句柄的任何操作都楔住"也被同机全事务轮证伪。
 - **解锁保持 = RTD3 抑制**：交棒后解锁被冲的来源是 Windows 驱动对该 eGPU 的**运行时 D3 停放**；`EnableRuntimePowerManagement=0`（设备驱动键）抑制后同会话 UNLOCKED 稳定保持（PLM 开、SS live、AON 扛过复位）。该形态当前可用组合：**全事务构建 + RTD3 抑制**（D#297 实测 UNLOCKED）。
-- **增益语义**：dense FP16/BF16 精确 2.0×（SS 半速钳制解除）；4070 Ti Super 锁态实测 89.4 TFLOPS、满速 ≈176–178（"180 多"多为 FP16-accum/稀疏口径）。
+- **增益语义**：SS 解锁的速率语义 = dense 2.0×（半速钳制解除，AD103 满速 ≈176–178）；**实测吞吐受功耗墙封顶**——4070 Ti Super 锁态 89.4 TFLOPS → 解锁态实测 FP16 148.6 / BF16 153.6 / TF32 72.9（285W 墙，≈1.67×），FP32 290.1 对照在位（解锁不全的疑虑不成立）；kernel 选择变量另算。
 
 <a id="secureboot"></a>
 
