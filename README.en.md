@@ -579,7 +579,27 @@ repository.
   [Instagram/ufd_tech](https://www.instagram.com/reel/De-ToVCgoRJ/) (EN, 120K+ likes) ·
   [Instagram/moddersinc](https://www.instagram.com/p/DfPiPqrG1CO/) (EN) ·
   [Instagram/code_signals](https://www.instagram.com/p/DfNV9ywFWPG/) (EN) ·
-  [Instagram/classified.ai](https://www.instagram.com/reel/DfhO_Axgs2-/) (EN)
+  [Instagram/classified.ai](https://www.instagram.com/reel/DfhO_Axgs2-/) (EN) ·
+  [KOCPC English](https://en.kocpc.com.tw/archives/26737) (EN) ·
+  [Guru3D forum thread](https://forums.guru3d.com/threads/modders-report-up-to-75-higher-ai-compute-on-geforce-rtx-20-30-and-40-cards.462390/) (EN) ·
+  [Reddit/r/tomshardware](https://www.reddit.com/r/tomshardware/comments/1xl6s42/opensource_usb_tool_unlocks_nvidias_halfspeed_gpu/) (EN) ·
+  [Reddit/r/HighVRAMHardwareWatch](https://www.reddit.com/r/HighVRAMHardwareWatch/comments/1xltzjg/opensource_usb_tool_unlocks_nvidias_halfspeed_gpu/) (EN) ·
+  [Facebook/Tom's Hardware](https://www.facebook.com/tomshardware/posts/an-open-source-uefi-tool-nv-uefi-unlocker-lifts-nvidias-tensor-rate-cap-on-rtx-2/1542242557940157/) (EN) ·
+  [Appinn (小众软件)](https://www.appinn.com/nvidia-gpu-ai-compute-unlock/) (ZH) ·
+  [SMZDM "your RTX has always been running at half speed"](https://post.smzdm.com/p/aqrzlpev/) (ZH) ·
+  [Tencent News "RTX 30 cracked on Windows too"](https://news.qq.com/rain/a/20261027A08B6I00) (ZH) ·
+  [GitCode blog "nv-uefi-unlocker community lineage and acknowledgements"](https://blog.gitcode.com/378fd52307292b3b145d70b50deba70b.html) (ZH) ·
+  [CSDN blog "how to verify the unlock actually took effect"](https://blog.csdn.net/gitblog_00215/article/details/161440400) (ZH) ·
+  [Sohu/Jianming Kexue "RTX performance +75%"](https://m.sohu.com/a/1096476767_120573081) (ZH) ·
+  [UNIKO's Hardware](https://unikoshardware.com/2026/11/nv-uefi-unlocker-ai-compute.html) (ZH-TW) ·
+  [Threads/@pzman3d](https://www.threads.com/@pzman3d/post/Df8zQyikyuj/) (ZH-TW) ·
+  [YouTube/true visuals](https://www.youtube.com/watch?v=I77YCGEurxk) (EN, RTX 3060 vs 5050 ComfyUI benchmark) ·
+  [YouTube/Jake Bonbrake](https://www.youtube.com/watch?v=gzw_DaTXSQ4) (EN, 14K+ views) ·
+  [YouTube/Dofu AI](https://www.youtube.com/watch?v=O8pV33e3_AY) (EN) ·
+  [YouTube/Swarowsky Tech](https://www.youtube.com/watch?v=4IJes3iL2Os) (EN, 10K+ views) ·
+  [YouTube/Star_Owal](https://www.youtube.com/watch?v=uOJfnTNOm1U) (ZH-TW) ·
+  [YouTube/thecodebear](https://www.youtube.com/watch?v=pnT4YYhdZb8) (EN, 68K+ views) ·
+  [YouTube/terminal-max (Shorts)](https://www.youtube.com/shorts/Uu8vnPtKroM) (EN)
 
 ## Star History
 
