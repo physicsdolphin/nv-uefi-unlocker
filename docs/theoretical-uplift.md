@@ -10,6 +10,7 @@
 - **速率单位**：半字 FMA/clk/SM（每时钟每 SM 的半精度乘加数）与 results/clk/SM（CUDA 编程指南口径）混用时逐处标注。
 - **理论上限的定义**：解锁 = 恢复**白皮书速率**（出厂架构速率），不是超频。因此每档精度的理论上限 = 出厂速率 ÷ 出货钳制速率，钳制路径为 2×，未钳制路径为 1×。
 - **实测区间来源**：[兼容性矩阵](compatibility.md)与本仓 evidence 目录；对照实验（解锁前后同机同驱动同功耗档）优先。
+- **累加精度口径（2026-11-28，#306 勘误）**：白皮书的张量表把同一物理路径按累加精度分成两列，引用时必须同时写明输入精度**与累加精度**。按本仓实测，`with FP32 Accumulate` 列对应出货钳制后的半速值，`with FP16 Accumulate` 列是该路径的满速值：2757 的 FP16·FP32acc 88.8 → 177.4 TF/s（2.00×），而同机 FP16·FP16acc 177.3 → 177.7（1.00×）；桌面 4090 的外部复现同形（165.6 → 331.6 TF/s，见 §3.3）。
 
 ## 2. 锁的单元级机理：九路速率选择器
 
@@ -42,17 +43,17 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 - 每 SM：4 处理块 × {16 FP32 + 16 INT32 + 2× 二代张量核}，FP64 ×2，4 warp 调度器（[Turing 白皮书](https://images.nvidia.com/aem-dam/en-zz/Solutions/design-visualization/technologies/turing-architecture/NVIDIA-Turing-Architecture-Whitepaper.pdf)、[Turing Tuning Guide](https://docs.nvidia.com/cuda/turing-tuning-guide/index.html)）。
 - 每时钟每 SM：FP32 64 FMA；CUDA 核 FP16（HFMA2）128；张量 FP16（HMMA.16816）512 半字 FMA；INT32 64；FP64 2。
-- 白皮书峰值（2080 Ti · TU102）：FP16 张量 **134.9 TFLOPS dense**（FP16 累加；269.8 sparse）· INT8 张量 428.4 TOPS · INT32 13.4 TIPS。
+- 白皮书峰值（2080 Ti · TU102；参考版/Founders Edition）：FP16 张量 **107.6/113.8 TFLOPS dense（FP16 累加；215.2/227.7 sparse）** · FP16·FP32acc 53.8/56.9 · INT8 张量 215.2/227.7 TOPS · INT32 13.4/14.2 TIPS。
 - 代际不存在 TF32/BF16/FP8 张量路径（非钳制，是硬件没有）。
-- **出货钳制（本仓实测）**：HMMA FP16·FP32acc 半速。2080 Ti 11GB 原厂解锁前 60.31 TFLOPS（≈ 白皮书一半再打功耗折），解锁后 89.57（[#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103)，功耗墙内）；2080 Super 46 → 68（[#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14)）。
+- **出货钳制（本仓实测）**：HMMA FP16·FP32acc 半速。2080 Ti 11GB 原厂 60.31 TFLOPS（≈ 白皮书 FP32acc 56.9，频率差 +6%），解锁后 89.57（= 白皮书 FP16acc 113.8 的 79%，功耗墙内，[#103](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/103)）；2080 Super 46 → 68（[#14](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/14)）——两例的出厂值都贴白皮书 FP32acc 列，解锁后向 FP16acc 列靠拢，差额由功耗墙解释。
 
 ### 3.2 Ampere 消费（GA10x · CC 8.6 · RTX 30）
 
 ![Ampere GA10x SM](images/sm-ampere-ga10x.svg)
 
 - 每 SM：4 分区 × {32 FP32 + 1× 三代张量核}，FP64 ×2（[GA102 白皮书](https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.1.pdf)、[Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html)：CC 8.6 的 FP32 吞吐是 CC 8.0 的 2×/SM）。
-- 每时钟每 SM：FP32 128 FMA；张量 FP16acc 256 半字 FMA；TF32 128；INT8 IMMA 512；FP64 1 FMA（≈FP32 的 1/64，**架构性**，消费/专业同）。
-- 自验算（3090 · 82 SM · 1.71 GHz）：82 × 256 × 2 × 1.71 ≈ 71.5 TF ✓ = 白皮书 FP16acc 71 dense；FP32acc 35.3 dense = ×0.5 **白皮书直接写明消费减半**；INT8 284 TOPS = 2× FP16acc（全速）；TF32 35.6 = 架构 2×FP32 的出货半速（30 系标准卡同样出厂钳制，#194 实测 3070 Ti 17.0→37.5 解锁翻倍）；FP64 0.56。
+- 每时钟每 SM（results/clk/SM，result=FMA）：FP32 128；张量 FP16·FP16acc 512 · FP16/BF16·FP32acc 256（出货值；解锁后 512）· TF32 128（出货值；解锁后 256）· INT8 IMMA 1024；FP64 2 FMA（≈FP32 的 1/64，**架构性**，消费/专业同）。
+- 自验算（3090 · 82 SM · 1.695 GHz）：82 × 512 × 2 × 1.695 ≈ 142 TF ✓ = 白皮书 FP16acc 142 dense（同一张表的 FP32acc 列 71 = ×0.5，**白皮书直接写明消费减半**）；INT8 284 TOPS = 2× FP16acc（全速）；TF32 35.6 = 架构 256/clk（2×FP32）的出货半速（30 系标准卡同样出厂钳制，#194 实测 3070 Ti 17.0→37.5 解锁翻倍）；FP64 0.56。
 - 熔丝签名：`FEAT_READOUT_1 = 0x00400080`。
 
 ### 3.3 Ada（AD10x · CC 8.9 · RTX 40）
@@ -60,8 +61,8 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 ![Ada SM](images/sm-ada.svg)
 
 - SM 结构与 GA10x 同构（128 FP32 + 4× 四代张量核 + FP64 ×2），新增 FP8（E4M3/E5M2）张量路径（[Ada 白皮书](https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf)、[Ada Tuning Guide](https://docs.nvidia.com/cuda/ada-tuning-guide/index.html)）。
-- CUDA 指南 CC 8.9 行（results/clk/SM）：FP8 1024 · FP16/BF16/TF32 256 · FP32 128 · FP64 2。
-- 自验算（4090 · AD102 · 128 SM · 2.52 GHz）：128 × 256 × 2 × 2.52 ≈ 165 TF ✓ = 白皮书 FP16acc dense；**白皮书把 FP32acc 全速率写成规格（330 sparse/165 dense）**——但出货固件按半速钳制。4090 Laptop（AD103M · 76 SM · 2.29 GHz）自验算 76 × 256 × 2 × 2.29 ≈ 178 TF ✓，与本仓 2757 解锁后实测 177.4 TF/s 逐位吻合（[evidence/uefi-2757-m18r1](evidence/uefi-2757-m18r1/report.md)）。
+- CUDA 指南 CC 8.9 原生行（CUDA 核，results/clk/SM）：FP16 256 · FP32 128 · FP64 2；张量侧按 [Ada 白皮书 V2.02](https://images.nvidia.com/aem-dam/Solutions/Data-Center/l4/nvidia-ada-gpu-architecture-whitepaper-V2.02.pdf) Appendix A Table 2（pp. 29–31，4090 · 128 SM · 2.52 GHz）折算：FP16·FP16acc 512 · FP16/BF16·FP32acc 256（出货值；解锁后 512）· TF32 128（出货值；解锁后 256）· FP8 1024/512（FP16acc/FP32acc）· INT8 1024。
+- 自验算（4090 · AD102 · 128 SM · 2.52 GHz）：128 × 256 × 2 × 2.52 ≈ 165 TF = 白皮书 **FP16·FP32acc** dense（165.2/330.4 sparse；出货钳制值），同一张表的 **FP16·FP16acc** 为 330.3 dense（512/clk）——后者出厂即满速，也是解锁后 FP32acc 路径实测回到的速率（外部 8×4090 复现 165.6 → 331.6 TF/s，Harry Chen 2026-11-17）。4090 Laptop（AD103M · 76 SM · 2.29 GHz）自验算 76 × 256 × 2 × 2.29 ≈ 178 TF = 解锁后 FP16·FP32acc 实测 177.4 TF/s（逐位）；同机 FP16·FP16acc 对照 177.3 → 177.7（1.00×，出厂即满速）——**锁只打在 FP32acc 路径，本仓默认的 `mma_bench f16/f32` 走的正是这条路**（[evidence/uefi-2757-m18r1](evidence/uefi-2757-m18r1/report.md)）。
 - **出货钳制图（2757 前后对照，同机同驱动同功耗档，mma_bench 20000 iters × 5 reps）**：
 
 | 路径 | 出厂 | 解锁后 | 倍数 | 结论 |
@@ -75,7 +76,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 这张表是全文的锚：**钳制精确到「张量路径 × 累加模式」，CUDA 核与整数张量路径完全无关。**
 
-桌面侧（2684 · 三份独立 cuBLAS 数据：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) 两位报告者 + [#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)）补齐了 Ada 桌面的逐路径谱：**TF32 per-clock 243–247 → 477–493 FLOP/clk/SM（= 512 满速的 93–96%，+96~100%，三尺寸稳定）**——TF32·FP32acc 在 40 系标准桌面卡出厂即钳制 ×0.5（30 系同锁：2026-11-06 由 #194 与本机 3080 12 GB 35→69 实测推翻旧「30 系全速」判断，「逐代差异」不成立）。据此修正白皮书语义：Ada 白皮书 TF32 82.6 是**出货钳制值**而非架构速率（CUDA guide CC 8.9 TF32 = 256 results/clk/SM = 架构值），GeForce「TF32 = FP32 速率」的著名怪象即这把锁的可见形态。FP16/BF16·FP32acc 的 cuBLAS 行为受框架路由支配（见 §5、§7），裸管线在 2684 上尚未被直接测过。
+桌面侧（2684 · 三份独立 cuBLAS 数据：[#69](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/69) 两位报告者 + [#80](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/80)）补齐了 Ada 桌面的逐路径谱：**TF32 per-clock 243–247 → 477–493 FLOP/clk/SM（= 512 满速的 93–96%，+96~100%，三尺寸稳定）**——TF32·FP32acc 在 40 系标准桌面卡出厂即钳制 ×0.5（30 系同锁：2026-11-06 由 #194 与本机 3080 12 GB 35→69 实测推翻旧「30 系全速」判断，「逐代差异」不成立）。据此修正白皮书语义：Ada 白皮书 TF32 82.6 是**出货钳制值**而非架构速率（#80 定频实测 243–247 results/clk/SM ≈ 256/clk 的架构值，见 §6），GeForce「TF32 = FP32 速率」的著名怪象即这把锁的可见形态。FP16/BF16·FP32acc 的 cuBLAS 行为受框架路由支配（见 §5、§7），裸管线在 2684 上尚未被直接测过。
 
 ### 3.4 同代笔记本与台式同构
 
@@ -94,7 +95,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 | **FP8**（E4M3/E5M2） | gen4 TC FP8 MMA（HMMA/QGMM 类，FP32acc） | 四代张量核（仅 SM89+） | **×0.5** | **2×** | 1.99×（2757）；1.9×（banner 口径） |
 | **INT8** | IMMA.S8.S32（张量）；DP4A.S8.S32（CUDA 核） | 二至四代张量核；INT 路径 | 无 | 1× | 1.00×（s8/s32、dp4a 对照全平） |
 | **FP16** | HMMA.16816.F32（FP32acc，cuBLAS 默认 hgemm）；HMMA.16816.F16（FP16acc）；HFMA2（CUDA 核半字） | 二至四代张量核 | **FP32acc ×0.5**；FP16acc 无 | 2×（仅 FP32acc 路径） | 1.47–2.0×（#14/#103/2504/2702/2757） |
-| **BF16** | HMMA BF16·FP32acc | 三/四代张量核（SM80+） | **×0.5**（移动端实测；桌面 2684 出厂即满速，#80——见 §8 开放项） | 2× | 1.98×（2757）；1.57×（28e0 热限）；**1.00×（2684 双态一致）** |
+| **BF16** | HMMA BF16·FP32acc | 三/四代张量核（SM80+） | **×0.5**（移动端与桌面裸管线实测；2684 的 cuBLAS 行停在出货半速且解锁无感，属路由/逐 die 未判——见 §8） | 2× | 1.98×（2757）；1.57×（28e0 热限）；**1.00×（2684 cuBLAS 双态一致）** |
 | **INT16** | 标量 INT MAD（无张量路径） | INT32 CUDA 核 | 无 | 1× | — |
 | **TF32** | HMMA TF32（19-bit，FP32acc） | 三/四代张量核（SM80+） | **30/40 系标准卡 ×0.5（40 系 2026-11 #69/#80；30 系 2026-11-06 #194 + 本机 3080 12G）**；异常形态有 | 2× | +79.9%（3090 20GB 异常形态）；**1.96×（2684 定频，#80）+ per-clock 翻倍（#69）**；2.20×（3070 Ti #194）；约 2×（3080 12G 35→69） |
 | **FP32** | FFMA / FMLA32 | FP32 CUDA 核 | 无（**CMP 矿卡 ÷32 才有**） | 1×（CMP 32×） | — |
@@ -126,20 +127,21 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 | 卡 | 精度·路径 | 推导 | 结果 | 白皮书/实测对账 |
 |---|---|---|---|---|
-| 3090（GA102 · 82 SM · 1.71 GHz） | FP16·FP16acc 张量 | 82×256×2×1.71 GHz | ≈71.5 TF | 白皮书 71 ✓ |
-| 3090 | FP16·FP32acc | 同式 ÷2（出厂半速） | ≈35.7 TF | 白皮书 35.3 ✓ |
-| 3090 | INT8 IMMA | 82×512 ops×2×1.71 | ≈287 TOPS | 白皮书 284 ✓ |
-| 4090（AD102 · 128 SM · 2.52 GHz） | FP16acc 张量 | 128×256×2×2.52 | ≈165 TF | 白皮书 165 ✓ |
-| 4090 | TF32·FP32acc | 架构 128×256×2×2.52；出货 ÷2 | 165 / 82.6 | 白皮书 82.6 = 出货钳制值，CUDA guide 256 results/clk/SM = 架构值；#80 定频 A/B 47.9→93.8 TF @1.5 GHz（97%→95%）✓ |
-| 4090L 2757（AD103M · 76 SM · 2.29 GHz） | FP16acc | 76×256×2×2.29 | ≈178 TF | 解锁后实测 177.4 ✓（逐位） |
-| 4080 SUPER 2702（AD103 桌面，seti9585 mma_bench，#80） | FP32acc 两模式 | 1e/f16 对照 203 TF → 减半 | ≈101 TF | 锁定 101.0 / 解锁 202.7 ✓（**2.01×**，f16/f16 1.00× 对照平） |
-| 2080 Ti（TU102 · 68 SM） | FP16acc | 白皮书 | 134.9 TF | 出厂实测 60.31 ≈ 半速再打功耗折；解锁后 89.57（功耗墙内）✓ 模型 |
+| 3090（GA102 · 82 SM · 1.695 GHz） | FP16·FP16acc 张量 | 82×512×2×1.695 GHz | ≈142 TF | 白皮书 142 ✓（出厂满速） |
+| 3090 | FP16·FP32acc | 同式，256/clk（出货半速） | ≈71 TF | 白皮书 71 ✓ |
+| 3090 | INT8 IMMA | 82×1024 ops×2×1.695 | ≈284 TOPS | 白皮书 284 ✓ |
+| 4090（AD102 · 128 SM · 2.52 GHz） | FP16·FP16acc 张量 | 128×512×2×2.52 | ≈330 TF | 白皮书 330.3 ✓（出厂满速；对照） |
+| 4090 | FP16·FP32acc 张量 | 128×256×2×2.52 | ≈165 TF | 白皮书 165.2 ✓（出货钳制值；解锁后 → ≈330） |
+| 4090 | TF32·FP32acc | 架构 256/clk（128×256×2×2.52 = 165）；出货 128/clk | 165 / 82.6 | 白皮书 82.6 = 出货钳制值；#80 定频 A/B 47.9→93.8 TF @1.5 GHz（243→489 FLOP/clk/SM，97%→95%）✓ |
+| 4090L 2757（AD103M · 76 SM · 2.29 GHz） | FP16·FP32acc（解锁后） | 76×256×2×2.29 | ≈178 TF | 实测 177.4 ✓（逐位）；同机 FP16·FP16acc 对照 177.3→177.7（1.00×） |
+| 4080 SUPER 2702（AD103 桌面，seti9585 mma_bench，#80） | FP16·FP32acc 两模式 | 256/clk 出货；f16/f16 对照 203 TF | ≈101 TF | 锁定 101.0 / 解锁 202.7 ✓（**2.01×**，f16/f16 1.00× 对照平） |
+| 2080 Ti（TU102 · 68 SM） | FP16·FP16acc 张量 | 白皮书（FE） | 113.8 TF | 出厂 60.31 ≈ 白皮书 FP32acc 56.9（+6% 频率差）；解锁 89.57 = 113.8 的 79%（功耗墙内）✓ 模型 |
 
 **每档理论上限**：被钳制路径（FP16/BF16/TF32·acc、FP8）= **2×**（半速→全速）；未钳制路径（FP16acc、INT8、INT16/32、FP32、FP64、DP4A）= **1×**。CMP 矿卡的 FFMA/FMLA16/FMLA32/IMLA0–4 全路 ÷32，理论上限 32×（170HX 实测 FP32 0.395 → 12.7–12.9 TFLOPS）。
 
 ## 7. 为什么实际增益经常小于 2×：四堵墙
 
-1. **功耗墙**：半速钳制解除后 SM 翻倍翻转，撞功耗墙时频率回落。典型：3090 20GB 形态 FP16 +48.9%（[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)）、4060L 热限 +49.4%（#119）、2080 Ti 恢复到 89.57 而非 134.9（#103）。同频归一化后增益普遍贴近 2×（2702 双独立点 1.75×/1.78×/1.66× + 频率分析）。**这堵墙最干净的一次现场量化**（#54，AD102 4090 + 850 W 直供，`nvidia-smi -lgc` 定频）：锁定态 → 解锁态的增益随时钟单调收窄——1005 MHz +55%（60 W→160 W）、1800 MHz +23%、2100 MHz +18%、自由加速 +15%（撞 450 W）；低精度把墙推远，同一张卡同一解锁 FP8 `torch._scaled_mm` 532.1 TF/s ≈ 官方 FP8 的 160%、INT8 593.2 TOP/s ≈ 180%。即 2× 是"功率免费时"的上限，不是任何时钟都能兑现；日常推理若不受张量速率限（该机 2100 与 2595 MHz 端到端同秒数），解锁收益只在 compute-bound 负载上体现。
+1. **功耗墙**：半速钳制解除后 SM 翻倍翻转，撞功耗墙时频率回落。典型：3090 20GB 形态 FP16 +48.9%（[#29](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/29)）、4060L 热限 +49.4%（#119）、2080 Ti 恢复到 89.57 而非 113.8（#103）。同频归一化后增益普遍贴近 2×（2702 双独立点 1.75×/1.78×/1.66× + 频率分析）。**这堵墙最干净的一次现场量化**（#54，AD102 4090 + 850 W 直供，`nvidia-smi -lgc` 定频）：锁定态 → 解锁态的增益随时钟单调收窄——1005 MHz +55%（60 W→160 W）、1800 MHz +23%、2100 MHz +18%、自由加速 +15%（撞 450 W）；低精度把墙推远，同一张卡同一解锁 FP8 `torch._scaled_mm` 532.1 TF/s ≈ 官方 FP8 的 160%、INT8 593.2 TOP/s ≈ 180%。即 2× 是"功率免费时"的上限，不是任何时钟都能兑现；日常推理若不受张量速率限（该机 2100 与 2595 MHz 端到端同秒数），解锁收益只在 compute-bound 负载上体现。
 2. **显存带宽绑定**：LLM decode 每 token 读全量权重，算力翻倍换不来带宽 → decode +5.5% vs prefill +16~19%（132K 上下文两组区间零重叠，2702 双卡 MoE 实测）。图像/视频生成 +14–75%、DirectML +94% 属于混合谱（算力档占比不同的算子集合），处于两堵墙之间。
 3. **逐 die 分箱**：SS0/SS1 出厂覆盖值逐 die 不同，个别形态（屏蔽修复卡、OEM 改动形态）钳制更深或路径更多（3090 20GB 的 TF32 +79.9% 即此类），逐卡以 `FEAT_READOUT_1` 与实测为准。
 4. **栈/库路由与实现率**：框架端到端测的可能不是被锁路径本身——cuBLAS 13 的 COMPUTE_32F FP16/BF16 行 ≈ FP8 行 ÷2（§5 第三条），stock 基线已在全速类，PyTorch 用户感知的 FP16/BF16 增益仅 1.0–1.3×（2684：除 TF32 1.96× 外全表 1.00–1.33×），而裸管线口径是 2.00×（2757 mma_bench）。banner 的 ~2×/FP8 ~1.9× 是 mma_bench/stressor 口径，框架用户感知可以显著更低——2702 的 cuBLAS 1.66–1.78× 与 2684 的 1.1–1.45× 离散亦属此墙（栈版本/die 待判）。另：解锁后 F32acc 半精度行 realized 60–76% 且随 N 爬升（非硬 cap：破自身类天花板 115–134%、同累加模式的 TF32 到满反例），未达 fp16acc parity（#69 定频缺口 1.39×）的成因三选一（kernel 实现率 / 管线属性 / 路由），判别见 §8。**外部实证（2026-11-17，Harry Chen，8×RTX 4090）**：kernel 实现率分支已在他机坐实为主因——NCU 对照显示解锁后 cuBLASLt 默认仍按出厂半速模型选小 tile kernel（`128x64`，SM 利用率 56%、显存带宽已 87%），库内最优大 tile（`128x128`）达 287 TF/s ≈ 指令级峰值 331.6 的 87%；启发式为完全静态 LUT（锁频不变、LD_PRELOAD 伪装 6000 Ada 无效、`CUBLASLT_HEURISTICS_LUT_FILE` 死路径、kernel 集只按 CC 划分）。按形状遍历候选实测择优（autotune）可回收 FP8 1.17–1.93×、非对称大矩阵 FP16/BF16 1.3–1.64×，超大 K 需 CUTLASS swizzle（+24–128%）；方法与各精度推荐配置见 [unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm) 与[原始博客](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/)。
@@ -149,7 +151,7 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 - Turing 的 FP16·FP16acc 对照组实验尚未做（模型预测：全速、无感）；Turing INT8 张量对照同样未测。
 - ~~Ada/GA10x 的 TF32 全速出货判断……标准卡 TF32 前后对照仍缺~~ → **已回答（2026-11-02，#69/#80）：40 系标准桌面卡 TF32 出厂钳制 ×0.5**（2684 定频 1.96×、per-clock 243→489 三尺寸稳定）；**“GA10x 全速”已于 2026-11-06 被推翻**：#194 的 3070 Ti 17.0→37.5（2.20×）与本机 3080 12 GB 约 35→69 证明 30 系同一把锁，逐代差异不成立，§4/§6 已改按钳制记。
-- **2684 桌面 BF16·FP32acc 出厂即满速且解锁无感**（#80：506–507 FLOP/clk/SM = 512 类架构值 99%，双态一致）与 2757/28e0 的钳制（1.98×/+56.9%）冲突——逐 die/SKU 分箱 vs instrument，判别 = 2684 跑 mma_bench。**补充（2026-11-06，#80 内 seti9585）：桌面 AD103 `2702` 的 mma_bench 已做**——`bf16/f32` 101.0→**202.7（2.01×）**、`f16/f32` 2.01×、`f16/f16` 对照 1.00×，双态 ssdiag 验证：**裸管线 2× 在桌面 Ada 成立**，与 2757 一致；2684 自身的 mma_bench 仍待跑（该 die 的 BF16 出厂满速是否为逐 die 事实未变）。
+- **2684 桌面 BF16·FP32acc 在 cuBLAS 口径下停在出货 FP32acc 速率且解锁无感**（#80：506–507 FLOP/clk/SM ≈ 256 FMA/clk/SM = 白皮书 FP32acc 列的 99%，双态一致；注意这是 cuBLAS 行，受 §5 第三条的框架路由支配，不能当作裸管线证据）与 2757/2702 裸管线的 2× 冲突——判别 = 2684 跑 mma_bench：若裸管线也停在半速则该 die 属于逐 die/SKU 形态，若翻倍则坐实 cuBLAS 路由。**补充（2026-11-06，#80 内 seti9585）：桌面 AD103 `2702` 的 mma_bench 已做**——`bf16/f32` 101.0→**202.7（2.01×）**、`f16/f32` 2.01×、`f16/f16` 对照 1.00×，双态 ssdiag 验证：**裸管线 2× 在桌面 Ada 成立**，与 2757 一致；2684 自身的 mma_bench 仍待跑。
 - **cuBLAS COMPUTE_32F FP16/BF16 行的 FP8 路由机制未文档化**（§5 第三条）——判别 = cuBLASLt log 看 dispatch kernel 名；若证实，README/FAQ 需加「框架口径 vs 裸管线口径」注。
 - **解锁后 F32acc 半精度行 realized 60–76% 未达 fp16acc parity**（N 正相关、无硬 cap）的成因（kernel 实现率/管线属性/路由）——判别 = 2684 mma_bench N-sweep（2757 裸管线已证 parity）。**外部旁证（2026-11-17，unlocked-ada-gemm）**：4090 上以 NCU 坐实 kernel 选择是主因之一（默认 56% vs 库内最优 85% SM 利用率）；本仓 2684 N-sweep 仍待跑，以完成本仓口径闭环。
 - Turing 熔丝级普查（cmp170hx 同等粒度）未做，Turing 侧结论以 FEAT_READOUT 与实测为锚。
@@ -158,9 +160,9 @@ Turing（20 系）走同族 FEAT 块（地址 `0x4096xx` 而非 `0x823xxx`，见
 
 - 熔丝/单元映射与 0x1 档：[cmp170hx compute-throttle.md](https://github.com/Consensus-Protocol/cmp170hx/blob/main/docs/unlock/compute-throttle.md)（15 卡熔丝普查）
 - 熔丝普查前的行为学记录链：[FluidX3D issue #8](https://github.com/ProjectPhysX/FluidX3D/issues/8)（2023-10-27，FMA 禁用原始发现）、[dartraiden/NVIDIA-patcher issue #73](https://github.com/dartraiden/NVIDIA-patcher/issues/73)（2023-12-06，jetcat8848 的 15.9× 与 efuse 1/2^n 假设；cmp170hx 记为通向寄存器级破解的源头线程）、[arXiv 2505.03782](https://arxiv.org/pdf/2505.03782)（学术引用）
-- Turing：[Turing 白皮书](https://images.nvidia.com/aem-dam/en-zz/Solutions/design-visualization/technologies/turing-architecture/NVIDIA-Turing-Architecture-Whitepaper.pdf)、[Turing Tuning Guide](https://docs.nvidia.com/cuda/turing-tuning-guide/index.html)
-- GA10x：[GA102 白皮书 v2.1](https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.1.pdf)、[Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html)
-- Ada：[Ada 白皮书](https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf)、[Ada Tuning Guide](https://docs.nvidia.com/cuda/ada-tuning-guide/index.html)、CUDA C++ Programming Guide CC 8.9 吞吐行（[FP8 1024/FP16 256/TF32 256/FP32 128/FP64 2](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html)）
+- Turing：[Turing 白皮书](https://images.nvidia.com/aem-dam/en-zz/Solutions/design-visualization/technologies/turing-architecture/NVIDIA-Turing-Architecture-Whitepaper.pdf)（Appendix A 规格表：2080 Ti 参考版/Founders Edition 113.8/56.9/227.7 TFLOPS·TOPS，FP16acc/FP32acc/INT8）、[Turing Tuning Guide](https://docs.nvidia.com/cuda/turing-tuning-guide/index.html)
+- GA10x：[GA102 白皮书 v2.1](https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.1.pdf)（Appendix A 3090 表：142/71/35.6 TFLOPS 与 284 TOPS，FP16acc/FP32acc/TF32/INT8）、[Ampere Tuning Guide](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html)
+- Ada：[Ada 白皮书 V2.02](https://images.nvidia.com/aem-dam/Solutions/Data-Center/l4/nvidia-ada-gpu-architecture-whitepaper-V2.02.pdf)（Appendix A Table 2，pp. 29–31：FP16·FP16acc 330.3 / FP16·FP32acc 165.2 / BF16·FP32acc 165.2 / TF32 82.6 / FP8 660.6/330.3 / INT8 660.6，dense）、[Ada Tuning Guide](https://docs.nvidia.com/cuda/ada-tuning-guide/index.html)、CUDA C++ Programming Guide CC 8.9 原生行（[FP16 256/FP32 128/FP64 2 results/clk/SM](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html)）
 - 解锁后软件栈适配（kernel 启发式按出厂半速校准与 autotune 方法）：[Harry-Chen/unlocked-ada-gemm](https://github.com/Harry-Chen/unlocked-ada-gemm) 与[配套博客](https://harrychen.xyz/2026/11/17/unlocked-rtx-4090-gemm-perf/)（2026-11-17，8×4090 实测）
 - 逐路径钳制的决定性对照：本仓 [evidence/uefi-2757-m18r1](evidence/uefi-2757-m18r1/report.md)（mma_bench，gpu-unlock-ada/diagnostics）
 - 逐卡实测：[兼容性矩阵](compatibility.md)（#14/#29/#70/#71/#103/#119、2702/2757 报告）
