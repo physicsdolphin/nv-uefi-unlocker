@@ -21,7 +21,7 @@
 | 是硅的问题吗？ | **不是。** 同 GB202 die 的 RTX PRO 6000 满速（BF16→FP32 518 TF/s）、`FEAT_READOUT_1=0`——纯产品分割 |
 | 为什么旧办法不行？ | Blackwell 引导链**没有 SEC2 阶段**：FSP(ROM,PL3)→GSP BootROM(ROM,PL3)→FMC(主机供、签名+加密、PL3)→GSP-RM(明文,PL2)。Ada/Ampere 的"签名 booter 栈溢出→ROP gadget→写 PLM"载具不存在 |
 | 有 GB20x booter 吗？ | **公开不存在。** `kgspGetBinArchiveBooterLoadUcode` 只为 TU102/TU116/GA100/GA102/AD102 开分支，其余落共享 fallback；开放模块里该 fallback 是 NULL 桩，真实映像只在闭源 `nv-kernel.o` |
-| debug 镜像能当后门吗？ | **不能。** GB202 debug/prod FMC 的 `UCODE_IMAGE`/`UCODE_HASH` 逐字节相同（密文也一样），只有 96 B `UCODE_SIG` 不同，且**没有多签名槽表**可降级 |
+| debug 镜像能当后门吗？ | **不能。** GB202 数组（GB206 等经 HAL 复用）的 debug/prod FMC `UCODE_IMAGE`/`UCODE_HASH` 逐字节相同（密文也一样），`UCODE_PKEY`（104 B）与 `UCODE_SIG`（96 B）两个字段不同（共 200 B；实际 191 B 变），且**没有多签名槽表**可降级 |
 | 解 FMC 呢？ | 失败且已穷尽一条路线：MD5-IV 置换族 `16!` 全搜 × 两种容器 × 五种模式，零命中；换用真实 RISC-V 码评分器后仍无键 |
 | 还开着什么？ | ①suspend/resume 信任面（SR 状态 205.875 MiB/卡，熵 7.9998）；②FSP/FMC 解析器（host 输入按对齐/精确值/边界/认证四类检查，heap 有 11 档 lever）；③每 SM selector（只探过全局 FEAT 块；GB206 TPC floorsweeping 的跨卡只读对照采集已开——[D#216](https://github.com/physicsdolphin/nv-uefi-unlocker/discussions/216)：5060 Laptop `2d59` 实测 13 TPC/26 SM，征集桌面 5060 Ti `2d04` 同协议六值样本，Linux 只读采集器与贡献指南在其链接仓库）；移动 GB206 `2d58` 已由 [#283](https://github.com/physicsdolphin/nv-uefi-unlocker/issues/283) 补采（36 SM/18 TPC、L2 32 MiB 闭合 OQ #19、SB+HVCI 下零写只读），HMMA 归一化 0.51× 与 §1.2 一致 |
 | 本项目能做什么？ | 只读：efi SAMPLE、ssdiag、diag-unlock 都已覆盖该块（本轮）。事务：不能跑，等待 PL3 执行原语 |
@@ -132,18 +132,25 @@ heap size（不动保护区，只从 WPR 基址挪非保护区，11 档布局 le
 fallback 是 NULL 桩（对象另行生成），GB20x 映像只在闭源 `nv-kernel.o`。
 没有明文可反汇编的 booter，就没有可挖 gadget 的对象。
 
-### 3.2 debug 签名镜像当替代 —— 逐字节相同
+### 3.2 debug 签名镜像当替代 —— 镜像逐字节相同，换的是 PKEY + 签名
 
 曾有一个合理猜想：debug 构建可挖 → 在 PL3 跑 → 不需要 booter。实测否定。
-615.71.10 开放模块 `src/nvidia/generated/` 里：
+615.71.10 与 615.78.08 开放模块 `src/nvidia/generated/` 的 `_GB202.c` bindata 里
+（两版逐字节相同）：
 
 | 资产 | debug | prod |
 |---|---|---|
 | `UCODE_IMAGE`（287,304 B） | 密文熵 8.00 | **与 debug 逐字节相同** |
-| `UCODE_HASH`（48 B） | `b54e23af…` | **与 debug 逐字节相同** |
-| `UCODE_SIG`（96 B） | `c9907005…` | 不同（`207634c2…`） |
+| `UCODE_HASH`（48 B） | `b54e23af…` | **与 debug 逐字节相同**；等于镜像的 SHA-384 |
+| `UCODE_PKEY`（104 B 数组，声明 97 B） | `04d30bd5…` | 不同（`048bf118…`；95/104 B 变） |
+| `UCODE_SIG`（96 B） | `c9907005…` | 不同（`207634c2…`；96/96 B 变） |
 
-"DebugSigned" 只换签名。且 FMC 是**单条 96 B 签名**、没有 `num_sigs` 槽表，
+数组名是 `_GB202`；GB206 没有独立 FMC 数组——`g_kernel_gsp_nvoc.c` 的
+HAL 把 GB202/GB203/GB205/GB206/GB207 统一派发到 `_GB202`（615.78.08 的
+962/1001 行）。所以这里是 GB202 数组在 GB206 上的复用，不是 GB206 专属数据。
+
+"DebugSigned" 只换公钥与签名（PKEY 104 B + SIG 96 B = 200 B 字段），镜像与
+哈希不变。且 FMC 是**单条 96 B 签名**、没有 `num_sigs` 槽表，
 `gpu_unlock_booter_patch()` 那种"按熔丝版本选槽"的降级面也不存在。另外进入
 debug 熔丝态在零售卡上没有公开方法。
 
